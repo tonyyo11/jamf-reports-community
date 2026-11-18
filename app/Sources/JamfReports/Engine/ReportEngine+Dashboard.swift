@@ -45,10 +45,16 @@ extension ReportEngine {
     /// `protect` unless its profile is known to be another product's login, which jamf-cli
     /// would take for a clash or fail on; then one `[warn]` line and the page has no Protect card.
     static func dashboardProtect(
-        _ protect: String?, bin: URL,
+        _ protect: String?, bin: URL, collectSkip: Set<String> = [],
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) async -> String? {
         guard let protect else { return nil }
+        // Every Protect source turned off here: the page must not collect Protect behind it.
+        if Set(DataFreshnessHealth.protectKinds).isSubset(of: collectSkip) {
+            onLine(.init(timestamp: Date(), level: .warn, text: "[warn] dashboard: Protect left "
+                + "out: every Jamf Protect source is turned off in this workspace"))
+            return nil
+        }
         let refusal = await ProfileAuthMethod.protectRefusal(
             profile: protect,
             resolved: { ProfileAuthMethod.resolve(profile: $0, binary: bin) })

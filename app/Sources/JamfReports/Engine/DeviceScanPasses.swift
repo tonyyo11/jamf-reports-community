@@ -31,6 +31,9 @@ struct DeviceScanRound: Codable, Equatable, Sendable {
     var remaining: Int
     var history = DeviceScanTally()
     var statusItems = DeviceScanTally()
+    /// The scan kinds `collect_skip` turned off when the round started (Jamf Pro); nil reads as
+    /// none. A round whose set differs from today's is not continued.
+    var turnedOff: [String]?
 
     /// About 12,000 Mac ids fit many times over.
     static let fileLimit = 4 * 1024 * 1024

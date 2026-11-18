@@ -339,7 +339,7 @@ final class SchoolDeviceScanTests: XCTestCase {
             ReportEngine.SchoolDeviceScanPlan.notDue(lastAttempt: nil).planText,
             "device scan: not due (last attempt: never)")
         let plan = CollectSourcesPlan.build(.init(
-            product: .jamfSchool, profile: "p", collectSkip: [ReportEngine.schoolDeviceDetailKind]))
+            product: .jamfSchool, profile: "p", collectSkipList: [ReportEngine.schoolDeviceDetailKind]))
         let source = plan.sources.first { $0.kind == ReportEngine.schoolDeviceDetailKind }
         XCTAssertEqual(source?.product, .school)
         XCTAssertNotNil(source?.skipReason)
@@ -368,7 +368,7 @@ final class SchoolDeviceScanTests: XCTestCase {
                     ReportEngine.landedSources?.schoolDevices = list
                     if let schoolThrows { throw schoolThrows }
                 },
-                protectCollect: { _, _, _ in events.append("protect"); return ["protect-alerts"] },
+                protectCollect: { _, _, _, _ in events.append("protect"); return ["protect-alerts"] },
                 resolved: { _ in nil },
                 gate: { _, _, _, _, _, _ in .proceed(holdsClaim: false, coordinating: false) },
                 locateJamfCLI: { stub }, schoolScanLimits: .init(concurrency: 1),
@@ -518,7 +518,7 @@ final class SchoolDeviceScanTests: XCTestCase {
             workspace: try WorkspaceID(validating: profile), tiers: [.scan], config: config,
             workspacePaths: WorkspacePaths.self, now: now,
             schoolCollect: schoolCollectThroughTheStub(stub),
-            protectCollect: { _, _, _ in [] }, resolved: { _ in nil },
+            protectCollect: { _, _, _, _ in [] }, resolved: { _ in nil },
             gate: { _, _, _, _, _, _ in
                 SharedWorkspace.acquire(profile: name, operation: "collect", ttl: 3_600)
                 return .proceed(holdsClaim: true, coordinating: true)

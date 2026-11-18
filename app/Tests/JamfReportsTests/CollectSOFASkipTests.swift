@@ -32,11 +32,11 @@ final class CollectSOFASkipTests: XCTestCase {
 
     // MARK: - Pure rules
 
-    func testSOFACanBeSkippedAndPatchReleaseDatesCannot() {
+    /// Each after-matrix source turns off on its own (2.12: any optional source can).
+    func testSOFAAndPatchReleaseDatesCanEachBeSkipped() {
         XCTAssertEqual(ReportEngine.collectSkipKinds(["SOFA", " sofa "]), ["sofa"])
-        XCTAssertTrue(
-            ReportEngine.collectSkipKinds(["patch_release_dates"]).isEmpty,
-            "patch-release-dates asks the Jamf server through jamf-cli, not a third party")
+        XCTAssertEqual(
+            ReportEngine.collectSkipKinds(["patch_release_dates"]), ["patch-release-dates"])
     }
 
     func testFreshnessDoesNotExpectASkippedSOFA() {

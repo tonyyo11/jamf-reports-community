@@ -240,7 +240,7 @@ final class SecurityCloudCollectTests: XCTestCase {
                     return .collected
                 },
                 schoolCollect: { _, _, _, _, _, _ in },
-                protectCollect: { _, _, _ in ["protect-alerts"] },
+                protectCollect: { _, _, _, _ in ["protect-alerts"] },
                 securityCollect: { _, _, skip, _ in
                     calls.hit(skip)
                     if let securityThrowing { throw securityThrowing }

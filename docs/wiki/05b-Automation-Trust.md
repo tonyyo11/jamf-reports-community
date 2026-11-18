@@ -129,9 +129,11 @@ says so. They never appear in the strip and the hourly repair never retries them
 profile whose authentication method cannot be determined is *not* skipped: "we could not
 ask" is never read as "not platform".
 
-Sources you list in `jamf_cli.collect_skip` — any of the four per-device-heavy reports that
-stall some on-premise servers, or `dashboard`, `sofa` or `security-risk` — are handled the same way: never attempted, even by
-**Collect now**, never counted as failures, and left out of the strip.
+Sources you turn off on **Data Sources** (each source has a switch; they are written to
+`jamf_cli.collect_skip`) are handled the same way: never attempted, even by **Collect now**,
+never counted as failures, and left out of the strip. Any source can be turned off except the
+ones the daily summary is built from. On a shared workspace, a source another Mac turned off or
+on is collected as before here until you confirm the change in Config Doctor.
 
 ### Where the state lives
 

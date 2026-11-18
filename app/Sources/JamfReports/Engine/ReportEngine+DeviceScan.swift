@@ -117,17 +117,24 @@ extension ReportEngine {
     /// round is open, any unforced run takes one pass a local day, whatever its tiers.
     static func planDeviceScan(
         tiers: Set<CollectionTier>, skipExpensive: Bool, force: Bool,
+        collectSkip: Set<String> = [], skippedSides: Set<FleetSide> = [],
         stateStore: StateFileStore?, now: Date
     ) -> DeviceScanPlan {
-        let round = DeviceScanPasses.round(in: stateStore, now: now)
+        let round = continuedRound(
+            DeviceScanPasses.round(in: stateStore, now: now), collectSkip: collectSkip)
         guard tiers.contains(.scan) || (round != nil && !force) else { return .tierNotSelected }
+        guard !skippedSides.contains(.mac) else { return .noComputers }
         guard !skipExpensive else { return .turnedOff }
+        let scanKinds = [ddmDeviceStatusKind, mdmCommandHealthKind].filter {
+            !collectSkip.contains($0)
+        }
+        guard !scanKinds.isEmpty else { return .listedInCollectSkip }
         guard !force else { return .due }
         if let round {
             return Calendar.current.isDate(round.lastPass, inSameDayAs: now)
                 ? .notDue(lastAttempt: round.lastPass) : .due
         }
-        let attempts = [ddmDeviceStatusKind, mdmCommandHealthKind].map { kind in
+        let attempts = scanKinds.map { kind in
             (kind: kind, last: lastAttemptDate(for: kind, stateStore: stateStore))
         }
         let due = attempts.contains {
@@ -137,6 +144,22 @@ extension ReportEngine {
         return due ? .due : .notDue(lastAttempt: attempts.compactMap(\.last).max())
     }
 
+    /// The scan kinds `collectSkip` turns off, as a round records them.
+    static func scanKindsTurnedOff(_ collectSkip: Set<String>) -> [String] {
+        [ddmDeviceStatusKind, mdmCommandHealthKind].filter(collectSkip.contains).sorted()
+    }
+
+    /// `round` when it was started with the same scan kinds turned off; otherwise a fresh round
+    /// starts, so a pass never carries a round across a switch change.
+    static func continuedRound(
+        _ round: DeviceScanRound?, collectSkip: Set<String>
+    ) -> DeviceScanRound? {
+        guard let round, (round.turnedOff ?? []) == scanKindsTurnedOff(collectSkip) else {
+            return nil
+        }
+        return round
+    }
+
     /// Returns the kinds it wrote. Never throws: the matrix's verdicts have
     /// already run, and a scan problem must not turn a good run red. An unforced pass stops
     /// starting Macs after `scanBudget` seconds or when `runStop` asks; a forced one scans all.
@@ -144,6 +167,7 @@ extension ReportEngine {
     static func runDeviceScanPhase(
         profile: String, bin: URL, dataDir: URL, plan: DeviceScanPlan,
         recordManifest: Bool,
+        collectSkip: Set<String> = [],
         stateStore: StateFileStore?, collectStart: Date,
         authConfirmationProbe: @escaping AuthConfirmationProbe,
         limits: DeviceCallLimits = DeviceCallLimits(),
@@ -158,8 +182,11 @@ extension ReportEngine {
             }
             return []
         }
+        // A call type turned off in this workspace makes no call and records nothing.
+        let off = Set([CallType.history, .statusItems].filter { collectSkip.contains($0.kind) })
         guard let targets = loadScanTargets(dataDir: dataDir, onLine: onLine),
-              let earlier = loadEarlier(dataDir: dataDir, wholeFleet: force, onLine: onLine)
+              let earlier = loadEarlier(
+                  dataDir: dataDir, wholeFleet: force, off: off, onLine: onLine)
         else { return [] }
         onLine(.init(
             timestamp: Date(), level: .info,
@@ -167,7 +194,8 @@ extension ReportEngine {
                 + "\(targets.filter(\.ddmEnabled).count) DDM-enabled"
         ))
         let targetIDs = Set(targets.map(\.id))
-        var round = force ? nil : DeviceScanPasses.round(in: stateStore, now: collectStart)
+        var round = force ? nil : continuedRound(
+            DeviceScanPasses.round(in: stateStore, now: collectStart), collectSkip: collectSkip)
         var doneBefore = Set(round?.attempted ?? []).intersection(targetIDs)
         // A round that already covers every current target has nothing left: start afresh.
         if doneBefore == targetIDs { round = nil; doneBefore = [] }
@@ -181,7 +209,7 @@ extension ReportEngine {
                            runStop: stopRun)
         })
         let (results, stops, stopCause) = await scanDevices(
-            pending, profile: profile, bin: bin,
+            pending, profile: profile, bin: bin, off: off,
             probe: authConfirmationProbe, limits: limits, shouldStop: shouldStop, onLine: onLine
         )
         let attempted = Set(results.map(\.target.id))
@@ -194,7 +222,7 @@ extension ReportEngine {
         }
         let left = pending.count - attempted.count
         let pass = PassInput(
-            results: results, stops: stops, stopCause: stopCause, targets: targets,
+            results: results, stops: stops, off: off, stopCause: stopCause, targets: targets,
             earlier: earlier, prior: round,
             roundEnds: left <= 0 || !stops.isEmpty)
         let (written, tallies) = reduceAndSave(
@@ -208,7 +236,8 @@ extension ReportEngine {
                 attempted: doneBefore.union(attempted).sorted(), remaining: left,
                 history: (round?.history ?? DeviceScanTally()) + (tallies[.history] ?? .init()),
                 statusItems: (round?.statusItems ?? DeviceScanTally())
-                    + (tallies[.statusItems] ?? .init()))
+                    + (tallies[.statusItems] ?? .init()),
+                turnedOff: scanKindsTurnedOff(collectSkip))
             do { try stateStore?.recordDeviceScanRound(next) } catch {
                 onLine(.init(timestamp: Date(), level: .warn, text:
                     "[warn] device scan: round not recorded — \(error.englishDescription)"))
@@ -255,11 +284,13 @@ extension ReportEngine {
     /// scan takes the whole fleet, so what it writes is whole and may replace an unreadable
     /// file; otherwise one bad file would block the scan until someone removed it.
     private static func loadEarlier(
-        dataDir: URL, wholeFleet: Bool, onLine: @Sendable (CLIBridge.LogLine) -> Void
+        dataDir: URL, wholeFleet: Bool, off: Set<CallType> = [],
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) -> Earlier? {
-        let health = DeviceScanPasses.earlierRows(
+        // A kind turned off is never read: its file, readable or not, cannot hold up the other.
+        let health = off.contains(.history) ? [] : DeviceScanPasses.earlierRows(
             kind: mdmCommandHealthKind, dataDir: dataDir, as: MDMCommandHealthRecord.self)
-        let ddm = DeviceScanPasses.earlierRows(
+        let ddm = off.contains(.statusItems) ? [] : DeviceScanPasses.earlierRows(
             kind: ddmDeviceStatusKind, dataDir: dataDir, as: DDMDeviceStatusRecord.self)
         for (kind, rows) in [(mdmCommandHealthKind, health == nil),
                              (ddmDeviceStatusKind, ddm == nil)] where rows {
@@ -282,6 +313,7 @@ extension ReportEngine {
     private struct PassInput {
         let results: [DeviceResult]
         let stops: [CallType: Int32]
+        var off: Set<CallType> = []
         let stopCause: FailureCause?
         let targets: [DeviceScanTarget]
         let earlier: Earlier
@@ -313,13 +345,13 @@ extension ReportEngine {
     /// both — a credential that died mid-scan will not come back for device 400. Timed-out
     /// calls stop their call type after `limits.stopAfterTimeouts` in a row (exit -2).
     private static func scanDevices(
-        _ targets: [DeviceScanTarget], profile: String, bin: URL,
+        _ targets: [DeviceScanTarget], profile: String, bin: URL, off: Set<CallType> = [],
         probe: @escaping AuthConfirmationProbe, limits: DeviceCallLimits,
         shouldStop: (@Sendable (Int) -> Bool)?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> (results: [DeviceResult], stops: [CallType: Int32], stopCause: FailureCause?) {
         let bridge = CLIBridge()
-        let gate = StopGate(probe: probe, profile: profile, bin: bin, limits: limits)
+        let gate = StopGate(probe: probe, profile: profile, bin: bin, limits: limits, off: off)
         var results: [DeviceResult] = []
         results.reserveCapacity(targets.count)
         var done = 0
@@ -460,21 +492,23 @@ extension ReportEngine {
         private let limits: DeviceCallLimits
         private var timeoutStreak: [CallType: Int] = [:]
         private var keychainStop: FailureCause?
+        private let off: Set<CallType>
 
         init(
             probe: @escaping AuthConfirmationProbe, profile: String, bin: URL,
-            limits: DeviceCallLimits
+            limits: DeviceCallLimits, off: Set<CallType> = []
         ) {
             self.probe = probe
             self.profile = profile
             self.bin = bin
             self.limits = limits
+            self.off = off
         }
 
-        func allows(_ type: CallType) -> Bool { stopped[type] == nil }
+        func allows(_ type: CallType) -> Bool { stopped[type] == nil && !off.contains(type) }
 
         /// False once both call types are stopped — no device will call jamf-cli again.
-        func stillScanning() -> Bool { stopped[.history] == nil || stopped[.statusItems] == nil }
+        func stillScanning() -> Bool { allows(.history) || allows(.statusItems) }
 
         func stops() -> [CallType: Int32] { stopped }
 
@@ -724,7 +758,9 @@ extension ReportEngine {
         let now = Date()
 
         // History → mdm-command-health (every device).
-        if let stopExit = pass.stops[.history] {
+        if pass.off.contains(.history) {
+            // Turned off in this workspace: nothing written, nothing recorded.
+        } else if let stopExit = pass.stops[.history] {
             recordStopped(mdmCommandHealthKind, stopExit: stopExit, cause: pass.stopCause,
                           stateStore: stateStore, collectStart: collectStart, onLine: onLine)
         } else {
@@ -750,6 +786,7 @@ extension ReportEngine {
 
         // Status items → ddm-device-status (DDM-enabled devices only). With none in the fleet
         // it writes an empty snapshot, a real result the health strip must see.
+        if pass.off.contains(.statusItems) { return (written, tallies) }
         if let stopExit = pass.stops[.statusItems] {
             recordStopped(ddmDeviceStatusKind, stopExit: stopExit, cause: pass.stopCause,
                           stateStore: stateStore, collectStart: collectStart, onLine: onLine)

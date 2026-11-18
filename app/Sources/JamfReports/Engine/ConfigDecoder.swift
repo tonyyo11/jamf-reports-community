@@ -103,10 +103,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
-    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
-    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
-    /// screen save keeps it.
+    /// Sources `collect` never runs: any but the core ones (`ReportEngine.optionalKinds`).
+    /// Read only through `SharedConfigPin.collectSkip`; written by the Data Sources switches
+    /// (`CollectSkipConfigWriter`), and a Config screen save keeps it.
     var collectSkip: [String]?
     /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
     /// or not a boolean reads as false (`ReportEngine.reducingComputers`).

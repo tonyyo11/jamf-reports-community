@@ -49,7 +49,7 @@ enum SiteScope: Codable, Equatable, Sendable {
 
     /// Fleet › `resource` as a whole number: a JSON number, digits, or digits with `,` group
     /// separators ("1,234"); anything else (`N/A`, blank, text) is nil.
-    private static func fleetTotal(_ overview: [Any]?, resource: String) -> Int? {
+    static func fleetTotal(_ overview: [Any]?, resource: String) -> Int? {
         let row = overview?.lazy.compactMap { $0 as? [String: Any] }.first {
             $0["section"] as? String == "Fleet" && $0["resource"] as? String == resource
         }

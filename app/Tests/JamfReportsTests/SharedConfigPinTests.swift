@@ -383,7 +383,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: config,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect: protect.profile changed") })
@@ -418,7 +418,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: config,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains {
@@ -458,7 +458,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: loaded,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect:") })

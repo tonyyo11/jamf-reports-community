@@ -151,7 +151,7 @@ final class SchoolDeviceDetailTests: XCTestCase {
         let off = try XCTUnwrap(SchoolDeviceHealth(
             SchoolFleetService.load(dataDir: dir), scanTurnedOff: true))
         XCTAssertEqual(off.detailLines,
-                       [L("Per-device details are turned off (jamf_cli.collect_skip)")])
+                       [L("Per-device details are turned off in Data Sources")])
         try scan([detail(1, ["deviceEnrollType": "dep", "totalCapacity": 64]),
                   detail(2, ["deviceEnrollType": "dep"])])
         let lines = try health().detailLines

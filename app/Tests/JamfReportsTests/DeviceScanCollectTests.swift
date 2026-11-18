@@ -693,6 +693,108 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNil(store.failures(report: "patch-device-failures"))
     }
 
+    /// A scan call type turned off makes no call and records nothing; the other still lands.
+    func testCollectSkipTurnsOffOneScanCallType() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [mdm_command_health]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] mdm-command-health: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+        XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+    }
+
+    func testCollectSkipTurnsOffTheDDMCallType() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [ddm-device-status]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertFalse(callsLog().contains("status-items"), callsLog())
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "ddm-device-status"))
+    }
+
+    /// A shared workspace scans by the list this Mac confirmed, not the one a peer wrote.
+    func testAPinnedWorkspaceScansByThePinnedList() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let config = ws.appendingPathComponent("config.yaml")
+        let text = { (list: String) in
+            "shared_workspace:\n  enabled: true\njamf_cli:\n  profile: \"\(self.profile)\"\n"
+                + "  collect_skip: \(list)\n"
+        }
+        try text("[mdm-command-health]").write(to: config, atomically: true, encoding: .utf8)
+        _ = SharedConfigPin.check(profile: profile)
+        try text("[]").write(to: config, atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] mdm-command-health: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+    }
+
+    /// An unreadable snapshot of a kind that is off cannot hold up the kind that is on.
+    func testAnUnreadableSnapshotOfAnOffKindDoesNotBlockThePass() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [mdm-command-health]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let dir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("mdm-command-health", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "not json".write(
+            to: dir.appendingPathComponent("mdm-command-health_20260903T120000.json"),
+            atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan(force: false)
+
+        XCTAssertFalse(lines.contains { $0.contains("could not be read") }, "\(lines)")
+        XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+    }
+
+    /// A fleet with no computers: the scan is skipped, nothing recorded, the run not Partial.
+    func testAFleetWithNoComputersSkipsTheScanAndRecordsNothing() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "overview", dataDir: data, at: Date().addingTimeInterval(-60), rows: [
+                ["section": "Fleet", "resource": "Managed Computers", "value": 0],
+                ["section": "Fleet", "resource": "Unmanaged Computers", "value": 0],
+                ["section": "Fleet", "resource": "Managed Devices", "value": 4],
+                ["section": "Fleet", "resource": "Unmanaged Devices", "value": 0],
+            ])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: data, at: Date().addingTimeInterval(-60), rows: [])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "mobile-devices-list", dataDir: data, at: Date().addingTimeInterval(-60),
+            rows: (0..<4).map { ["id": "\($0)", "name": "iPad \($0)", "deviceType": "iOS"] })
+        let lines = try await runScan()
+
+        XCTAssertTrue(lines.contains("[plan] device scan: skipped (no computers in Jamf Pro)"),
+                      "\(lines)")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[partial]") }, "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+    }
+
     // MARK: - A dead matrix verdict and the scan (#207 G17)
 
     /// Runs a scan-tier collect that must fail on its reports; returns the history calls made.

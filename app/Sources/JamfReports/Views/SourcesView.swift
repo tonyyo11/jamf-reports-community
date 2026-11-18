@@ -30,6 +30,8 @@ struct SourcesView: View {
     @State private var reauthOpensPlatform = false
     @State private var environmentCard: EnvironmentCardState?
     @State private var unassigned: [AddSheetPlan.UnassignedProfile] = []
+    /// The source whose switch was turned off, waiting for the confirmation.
+    @State private var pendingTurnOff: CollectSourcesPlan.Source?
 
     private var isSchoolWorkspace: Bool {
         sourcesPlan?.sources.first?.product == .school
@@ -193,6 +195,17 @@ struct SourcesView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .alert(
+            pendingTurnOff.map { L("Turn off \($0.kind)?") } ?? "",
+            isPresented: Binding(
+                get: { pendingTurnOff != nil }, set: { if !$0 { pendingTurnOff = nil } }),
+            presenting: pendingTurnOff
+        ) { source in
+            Button(L("Turn Off"), role: .destructive) { setCollecting(source.kind, false) }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: { source in
+            Text(Self.quietSentence(for: source.kind))
+        }
     }
 
     /// What a full collect runs for this workspace, a group per product, from the same lists
@@ -203,6 +216,7 @@ struct SourcesView: View {
             Text("What a full collect runs for this workspace.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
+            if plan.changedOnAnotherMac { changedOnAnotherMacLine }
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(CollectSourcesPlan.Product.allCases, id: \.self) { product in
                     let sources = plan.sources(for: product)
@@ -254,21 +268,126 @@ struct SourcesView: View {
     }
 
     private func sourceRow(_ source: CollectSourcesPlan.Source) -> some View {
+        let state = sourcesPlan?.switchState(for: source)
+            ?? .init(control: .hidden, changedOnAnotherMac: false)
         // The label wraps at its full height: truncated, it still reserved the wrapped
         // height below the cards row.
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
             Mono(text: source.command,
                  color: source.skipReason == nil ? Theme.Text.secondary
                     : Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(Self.sourceStatus(source, cachedAt: cachedAt[source.kind]))
+            Text(Self.rowStatus(source, state: state.control, cachedAt: cachedAt[source.kind]))
                 .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .foregroundStyle(state.changedOnAnotherMac
+                    ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: 220, alignment: .trailing)
+            sourceSwitch(source, state: state.control)
         }
         .padding(.vertical, 6)
+    }
+
+    /// One line for the whole card while the list waits for a Confirm: a peer's edit, a pin or
+    /// a config.yaml this Mac cannot read.
+    private var changedOnAnotherMacLine: some View {
+        HStack(spacing: 8) {
+            Text("Changed on another Mac; confirm in Config Doctor")
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.warn)
+            Button(L("Review")) {
+                AutomationHealthModel.shared.openConfigDoctorRequested = true
+                NotificationCenter.default.post(
+                    name: .navigateToTab, object: nil, userInfo: ["tab": Tab.audit.rawValue])
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+        }
+    }
+
+    /// The trailing switch; none for a source skipped for another reason.
+    @ViewBuilder
+    private func sourceSwitch(
+        _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch
+    ) -> some View {
+        if state == .on || state == .off || state == .locked {
+            let held = sourcesPlan?.changedOnAnotherMac == true
+            Toggle("", isOn: Binding(
+                get: { state != .off },
+                set: { on in
+                    guard !workspace.demoMode else { return }
+                    if on { setCollecting(source.kind, true) } else { pendingTurnOff = source }
+                }))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .accessibilityLabel(L("Collect \(source.kind)"))
+                .disabled(state == .locked || workspace.demoMode || held)
+                .help(switchHelp(state: state, held: held))
+        }
+    }
+
+    private func switchHelp(state: CollectSourcesPlan.SourceSwitch, held: Bool) -> String {
+        if workspace.demoMode { return DemoData.liveOnlyHelp }
+        if state == .locked {
+            return L("This source cannot be turned off: the daily summary and most screens are built from it.")
+        }
+        return held ? L("Changed on another Mac; confirm in Config Doctor") : ""
+    }
+
+    /// Writes the switch, then reloads the card and the health strip.
+    private func setCollecting(_ kind: String, _ on: Bool) {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try CollectSkipConfigWriter.setCollecting(kind, on, profile: profile)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            if let failure { workspace.toast = Toast(message: failure, style: .danger) }
+            reloadSourcesPlan()
+            await workspace.refreshDataFreshness()
+        }
+    }
+
+    /// The row's trailing text: the switch's state in words, else `sourceStatus`.
+    nonisolated static func rowStatus(
+        _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch,
+        cachedAt: Date?
+    ) -> String {
+        switch state {
+        case .off: L("Turned off in this workspace")
+        case .followsPatchStatus: L("Turned off with patch-status")
+        case .noDevices(.mac): L("No computers in Jamf Pro")
+        case .noDevices(.mobile): L("No mobile devices in Jamf Pro")
+        default: sourceStatus(source, cachedAt: cachedAt)
+        }
+    }
+
+    /// What turning `kind` off does, one sentence per source family: it stops updating, the
+    /// screens keep its last data with its date, and the daily summary stops using it.
+    nonisolated static func quietSentence(for kind: String) -> String {
+        if kind.hasPrefix("patch-") {
+            return L("Patch data stops updating. Patch screens and report tabs keep showing what was last collected, with its date; the daily summary and the patch part of the Security Score stop using it.")
+        }
+        if kind.hasPrefix("update-") {
+            return L("OS update data stops updating. The OS Updates screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it.")
+        }
+        if kind.hasPrefix("protect-") {
+            return L("This Jamf Protect data stops updating. The Jamf Protect screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it.")
+        }
+        if kind == ReportEngine.sofaKind {
+            return L("The SOFA feed stops updating. OS currency keeps showing what was last collected, with its date; the daily summary and the macOS and XProtect current parts of the Security Score stop using it.")
+        }
+        if kind == "ea-results" || kind == "computer-extension-attributes" {
+            return L("Extension attribute data stops updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary and security agent coverage stop using it.")
+        }
+        return L("This source stops updating. Screens keep showing what was last collected, with its date, and the daily summary stops using it.")
     }
 
     /// "12 run · 10 cached · 4 skipped", each part only when it is not zero.
@@ -779,6 +898,9 @@ struct SourcesView: View {
                 let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
                 let protectProfile = environment.protect
                 let securityCloudProfile = environment.securityCloud
+                let typedSkip = config?.jamfCli?.collectSkip
+                let skipList = SharedConfigPin.collectSkipList(
+                    configured: typedSkip, profile: profile)
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
@@ -795,7 +917,11 @@ struct SourcesView: View {
                     installedVersion: version, skipExpensive: skipExpensive,
                     authMethod: auth?.authMethod, tenantLevel: auth?.isTenantLevel == true,
                     hasTenantID: workspaceAuth?.hasTenantID == true,
-                    collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+                    collectSkipList: skipList.effective,
+                    collectSkipInFile: skipList.drifted ? typedSkip ?? [] : nil,
+                    fleet: detected.type == .jamfPro
+                        ? FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
+                        : .unknown,
                     platformUnavailable: routed.unavailable))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.

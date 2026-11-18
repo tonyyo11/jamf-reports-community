@@ -25,6 +25,9 @@ struct ReportEngine: Sendable {
     /// included; nothing in config.yaml names it, since a peer on a shared workspace can edit
     /// that file. An engine with none (tests, library use) resolves no workspace folder.
     var workspace: WorkspaceID? = nil
+    /// The sources turned off for this run (`SharedConfigPin.collectSkip`); nil reads them for
+    /// `workspace`. The daily summary treats them as absent, never as current.
+    var turnedOffKinds: Set<String>? = nil
 
     /// The trend-chart tab, the one tab no sheet plan writes.
     static let chartsSheetName = "Charts"
@@ -757,7 +760,18 @@ struct ReportEngine: Sendable {
         // ABSENT (skipped + warned, named by kind/age/key) so the daily digest
         // and the freshness signal it feeds never silently absorb ancient cache.
         let maxCacheAgeHours = config.jamfCli?.resolvedMaxCacheAgeHours ?? 168
+        // A source turned off stops updating: its last snapshot must not feed today's figures.
+        // A skipped fleet side's old snapshots are absent too (`FleetState`).
+        let fleetSides = FleetState.load(dataDir: dataDir)
+        let turnedOff = (turnedOffKinds ?? workspace.map {
+            SharedConfigPin.collectSkip(
+                configured: config.jamfCli?.collectSkip, profile: $0.name, fleet: fleetSides)
+        } ?? []).union(Self.kinds(of: fleetSides.skipped))
         func cachedData(kind: String) -> Data? {
+            if turnedOff.contains(kind) {
+                recordSource(kind: kind, present: false)
+                return nil
+            }
             if let hit = snapshotCache[kind] { return hit }
             do {
                 let d = try Self.loadLatestSnapshotData(
@@ -854,9 +868,10 @@ struct ReportEngine: Sendable {
         if let mobileData = cachedData(kind: "mobile-devices-list") {
             mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
             // Read past `cachedData` so the scan does not join the digest's sources.
-            let scan = try? Self.loadLatestSnapshotData(
-                kind: "update-device-failures", dataDir: dataDir,
-                maxCacheAgeHours: maxCacheAgeHours)
+            let scan = turnedOff.contains("update-device-failures") ? nil
+                : try? Self.loadLatestSnapshotData(
+                    kind: "update-device-failures", dataDir: dataDir,
+                    maxCacheAgeHours: maxCacheAgeHours)
             mobile = mobileFigures(mobileData, updateFailures: scan)
         }
 
@@ -911,7 +926,8 @@ struct ReportEngine: Sendable {
            let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
            totalDevices > 0 {
             let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
-            let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            let sofaSnapshot = turnedOff.contains(Self.sofaKind)
+                ? SOFAFeedService.Snapshot.empty : SOFAFeedService.load(dataDir: dataDir)
             recordSource(kind: "sofa", present: !sofaSnapshot.rows.isEmpty)
             let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
             osCurrentPct = Self.osCurrentPercent(
@@ -1027,10 +1043,11 @@ struct ReportEngine: Sendable {
         // and the workbook use, so a fleet has one score everywhere. A factor without data
         // drops out of the denominator.
         let scoreFactors = config.resolvedScoreFactors
-        let scoreSources = Self.scoreSources(
+        var scoreSources = Self.scoreSources(
             dataDir: dataDir, computers: cachedData(kind: "computers"),
             patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows,
             computerDates: computerDates)
+        if turnedOff.contains(Self.sofaKind) { scoreSources.sofa = nil }
         let score = SecurityScoreCalculator.score(
             factors: scoreFactors,
             measures: SecurityScoreInputs.measures(
@@ -2383,7 +2400,11 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
-        let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
+        // The fleet as the last overview counted it: a side with no devices is not collected.
+        let fleet = FleetState.load(dataDir: dataDir, now: collectStart)
+        let collectSkip = SharedConfigPin.collectSkip(
+            configured: loadedConfig?.jamfCli?.collectSkip, profile: workspace.name,
+            fleet: fleet)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
@@ -2393,6 +2414,7 @@ struct ReportEngine: Sendable {
             collectSkip: collectSkip, dashboardSupported: dashboardSupported,
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
+        planInputs.skippedSides = fleet.skipped
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
         let plan = Self.slowLast(
             Self.planCollect(
@@ -2401,12 +2423,20 @@ struct ReportEngine: Sendable {
                 lastRun: { stateStore?.lastRun(report: $0) }
             ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
-            tiers: tiers, skipExpensive: skipExpensive, force: force,
-            stateStore: stateStore, now: collectStart)
-        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
+            tiers: tiers, skipExpensive: skipExpensive, force: force, collectSkip: collectSkip,
+            skippedSides: fleet.skipped, stateStore: stateStore, now: collectStart)
+        let afterMatrix = Self.sourcesAfterMatrix(
+            tiers: tiers, collectSkip: collectSkip, skippedSides: fleet.skipped)
+        // The scan kinds turned off here get the same plan and skip lines as the after-matrix ones.
+        let scanKindsOff = [.tierNotSelected, .turnedOff, .noComputers].contains(scanPlan)
+            ? [] : Self.scanKindsTurnedOff(collectSkip)
         Self.logCollectPlan(
             profile: profile, plan: plan, afterMatrix: afterMatrix,
-            afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
+            afterMatrixSkipped: Self.skippedAfterMatrix(
+                tiers: tiers, collectSkip: collectSkip, skippedSides: fleet.skipped)
+                + scanKindsOff,
+            afterMatrixFleetSkipped: Self.fleetSkippedAfterMatrix(
+                tiers: tiers, skippedSides: fleet.skipped),
             deviceScan: scanPlan, onLine: onLine)
         if let line = Self.slowLastLine(plan, lastDuration: lastDuration) {
             onLine(.init(timestamp: Date(), level: .info, text: line))
@@ -2477,7 +2507,7 @@ struct ReportEngine: Sendable {
             } else if kind == Self.dashboardKind {
                 let dashboardProtect = await Self.dashboardProtect(
                     Self.dashboardProtectProfile(config: loadedConfig, workspace: workspace),
-                    bin: bin, onLine: onLine)
+                    bin: bin, collectSkip: collectSkip, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
                     arguments: Self.dashboardArguments(
@@ -2581,7 +2611,7 @@ struct ReportEngine: Sendable {
         let scanSaved = await Self.runDeviceScanPhase(
             profile: profile, bin: bin, dataDir: dataDir,
             plan: stoppedEarly && scanPlan == .due ? .notDue(lastAttempt: nil) : scanPlan,
-            recordManifest: recordManifest,
+            recordManifest: recordManifest, collectSkip: collectSkip,
             stateStore: stateStore, collectStart: collectStart,
             authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, force: force,
             scanBudget: scanBudget ?? TimeInterval(60 * (loadedConfig?.jamfCli?
@@ -2805,7 +2835,11 @@ struct ReportEngine: Sendable {
         else { return }
         let provenance = await Provenance.current(
             profile: workspace.name, jamfCLIURL: bin, dataDir: dataDir)
-        let outcome = ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(
+        var early = ReportEngine(config: config, dataDir: dataDir)
+        early.turnedOffKinds = SharedConfigPin.collectSkip(
+            configured: config.jamfCli?.collectSkip, profile: workspace.name,
+            fleet: FleetState.load(dataDir: dataDir))
+        let outcome = early.emitSummaryJSON(
             summariesDir: summariesDir, provenance: provenance,
             liveKinds: buildLiveKinds(savedKinds: savedKinds, sofaRefreshed: false),
             day: day, onLine: { _ in })
@@ -2885,7 +2919,10 @@ struct ReportEngine: Sendable {
                 jamfCLIURL: bin,
                 dataDir: dataDir
             )
-            let engine = ReportEngine(config: config, dataDir: dataDir)
+            var engine = ReportEngine(config: config, dataDir: dataDir)
+            engine.turnedOffKinds = SharedConfigPin.collectSkip(
+                configured: config.jamfCli?.collectSkip, profile: workspace.name,
+                fleet: FleetState.load(dataDir: dataDir))
             // R4: kinds where saveSnapshot succeeded this run → "live" in summary.
             let liveKinds = Self.buildLiveKinds(savedKinds: savedKinds,
                                                 sofaRefreshed: sofaRefreshSucceeded)
@@ -4028,12 +4065,12 @@ struct ReportEngine: Sendable {
         if resolved == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
             throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
         }
-        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
+        let collectSkip = schoolCollectSkip(profile: workspace.name)
         let scanPlan = landedSources?.schoolScanPlan ?? planSchoolDeviceScan(
             tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now)
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
         let plan = slowLast(planSchoolCollect(
-            profile: profile, tiers: tiers, force: force,
+            profile: profile, tiers: tiers, force: force, collectSkip: collectSkip,
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
             scanDue: scanPlan == .due,
             timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) }) {
@@ -4052,7 +4089,7 @@ struct ReportEngine: Sendable {
         if let line = slowLastLine(plan, lastDuration: lastDuration) {
             onLine(.init(timestamp: Date(), level: .info, text: line))
         }
-        for kind in afterMatrixSkipped {
+        for kind in plan.filter({ $0.skip == .collectSkip }).map(\.kind) + afterMatrixSkipped {
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
@@ -4166,17 +4203,18 @@ struct ReportEngine: Sendable {
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
     }
 
-    /// `jamf_cli.collect_skip` as typed; empty when config.yaml is absent or will not load
-    /// (`schoolStaleDays` already warns about the latter).
     /// `jamf_cli.collect_skip` lists the School device scan.
     static func schoolScanTurnedOff(profile: String) -> Bool {
-        collectSkipKinds(schoolCollectSkip(profile: profile)).contains(schoolDeviceDetailKind)
+        schoolCollectSkip(profile: profile).contains(schoolDeviceDetailKind)
     }
 
-    private static func schoolCollectSkip(profile: String) -> [String] {
-        ProfileService.workspaceURL(for: profile)
+    /// The kinds this Mac turns off for `profile` (`SharedConfigPin.collectSkip`); config.yaml
+    /// absent or unreadable lists none (`schoolStaleDays` already warns about the latter).
+    private static func schoolCollectSkip(profile: String) -> Set<String> {
+        let typed = ProfileService.workspaceURL(for: profile)
             .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?
-            .jamfCli?.collectSkip ?? []
+            .jamfCli?.collectSkip
+        return SharedConfigPin.collectSkip(configured: typed, profile: profile)
     }
 
     /// `thresholds.stale_device_days` for a School summary; 30 when config.yaml will not load,
@@ -4252,6 +4290,7 @@ struct ReportEngine: Sendable {
     static func protectCollect(
         profile: String,
         dataDir: URL,
+        collectSkip: Set<String> = [],
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String] {
@@ -4269,8 +4308,8 @@ struct ReportEngine: Sendable {
         let collectStart = Date()
         let commands = announcing(
             planAddOn(
-                commands: protectCommandMatrix(profile: profile), stateStore: stateStore,
-                now: collectStart),
+                commands: protectCommandMatrix(profile: profile), collectSkip: collectSkip,
+                stateStore: stateStore, now: collectStart),
             profile: profile, onLine: onLine)
 
         let bridge = CLIBridge()
@@ -4385,7 +4424,10 @@ struct ReportEngine: Sendable {
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
-            now: now)
+            now: now, collectSkip: workspace.map {
+                SharedConfigPin.collectSkip(
+                    configured: config.jamfCli?.collectSkip, profile: $0.name)
+            } ?? [])
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
         let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 

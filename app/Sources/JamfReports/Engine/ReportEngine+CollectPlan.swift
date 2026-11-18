@@ -14,6 +14,8 @@ extension ReportEngine {
         case schoolNoPlatform
         case platformUnavailable(String)
         case collectSkip
+        /// The fleet has none of this side's devices (`FleetState`).
+        case noDevices(FleetSide)
         case dashboardUnsupported(installedVersion: String?)
         case tierNotSelected(CollectionTier)
         case notDue(lastRun: Date?, cadence: Cadence)
@@ -36,6 +38,8 @@ extension ReportEngine {
                 return reason
             case .collectSkip:
                 return "listed in jamf_cli.collect_skip"
+            case .noDevices(let side):
+                return "\(Self.noDevicesText(side)) (overview); checked again weekly"
             case .dashboardUnsupported(let installed):
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later "
                     + "(installed: \(installed ?? "unknown"))"
@@ -60,12 +64,17 @@ extension ReportEngine {
             case .schoolNoPlatform: return "the School profile has no Platform API fields"
             case .platformUnavailable(let reason): return reason
             case .collectSkip: return "jamf_cli.collect_skip"
+            case .noDevices(let side): return Self.noDevicesText(side)
             case .dashboardUnsupported:
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
             case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
             }
+        }
+
+        static func noDevicesText(_ side: FleetSide) -> String {
+            side == .mac ? "no computers in Jamf Pro" : "no mobile devices in Jamf Pro"
         }
 
         /// A cadence skip, the only kind that says the server answered recently.
@@ -94,6 +103,8 @@ extension ReportEngine {
         let installedVersion: String?
         let now: Date
         var platformUnavailable: String?
+        /// Sides of the fleet with no devices (`FleetState.skipped`); forced runs follow it too.
+        var skippedSides: Set<FleetSide> = []
     }
 
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
@@ -226,6 +237,9 @@ extension ReportEngine {
             return .platformOnly(authMethod: auth)
         }
         if inputs.tenantLevel, environmentLevelKinds.contains(kind) { return .environmentLevel }
+        if let side = skippedSide(of: kind, skipped: inputs.skippedSides) {
+            return .noDevices(side)
+        }
         if inputs.collectSkip.contains(kind) { return .collectSkip }
         if kind == dashboardKind, !inputs.dashboardSupported {
             return .dashboardUnsupported(installedVersion: inputs.installedVersion)
@@ -273,16 +287,29 @@ extension ReportEngine {
     /// their own: the tier set alone decides, so every collect that includes the Refresh
     /// tier fetches both, forced or not, unless `jamf_cli.collect_skip` lists one.
     static func sourcesAfterMatrix(
-        tiers: Set<CollectionTier>, collectSkip: Set<String>
+        tiers: Set<CollectionTier>, collectSkip: Set<String>, skippedSides: Set<FleetSide> = []
     ) -> [String] {
-        selectedAfterMatrix(tiers: tiers).filter { !collectSkip.contains($0) }
+        selectedAfterMatrix(tiers: tiers).filter {
+            !collectSkip.contains($0) && skippedSide(of: $0, skipped: skippedSides) == nil
+        }
     }
 
     /// The after-matrix sources this run's tier set selects that `collect_skip` turns off.
     static func skippedAfterMatrix(
-        tiers: Set<CollectionTier>, collectSkip: Set<String>
+        tiers: Set<CollectionTier>, collectSkip: Set<String>, skippedSides: Set<FleetSide> = []
     ) -> [String] {
-        selectedAfterMatrix(tiers: tiers).filter { collectSkip.contains($0) }
+        selectedAfterMatrix(tiers: tiers).filter {
+            collectSkip.contains($0) && skippedSide(of: $0, skipped: skippedSides) == nil
+        }
+    }
+
+    /// The after-matrix sources this run's tier set selects that a fleet side leaves out.
+    static func fleetSkippedAfterMatrix(
+        tiers: Set<CollectionTier>, skippedSides: Set<FleetSide>
+    ) -> [(kind: String, side: FleetSide)] {
+        selectedAfterMatrix(tiers: tiers).compactMap { kind in
+            skippedSide(of: kind, skipped: skippedSides).map { (kind, $0) }
+        }
     }
 
     private static func selectedAfterMatrix(tiers: Set<CollectionTier>) -> [String] {
@@ -297,7 +324,9 @@ extension ReportEngine {
     /// always had, then the `[plan]` block.
     static func logCollectPlan(
         profile: String, plan: [PlannedKind], afterMatrix: [String],
-        afterMatrixSkipped: [String] = [], deviceScan: DeviceScanPlan,
+        afterMatrixSkipped: [String] = [],
+        afterMatrixFleetSkipped: [(kind: String, side: FleetSide)] = [],
+        deviceScan: DeviceScanPlan,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
         let perDevice = plan.filter { $0.skip == .settingsSkipExpensive }.map(\.kind)
@@ -310,7 +339,8 @@ extension ReportEngine {
         }
         let lines = collectPlanLines(
             profile: profile, plan: plan, afterMatrix: afterMatrix,
-            afterMatrixSkipped: afterMatrixSkipped, deviceScan: deviceScan)
+            afterMatrixSkipped: afterMatrixSkipped,
+            afterMatrixFleetSkipped: afterMatrixFleetSkipped, deviceScan: deviceScan)
         for line in lines {
             onLine(.init(timestamp: Date(), level: .info, text: line))
         }
@@ -319,6 +349,11 @@ extension ReportEngine {
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
+        }
+        for (kind, side) in afterMatrixFleetSkipped {
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[skip] \(kind): \(CollectSkipReason.noDevices(side).skipDetail ?? "")"))
         }
     }
 
@@ -330,7 +365,9 @@ extension ReportEngine {
     /// the after-matrix sources `collect_skip` turned off), and the device scan.
     static func collectPlanLines(
         profile: String, plan: [PlannedKind], afterMatrix: [String] = [],
-        afterMatrixSkipped: [String] = [], deviceScan: DeviceScanPlan
+        afterMatrixSkipped: [String] = [],
+        afterMatrixFleetSkipped: [(kind: String, side: FleetSide)] = [],
+        deviceScan: DeviceScanPlan
     ) -> [String] {
         var groups: [(label: String, kinds: [String])] = []
         func add(_ kind: String, under label: String) {
@@ -346,6 +383,9 @@ extension ReportEngine {
         for kind in afterMatrixSkipped {
             add(kind, under: CollectSkipReason.collectSkip.planLabel)
         }
+        for (kind, side) in afterMatrixFleetSkipped {
+            add(kind, under: CollectSkipReason.noDevices(side).planLabel)
+        }
         return collectPlanLines(
             profile: profile, running: plan.filter { $0.skip == nil }.map(\.kind) + afterMatrix,
             skipped: groups
@@ -359,14 +399,17 @@ extension ReportEngine {
     /// with only the scan tier collects `school-devices`, the device scan's input, and only
     /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
     static func planSchoolCollect(
-        profile: String, tiers: Set<CollectionTier>, force: Bool, now: Date = Date(),
+        profile: String, tiers: Set<CollectionTier>, force: Bool,
+        collectSkip: Set<String> = [], now: Date = Date(),
         platformFieldsMissing: Bool = false, scanDue: Bool = false,
         timeoutHold: (String) -> Date? = { _ in nil }, lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return schoolCommandMatrix(profile: profile).map { args, kind in
             let skip: CollectSkipReason?
-            if tiers.isDisjoint(with: [.refresh, .inventory]) {
+            if collectSkip.contains(kind) {
+                skip = .collectSkip
+            } else if tiers.isDisjoint(with: [.refresh, .inventory]) {
                 skip = scanDue && tiers.contains(.scan) && kind == SchoolFleetService.devicesKind
                     ? nil : .tierNotSelected(.inventory)
             } else if kind == schoolBlueprintsKind, platformFieldsMissing {
@@ -500,6 +543,10 @@ enum DeviceScanPlan: Equatable, Sendable {
     case tierNotSelected
     /// Settings: Skip expensive collections.
     case turnedOff
+    /// `jamf_cli.collect_skip` turns off both scan kinds.
+    case listedInCollectSkip
+    /// The fleet has no computers (`FleetState`).
+    case noComputers
     /// Every scan kind's cadence floor holds; `lastAttempt` is the newest attempt, if any.
     case notDue(lastAttempt: Date?)
     case due
@@ -510,6 +557,10 @@ enum DeviceScanPlan: Equatable, Sendable {
             return "device scan: not selected (tier scan is not in this run)"
         case .turnedOff:
             return "device scan: turned off (Settings: Skip expensive collections)"
+        case .listedInCollectSkip:
+            return "device scan: turned off (jamf_cli.collect_skip)"
+        case .noComputers:
+            return "device scan: skipped (no computers in Jamf Pro)"
         case .notDue(let lastAttempt):
             return "device scan: not due (last attempt: \(collectLogDateLabel(lastAttempt)))"
         case .due:
