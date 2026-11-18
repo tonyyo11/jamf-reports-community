@@ -118,6 +118,8 @@ final class PatchByTitleTests: XCTestCase {
         let again = await collect(stub)
         XCTAssertEqual(reportCalls(), 1, "the report is not tried again inside the period")
         XCTAssertTrue(again.contains { $0.hasPrefix("[info] patch-status: the patch report timed out") })
+        XCTAssertEqual(store.patchByTitleUntil(), until,
+                       "a walk inside the period does not renew it")
 
         // After the period the report gets one more try; landing it would end title mode.
         store.recordPatchByTitle(at: Date().addingTimeInterval(-ReportEngine.patchByTitlePeriod - 60))

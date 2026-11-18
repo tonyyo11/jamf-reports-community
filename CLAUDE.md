@@ -775,7 +775,8 @@ three titles in a row): that is a second timeout in the run, so the hold starts 
 of `StateFileStore.chronicTimeouts` (4) holds for `chronicTimeoutHold` (7 days) instead of 20 hours. `patchStatusRow` builds the report's row
 (`compliance_pct` rounded as jamf-cli rounds it, `N/A` with no devices). The snapshot is saved
 only when every title answered; otherwise the kind records a failure and nothing is written. A
-landed walk writes `state/patch-status.by-title`, and for `patchByTitlePeriod` (7 days,
+walk that lands after the report timed out writes `state/patch-status.by-title` (a walk inside
+the period does not renew it), and for `patchByTitlePeriod` (7 days,
 `StateFileStore.patchByTitleUntil`) `collect` skips the report and goes straight to titles, forced
 or not; the report landing again clears it. While it is in effect `timeoutHoldUntil` holds
 `patch-device-failures`, which has no per-title form.
