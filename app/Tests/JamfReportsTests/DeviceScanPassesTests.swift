@@ -141,6 +141,17 @@ final class DeviceScanPassesTests: XCTestCase {
                         attempted: ["1"], remaining: remaining)
     }
 
+    func testARoundWhoseTallyExceedsItsMacsIsAbsent() throws {
+        var planted = round(started: 1, lastPass: 0)
+        planted.history = DeviceScanTally(attempted: Int.max, failed: 0)
+        XCTAssertNil(DeviceScanPasses.round(in: try store(round: planted), now: now),
+                     "a planted count would overflow the next pass's sum")
+        planted.history = DeviceScanTally(attempted: 1, failed: 2)
+        XCTAssertNil(DeviceScanPasses.round(in: try store(round: planted), now: now))
+        planted.history = DeviceScanTally(attempted: 1, failed: 1)
+        XCTAssertNotNil(DeviceScanPasses.round(in: try store(round: planted), now: now))
+    }
+
     func testAFutureDatedOrOverAgeRoundIsAbsent() throws {
         XCTAssertNotNil(DeviceScanPasses.round(
             in: try store(round: round(started: 3, lastPass: 1)), now: now))

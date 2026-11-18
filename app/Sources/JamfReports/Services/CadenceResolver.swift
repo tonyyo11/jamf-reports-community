@@ -51,7 +51,10 @@ enum CadenceResolver {
         case .never:
             return false
         case .seconds(let interval):
-            guard let lastRun else { return true }
+            // A last run more than the clock-skew tolerance ahead is a peer's planted stamp or a
+            // wrong clock: due, so it cannot keep a source from collecting for years.
+            guard let lastRun, lastRun.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+            else { return true }
             let elapsed = now.timeIntervalSince(lastRun)
             return elapsed >= TimeInterval(interval) - dueTolerance(for: interval)
         }

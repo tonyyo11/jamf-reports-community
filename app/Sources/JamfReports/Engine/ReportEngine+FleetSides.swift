@@ -77,14 +77,16 @@ struct FleetState: Sendable, Equatable {
         return state
     }
 
-    /// Newest snapshot of `kind` stamped within `maxAge` of `now` (a stamp ahead of now counts
-    /// as now), read through the snapshot seam; nil when absent, older or unreadable.
+    /// Newest snapshot of `kind` stamped within `maxAge` of `now`, read through the snapshot
+    /// seam; nil when absent, older, unreadable or stamped more than the clock-skew tolerance
+    /// ahead (a peer's planted future file must not keep a side skipped for good).
     private static func newest(
         _ kind: String, in dataDir: URL, maxAge: TimeInterval, now: Date
     ) -> (Data, Date)? {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         guard let url = FileManager.newestJSONFile(in: dir),
               let stamp = CloudStorage.snapshotTimestamp(of: url),
+              stamp.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance,
               now.timeIntervalSince(min(stamp, now)) < maxAge,
               let data = BoundedFile.readSnapshotLogged(url) else { return nil }
         return (data, stamp)

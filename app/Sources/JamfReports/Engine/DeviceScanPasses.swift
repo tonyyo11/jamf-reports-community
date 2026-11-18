@@ -13,6 +13,12 @@ struct DeviceScanTally: Codable, Equatable, Sendable {
     var attempted = 0
     var failed = 0
 
+    /// A tally a pass could have written: counts within the Macs the round attempted, so a
+    /// planted count cannot overflow the next pass's sum.
+    func fits(attempted macs: Int) -> Bool {
+        (0...macs).contains(attempted) && (0...attempted).contains(failed)
+    }
+
     static func + (a: Self, b: Self) -> Self {
         Self(attempted: a.attempted + b.attempted, failed: a.failed + b.failed)
     }
@@ -51,12 +57,15 @@ enum DeviceScanPasses {
     static let inProgressWindow: TimeInterval = 2 * 86_400
 
     /// The open round, if any. A round with nothing left, a start or last pass more than the
-    /// clock-skew tolerance ahead of now, or a start older than `rowAgeLimit` reads as absent.
+    /// clock-skew tolerance ahead of now, a start older than `rowAgeLimit`, or a tally larger than
+    /// the Macs it attempted reads as absent.
     static func round(in store: StateFileStore?, now: Date) -> DeviceScanRound? {
         guard let r = store?.deviceScanRound(), r.remaining > 0 else { return nil }
         let ahead = now.addingTimeInterval(SharedWorkspace.clockSkewTolerance)
         guard r.started <= ahead, r.lastPass <= ahead,
-              r.started >= now.addingTimeInterval(-rowAgeLimit) else { return nil }
+              r.started >= now.addingTimeInterval(-rowAgeLimit),
+              [r.history, r.statusItems].allSatisfy({ $0.fits(attempted: r.attempted.count) })
+        else { return nil }
         return r
     }
 

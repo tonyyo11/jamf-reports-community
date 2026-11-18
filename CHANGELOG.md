@@ -612,6 +612,10 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
+  source's last run or timeout dated in the future, a device-scan progress file with impossible
+  counts, or a future-dated empty device list now reads as no record, so the source is collected
+  as usual instead of held, skipped or crashing the scan.
 - Run History and the schedule list now take a run's Partial status from the run's own log
   only, so a file another Mac drops into a shared workspace can no longer make a partial run
   read as clean. (#305)

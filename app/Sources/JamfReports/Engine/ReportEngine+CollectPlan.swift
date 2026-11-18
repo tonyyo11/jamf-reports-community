@@ -442,7 +442,8 @@ extension ReportEngine {
                 skip = .collectSkip
             } else if addOnCollectForced {
                 skip = nil
-            } else if let until = stateStore?.timeoutHoldUntil(report: kind), now < until {
+            } else if let until = stateStore?.timeoutHoldUntil(report: kind, now: now),
+                      now < until {
                 skip = .repeatedTimeouts(retryAfter: until)
             } else if let last, Calendar.current.isDate(last, inSameDayAs: now),
                       !CadenceResolver.isDue(lastRun: last, cadence: cadence, now: now) {
