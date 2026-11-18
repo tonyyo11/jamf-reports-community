@@ -70,6 +70,22 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertNil(skip("computers", in: plan), "never collected: due")
     }
 
+    /// The app's background refresh keeps a source that keeps timing out on hold; Collect now
+    /// (forced) still runs it.
+    func testTheBackgroundRefreshKeepsTheTimeoutHold() {
+        let until = now.addingTimeInterval(3600)
+        func plan(force: Bool) -> [ReportEngine.PlannedKind] {
+            ReportEngine.planCollect(
+                commands: matrix, inputs: inputs(tiers: [.refresh], force: force),
+                timeoutHold: { $0 == "patch-status" ? until : nil }, lastRun: { _ in nil })
+        }
+        let background = plan(force: WorkspaceStore.backgroundRefreshForces)
+        XCTAssertEqual(skip("patch-status", in: background), .repeatedTimeouts(retryAfter: until))
+        XCTAssertNil(skip("overview", in: background),
+                     "a source past its cadence is still collected")
+        XCTAssertNil(skip("patch-status", in: plan(force: true)))
+    }
+
     func testForceBypassesCadenceButNotCollectSkipOrTheTierSet() {
         let plan = ReportEngine.planCollect(
             commands: matrix,

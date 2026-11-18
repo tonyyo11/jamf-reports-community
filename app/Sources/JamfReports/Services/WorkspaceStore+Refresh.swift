@@ -36,6 +36,12 @@ extension WorkspaceStore {
         return new
     }
 
+    /// Unforced, like self-repair and catch-up: the coordinator starts it only once the probe
+    /// snapshot is past its cadence, so the due check skips only what is fresh, and a source that
+    /// keeps timing out keeps its hold (on a 5,900-Mac server a forced run waited on the patch
+    /// request each time the app came forward). Collect now still forces.
+    nonisolated static let backgroundRefreshForces = false
+
     /// The coordinator's collect, shown and recorded like every other GUI collect. It holds the
     /// lock that makes Generate refuse, so it must not run unseen (#368). A refusal comes first:
     /// `beginCollect` would replace the status line of the collect that is running.
@@ -51,7 +57,8 @@ extension WorkspaceStore {
         ) { onLine in
             try await ReportEngine.stoppingBetweenSources(profile: profile) {
                 try await CLIBridge().collect(
-                    profile: profile, tiers: [tier], force: true, onLine: onLine)
+                    profile: profile, tiers: [tier], force: Self.backgroundRefreshForces,
+                    onLine: onLine)
             }
         }
         await refreshDataFreshness()
