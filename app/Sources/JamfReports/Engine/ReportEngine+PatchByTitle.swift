@@ -99,7 +99,9 @@ extension ReportEngine {
             data: data, kind: kind, dataDir: dataDir, recordManifest: recordManifest,
             onLine: onLine)
         stateStore?.record(.landed, report: kind, at: collectStart)
-        stateStore?.recordPatchByTitle(at: collectStart)
+        // Only a walk after the report timed out starts the period; a walk inside it must not
+        // renew it, or the report and the failures scan are never tried again.
+        if afterReportTimeout { stateStore?.recordPatchByTitle(at: collectStart) }
         let seconds = Int(Date().timeIntervalSince(started).rounded())
         stateStore?.recordDuration(report: kind, seconds: seconds)
         say(.ok, "[ok] \(kind): \(rows.count) title(s), collected one at a time in \(seconds)s")

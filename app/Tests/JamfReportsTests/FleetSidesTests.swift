@@ -108,6 +108,12 @@ final class FleetSidesTests: XCTestCase {
         XCTAssertEqual(load().skipped, [], "a device in the overview resumes collecting")
     }
 
+    func testAFutureStampedEmptyListSkipsNoSide() throws {
+        try writeOverview(computers: 0, mobile: 3)
+        try writeList(.mac, rows: 0, age: -SharedWorkspace.clockSkewTolerance * 2)
+        XCTAssertEqual(load().skipped, [], "a planted future file must not skip Macs for good")
+    }
+
     func testTheWeeklyRecheckCollectsAnOldEmptyList() throws {
         try writeOverview(computers: 0, mobile: 4)
         try writeList(.mac, rows: 0, age: 8 * 86_400)

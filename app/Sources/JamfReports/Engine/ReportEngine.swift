@@ -2419,7 +2419,7 @@ struct ReportEngine: Sendable {
         let plan = Self.slowLast(
             Self.planCollect(
                 commands: commands, inputs: planInputs,
-                timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) },
+                timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: collectStart) },
                 lastRun: { stateStore?.lastRun(report: $0) }
             ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
@@ -4073,7 +4073,7 @@ struct ReportEngine: Sendable {
             profile: profile, tiers: tiers, force: force, collectSkip: collectSkip,
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
             scanDue: scanPlan == .due,
-            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0) }) {
+            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: now) }) {
             stateStore?.lastRun(report: $0)
         }, lastDuration: lastDuration)
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)

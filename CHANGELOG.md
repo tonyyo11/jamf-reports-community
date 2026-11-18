@@ -319,6 +319,10 @@ versions in this repository map to git tags.
   row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
   most of the day and every manual refresh was turned away with "A scheduled run is in
   progress". The next day's run and Collect now still try the source.
+- The app's own background refresh, which runs when the app opens or comes to the front with
+  data more than a day old, now leaves alone a data source that keeps timing out, as scheduled
+  runs do, and skips sources collected recently. Before, it tried the stalled source each time
+  and waited its full time. Collect now still collects everything.
 - A data source that Jamf Pro never answers (jamf-cli reports "the server did not answer in
   time") is tried once per run instead of twice, and after two such runs in a row it is left to
   the next day like any other timeout. On one large server this source alone held each run for
@@ -612,6 +616,10 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
+  source's last run or timeout dated in the future, a device-scan progress file with impossible
+  counts, or a future-dated empty device list now reads as no record, so the source is collected
+  as usual instead of held, skipped or crashing the scan.
 - Run History and the schedule list now take a run's Partial status from the run's own log
   only, so a file another Mac drops into a shared workspace can no longer make a partial run
   read as clean. (#305)

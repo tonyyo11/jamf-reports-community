@@ -93,6 +93,27 @@ final class RepeatedTimeoutBackoffTests: XCTestCase {
 
     /// An older build reads only the two- and three-field `.fail` forms, and a record without a
     /// streak file reads as none.
+    func testAPeerWrittenFutureDateOrHugeCountHoldsNothing() throws {
+        let store = StateFileStore(directory: dir)
+        let future = Date().addingTimeInterval(SharedWorkspace.clockSkewTolerance * 2)
+        for _ in 0..<4 {
+            store.record(.failed(exitCode: timedOut), report: "computers", at: future)
+        }
+        XCTAssertNil(store.timeoutHoldUntil(report: "computers"),
+                     "a failure dated ahead holds nothing")
+        XCTAssertTrue(CadenceResolver.isDue(lastRun: future, cadence: .seconds(86_400)),
+                      "a success dated ahead cannot make a source not due")
+
+        fail(store, timedOut, kind: "patch-status")
+        fail(store, timedOut, kind: "patch-device-failures")
+        for kind in ["patch-status", "patch-device-failures"] {
+            try "\(Int.max)".write(to: dir.appendingPathComponent("\(kind).timeouts"),
+                                    atomically: true, encoding: .utf8)
+        }
+        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), Int.max,
+                       "the shared sum saturates instead of trapping")
+    }
+
     func testTheFailFileKeepsItsFormatAndAnOlderRecordReadsAsNoStreak() throws {
         let store = StateFileStore(directory: dir)
         fail(store, timedOut)

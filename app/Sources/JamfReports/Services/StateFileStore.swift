@@ -140,7 +140,11 @@ struct StateFileStore: Sendable {
         if report == "patch-status", patchByTitleUntil() != nil {
             return ownConsecutiveTimeouts(for: report)
         }
-        return Self.sharedRequestKinds(report).reduce(0) { $0 + ownConsecutiveTimeouts(for: $1) }
+        // Saturating: a count read from a damaged or planted file can be Int.max.
+        return Self.sharedRequestKinds(report).reduce(0) {
+            let (sum, overflow) = $0.addingReportingOverflow(ownConsecutiveTimeouts(for: $1))
+            return overflow ? Int.max : sum
+        }
     }
 
     /// The kinds whose first request is the same one as `report`'s, `report` included.
@@ -175,7 +179,7 @@ struct StateFileStore: Sendable {
     /// When an unforced collect may try `report` again: `timeoutHold` (20 h) after its last failure,
     /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
     /// for any other kind. A landed snapshot clears the count.
-    func timeoutHoldUntil(report: String) -> Date? {
+    func timeoutHoldUntil(report: String, now: Date = Date()) -> Date? {
         // While patch-status is collected title by title, the failures scan would only wait
         // on the request that does not answer: it has no per-title form.
         if report == "patch-device-failures", let until = patchByTitleUntil() { return until }
@@ -183,7 +187,10 @@ struct StateFileStore: Sendable {
         guard streak >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
               let last = Self.sharedRequestKinds(report)
                 .filter({ ownConsecutiveTimeouts(for: $0) > 0 })
-                .compactMap({ failures(report: $0)?.last }).max() else { return nil }
+                .compactMap({ failures(report: $0)?.last }).max(),
+              // A peer can write the state folder: a planted future failure holds nothing.
+              last.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        else { return nil }
         return last.addingTimeInterval(
             streak >= Self.chronicTimeouts ? Self.chronicTimeoutHold : Self.timeoutHold)
     }
