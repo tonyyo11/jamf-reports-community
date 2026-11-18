@@ -718,6 +718,8 @@ and the next day's run still try it. jamf-cli's own give-up on a server that nev
 (exit 1, message containing `FailureCause.serverTimeoutMarker`, "the server did not answer in
 time") counts toward that streak (`FailureCause.serverTimedOut`, `isTimeout`) and is not retried
 inside the run (`invokeWithRetry`): jamf-cli already waited out its limit at every page size.
+Its cause carries the app's hint (`FailureCause.serverTimeoutHint`), not jamf-cli's, which names
+`--page-size`, `--section` or `--filter`, flags the app chooses (jamf-cli #476).
 The planner holds the same streak: `StateFileStore.timeoutHoldUntil(report:)` is 20 hours
 (`timeoutHold`, under a daily schedule's cycle since the failure is stamped with its run's start)
 after the last failure once two in a row timed out, and `planCollect` and

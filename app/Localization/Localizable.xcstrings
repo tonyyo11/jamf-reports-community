@@ -126959,6 +126959,46 @@
         }
       }
     },
+    "The server did not answer in time. Collect now tries again at once; after two timeouts in a row, automatic runs leave this source to the next day, and to the next week if it keeps timing out. To stop collecting it, turn it off in Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server hat nicht rechtzeitig geantwortet. „Jetzt erfassen“ versucht es sofort erneut; nach zwei Zeitüberschreitungen in Folge lassen automatische Läufe diese Quelle bis zum nächsten Tag aus, bei anhaltenden Zeitüberschreitungen bis zur nächsten Woche. Um sie nicht mehr zu erfassen, schalten Sie sie unter Datenquellen aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no respondió a tiempo. «Recopilar ahora» vuelve a intentarlo de inmediato; tras dos tiempos de espera agotados seguidos, las ejecuciones automáticas dejan esta fuente para el día siguiente, y para la semana siguiente si se sigue agotando el tiempo. Para dejar de recopilarla, desactívela en Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur n'a pas répondu à temps. « Collecter maintenant » réessaie immédiatement ; après deux dépassements de délai consécutifs, les exécutions automatiques reportent cette source au lendemain, puis à la semaine suivante si le délai continue d'être dépassé. Pour ne plus la collecter, désactivez-la dans Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server non ha risposto in tempo. «Raccogli ora» riprova subito; dopo due timeout consecutivi, le esecuzioni automatiche rimandano questa origine al giorno successivo, e alla settimana successiva se il timeout continua. Per non raccoglierla più, è possibile disattivarla in Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバーが時間内に応答しませんでした。「今すぐ収集」はすぐに再試行します。2 回続けてタイムアウトすると、自動実行はこのソースを翌日に回し、タイムアウトが続く場合は翌週に回します。収集を止めるには、データソースでオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor não respondeu a tempo. “Coletar agora” tenta de novo imediatamente; após dois tempos limite seguidos, as execuções automáticas deixam esta fonte para o dia seguinte, e para a semana seguinte se o tempo limite continuar. Para deixar de coletá-la, desative-a em Fontes de dados."
+          }
+        }
+      }
+    },
     "The software update scan found errors on these devices. Open OS Updates for the products and status, and check that the device can reach Apple." : {
       "localizations" : {
         "de" : {

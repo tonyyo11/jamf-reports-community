@@ -69,6 +69,9 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// jamf-cli's wording (1.32+) when a request got no response headers within its own limit,
     /// after it had shrunk the page size as far as it goes. It exits 1.
     static let serverTimeoutMarker = "the server did not answer in time"
+    static var serverTimeoutHint: String {
+        L("The server did not answer in time. Collect now tries again at once; after two timeouts in a row, automatic runs leave this source to the next day, and to the next week if it keeps timing out. To stop collecting it, turn it off in Data Sources.")
+    }
 
     /// True for a failed call whose error envelope says the server never answered. Another try
     /// in the same run waits out the same limit, so `invokeWithRetry` skips it.
@@ -224,8 +227,11 @@ struct FailureCause: Codable, Equatable, Sendable {
             return cause(.missingPermission)
         }
         guard exitCode == 0 else {
-            var other = cause(.other)
-            if message.contains(serverTimeoutMarker) { other.serverTimedOut = true }
+            guard message.contains(serverTimeoutMarker) else { return cause(.other) }
+            // Our hint, not jamf-cli's: its advice names flags, and the app chooses the flags.
+            var other = FailureCause(
+                kind: .other, names: [], hint: serverTimeoutHint, exitCode: exitCode)
+            other.serverTimedOut = true
             return other
         }
         if sawForbiddenOnStderr { return cause(.missingPermission) }

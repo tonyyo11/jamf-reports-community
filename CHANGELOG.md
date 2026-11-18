@@ -327,6 +327,11 @@ versions in this repository map to git tags.
   time") is tried once per run instead of twice, and after two such runs in a row it is left to
   the next day like any other timeout. On one large server this source alone held each run for
   24 minutes, several times a day.
+- Run History no longer tells you to "pass a smaller --page-size or narrow it with --section or
+  --filter" when Jamf Pro does not answer in time. That advice is jamf-cli's, and the app chooses
+  those flags itself. The line now says what the app does next: Collect now tries again at once,
+  automatic runs wait a day after two timeouts in a row, and the source can be turned off in Data
+  Sources.
 - A data source that timed out two runs in a row is now left to the next day's run (20 hours)
   by every automatic collect (schedules, self-repair and catch-up), not only by the retries.
   Before, a source that had never landed counted as due in every collect, so each one waited on
