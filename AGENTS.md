@@ -195,7 +195,8 @@ queries known to stall on-prem Jamf Pro. It also accepts `dashboard` (2.9), whic
 sweeps the whole inventory again for the HTML report's dashboard section, and
 `sofa` (2.9), the one fetch from the SOFA host (`sofafeed.macadmins.io`), for a
 network that must not reach a third-party host, and `security-risk` (P12), the Jamf
-Security Cloud device list. Underscores and hyphens are
+Security Cloud device list, and `patch-status` (2.12), for a server that cannot list its
+patch titles in time. Underscores and hyphens are
 interchangeable. Core inventory commands always run.
 `ReportEngine.collectSkipKinds` normalizes the list (trimmed, lowercased, anything
 outside `ReportEngine.skippableKinds` dropped); `collect` skips a listed kind even
@@ -671,6 +672,73 @@ and the next day's run still try it. jamf-cli's own give-up on a server that nev
 (exit 1, message containing `FailureCause.serverTimeoutMarker`, "the server did not answer in
 time") counts toward that streak (`FailureCause.serverTimedOut`, `isTimeout`) and is not retried
 inside the run (`invokeWithRetry`): jamf-cli already waited out its limit at every page size.
+The planner holds the same streak: `StateFileStore.timeoutHoldUntil(report:)` is 20 hours
+(`timeoutHold`, under a daily schedule's cycle since the failure is stamped with its run's start)
+after the last failure once two in a row timed out, and `planCollect` and
+`planSchoolCollect` (`timeoutHold:`) skip the kind until then with
+`CollectSkipReason.repeatedTimeouts` unless `force`, because the due check reads the last
+success only and a kind that never landed is otherwise due in every collect of its tier.
+**Slow sources last (2.12).** `collectOneKind` and the School loop record each attempt's
+seconds in `<kind>.took` (`StateFileStore.recordDuration`, `lastDuration(for:)`; best effort,
+outside the manifest). `ReportEngine.slowLast` moves the planned sources whose last attempt took
+over `slowSourceThreshold` (120 s) to the end, shortest first; everything else keeps the matrix
+order, and `slowLastLine` logs `[plan] running last (slow on their last run): …`.
+**Refused for size (2.12).** `BoundedFile.readLogged` records a snapshot over its limit as a
+`SizeRefusal` (kind, MB, limit; `allSizeRefusals`, reset by `resetSizeRefusals` at the start of
+`generate` and `generateHTML`). `CoreDashboardError`/`SchoolDashboardError.noCachedData` word the
+skip line from it ("the ea-results snapshot is 402 MB, over the 256 MB this Mac reads; left
+out"), `ReportEngine.reportSizeRefusals` logs one `[warn]` per kind and raises
+`AttentionCode.snapshotTooLarge` (cleared by a workbook run with none), and the HTML appendix
+lists it under "Not included". The per-device scan kinds are inventory kinds (256 MB).
+**Early summary (2.12).** Before the first slow source and before a due device scan, `collect`
+writes today's summary once (`writeEarlySummary`), only when every source attempted so far
+landed, so the dead-run verdicts at the end still decide a run with a failure; the end of the
+run rebuilds it (`freshSummaryIsBetter`). Config Doctor's `retention.data_folder_size` (probe
+runs only) suggests retention when the data folder passes `dataFolderSuggestionBytes` (20 GB)
+with retention off.
+**Stopping between sources (2.12).** `ReportEngine.runStop` (task-local, set through
+`stoppingBetweenSources(profile:)` by `scheduledRunSingle` and by the app's automatic collects:
+`recordingAutomaticCollect` for self-repair and catch-up, `runBackgroundRefresh`; the budget is
+per workspace, so a multi-profile schedule gets one each) is asked before each source of the Jamf Pro, School, Protect and Security
+Cloud loops, before the device scans and before the after-matrix sources (`stopsRun`).
+`RunStop.evaluate` answers `.manualRefresh` while `ManualRefreshRequest.isPending` (a per-Mac
+file in Application Support the app posts, 35-minute lifetime) and `.budgetUsed` once the run has
+held the lock for `jamf_cli.run_budget_minutes` (default 45, clamped 10-240;
+`scan_budget_minutes`, default 30, is decoded for the scan passes). A stop logs
+`ReportEngine.stoppedEarlyMarker` with what is left, records nothing for those sources, is never
+`[partial]` (a summary it could not write yet is `[info] summary not written yet:`), and `CollectHonestyWatcher` reads the marker as `retryCouldHelp`, so the tick's
+same-day retry is the run that picks the rest up. `WorkspaceStore.manualCollectMayStart` (the
+three GUI collect paths) posts the request when a scheduled run in another process holds the
+lock or an automatic collect runs in this app (`automaticCollectsRunning`), waits up to `manualRefreshWait` (30 minutes; 0 under XCTest) polling the lock, then
+collects; `manualCollectMustWait` still refuses for an in-process collect or a jamf-cli update.
+**Add-on products (2.12).** `planAddOn` plans `protectCommandMatrix` and `security-risk`: unforced
+(`ReportEngine.addOnCollectForced` false, set by `CollectRouter.run` from `force`) a source waits
+the refresh cadence, but only within the local day it last landed (the daily summary takes these
+figures from the run that landed them), and the timeout hold; a Protect-only environment always collects everything.
+**Patch titles one at a time (2.12).** When `pro report patch-status` ends in a timeout (the
+app's limit, or `FailureCause.serverTimedOut`), `collectPatchStatusByTitle`
+(`ReportEngine+PatchByTitle.swift`) runs in the same collect: `pro classic-patch-titles list` for
+the ids (the same ids the report uses), then `pro patch-software-title-configurations
+patch-summary <id>` for each, 4 at a time under `patchDefinitionLimits`, stopping after three
+timeouts in a row (the app's limit or jamf-cli's own "did not answer in time", through
+`FailureCause.exitCountingServerTimeout`, which the device scan and the release-date walk use
+too), on exit 3, 5, 6 or 8, or when `runStop` answers (then nothing is recorded and the run
+logs the stop marker). A walk that fails after the report's own timeout records nothing more,
+so the report's timeout streak and hold stand, unless the walk timed out too (the title list or
+three titles in a row): that is a second timeout in the run, so the hold starts at once. A streak
+of `StateFileStore.chronicTimeouts` (4) holds for `chronicTimeoutHold` (7 days) instead of 20 hours. `patchStatusRow` builds the report's row
+(`compliance_pct` rounded as jamf-cli rounds it, `N/A` with no devices). The snapshot is saved
+only when every title answered; otherwise the kind records a failure and nothing is written. A
+landed walk writes `state/patch-status.by-title`, and for `patchByTitlePeriod` (7 days,
+`StateFileStore.patchByTitleUntil`) `collect` skips the report and goes straight to titles, forced
+or not; the report landing again clears it. While it is in effect `timeoutHoldUntil` holds
+`patch-device-failures`, which has no per-title form.
+Kinds that start with the same request share one streak and one hold
+(`StateFileStore.sharedRequestKinds`: `patch-status` and `patch-device-failures`, both the
+patch-title list), and `collectSkipKinds` adds `patch-device-failures` when `patch-status` is listed.
+`patch-release-dates` walks the `patch-status` snapshot and records nothing without one, so
+`evaluateFreshness` leaves it out until `patch-status` has landed, and `collectSkipKinds` adds it
+whenever `patch-status` is listed.
 `runAndCapture` also stops waiting for pipe EOF
 `CLIBridge.eofGraceAfterExit` (3 s) after a normal exit, so a process the child left running
 cannot hold the call; it returns what was read.
@@ -781,7 +849,37 @@ per-device fan-out inside `collect` — the jamf-cli feature request for
 server-side equivalents is what retires it. The DDM screen is no longer
 Platform-only: it unlocks from the per-device snapshot or from inventory
 saying DDM is enabled; the Blueprints sections remain Platform-gated and are
-absent, not locked, on-prem.
+absent, not locked, on-prem. **Passes (2.12, large-fleet L3):** each row carries an ISO 8601
+`scannedAt` (a row an older build wrote takes its file's snapshot stamp, `DeviceScanPasses.scanDate`;
+the snapshot stays a bare array). An unforced pass takes the Macs not yet attempted this round in
+`DeviceScanPasses.passOrder`: one site's Macs before the next (`general.site.id`, compared as
+numbers; "-1" or absent last), then oldest `scannedAt` first, never scanned first. It stops
+starting Macs after `jamf_cli.scan_budget_minutes` (default 30, 5 to 240) or when
+`ReportEngine.runStop` answers (`passShouldStop`); calls in flight finish. A forced scan (Collect
+now) scans the whole fleet. The saved snapshot is this pass's rows plus the newest earlier row of
+every other current target, a Mac whose call failed included, scanned within
+`DeviceScanPasses.rowAgeLimit` (21 days) (`merged`); a Mac gone from `computers` (or no longer
+DDM-enabled) is dropped. An earlier snapshot that is there but cannot be read skips the pass with
+one `[warn] device scan: <kind> snapshot could not be read; pass skipped` (a forced scan takes the whole fleet and replaces the file instead) and records nothing. The
+round lives in `state/device-scan.round` (`DeviceScanRound`: start, last pass, the ids attempted
+this round, how many are left, attempts and failures per call type; outside the manifest), read as
+untrusted through `DeviceScanPasses.round(in:now:)`: a start or last pass more than
+`SharedWorkspace.clockSkewTolerance` ahead, or a start older than 21 days, reads as no round, and
+`attempted` is intersected with the current targets (a round that covers them all starts afresh).
+While a round is open any unforced run, whatever its tiers, takes one pass a local day
+(`planDeviceScan`), honouring Skip expensive collections. A pass that leaves Macs for later records
+nothing (no `.last`, no failure, failures included) and logs one `[info] device scan: scanned N of
+M Macs this pass; K left for the next pass`, never `[partial]`; a pass that attempts no Mac writes
+nothing and leaves the round as it was. The pass that attempts the last Mac ends the round: a call
+type with more than a quarter of the round's attempts failed records its kind failed with the
+round's totals, otherwise the kind lands (the device-gap `[partial]` line gives the round's
+totals). A stopped call type (exit 3, 5, 6, 8, three timeouts) ends the round and records the
+failure as before. `WorkspaceStore.evaluateFreshness` leaves the two kinds out while
+`DeviceScanPasses.scanInProgress` (an open round whose last pass is within 2 days). The DDM screen
+and the Audit's command-health card show "Scan in progress: N of M Macs scanned this round"
+(`roundProgress`: the round's attempts among the de-duplicated, safe-id targets, the DDM-eligible
+ones on the DDM screen) only while a round is open, and both workbook tabs end with a Scanned
+column. The Jamf School scan takes passes too (see **Jamf School device scan**).
 
 **Collect plan (2.9).** `ReportEngine.collect` decides every skip once, before its first
 jamf-cli command (`ReportEngine+CollectPlan`: `planCollect` over the matrix, `planDeviceScan`
@@ -1411,7 +1509,7 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 
 **Jamf School device health (2.12).** A School workspace gets none of Management health (it reads the Jamf Pro `computers` snapshot); its equivalent is `SchoolDeviceHealth` (`Models/SchoolDeviceHealth.swift`), one calculator over snapshots School already collects: Automated Device Enrollment devices not enrolled (a `school-dep-devices` serial, trimmed and case-folded, that no `school-devices` row outside the trash holds), with breakdowns by DEP `status` (as School gives it) and enrollment profile, users with no device, device groups with no members (smart and normal apart), and classes with no devices, students or teacher. Every figure is a neutral `{count, of}`, never a gap, warning or colour: on a real district most users have no device and most groups are empty. A figure whose snapshot is missing is absent; one whose snapshot is present but undecodable is in `unreadable` (`SchoolFleetService.Snapshot.unreadable`) and reads "could not be read"; a wrong-type field leaves the denominator. Breakdowns use `ManagementHealth.maxShownValues` and `ConfigSchema.displayText`. Surfaces: the "Device health" card on the School Overview (`SchoolDeviceHealthCard`) and a "Device Health" tab appended last in the School workbook (after the Protect tabs; skipped with no figure). Not yet: School figures in the daily summary, DDM reports (#421).
 
-**Jamf School device scan (2.12).** `ReportEngine.runSchoolDeviceScanStep` (`Engine/ReportEngine+SchoolDeviceScan.swift`) runs one `school devices get <udid>` per device and saves `school-device-detail` (`schoolDeviceDetailKind`): rows are an allow-list, `{udid, serialNumber, batteryLevel, deviceEnrollType, totalCapacity}`, a wrong-type value left out per field, no device name. It is a step of its own in `CollectRouter.run`, after the coordination gate's block has closed (the School collect, Protect, Security Cloud and `finalize()` done, the shared-workspace claim released), still inside the tick lock; it never throws out of the router or changes the collect's result. `planSchoolDeviceScan` decides once, in the router, and the plan rides on `LandedSources.schoolScanPlan`: the run's tiers hold `.scan`, `jamf_cli.collect_skip` does not list the kind, the state folder is available, and the last attempt is 7 days old (`schoolDeviceScanInterval`, through `CadenceResolver.isDue`, so the tick's tolerance applies; a stamp ahead of now reads as absent). `force` never bypasses it. The attempt stamp is written when the scan starts (a peer sees it as not due) and restored when the scan is cancelled. Its input is the `school-devices` bytes this run landed (`LandedSources.schoolDevices`), never a re-read; with none it logs `[skip] school-device-detail: school-devices did not land this run`. A scan-only School run (`[.scan]`) collects `school-devices`, ignoring its 12-hour cadence, only when the scan is due, and is otherwise the no-op it was. The loop is School's own (four at a time, `deviceCallTimeout` per call, no Jamf Pro token probe; it shares only `run` with the Jamf Pro scan) and stops, writing nothing, when failures pass 25% of the targets, when the first min(20, targets) calls all fail, at a 60-minute deadline (exit -2) or on exit 3, 5, 6 or 8. It never logs `[partial]` (a not-written scan is `[warn] school-device-detail not written: …`, gaps are `[info]`), so Run History stays OK and the tick's same-day retry is never triggered. The kind is in neither `knownCollectKinds` nor `CollectionTier`, so no workspace expects it in Data Freshness; `CollectSourcesPlan` lists it and `CommandCatalog` knows the command. `SchoolFleetService.loadDeviceDetail` reads it (joined to devices by lowercased UDID) and `SchoolDeviceHealth` adds its figures: enrollment type and storage breakdowns with their denominators, "battery 1 to 20% when scanned" (`lowBatteryPercent`) and "battery reported as 0" apart, and the last scan or a failed last attempt. The card and the workbook show them (three columns appended to "Device Inventory": Enrollment, Storage (GB), Battery (%) when scanned; rows on Device Health); the School Devices screen has no columns for it yet (#421). Design: `docs/superpowers/specs/2026-11-15-school-device-scan-design.md`.
+**Jamf School device scan (2.12).** `ReportEngine.runSchoolDeviceScanStep` (`Engine/ReportEngine+SchoolDeviceScan.swift`) runs one `school devices get <udid>` per device and saves `school-device-detail` (`schoolDeviceDetailKind`): rows are an allow-list, `{udid, serialNumber, batteryLevel, deviceEnrollType, totalCapacity}`, a wrong-type value left out per field, no device name. It is a step of its own in `CollectRouter.run`, after the coordination gate's block has closed (the School collect, Protect, Security Cloud and `finalize()` done, the shared-workspace claim released), still inside the tick lock; it never throws out of the router or changes the collect's result. `planSchoolDeviceScan` decides once, in the router, and the plan rides on `LandedSources.schoolScanPlan`: the run's tiers hold `.scan`, `jamf_cli.collect_skip` does not list the kind, the state folder is available, and the last attempt is 7 days old (`schoolDeviceScanInterval`, through `CadenceResolver.isDue`, so the tick's tolerance applies; a stamp ahead of now reads as absent). `force` never bypasses it (every GUI collect passes it, so it cannot mean "a person asked"). **Passes (2.12, large-fleet L3, as for Jamf Pro):** each row carries `scannedAt` (`SchoolDeviceDetailRow: DeviceScanRow`, keyed by lowercased UDID; a row without it takes its file's stamp); the round is the Jamf Pro one's `state/device-scan.round` (`DeviceScanRound`, `history` tally only; a workspace is never both), read through `DeviceScanPasses.round(in:now:)`. While a round is open, any run takes one pass a local day, whatever its tiers, unless the round's last pass or the attempt stamp is today. A pass takes the devices not yet attempted this round, never scanned first, then the oldest `scannedAt` (`schoolPassOrder`; not by location: the captured `school-devices` rows carry none), and stops starting devices after `jamf_cli.scan_budget_minutes` (router: `SchoolDeviceScanLimits.budget`) or when `runStop` answers. Every pass writes one whole-fleet snapshot (`DeviceScanPasses.merged`: devices gone from `school-devices` and rows older than 21 days dropped, a failed device keeps its earlier row). A pass that leaves devices for later records the round, no failure, and puts the earlier stamp back, so the cadence does not advance; the pass that attempts the last device lands the kind. The 25% rule counts the round's earlier failures over the round's whole fleet. An earlier snapshot that cannot be read is replaced only by a scan of every device, which then ignores the budget (School has no forced scan). The Device Health card says "Scan in progress: N of M devices scanned this round" while a round is open (`SchoolFleetService.Snapshot.deviceScanRoundAttempted`). The attempt stamp is written when the scan starts (a peer sees it as not due) and restored when the scan is cancelled. Its input is the `school-devices` bytes this run landed (`LandedSources.schoolDevices`), never a re-read; with none it logs `[skip] school-device-detail: school-devices did not land this run`. A scan-only School run (`[.scan]`) collects `school-devices`, ignoring its 12-hour cadence, only when the scan is due, and is otherwise the no-op it was. The loop is School's own (four at a time, `deviceCallTimeout` per call, no Jamf Pro token probe; it shares only `run` with the Jamf Pro scan) and stops, writing nothing and ending the round, when the round's failures pass 25% of its devices, when a pass's first min(20, devices) calls all fail, or on exit 3, 5, 6 or 8 (the 60-minute deadline is gone: the budget ends a pass instead). It never logs `[partial]` (a not-written scan is `[warn] school-device-detail not written: …`, gaps are `[info]`), so Run History stays OK and the tick's same-day retry is never triggered. The kind is in neither `knownCollectKinds` nor `CollectionTier`, so no workspace expects it in Data Freshness; `CollectSourcesPlan` lists it and `CommandCatalog` knows the command. `SchoolFleetService.loadDeviceDetail` reads it (joined to devices by lowercased UDID) and `SchoolDeviceHealth` adds its figures: enrollment type and storage breakdowns with their denominators, "battery 1 to 20% when scanned" (`lowBatteryPercent`) and "battery reported as 0" apart, and the last scan or a failed last attempt. The card and the workbook show them (four columns appended to "Device Inventory": Enrollment, Storage (GB), Battery (%) when scanned, Scanned; rows on Device Health); the School Devices screen has no columns for it yet (#421). Design: `docs/superpowers/specs/2026-11-15-school-device-scan-design.md`.
 
 **Account names in saved snapshots (2.12).** `saveCollectedPayload` removes, before a snapshot is saved, the account names and contact details no reader opens: `ReportEngine.reducingComputers` (purchasing cut to `poDate`, plus `computerAccountNameKeys`), `droppingLostModeText(removingAccountNames:)` (`mobileAccountNameKeys`) and `keepingEnrollmentIdentity` (`id`, `name`, `serverName`, `tokenExpirationDate`); a top-level `null` or `[]` is an empty answer and is saved as it is; a payload that cannot be reduced is not saved and a failure is recorded. `userAndLocation.username` and `email` stay (Offline Outreach). Also removed: `remoteManagement.managementUsername`, and `username` from the `device_failures`/`device_pending` rows of `app-status` and `profile-status` (the patch and update failure reports keep theirs, which screens read). The Device Lookup cache is written through `reducingDeviceDetail` (the flat `pro device` rows by label, a mobile lookup by its `location` layout); the screen gets the live data. An array payload with a non-object element is not cached. Snapshot services read through `BoundedFile.readSnapshotLogged`, rooted at the data folder, so a kind folder replaced by a link is refused (2.12). `SnapshotManifest` reads and verifies manifests through `readManifest`, rooted the same way, `record` refuses a linked kind folder, and `JamfCLIDecoder`'s `rows(at:logging:)` uses the rooted read. `jamf_cli.keep_account_names` (boolean, absent is false, a non-boolean reads as false and Config Doctor names it) keeps them; `collect` resolves it once through `SharedConfigPin.keepAccountNames`, which follows the `protect.backup_on_synced_storage` rule: false applies at once, true (also at first sight, or when an existing pin learns the key) waits for a Confirm on this Mac. Config Doctor's `accountNameRows` say which applies and warn when names are kept on shared storage. Snapshots already on disk are never rewritten (#421).
 

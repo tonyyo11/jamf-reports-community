@@ -422,6 +422,17 @@ final class SecurityCloudSummaryTests: XCTestCase {
         XCTAssertFalse(day(count: -1).numbersAreInRange)
         XCTAssertFalse(day(count: 2, risk: ["high": 3]).numbersAreInRange)
         XCTAssertFalse(day(risk: ["high": -1]).numbersAreInRange)
+        // A device count is never negative, whichever field carries it.
+        let negativeFleet = DailySummary(
+            date: "2026-11-07", totalDevices: -3, fileVaultPct: 90, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli")
+        XCTAssertFalse(negativeFleet.numbersAreInRange)
+        let negativeStale = DailySummary(
+            date: "2026-11-07", totalDevices: 10, fileVaultPct: 90, compliancePct: nil,
+            staleCount: -1, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli")
+        XCTAssertFalse(negativeStale.numbersAreInRange)
     }
 
     func testANewlyMeasuredFieldIsAnUpgradeForTheSameDayRebuild() {

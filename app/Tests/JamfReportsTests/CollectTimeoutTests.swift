@@ -119,6 +119,16 @@ final class CollectTimeoutTests: XCTestCase {
                     kind, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true),
                 run == 2, "the same-day retry stops after the second run")
         }
+        // An unforced collect (a schedule, self-repair, catch-up) now leaves it for a day.
+        XCTAssertNotNil(store.timeoutHoldUntil(report: kind))
+        _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan], force: false,
+            authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },
+            onLine: { _ in })
+        XCTAssertEqual(
+            try String(contentsOf: calls, encoding: .utf8).split(separator: "\n").count, 2,
+            "no third call while the hold lasts")
         store.record(.failed(exitCode: 1), report: kind, at: Date())
         XCTAssertEqual(store.consecutiveTimeouts(for: kind), 0, "another failure ends the streak")
     }

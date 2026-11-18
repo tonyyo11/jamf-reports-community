@@ -81,6 +81,71 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertEqual(skip("computers", in: plan), .tierNotSelected(.inventory))
     }
 
+    /// A kind that never lands has no last success, so cadence alone runs it in every collect
+    /// of its tier. A hold keeps an unforced collect off it; Collect now (`force`) still tries.
+    func testAKindOnTimeoutHoldIsSkippedUntilTheHoldEndsUnlessForced() {
+        let until = now.addingTimeInterval(3_600)
+        func plan(force: Bool = false, at time: Date? = nil) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(tiers: [.refresh], force: force)
+            if let time {
+                planInputs = ReportEngine.CollectPlanInputs(
+                    tiers: planInputs.tiers, force: force, skipExpensive: false,
+                    nonPlatformAuth: nil, tenantLevel: false, collectSkip: [],
+                    dashboardSupported: true, installedVersion: nil, now: time)
+            }
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs,
+                timeoutHold: { $0 == "patch-status" ? until : nil },
+                lastRun: { _ in nil })
+        }
+        XCTAssertEqual(skip("patch-status", in: plan()), .repeatedTimeouts(retryAfter: until))
+        XCTAssertNil(skip("overview", in: plan()), "only the held kind waits")
+        XCTAssertNil(skip("patch-status", in: plan(force: true)))
+        XCTAssertNil(skip("patch-status", in: plan(at: until)), "due again once the hold ends")
+        XCTAssertFalse(ReportEngine.CollectSkipReason.repeatedTimeouts(retryAfter: until).isNotDue)
+    }
+
+    // MARK: - Slow sources last
+
+    func testSourcesThatWereSlowLastTimeRunLastShortestFirst() {
+        let plan = ReportEngine.planCollect(
+            commands: matrix, inputs: inputs(tiers: [.refresh, .inventory]),
+            lastRun: { $0 == "security" ? self.now : nil })
+        let took = ["ea-results": 900, "overview": 300, "computers": 120, "security": 999]
+        let ordered = ReportEngine.slowLast(plan) { took[$0] }
+
+        XCTAssertEqual(ordered.suffix(2).map(\.kind), ["overview", "ea-results"])
+        let rest = ordered.dropLast(2).map(\.kind)
+        XCTAssertEqual(
+            rest, plan.map(\.kind).filter { $0 != "overview" && $0 != "ea-results" },
+            "everything else keeps the matrix order: at the threshold is not slow, and a "
+                + "skipped source is not moved")
+        XCTAssertEqual(
+            ReportEngine.slowLastLine(ordered) { took[$0] },
+            "[plan] running last (slow on their last run): overview 300s, ea-results 900s")
+    }
+
+    func testAPlanWithNoSlowSourceKeepsTheMatrixOrder() {
+        let plan = ReportEngine.planCollect(
+            commands: matrix, inputs: inputs(), lastRun: { _ in nil })
+        XCTAssertEqual(ReportEngine.slowLast(plan) { _ in nil }, plan)
+        XCTAssertEqual(ReportEngine.slowLast(plan) { _ in 5 }, plan)
+        XCTAssertNil(ReportEngine.slowLastLine(plan) { _ in 5 })
+    }
+
+    func testASchoolKindOnTimeoutHoldIsSkippedUnlessForced() {
+        let until = now.addingTimeInterval(3_600)
+        func plan(force: Bool) -> [ReportEngine.PlannedKind] {
+            ReportEngine.planSchoolCollect(
+                profile: "school", tiers: [.refresh], force: force, now: now,
+                timeoutHold: { $0 == SchoolFleetService.devicesKind ? until : nil }) { _ in nil }
+        }
+        XCTAssertEqual(
+            skip(SchoolFleetService.devicesKind, in: plan(force: false)),
+            .repeatedTimeouts(retryAfter: until))
+        XCTAssertNil(skip(SchoolFleetService.devicesKind, in: plan(force: true)))
+    }
+
     func testSettingsSkipsThePerDeviceKinds() {
         let plan = ReportEngine.planCollect(
             commands: matrix, inputs: inputs(skipExpensive: true), lastRun: { _ in nil })

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 /// A read of a file another Mac can write, bounded in size and type. The file is opened once
 /// (non-blocking, so a FIFO planted at the name cannot hang the open), its type is checked on
@@ -150,7 +151,47 @@ enum BoundedFile {
     private static let inventoryKinds = [
         "ea-results", "computers", "computers-list", "mobile-devices-list",
         "mobile-device-inventory-details",
+        // The per-device scans: one row per device, so 64 MB is passed near 17,000 Macs.
+        "ddm-device-status", "mdm-command-health", "school-device-detail",
     ]
+
+    /// A snapshot `readLogged` refused because it is over its read limit. Unreadable is not
+    /// absent: a report that leaves the data out has to say this, not "no snapshot found".
+    struct SizeRefusal: Sendable, Equatable {
+        let kind: String
+        let megabytes: Int
+        let limitMegabytes: Int
+
+        var sentence: String {
+            "the \(kind) snapshot is \(megabytes) MB, over the \(limitMegabytes) MB this Mac reads"
+        }
+    }
+
+    private static let sizeRefusals = Mutex<[String: SizeRefusal]>([:])
+
+    /// Every kind refused for size since `resetSizeRefusals`, by kind name.
+    static var allSizeRefusals: [SizeRefusal] {
+        sizeRefusals.withLock { $0.values.sorted { $0.kind < $1.kind } }
+    }
+
+    /// The refusal for any of `names` (`_` and `-` are one spelling), if one was recorded.
+    static func sizeRefusal(forAnyOf names: [String]) -> SizeRefusal? {
+        let wanted = Set(names.map { $0.replacingOccurrences(of: "_", with: "-") })
+        return allSizeRefusals.first { wanted.contains($0.kind) }
+    }
+
+    /// A report calls this when it starts, so it answers for its own reads only.
+    static func resetSizeRefusals() { sizeRefusals.withLock { $0.removeAll() } }
+
+    private static func noteSizeRefusal(_ url: URL, limit: Int) {
+        let kind = url.deletingLastPathComponent().lastPathComponent
+            .replacingOccurrences(of: "_", with: "-")
+        let bytes = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size]
+            as? NSNumber)?.intValue ?? limit
+        let refusal = SizeRefusal(
+            kind: kind, megabytes: bytes / 1_048_576, limitMegabytes: limit / 1_048_576)
+        sizeRefusals.withLock { $0[kind] = refusal }
+    }
 
     /// The read limit for a snapshot of `kind` (`_` and `-` are one spelling).
     static func limit(forKind kind: String) -> Int {
@@ -226,6 +267,7 @@ enum BoundedFile {
         } catch let failure as Failure {
             // EMLINK is logged by the open itself.
             if failure == .unreadable(ENOENT) || failure == .unreadable(EMLINK) { return nil }
+            if failure == .tooLarge { noteSizeRefusal(url, limit: limit) }
             let name = ConfigSchema.displayText(url.lastPathComponent)
             let detail = failure == .tooLarge
                 ? "over \(limit / 1_048_576) MB" : failure.localizedDescription

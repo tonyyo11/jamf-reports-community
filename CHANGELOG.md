@@ -135,6 +135,28 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The weekly per-device scan of a Jamf Pro fleet (DDM status and MDM command health) now runs in
+  passes. A scheduled or automatic pass takes one site's Macs before the next, those scanned
+  longest ago first, and stops after 30 minutes or when someone waits to refresh in the app; the
+  rest of the fleet follows in one pass a day until every Mac has had its turn, and the next round
+  starts a week later. The DDM screen and the Health Audit keep showing the whole fleet, and say
+  "Scan in progress: N of M Macs scanned this round" while a round is open; the data freshness
+  strip does not call the two sources missing meanwhile. A Mac that did not answer keeps its
+  earlier result for up to 21 days; an older one is dropped rather than shown as current. The
+  more-than-a-quarter-failed rule is judged over the whole round. `jamf_cli.scan_budget_minutes`
+  (5 to 240) changes the limit; Collect now still scans the whole fleet. A fleet that fits in one
+  pass scans as before.
+- The workbook's DDM Device Status and MDM Command Health tabs gain one column at the end,
+  Scanned: when that Mac was last scanned. No other tab, column or row moved.
+- The weekly per-device scan of a Jamf School fleet runs in the same passes: those scanned
+  longest ago first, stopping after `jamf_cli.scan_budget_minutes` or when someone waits to
+  refresh in the app, the rest in one pass a day. The Device health card says "Scan in progress:
+  N of M devices scanned this round" while a round is open. A device that did not answer keeps
+  its earlier result for up to 21 days, and the more-than-a-quarter-failed rule is judged over
+  the round. Running out of time is no longer a failed scan. A School fleet that fits in one pass
+  scans as before.
+- The Jamf School workbook's Device Inventory tab gains one column at the end, Scanned: when that
+  device was last scanned. No other tab, column or row moved.
 - Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
   as a warning.
 - Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
@@ -289,6 +311,58 @@ versions in this repository map to git tags.
   time") is tried once per run instead of twice, and after two such runs in a row it is left to
   the next day like any other timeout. On one large server this source alone held each run for
   24 minutes, several times a day.
+- A data source that timed out two runs in a row is now left to the next day's run (20 hours)
+  by every automatic collect (schedules, self-repair and catch-up), not only by the retries.
+  Before, a source that had never landed counted as due in every collect, so each one waited on
+  it again. The run log names it under "timed out repeatedly, left to the next day's run", and
+  Collect now still tries it.
+- Refresh and Collect now no longer get "A scheduled run is in progress" or "A refresh is
+  already running" while an automatic collect is going (a scheduled run, or the app's own
+  background refresh). The app asks it to stop after the source it is on, waits for it (the
+  status bar says so), then refreshes. The stopped run logs why and collects what is left on its
+  next run. Generate with "Collect fresh data" still waits its turn.
+- An automatic collect gives the lock back after 45 minutes per workspace and leaves the rest for
+  its next run (a scheduled run comes back an hour later) instead of holding it until every
+  source is done. `jamf_cli.run_budget_minutes` (10 to 240) changes the limit for a slower server.
+- Jamf Protect and Jamf Security Cloud are no longer collected again by every automatic collect
+  in a day: after the day's first run they wait 12 hours, and a source that timed out two runs in
+  a row waits like any other.
+- The day's summary is written before a run's slow sources and the per-device scan, so the
+  Overview and Trends have today's figures in the first minutes of a run; the end of the run
+  updates it with what landed later.
+- Config Doctor suggests turning on retention when saved snapshots use more than 20 GB.
+- A data source that took more than two minutes on its last run now runs after the others,
+  shortest first, so one slow source no longer holds up the rest of the day's data. The run log
+  names them in a "running last" line. Jamf School sources are ordered the same way.
+- A snapshot too large for the app to read (over 256 MB) is now named, with its size, wherever
+  a report leaves its data out: in the run log, on the skipped tab's line, in the HTML report's
+  "Not included" list and as a Needs attention item. Before, the report said no snapshot had
+  been found and lost the tab without saying why. The per-device scan snapshots now share the
+  256 MB limit instead of 64 MB.
+- **Patch data on a server that cannot answer the patch report.** When Jamf Pro never answers
+  the patch report, the app now collects the patch titles one at a time instead, through two
+  smaller requests that return the same figures. For the next week it goes straight to that
+  path, then gives the report one more try. On a test server 65 titles took 18 seconds and
+  matched the report row for row. The patch failures scan has no such path and is left out
+  while this is in effect. It reads the same patch titles the report reads; if a login can run
+  the report but not this path, the run log says which request was refused.
+- When the patch report and the patch title list both time out in one run, the patch sources
+  are held straight away instead of after a second run like it. A source that has timed out four
+  times in a row is then tried once a week rather than once a day.
+- A daily summary holding a negative device count is now refused as damaged, like any other
+  out-of-range summary, instead of being read.
+- A compliance tab left out because the extension attribute results hold no values for the
+  configured baselines now says so. It said no snapshot had been found, which sent people to
+  collect again.
+- The patch title report and the patch failures scan now share one timeout count, because both
+  start with the same request to Jamf Pro. On one large server each of them waited 12 minutes
+  on it, twice, before being left alone; now two timeouts between them hold both.
+  `collect_skip: [patch-status]` skips the failures scan as well.
+- Patch release dates are no longer reported as "not collected yet" while the patch title report
+  itself has never landed; that kept an hourly background refresh running.
+- `jamf_cli.collect_skip` accepts `patch-status`, for a Jamf Pro server that cannot list its
+  patch titles in time; the patch release dates that depend on it are skipped with it. Patch
+  screens and the patch score factor then have no data.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".

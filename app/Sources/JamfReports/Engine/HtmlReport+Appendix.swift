@@ -136,6 +136,9 @@ extension HtmlReport {
         for label in glance?.missing ?? [] {
             lines.append("At a glance: \(label) — the daily summary has no value for it")
         }
+        for refusal in BoundedFile.allSizeRefusals {
+            lines.append("\(refusal.kind) data — \(refusal.sentence)")
+        }
         lines.append("Computer and mobile device inventory — the full lists are in the workbook, "
             + "not in an HTML report that is forwarded")
         return lines

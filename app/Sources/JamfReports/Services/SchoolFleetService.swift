@@ -92,6 +92,8 @@ enum SchoolFleetService {
         var deviceDetail: SchoolDeviceDetail?
         /// When the last scan attempt failed, if its newest result is a failure.
         var deviceDetailFailedAt: Date?
+        /// Lowercased UDIDs a pass of the open scan round attempted; nil with no round open.
+        var deviceScanRoundAttempted: Set<String>?
         var devicesDate: Date?
         var depDate: Date?
         var overviewDate: Date?
@@ -133,7 +135,7 @@ enum SchoolFleetService {
         return load(dataDir: dataDir)
     }
 
-    static func load(dataDir: URL) -> Snapshot {
+    static func load(dataDir: URL, now: Date = Date()) -> Snapshot {
         var snapshot = Snapshot()
         func read(_ kind: String, _ apply: (inout Snapshot, [[String: Any]], Date) -> Void) {
             switch readRows(kind: kind, in: dataDir) {
@@ -175,9 +177,11 @@ enum SchoolFleetService {
         read(deviceDetailKind) { snap, rows, date in
             snap.deviceDetail = SchoolDeviceDetail(snapshotRows: rows, date: date)
         }
-        snapshot.deviceDetailFailedAt = StateFileStore(
+        let state = StateFileStore(
             directory: dataDir.appendingPathComponent("state", isDirectory: true))
-            .failures(report: deviceDetailKind)?.last
+        snapshot.deviceDetailFailedAt = state.failures(report: deviceDetailKind)?.last
+        snapshot.deviceScanRoundAttempted = DeviceScanPasses.round(in: state, now: now)
+            .map { Set($0.attempted) }
         return snapshot
     }
 

@@ -174,6 +174,8 @@ final class MSCPComplianceSheetsTests: XCTestCase {
         XCTAssertThrowsError(try dash.writeMSCPCompliance()) { error in
             XCTAssertTrue(error is SheetSkippable,
                           "No ea-results case must throw SheetSkippable, got: \(error)")
+            XCTAssertEqual((error as? SheetSkippable)?.skipReason,
+                           "No cached jamf-cli snapshot found for: ea-results")
         }
         XCTAssertNil(dash.workbook.sheet(named: "mSCP Compliance"))
     }
@@ -192,6 +194,10 @@ final class MSCPComplianceSheetsTests: XCTestCase {
         XCTAssertThrowsError(try dash.writeMSCPCompliance()) { error in
             XCTAssertTrue(error is SheetSkippable,
                           "All-no-data case must be SheetSkippable, got: \(error)")
+            // The snapshot is there: saying none was found would send someone to collect again.
+            XCTAssertEqual(
+                (error as? SheetSkippable)?.skipReason,
+                "the ea-results snapshot has no values for the configured compliance baselines")
         }
     }
 

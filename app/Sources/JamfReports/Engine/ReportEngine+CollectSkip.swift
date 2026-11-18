@@ -10,10 +10,12 @@ extension ReportEngine {
     /// whole inventory again for a page only the HTML report uses, and `sofa`, the
     /// one fetch from a third-party host, for a network that must not reach it, and
     /// `security-risk`, the Jamf Security Cloud device list, for an organization that keeps it out, and `school-device-detail`, the Jamf School
-    /// per-device scan.
+    /// per-device scan, and `patch-status`, for a server that cannot list its patch titles in
+    /// time (a 5,900-Mac fleet, 2.12.0-rc1).
     /// Anything else in the list is ignored, so a typo or an over-eager list can never
     /// stop core inventory from being collected.
     static let skippableKinds: Set<String> = [
+        "patch-status",
         "patch-device-failures",
         "profile-status",
         "update-status",
@@ -32,6 +34,12 @@ extension ReportEngine {
                 .lowercased()
                 .replacingOccurrences(of: "_", with: "-")
         }
-        return Set(names).intersection(skippableKinds)
+        var kinds = Set(names).intersection(skippableKinds)
+        // The release-date walk reads the patch-status snapshot and has nothing to walk without
+        // it, and the failures scan starts with the same patch-title request.
+        if kinds.contains("patch-status") {
+            kinds.formUnion([patchReleaseDatesKind, "patch-device-failures"])
+        }
+        return kinds
     }
 }

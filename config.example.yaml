@@ -120,8 +120,17 @@ jamf_cli:
   # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
   # a cached feed stays in use.
   # school-device-detail stops the weekly per-device scan of a Jamf School workspace.
+  # patch-status stops the patch title report, for a server that cannot list its patch
+  # titles in time; patch screens and the patch score factor then have no data.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # How long a scheduled run may hold the lock before it leaves the rest of its sources for
+  # its next run (minutes, 10 to 240). Raise it for a slow server.
+  run_budget_minutes: 45
+  # How long one pass of the weekly per-device scan (Jamf Pro or Jamf School) may run before it
+  # leaves the rest of the fleet for the next day's pass (minutes, 5 to 240). Collect now scans
+  # a Jamf Pro fleet whole.
+  scan_budget_minutes: 30
 
 
 # =============================================================================

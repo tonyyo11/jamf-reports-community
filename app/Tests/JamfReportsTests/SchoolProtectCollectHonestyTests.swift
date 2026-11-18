@@ -85,6 +85,49 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         XCTAssertEqual(store.cause(for: kind)?.kind, .keychainLocked)
     }
 
+    /// Protect rides after the MDM collect. Unforced, a source that landed inside the refresh
+    /// cadence, or that timed out twice in a row, is left alone; a direct or forced call and a
+    /// Protect-only environment collect everything.
+    func testAnUnforcedProtectCollectKeepsTheCadenceAndTheTimeoutHold() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        let calls = root.appendingPathComponent("calls")
+        try "#!/bin/sh\necho x >> '\(calls.path)'\nprintf '[]'\n"
+            .write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+        let stub: URL = bin
+        let kinds = ReportEngine.protectCommandMatrix(profile: profile).map(\.kind)
+        func callCount() -> Int {
+            ((try? String(contentsOf: calls, encoding: .utf8)) ?? "")
+                .split(separator: "\n").count
+        }
+        func collect(forced: Bool) async throws -> [String] {
+            try await ReportEngine.$addOnCollectForced.withValue(forced) {
+                try await ReportEngine.protectCollect(
+                    profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+            }
+        }
+
+        let first = try await collect(forced: false)
+        XCTAssertEqual(first, kinds, "never collected: every source is due")
+        XCTAssertEqual(callCount(), kinds.count)
+        let second = try await collect(forced: false)
+        XCTAssertEqual(second, [], "all inside the cadence: nothing runs, nothing landed")
+        XCTAssertEqual(callCount(), kinds.count)
+        let forced = try await collect(forced: true)
+        XCTAssertEqual(forced, kinds)
+        XCTAssertEqual(callCount(), kinds.count * 2)
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let held = try XCTUnwrap(kinds.first)
+        let old = Date().addingTimeInterval(-90_000)
+        for kind in kinds { store.record(.landed, report: kind, at: old) }
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: held, at: Date())
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: held, at: Date())
+        let afterHold = try await collect(forced: false)
+        XCTAssertEqual(afterHold, Array(kinds.dropFirst()), "the held source waits")
+    }
+
     /// jamf-cli's swallowed 403: exit 0, nothing on stdout, the refusal on stderr.
     private func installSwallowed403Stub() throws {
         let body = "#!/bin/sh\necho 'permission denied (HTTP 403)' >&2\nexit 0\n"

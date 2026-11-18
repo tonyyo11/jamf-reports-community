@@ -101,17 +101,18 @@ final class SchoolDeviceScanTests: XCTestCase {
 
     private func runStep(
         _ list: Data?, tiers: Set<CollectionTier> = [.scan], collectSkip: Set<String> = [],
-        limits: ReportEngine.SchoolDeviceScanLimits = .init(concurrency: 1)
+        limits: ReportEngine.SchoolDeviceScanLimits = .init(concurrency: 1), at: Date? = nil
     ) async throws -> [String] {
         let stub = try makeStub()
         let lines = LineBox()
+        let when = at ?? now
         let plan = ReportEngine.planSchoolDeviceScan(
             tiers: tiers, collectSkip: collectSkip,
-            stateStore: ReportEngine.schoolScanStateStore(dataDir: try dataDir), now: now)
+            stateStore: ReportEngine.schoolScanStateStore(dataDir: try dataDir), now: when)
         await ReportEngine.runSchoolDeviceScanStep(
             workspace: try WorkspaceID(validating: profile), school: profile,
             workspacePaths: WorkspacePaths.self, plan: plan,
-            devicesData: list, locateJamfCLI: { stub }, limits: limits, now: now,
+            devicesData: list, locateJamfCLI: { stub }, limits: limits, now: when,
             onLine: { lines.append($0.text) })
         XCTAssertFalse(lines.texts.contains { $0.contains("[partial]") }, "the scan never emits [partial]")
         return lines.texts
@@ -200,7 +201,8 @@ final class SchoolDeviceScanTests: XCTestCase {
         for row in rows {
             XCTAssertEqual(
                 Set(row.keys),
-                ["udid", "serialNumber", "batteryLevel", "deviceEnrollType", "totalCapacity"])
+                ["udid", "serialNumber", "batteryLevel", "deviceEnrollType", "totalCapacity",
+                 "scannedAt"])
         }
         XCTAssertFalse(try String(contentsOf: FileManager.newestSnapshotFile(
             in: dataDir.appendingPathComponent("school-device-detail"))!).contains("Secret"))
@@ -272,16 +274,15 @@ final class SchoolDeviceScanTests: XCTestCase {
         XCTAssertNil(try snapshotRows())
     }
 
-    /// Row: the 60-minute deadline (a short one injected) records exit -2.
-    func testTheDeadlineStopsTheScanAndRecordsATimeout() async throws {
+    /// Scan passes: the time budget (a short one injected) ends the pass, never as a failure.
+    func testTheBudgetEndsThePassWithoutAFailure() async throws {
         for u in udids(10) { try answer("dev-\(u).delay", "0.3") }
         var limits = ReportEngine.SchoolDeviceScanLimits(concurrency: 1)
-        limits.deadline = 0.5
+        limits.budget = 0.5
         let lines = try await runStep(deviceList(udids(10)), limits: limits)
-        XCTAssertTrue(has(lines, "[warn] school-device-detail not written: stopped after"))
-        XCTAssertEqual(
-            try stateStore.lastFailureExitCode(for: ReportEngine.schoolDeviceDetailKind),
-            CLIBridge.exitCodeTimedOut)
+        XCTAssertTrue(lines.contains { $0.hasSuffix("left for the next pass") })
+        XCTAssertFalse(has(lines, "[warn]"))
+        XCTAssertNil(try stateStore.failures(report: ReportEngine.schoolDeviceDetailKind))
         XCTAssertLessThan(calls().count, 10)
     }
 
@@ -485,14 +486,6 @@ final class SchoolDeviceScanTests: XCTestCase {
                 tiers: [.scan], collectSkip: [], stateStore: store, now: now), .due)
     }
 
-    /// The deadline reason names the limit in use.
-    func testTheDeadlineReasonNamesTheInjectedLimit() async throws {
-        for u in udids(10) { try answer("dev-\(u).delay", "0.3") }
-        var limits = ReportEngine.SchoolDeviceScanLimits(concurrency: 1)
-        limits.deadline = 0.5
-        let lines = try await runStep(deviceList(udids(10)), limits: limits)
-        XCTAssertTrue(has(lines, "[warn] school-device-detail not written: stopped after 0.5 seconds"))
-    }
 
     /// The not-written lines are neither incomplete nor a reason to retry.
     func testNotWrittenLinesLeaveTheHonestyWatcherQuiet() async throws {
@@ -559,6 +552,189 @@ final class SchoolDeviceScanTests: XCTestCase {
         XCTAssertEqual(
             try stateStore.lastRun(report: ReportEngine.schoolDeviceDetailKind),
             Date(timeIntervalSince1970: floor(beforeMidnight.timeIntervalSince1970)))
+    }
+    // MARK: - Passes (large-fleet design L3)
+
+    private let day: TimeInterval = 86_400
+
+    /// A pass that stops after `n` devices.
+    private func stopAfter(_ n: Int) -> ReportEngine.SchoolDeviceScanLimits {
+        var limits = ReportEngine.SchoolDeviceScanLimits(concurrency: 1)
+        limits.stop = { $0 >= n }
+        return limits
+    }
+
+    private func gets() -> [String] {
+        calls().filter { $0.contains(" devices get ") }
+            .map { $0.replacingOccurrences(of: #".* devices get ([^ ]+).*"#, with: "$1",
+                                           options: .regularExpression) }
+    }
+
+    private func clearCalls() {
+        try? FileManager.default.removeItem(at: answers.appendingPathComponent("calls.log"))
+    }
+
+    private func rowsByUDID() throws -> [String: [String: Any]] {
+        Dictionary(uniqueKeysWithValues: try XCTUnwrap(snapshotRows()).map {
+            (($0["udid"] as? String) ?? "", $0)
+        })
+    }
+
+    func testThePassTakesNeverScannedFirstThenOldestThenListOrder() {
+        let targets = ["A", "B", "C", "D"].map { ReportEngine.SchoolScanTarget(udid: $0, serial: "") }
+        func row(_ udid: String, _ at: String) -> ReportEngine.SchoolDeviceDetailRow {
+            .init(udid: udid.lowercased(), scannedAt: at)
+        }
+        let order = ReportEngine.schoolPassOrder(targets, earlier: [
+            row("A", "2026-11-10T00:00:00Z"), row("C", "2026-11-01T00:00:00Z"),
+        ])
+        XCTAssertEqual(order.map(\.udid), ["B", "D", "C", "A"])
+    }
+
+    /// An unfinished pass writes the whole-fleet file, records the round, no failure, and puts
+    /// the earlier stamp back; the next day's run takes the rest, whatever its tiers.
+    func testAnUnfinishedPassRecordsTheRoundAndTheNextDayFinishesIt() async throws {
+        var lines = try await runStep(deviceList(udids(10)), limits: stopAfter(3))
+        XCTAssertEqual(gets(), ["u1", "u2", "u3"])
+        XCTAssertTrue(lines.contains(
+            "[info] school-device-detail: scanned 3 of 10 devices this pass; 7 left for the next pass"))
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[ok]") })
+        let store = try stateStore
+        let kind = ReportEngine.schoolDeviceDetailKind
+        XCTAssertNil(store.lastRun(report: kind), "the cadence does not advance")
+        XCTAssertNil(store.failures(report: kind))
+        let round = try XCTUnwrap(store.deviceScanRound())
+        XCTAssertEqual(round.attempted, ["u1", "u2", "u3"])
+        XCTAssertEqual(round.remaining, 7)
+        XCTAssertEqual(try snapshotRows()?.count, 3)
+        XCTAssertNotNil(try rowsByUDID()["u1"]?["scannedAt"])
+        // Same day: not due. Next day: due on a run without the scan tier.
+        XCTAssertEqual(ReportEngine.planSchoolDeviceScan(
+            tiers: [.scan], collectSkip: [], stateStore: store, now: now),
+            .notDue(lastAttempt: round.lastPass))
+        let next = now.addingTimeInterval(day)
+        XCTAssertEqual(ReportEngine.planSchoolDeviceScan(
+            tiers: [.refresh, .inventory], collectSkip: [], stateStore: store, now: next), .due)
+        // A run that did not land school-devices leaves the round as it was.
+        _ = try await runStep(nil, tiers: [.refresh], at: next)
+        XCTAssertEqual(store.deviceScanRound(), round)
+
+        clearCalls()
+        lines = try await runStep(deviceList(udids(10)), tiers: [.refresh], at: next)
+        XCTAssertEqual(Set(gets()), Set((4...10).map { "u\($0)" }))
+        XCTAssertTrue(has(lines, "[ok] school-device-detail: 10 device(s)"))
+        XCTAssertNil(store.deviceScanRound())
+        XCTAssertEqual(store.lastRun(report: kind),
+                       Date(timeIntervalSince1970: floor(next.timeIntervalSince1970)))
+    }
+
+    /// The merge: a device that fails keeps its earlier row, a device gone from school-devices
+    /// loses it, and a row older than 21 days is dropped.
+    func testTheMergeKeepsTheWholeFleetAndDropsGoneAndOldRows() async throws {
+        let old = #"{"udid":"u4","scannedAt":"2020-01-01T00:00:00Z","batteryLevel":9}"#
+        let earlier = #"[{"udid":"u2","batteryLevel":70},{"udid":"u3","batteryLevel":70},"#
+            + old + "]"
+        try ReportEngine.saveSnapshot(
+            data: Data(earlier.utf8), kind: ReportEngine.schoolDeviceDetailKind,
+            dataDir: try dataDir)
+        for u in ["u2", "u4"] { try answer("dev-\(u).exit", "1") }
+        let fleet = ["u1", "u2", "u4"] + (5...10).map { "u\($0)" }
+        _ = try await runStep(deviceList(fleet))
+        let rows = try rowsByUDID()
+        XCTAssertEqual(Set(rows.keys), Set(fleet).subtracting(["u4"]), "u3 left, u4's row was too old")
+        XCTAssertEqual(rows["u2"]?["batteryLevel"] as? Int, 70, "a failed device keeps its row")
+        XCTAssertNotNil(rows["u2"]?["scannedAt"], "its file's stamp, since it had none")
+    }
+
+    /// The 25% rule is judged over the round: two passes of 1 failure in 4 land (2 of 8); a
+    /// second pass with 2 failures stops (3 of 8), writes nothing and records a failure.
+    func testTheFailureRuleIsJudgedOverTheRound() async throws {
+        try answer("dev-u1.exit", "1")
+        try answer("dev-u5.exit", "1")
+        _ = try await runStep(deviceList(udids(8)), limits: stopAfter(4))
+        var lines = try await runStep(deviceList(udids(8)), at: now.addingTimeInterval(day))
+        // u2-u4 from the first pass, u6-u8 from this one; u1 and u5 never answered.
+        XCTAssertTrue(has(lines, "[ok] school-device-detail: 6 device(s)"))
+        XCTAssertTrue(lines.contains("[info] school-device-detail: 2 of 8 devices did not respond"))
+
+        for dir in ["school-device-detail", "state"] {
+            try FileManager.default.removeItem(at: dataDir.appendingPathComponent(dir))
+        }
+        try answer("dev-u6.exit", "1")
+        _ = try await runStep(deviceList(udids(8)), limits: stopAfter(4))
+        let firstPass = try snapshotRows()
+        lines = try await runStep(deviceList(udids(8)), at: now.addingTimeInterval(day))
+        XCTAssertTrue(has(lines, "[warn] school-device-detail not written: 3 of"))
+        XCTAssertEqual(try snapshotRows()?.count, firstPass?.count, "nothing written")
+        XCTAssertEqual(try stateStore.failures(report: ReportEngine.schoolDeviceDetailKind)?.count, 1)
+        XCTAssertNil(try stateStore.deviceScanRound())
+    }
+
+    /// The round file is a peer's input: ids no longer in the fleet are ignored, and a round
+    /// started in the future or more than 21 days ago reads as no round.
+    func testTheRoundFileIsUntrusted() async throws {
+        let store = try stateStore
+        try store.recordDeviceScanRound(.init(
+            started: now, lastPass: now.addingTimeInterval(-day),
+            attempted: ["u1", "ghost"], remaining: 5))
+        _ = try await runStep(deviceList(udids(3)))
+        XCTAssertEqual(Set(gets()), ["u2", "u3"])
+
+        for started in [now.addingTimeInterval(3_600), now.addingTimeInterval(-30 * day)] {
+            clearCalls()
+            try store.recordDeviceScanRound(.init(
+                started: started, lastPass: started, attempted: ["u1"], remaining: 2))
+            store.clearRun(report: ReportEngine.schoolDeviceDetailKind)
+            XCTAssertEqual(ReportEngine.planSchoolDeviceScan(
+                tiers: [.refresh], collectSkip: [], stateStore: store, now: now),
+                .tierNotSelected, "no open round")
+            _ = try await runStep(deviceList(udids(3)))
+            XCTAssertEqual(Set(gets()), ["u1", "u2", "u3"])
+        }
+    }
+
+    /// An earlier snapshot that cannot be read is never replaced by part of the fleet; a scan
+    /// that reaches every device replaces it.
+    func testAnUnreadableSnapshotIsReplacedOnlyByAWholeFleetScan() async throws {
+        let kind = ReportEngine.schoolDeviceDetailKind
+        try ReportEngine.saveSnapshot(data: Data("not json".utf8), kind: kind, dataDir: try dataDir)
+        let bad = try XCTUnwrap(FileManager.newestSnapshotFile(
+            in: dataDir.appendingPathComponent(kind)))
+        var lines = try await runStep(deviceList(udids(3)), limits: stopAfter(1))
+        XCTAssertTrue(has(lines, "[warn] school-device-detail snapshot could not be read"))
+        XCTAssertEqual(FileManager.newestSnapshotFile(in: try dataDir.appendingPathComponent(kind)), bad)
+        XCTAssertNil(try stateStore.deviceScanRound())
+        XCTAssertNil(try stateStore.lastRun(report: kind))
+
+        lines = try await runStep(deviceList(udids(3)), limits: .init(concurrency: 1))
+        XCTAssertTrue(has(lines, "[ok] school-device-detail: 3 device(s)"))
+        XCTAssertEqual(try snapshotRows()?.count, 3)
+    }
+
+    /// Data freshness never expects the School scan, so an open round reads as nothing missing.
+    func testFreshnessDoesNotReportTheSchoolScanKind() throws {
+        let kind = ReportEngine.schoolDeviceDetailKind
+        XCTAssertFalse(DataFreshnessHealth.schoolKinds.contains(kind))
+        XCTAssertNil(DataFreshnessHealth.tier(forKind: kind))
+    }
+
+    /// The card's in-progress line: the round's attempted devices among the current fleet,
+    /// shown only while a round is open.
+    func testTheCardSaysScanInProgressOnlyWhileARoundIsOpen() async throws {
+        let list = try deviceList(udids(4))
+        try ReportEngine.saveSnapshot(data: list, kind: SchoolFleetService.devicesKind,
+                                      dataDir: try dataDir)
+        _ = try await runStep(list, limits: stopAfter(1))
+        let line = L("Scan in progress: \(1) of \(4) devices scanned this round")
+        var health = try XCTUnwrap(SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: try dataDir, now: now)))
+        XCTAssertEqual(health.detail.roundProgress, .init(count: 1, of: 4))
+        XCTAssertTrue(health.detailLines.contains(line))
+        _ = try await runStep(list, at: now.addingTimeInterval(day))
+        health = try XCTUnwrap(SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: try dataDir, now: now.addingTimeInterval(day))))
+        XCTAssertNil(health.detail.roundProgress)
+        XCTAssertFalse(health.detailLines.contains(line))
     }
 }
 

@@ -130,7 +130,26 @@ struct StateFileStore: Sendable {
     /// Kept in `<report>.timeouts`, beside the `.fail` file rather than in it: an older build
     /// reads only the two- and three-field forms of `.fail` and would see a longer one as no
     /// record at all.
+    ///
+    /// Kinds that make the same request share one streak (`sharedRequestKinds`): on a 5,900-Mac
+    /// fleet `patch-status` and `patch-device-failures` each waited 12 minutes, twice, on the
+    /// one patch-title request neither could get an answer to.
     func consecutiveTimeouts(for report: String) -> Int {
+        // While patch-status is collected title by title it no longer makes the shared
+        // request, so the failures scan's timeouts are not its own.
+        if report == "patch-status", patchByTitleUntil() != nil {
+            return ownConsecutiveTimeouts(for: report)
+        }
+        return Self.sharedRequestKinds(report).reduce(0) { $0 + ownConsecutiveTimeouts(for: $1) }
+    }
+
+    /// The kinds whose first request is the same one as `report`'s, `report` included.
+    static func sharedRequestKinds(_ report: String) -> [String] {
+        let patchTitles = ["patch-status", "patch-device-failures"]
+        return patchTitles.contains(report) ? patchTitles : [report]
+    }
+
+    private func ownConsecutiveTimeouts(for report: String) -> Int {
         guard lastFailureExitCode(for: report) == CLIBridge.exitCodeTimedOut
                 || cause(for: report)?.serverTimedOut == true,
               let text = BoundedFile.stateText(timeoutsURL(for: report), inside: trustedRoot),
@@ -144,6 +163,31 @@ struct StateFileStore: Sendable {
     /// the legacy two-field form or the three-field form carrying an exit code.
     /// Anything else reads as no record at all — a corrupt counter must not be
     /// able to silence the alarm it exists to raise.
+    /// How long an unforced collect leaves alone a kind whose last failures all timed out.
+    /// Under a day: the failure is stamped with its run's start, so a daily schedule that
+    /// starts a few seconds earlier the next day must find the hold over.
+    static let timeoutHold: TimeInterval = 72_000
+    /// The hold once `chronicTimeouts` in a row have timed out: a server that has not answered
+    /// for days is tried weekly, not daily, so it stops costing every day's run its wait.
+    static let chronicTimeoutHold: TimeInterval = 7 * 86_400
+    static let chronicTimeouts = 4
+
+    /// When an unforced collect may try `report` again: `timeoutHold` (20 h) after its last failure,
+    /// once `WorkspaceStore.repeatedTimeoutsBeforeBackoff` failures in a row timed out. nil
+    /// for any other kind. A landed snapshot clears the count.
+    func timeoutHoldUntil(report: String) -> Date? {
+        // While patch-status is collected title by title, the failures scan would only wait
+        // on the request that does not answer: it has no per-title form.
+        if report == "patch-device-failures", let until = patchByTitleUntil() { return until }
+        let streak = consecutiveTimeouts(for: report)
+        guard streak >= WorkspaceStore.repeatedTimeoutsBeforeBackoff,
+              let last = Self.sharedRequestKinds(report)
+                .filter({ ownConsecutiveTimeouts(for: $0) > 0 })
+                .compactMap({ failures(report: $0)?.last }).max() else { return nil }
+        return last.addingTimeInterval(
+            streak >= Self.chronicTimeouts ? Self.chronicTimeoutHold : Self.timeoutHold)
+    }
+
     private func validFailureFields(report: String) -> [Substring]? {
         guard let raw = BoundedFile.stateText(failureURL(for: report), inside: trustedRoot)
         else { return nil }
@@ -384,6 +428,64 @@ struct StateFileStore: Sendable {
     /// `.last` files — is unaffected by failure bookkeeping.
     private func failureURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).fail", isDirectory: false)
+    }
+
+    /// Until when `patch-status` is collected title by title (`ReportEngine.patchByTitlePeriod`
+    /// after the run that last had to); nil when it is not, or the stamp is ahead of now.
+    func patchByTitleUntil(now: Date = Date()) -> Date? {
+        guard let text = BoundedFile.stateText(patchByTitleURL, inside: trustedRoot),
+              let stamp = ISO8601Time.parse(text),
+              stamp.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance else { return nil }
+        return stamp.addingTimeInterval(ReportEngine.patchByTitlePeriod)
+    }
+
+    func recordPatchByTitle(at date: Date) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? atomicWrite(data: Data(ISO8601Time.string(date).utf8), to: patchByTitleURL)
+    }
+
+    func clearPatchByTitle() { try? FileManager.default.removeItem(at: patchByTitleURL) }
+
+    private var patchByTitleURL: URL {
+        directory.appendingPathComponent("patch-status.by-title", isDirectory: false)
+    }
+
+    /// How many seconds `report`'s last attempt took, landed or not (`<report>.took`, outside
+    /// the manifest); nil when none was recorded. `ReportEngine.slowLast` orders a run by it.
+    func lastDuration(for report: String) -> Int? {
+        BoundedFile.stateText(tookURL(for: report), inside: trustedRoot)
+            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .flatMap { $0 >= 0 ? $0 : nil }
+    }
+
+    /// Best effort: a duration that cannot be written only costs the next run its ordering.
+    func recordDuration(report: String, seconds: Int) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? atomicWrite(data: Data(String(max(seconds, 0)).utf8), to: tookURL(for: report))
+    }
+
+    /// The per-device scan's open round (`device-scan.round`, outside the manifest); nil when
+    /// none is open or the file cannot be read, which starts the next round afresh.
+    func deviceScanRound() -> DeviceScanRound? {
+        BoundedFile.stateData(roundURL, limit: DeviceScanRound.fileLimit, inside: trustedRoot)
+            .flatMap { try? JSONDecoder().decode(DeviceScanRound.self, from: $0) }
+    }
+
+    func recordDeviceScanRound(_ round: DeviceScanRound) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try atomicWrite(data: JSONEncoder().encode(round), to: roundURL)
+    }
+
+    func clearDeviceScanRound() {
+        try? FileManager.default.removeItem(at: roundURL)
+    }
+
+    private var roundURL: URL {
+        directory.appendingPathComponent("device-scan.round", isDirectory: false)
+    }
+
+    private func tookURL(for report: String) -> URL {
+        directory.appendingPathComponent("\(report).took", isDirectory: false)
     }
 
     /// `<report>.timeouts`: the consecutive-timeout count (see `consecutiveTimeouts`).

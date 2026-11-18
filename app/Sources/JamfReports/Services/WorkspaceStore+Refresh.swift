@@ -43,12 +43,16 @@ extension WorkspaceStore {
         if let refusal = generateRefusal() { throw refusal }
         beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
         defer { endCollect(for: profile) }
+        Self.automaticCollectsRunning.withLock { $0 += 1 }
+        defer { Self.automaticCollectsRunning.withLock { $0 -= 1 } }
         let (exit, _) = try await Self.recordingCollect(
             profile: profile, label: Self.appRefreshRunLabel, keep: Self.keptAppRefreshRuns,
             honesty: CollectHonestyWatcher()
         ) { onLine in
-            try await CLIBridge().collect(
-                profile: profile, tiers: [tier], force: true, onLine: onLine)
+            try await ReportEngine.stoppingBetweenSources(profile: profile) {
+                try await CLIBridge().collect(
+                    profile: profile, tiers: [tier], force: true, onLine: onLine)
+            }
         }
         await refreshDataFreshness()
         return exit
@@ -161,7 +165,7 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
@@ -210,7 +214,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
@@ -260,7 +264,7 @@ extension WorkspaceStore {
             toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(
             for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
@@ -290,6 +294,48 @@ extension WorkspaceStore {
     /// process — the bundled `--tick` agent — holds the tick lock (#226 5c), or a collect is
     /// already running in this app, for any profile. `CLIBridge.collect` would refuse the
     /// collect anyway; asking first keeps a refused button from touching any state.
+    /// `manualCollectMustWait`, except that an automatic collect (a scheduled run in another
+    /// process, or this app's own background refresh, self-repair or catch-up) is asked to
+    /// stop at its next source (`ManualRefreshRequest`) and waited for, up to
+    /// `manualRefreshWait`. True when the collect may start.
+    func manualCollectMayStart() async -> Bool {
+        let scheduledElsewhere = CLIBridge.collectRefusal() == .tickLockHeld
+        let automaticHere = Self.automaticCollectsRunning.withLock { $0 > 0 }
+        guard scheduledElsewhere || automaticHere, manualRefreshWait > 0,
+              !isWaitingForScheduledRun else {
+            return !manualCollectMustWait()
+        }
+        isWaitingForScheduledRun = true
+        ManualRefreshRequest.post()
+        globalStatus = L("Waiting for the automatic collect to finish its current source…")
+        defer {
+            isWaitingForScheduledRun = false
+            ManualRefreshRequest.clear()
+            globalStatus = nil
+        }
+        let deadline = Date().addingTimeInterval(manualRefreshWait)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(manualRefreshPoll))
+            guard await CLIBridge.collectRefusalOffMain() != nil || isAnyCollectInFlight
+                    || Self.automaticCollectsRunning.withLock({ $0 > 0 }) else {
+                toast = Toast(
+                    message: L("""
+                        The automatic collect stopped for this refresh. It will pick up what \
+                        is left on its next run.
+                        """),
+                    style: .info)
+                return true
+            }
+        }
+        toast = Toast(
+            message: L("""
+                The automatic collect is still on one source. Try again when it finishes; \
+                Run History shows what it is collecting.
+                """),
+            style: .info)
+        return false
+    }
+
     func manualCollectMustWait() -> Bool {
         let refusal = CLIBridge.collectRefusal()
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)

@@ -20,10 +20,22 @@ final class CollectSkipTests: XCTestCase {
     /// fetch, the one call to a third-party host, the Security Cloud device list (P12) and the Jamf
     /// School per-device scan.
     func testTheHeavyKindsTheDashboardAndSOFACanBeSkipped() {
-        let all = ["patch-device-failures", "profile-status", "update-status",
+        let all = ["patch-status", "patch-device-failures", "profile-status", "update-status",
                    "update-device-failures", "dashboard", "sofa", "security-risk",
                    "school-device-detail"]
-        XCTAssertEqual(ReportEngine.collectSkipKinds(all), Set(all))
+        XCTAssertEqual(
+            ReportEngine.collectSkipKinds(all), Set(all + ["patch-release-dates"]),
+            "skipping patch-status also skips the release-date walk that reads it")
+        XCTAssertEqual(
+            ReportEngine.collectSkipKinds(["patch-status"]),
+            ["patch-status", "patch-release-dates", "patch-device-failures"],
+            "and the failures scan, which starts with the same request")
+        XCTAssertFalse(
+            ReportEngine.collectSkipKinds(["update-status"]).contains("patch-release-dates"))
+        XCTAssertEqual(
+            ReportEngine.sourcesAfterMatrix(
+                tiers: [.refresh], collectSkip: ReportEngine.collectSkipKinds(["patch_status"])),
+            ["sofa"])
         XCTAssertEqual(ReportEngine.skippableKinds, Set(all))
     }
 

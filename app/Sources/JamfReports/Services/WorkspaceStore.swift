@@ -85,6 +85,18 @@ final class WorkspaceStore {
     var pendingDevicesFilter: String? = nil
     /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
     var pendingMobileFilter: String? = nil
+    /// How long a manual refresh waits for a scheduled run in another process to stop at its
+    /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
+    var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait
+    var manualRefreshPoll: TimeInterval = 2
+    var isWaitingForScheduledRun = false
+    static var defaultManualRefreshWait: TimeInterval {
+        #if DEBUG
+        // A test that holds the lock expects the refusal, not a half-hour wait.
+        if NSClassFromString("XCTestCase") != nil { return 0 }
+        #endif
+        return 1_800
+    }
     /// An Audit section to scroll to (`MobileDevicesSection.anchorID`), held the same way.
     var pendingAuditSection: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,

@@ -41,6 +41,56 @@ final class RepeatedTimeoutBackoffTests: XCTestCase {
         XCTAssertEqual(store.consecutiveTimeouts(for: "ea-results"), 0)
     }
 
+    /// `patch-status` and `patch-device-failures` both start with the patch-title request, so
+    /// one timeout of each is two in a row on that request and holds both.
+    func testKindsThatShareARequestShareTheStreakAndTheHold() {
+        let store = StateFileStore(directory: dir)
+        let first = Date(timeIntervalSince1970: 1_790_000_000)
+        let second = first.addingTimeInterval(7_200)
+        store.record(.failed(exitCode: timedOut), report: "patch-status", at: first)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-device-failures"))
+        store.record(.failed(exitCode: timedOut), report: "patch-device-failures", at: second)
+        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-status"), 2)
+        XCTAssertEqual(store.consecutiveTimeouts(for: "patch-device-failures"), 2)
+        let until = second.addingTimeInterval(StateFileStore.timeoutHold)
+        XCTAssertEqual(store.timeoutHoldUntil(report: "patch-status"), until)
+        XCTAssertEqual(store.timeoutHoldUntil(report: "patch-device-failures"), until)
+        XCTAssertEqual(store.consecutiveTimeouts(for: "ea-results"), 0, "no other kind is held")
+        store.record(.landed, report: "patch-status", at: second)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-device-failures"),
+                     "the request answered: one timeout left is not a hold")
+    }
+
+    func testTheLastDurationIsReadBackAndAnUnreadableOneIsNone() throws {
+        let store = StateFileStore(directory: dir)
+        XCTAssertNil(store.lastDuration(for: "ea-results"))
+        store.recordDuration(report: "ea-results", seconds: 722)
+        XCTAssertEqual(store.lastDuration(for: "ea-results"), 722)
+        try "soon".write(
+            to: dir.appendingPathComponent("ea-results.took"), atomically: true, encoding: .utf8)
+        XCTAssertNil(store.lastDuration(for: "ea-results"))
+    }
+
+    /// The planner's hold: 20 hours after the last failure once two in a row timed out.
+    func testTheHoldStartsAfterTwoTimeoutsInARowAndEndsWhenTheKindLands() throws {
+        let store = StateFileStore(directory: dir)
+        let first = Date(timeIntervalSince1970: 1_790_000_000)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-status"))
+        store.record(.failed(exitCode: timedOut), report: "patch-status", at: first)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-status"), "one timeout is retried")
+        let second = first.addingTimeInterval(3_600)
+        store.record(.failed(exitCode: timedOut), report: "patch-status", at: second)
+        XCTAssertEqual(
+            store.timeoutHoldUntil(report: "patch-status"),
+            second.addingTimeInterval(StateFileStore.timeoutHold))
+        store.record(.failed(exitCode: 1), report: "patch-status", at: second)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-status"), "another failure is no hold")
+        store.record(.failed(exitCode: timedOut), report: "patch-status", at: second)
+        store.record(.failed(exitCode: timedOut), report: "patch-status", at: second)
+        store.record(.landed, report: "patch-status", at: second)
+        XCTAssertNil(store.timeoutHoldUntil(report: "patch-status"))
+    }
+
     /// An older build reads only the two- and three-field `.fail` forms, and a record without a
     /// streak file reads as none.
     func testTheFailFileKeepsItsFormatAndAnOlderRecordReadsAsNoStreak() throws {

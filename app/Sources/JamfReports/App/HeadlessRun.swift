@@ -538,15 +538,20 @@ private func scheduledRunSingleBody(
             // Route to the correct collect function(s) based on profile product type.
             // Scheduled collects never bypass the Jamf Pro once-per-day guard; a School
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
-            try await CollectRouter.run(
-                workspace: try WorkspaceID(validating: profile),
-                tiers: resolvedTiers,
-                force: mode.forcesCollect(
-                    for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
-                config: routingConfig,
-                now: runStart,
-                onLine: onLine
-            )
+            // A scheduled run gives the lock up between sources once its budget is used or
+            // someone asks for a refresh in the app; what is left stays due.
+            try await ReportEngine.stoppingBetweenSources(profile: profile) {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: resolvedTiers,
+                    force: mode.forcesCollect(
+                        for: ProfileProductType.detect(
+                            from: routingConfig, profile: profile).type),
+                    config: routingConfig,
+                    now: runStart,
+                    onLine: onLine
+                )
+            }
             // Tighten permissions on collected snapshots immediately after
             // collect, before generate, so a crash or early exit still
             // leaves collected files at 0600. Mirrors the GUI's tightenOnSuccess.

@@ -110503,6 +110503,86 @@
         }
       }
     },
+    "Saved snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantáneas guardadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantanés enregistrés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot salvati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショット"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshots salvos"
+          }
+        }
+      }
+    },
+    "Saved snapshots use more than %lld GB and retention is off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots belegen mehr als %lld GB und die Aufbewahrung ist deaktiviert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las instantáneas guardadas ocupan más de %lld GB y la retención está desactivada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les instantanés enregistrés occupent plus de %lld Go et la conservation est désactivée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli snapshot salvati occupano più di %lld GB e la conservazione è disattivata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショットが %lld GB を超えており、保持設定はオフです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os snapshots salvos ocupam mais de %lld GB e a retenção está desativada."
+          }
+        }
+      }
+    },
     "Saved to %@" : {
       "localizations" : {
         "de" : {
@@ -110699,6 +110779,144 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dia da verificação"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld Mac scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Mac in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Mac scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysé sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Mac verificados nesta rodada"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld Macs scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Macs in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Macs scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Macs verificados nesta rodada"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld devices scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Geräten in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld devices scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld dispositivos analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld appareils analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld dispositivi analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたデバイス %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld dispositivos verificados nesta rodada"
           }
         }
       }
@@ -124363,6 +124581,86 @@
         }
       }
     },
+    "The automatic collect is still on one source. Try again when it finishes; Run History shows what it is collecting." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die automatische Erfassung arbeitet noch an einer Datenquelle. Versuchen Sie es erneut, wenn sie fertig ist; der Laufverlauf zeigt, was sie gerade erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La recopilación automática sigue en una fuente de datos. Inténtelo de nuevo cuando termine; Historial de ejecuciones muestra lo que está recopilando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La collecte automatique traite encore une source de données. Réessayez à la fin ; Historique des exécutions montre ce qu’elle collecte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La raccolta automatica è ancora su un’origine dati. Riprovare al termine; Cronologia esecuzioni mostra cosa sta raccogliendo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動収集はまだ1つのデータソースを収集中です。完了後にもう一度お試しください。収集中の内容は実行履歴で確認できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A coleta automática ainda está em uma fonte de dados. Tente novamente quando ela terminar; o Histórico de execuções mostra o que está sendo coletado."
+          }
+        }
+      }
+    },
+    "The automatic collect stopped for this refresh. It will pick up what is left on its next run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die automatische Erfassung wurde für diese Aktualisierung angehalten. Den Rest holt sie beim nächsten Lauf nach."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La recopilación automática se detuvo para esta actualización. Recogerá lo que falta en su próxima ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La collecte automatique s’est arrêtée pour cette actualisation. Elle reprendra le reste à sa prochaine exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La raccolta automatica si è fermata per questo aggiornamento. Riprenderà il resto alla prossima esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この更新のために自動収集を停止しました。残りは次回の実行で収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A coleta automática parou para esta atualização. Ela coletará o restante na próxima execução."
+          }
+        }
+      }
+    },
     "The automation folder is a link" : {
       "localizations" : {
         "de" : {
@@ -130657,6 +130955,46 @@
         }
       }
     },
+    "Turn on retention in config.yaml (retention.enabled) to archive or remove old snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren Sie die Aufbewahrung in config.yaml (retention.enabled), um alte Snapshots zu archivieren oder zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active la retención en config.yaml (retention.enabled) para archivar o eliminar las instantáneas antiguas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez la conservation dans config.yaml (retention.enabled) pour archiver ou supprimer les anciens instantanés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attivare la conservazione in config.yaml (retention.enabled) per archiviare o rimuovere i vecchi snapshot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "古いスナップショットをアーカイブまたは削除するには、config.yaml で保持設定（retention.enabled）をオンにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ative a retenção no config.yaml (retention.enabled) para arquivar ou remover snapshots antigos."
+          }
+        }
+      }
+    },
     "Turn on verbose logs on this Mac" : {
       "localizations" : {
         "de" : {
@@ -135339,6 +135677,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "RESUMO DO ESPAÇO DE TRABALHO"
+          }
+        }
+      }
+    },
+    "Waiting for the automatic collect to finish its current source…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warten, bis die automatische Erfassung ihre aktuelle Datenquelle abgeschlossen hat…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a que la recopilación automática termine su fuente de datos actual…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de la fin de la source de données en cours de la collecte automatique…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa che la raccolta automatica termini l’origine dati corrente…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動収集が現在のデータソースを終えるのを待っています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando a coleta automática concluir a fonte de dados atual…"
           }
         }
       }
