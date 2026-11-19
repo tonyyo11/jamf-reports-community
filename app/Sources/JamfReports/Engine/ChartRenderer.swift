@@ -402,7 +402,8 @@ enum ChartRenderer {
     ) {
         guard let row = lay.xLabelRows.first else { return }
         let withYear = calendar.component(.year, from: first) != calendar.component(.year, from: last)
-        for tick in dateTicks(from: first, to: last, calendar: calendar) {
+        for tick in dateTicks(from: first, to: last, calendar: calendar,
+                              maxTicks: maxDateTicks(forWidth: lay.plot.width)) {
             let x = xPosition(tick, first: first, last: last, plot: lay.plot)
             drawText(ctx: ctx, text: dayLabel(tick, calendar: calendar, withYear: withYear),
                      at: CGPoint(x: x, y: row.midY), fontSize: Style.axisFont, color: muted,

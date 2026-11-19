@@ -178,7 +178,7 @@ extension ChartRenderer {
     }
 
     /// Up to `maxTicks` labels on whole days from `start` to `end`, one step apart, never two
-    /// for the same day.
+    /// for the same day. Counted back from `end`, so the newest day is always labelled.
     static func dateTicks(from start: Date, to end: Date, calendar: Calendar,
                           maxTicks: Int = Style.maxDateTicks) -> [Date] {
         let first = calendar.startOfDay(for: start)
@@ -186,9 +186,14 @@ extension ChartRenderer {
         let days = calendar.dateComponents([.day], from: first, to: last).day ?? 0
         guard days > 0 else { return [first] }
         let step = max(1, Int((Double(days) / Double(max(maxTicks - 1, 1))).rounded(.up)))
-        return stride(from: 0, through: days, by: step).compactMap {
-            calendar.date(byAdding: .day, value: $0, to: first)
+        return stride(from: 0, through: days, by: step).reversed().compactMap {
+            calendar.date(byAdding: .day, value: -$0, to: last)
         }
+    }
+
+    /// How many day labels fit along `width` with room between them.
+    static func maxDateTicks(forWidth width: CGFloat) -> Int {
+        max(2, Int(width / 100))
     }
 
     static func dayLabel(_ date: Date, calendar: Calendar, withYear: Bool) -> String {

@@ -175,6 +175,20 @@ final class ChartRendererTests: XCTestCase {
                                                to: parse("2026-10-01", in: cal), calendar: cal).count, 1)
     }
 
+    func testTheNewestDayIsAlwaysLabelled() {
+        let cal = calendar("UTC")
+        // Ten days with room for five labels: the step is 3, counted back from Nov 19.
+        let ticks = ChartRenderer.dateTicks(from: parse("2026-11-10", in: cal),
+                                            to: parse("2026-11-19", in: cal), calendar: cal, maxTicks: 5)
+        XCTAssertEqual(ticks.map { ChartRenderer.dayLabel($0, calendar: cal, withYear: false) },
+                       ["Nov 10", "Nov 13", "Nov 16", "Nov 19"])
+        // A full-width workbook chart has room for every one of ten days.
+        let plotWidth = ChartRenderer.layout(size: ChartRenderer.defaultSize, title: nil, legend: [],
+                                             yLabel: nil, yTickLabels: ["0"], xLabelRowCount: 1,
+                                             footnote: nil).plot.width
+        XCTAssertGreaterThanOrEqual(ChartRenderer.maxDateTicks(forWidth: plotWidth), 10)
+    }
+
     // MARK: - OS adoption
 
     private func sofaRow(_ family: String, _ version: String) -> SOFAFeedService.OSFamilyRow {
