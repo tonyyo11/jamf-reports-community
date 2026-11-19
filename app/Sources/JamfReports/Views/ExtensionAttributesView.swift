@@ -35,10 +35,6 @@ struct ExtensionAttributesView: View {
         case name = "Name"
     }
 
-    /// Cap the rendered count so tenants with hundreds of EAs don't slow the
-    /// view diff. Full list is always available in the generated Excel report.
-    private static let definitionsDisplayCap = 100
-
     /// Threshold above which the view surfaces a "Top values shown per EA;
     /// generated reports include all values." footnote. ~25k rows is the
     /// point at which the topValueLimit cap starts hiding meaningful tails.
@@ -526,19 +522,14 @@ struct ExtensionAttributesView: View {
     private var definitionsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(
-                    title: L("EA Definitions"),
-                    trailing: snapshot.definitions.count > Self.definitionsDisplayCap
-                        ? L("\(Self.definitionsDisplayCap) of \(snapshot.definitions.count) shown")
-                        : nil
-                )
+                SectionHeader(title: L("EA Definitions"))
 
                 if snapshot.definitions.isEmpty {
                     Text("No EA definitions loaded.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
-                    Table(Array(snapshot.definitions.prefix(Self.definitionsDisplayCap))) {
+                    Table(snapshot.definitions) {
                         TableColumn("Name") { definition in
                             Text(definition.name ?? L("Unknown"))
                                 .font(.callout.weight(.medium))
@@ -570,13 +561,7 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 60, ideal: 80)
                     }
-                    .pageTableHeight(
-                        rows: min(snapshot.definitions.count, Self.definitionsDisplayCap))
-                    if snapshot.definitions.count > Self.definitionsDisplayCap {
-                        Text("Generated reports include every definition.")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
+                    .pageTableHeight(rows: snapshot.definitions.count)
                 }
             }
         }

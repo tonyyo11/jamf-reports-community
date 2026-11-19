@@ -142,7 +142,7 @@ struct PatchView: View {
             StatTile(
                 label: L("Total Titles"),
                 value: "\(snapshot.totalTitles)",
-                sub: L("Patch policies tracked")
+                sub: L("Patch titles tracked")
             )
             StatTile(
                 label: L("Fleet Compliance"),
@@ -167,22 +167,14 @@ struct PatchView: View {
         }
     }
 
-    /// Cap shown rows so the table stays responsive in tenants with hundreds
-    /// of patch titles. SwiftUI Tables are virtualized at the row-render
-    /// level but data-source construction is eager, so this cap also bounds
-    /// the SwiftUI diff cost on every state change.
-    private static let titlesDisplayCap = 50
+    /// Rows in the PNG export, which draws every row it is given into one image.
+    private static let pngExportRowCap = 50
 
     private var patchTitlesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(
-                        title: L("Patch Titles"),
-                        trailing: sortedTitles.count > Self.titlesDisplayCap
-                            ? L("\(Self.titlesDisplayCap) of \(sortedTitles.count) shown")
-                            : nil
-                    )
+                    SectionHeader(title: L("Patch Titles"))
                     PNPButton(
                         title: L("Export CSV"),
                         icon: "tablecells",
@@ -203,7 +195,7 @@ struct PatchView: View {
                     .help("Save the patch titles table as a PNG image")
                 }
                 let failingDevices = snapshot.failingDevicesByTitle
-                Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
+                Table(sortedTitles) {
                     TableColumn("Title") { title in
                         Text(title.title)
                             .font(.callout.weight(.medium))
@@ -281,12 +273,7 @@ struct PatchView: View {
                     }
                     .width(min: 80, ideal: 90)
                 }
-                .pageTableHeight(rows: min(sortedTitles.count, Self.titlesDisplayCap))
-                if sortedTitles.count > Self.titlesDisplayCap {
-                    Text("Generated reports include every patch title.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                .pageTableHeight(rows: sortedTitles.count)
             }
         }
     }
@@ -529,7 +516,7 @@ struct PatchView: View {
             suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile),
             percentFormat: percentFormat
         ) {
-            PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+            PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.pngExportRowCap)))
         }
         if case .failure(let error) = result {
             workspace.toast = Toast(message: error.userMessage, style: .danger)

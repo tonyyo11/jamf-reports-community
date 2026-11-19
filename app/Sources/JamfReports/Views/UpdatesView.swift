@@ -368,7 +368,7 @@ struct UpdatesView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Table(Array(snapshot.failedPlans.prefix(50))) {
+                Table(snapshot.failedPlans) {
                     TableColumn("Device") { plan in
                         Text(plan.name)
                             .font(.footnote)
@@ -410,13 +410,6 @@ struct UpdatesView: View {
                     .width(min: 150, ideal: 200)
                 }
                 .frame(minHeight: 200)
-
-                if snapshot.failedPlans.count > 50 {
-                    Text("+ \(snapshot.failedPlans.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
-                }
             }
         }
     }
@@ -426,7 +419,7 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: L("Error Devices"), trailing: L("\(snapshot.errorDevices.count) total"))
-                Table(Array(snapshot.errorDevices.prefix(50))) {
+                Table(snapshot.errorDevices) {
                     TableColumn("Device") { device in
                         Text(device.name)
                             .font(.footnote)
@@ -459,13 +452,6 @@ struct UpdatesView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .frame(minHeight: 150)
-
-                if snapshot.errorDevices.count > 50 {
-                    Text("+ \(snapshot.errorDevices.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
-                }
             }
         }
     }
