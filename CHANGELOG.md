@@ -140,6 +140,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Workbook charts have larger text, an axis title (Macs or percent of Macs), whole-number or
+  0–100% axes and one label per day. The OS chart is now "macOS Adoption by Major Version": each
+  bar is named from the SOFA feed ("macOS Tahoe 26"), shows its Macs and share, and says how many
+  run the latest release. The compliance donut's title reads "<baseline> — compliance bands, all
+  Macs", and the compliance trend notes how many Macs it leaves out for having no data.
 - A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
   with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
   Each is still checked once a week, and Data Sources says which sources are left out and why.
@@ -313,6 +318,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The workbook's charts (and the PNG copies written beside reports) no longer put the legend on
+  top of the title, show 0.8 or 3.2 Macs on a count axis, repeat a date, or stop a percentage axis
+  at 90%. A compliance trend with one day of history was drawn as empty axes; it now shows that
+  day with a note. The OS chart's unlabelled bar was Macs with no reported version, and is named.
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
   Total Titles tile now reads "Patch titles tracked" instead of "Patch policies tracked". The
   EA definitions table (it stopped at 100) and the OS Updates failed-plans and error-devices
