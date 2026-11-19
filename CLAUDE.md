@@ -1124,8 +1124,9 @@ passes no `-v`, but `-v` on a reporter's diagnostic now times each call without 
 run by the app: `protect threat-prevention-versions list` (alias `tpv`; the signature versions the
 tenant publishes, newest first), whose first row is the newest a computer's `signaturesVersion`
 can be, which `ProtectComputerRow.signatureLag` does not yet use (epic #421). Output shapes and exit
-codes of the commands the app runs are unchanged. The catalog was not recaptured for this release,
-and the fixture stays `commands-1.35.0.json`.
+codes of the commands the app runs are unchanged. The catalog (1,798 rows) adds that command's two
+rows and lists `--list-file` on 287; checked against it, every command and flag the app builds is
+unchanged, and the fixture stays `commands-1.35.0.json`.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
