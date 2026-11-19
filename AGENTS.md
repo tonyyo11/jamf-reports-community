@@ -1108,6 +1108,25 @@ out. The catalog (1,796 rows) adds thirteen rows and drops `--convert` from `blu
 import-profile`; every command and flag the app builds is unchanged, and the fixture stays
 `commands-1.35.0.json`.
 
+**v1.38.0 (2026-11-19) — List files, timeout hints, verbose call stats, Protect signatures.**
+No code change. Lists of records move to `--list-file` (one entry per line, `#` comments, `-` for
+stdin) on every namespace, and `get` gains it on every Pro and Classic command with a name lookup
+and on `protect computers get`/`school devices get`; `--from-file` is now a request body only, and
+a command that took a list through it keeps it as a hidden, deprecated alias until 2027-05
+(`multi --from-file` included). The app passes neither flag: `CLIBridge`'s `multi` call uses
+`--filter`/`--profiles`, and the single-ID `get`, `patch-summary` and `definitions` calls send the
+same request as before. A server timeout keeps its message ("the server did not answer in time",
+which `FailureCause.serverTimeoutMarker` matches) and exit 1; only the hint changes, now naming
+the narrowing flags the command declares or saying to retry later, and the app replaces it with
+`FailureCause.serverTimeoutHint` anyway (jamf-cli #476). `-v` adds request and response body sizes
+and per-attempt response times, and `-vvv` no longer cuts SDK-transport bodies at 64 KB; the app
+passes no `-v`, but `-v` on a reporter's diagnostic now times each call without a proxy. New and not
+run by the app: `protect threat-prevention-versions list` (alias `tpv`; the signature versions the
+tenant publishes, newest first), whose first row is the newest a computer's `signaturesVersion`
+can be, which `ProtectComputerRow.signatureLag` does not yet use (epic #421). Output shapes and exit
+codes of the commands the app runs are unchanged. The catalog was not recaptured for this release,
+and the fixture stays `commands-1.35.0.json`.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml
