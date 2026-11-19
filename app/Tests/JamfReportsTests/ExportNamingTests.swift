@@ -157,8 +157,14 @@ final class WorkbookTimestampTests: XCTestCase {
     /// 2026-10-05 15:15:06 UTC.
     private let sample = Date(timeIntervalSince1970: 1_791_213_306)
 
-    func testStampIsDateUnderscoreTimeInUTC() {
-        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), "2026-10-05_151506")
+    func testStampIsDateUnderscoreTimeInThisMacsZone() {
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        local.dateFormat = "yyyy-MM-dd_HHmmss"
+        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), local.string(from: sample))
+        // The HTML, PDF and PNGs a run writes beside the workbook use this stamp too.
+        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), ExportNaming.timestamp(sample))
     }
 
     func testWorkbookNameEndsInTheStampTheConfigExampleShows() throws {
@@ -172,10 +178,10 @@ final class WorkbookTimestampTests: XCTestCase {
             .lastPathComponent
         let stamp = String(name.dropFirst("report_".count))
 
-        // Read back as UTC, the stamp is now: the example and the file agree on the zone.
+        // Read back in this Mac's zone, as run rotation reads it, the stamp is now.
         let reader = DateFormatter()
         reader.locale = Locale(identifier: "en_US_POSIX")
-        reader.timeZone = TimeZone(identifier: "UTC")
+        reader.timeZone = .current
         reader.dateFormat = "yyyy-MM-dd_HHmmss"
         let written = try XCTUnwrap(reader.date(from: stamp), stamp)
         XCTAssertLessThan(abs(written.timeIntervalSinceNow), 5)

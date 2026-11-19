@@ -4477,14 +4477,12 @@ struct ReportEngine: Sendable {
         }
     }
 
-    /// The stamp a workbook's file name ends in: `yyyy-MM-dd_HHmmss`. It is UTC, the
-    /// ISO 8601 formatter's default zone, which is why a workbook's name can read hours
-    /// ahead of the Generated column beside it. The Config screen's example comes from here.
+    /// The stamp a workbook's file name ends in: `ExportNaming.timestamp`, `yyyy-MM-dd_HHmmss`
+    /// in this Mac's zone, so the workbook, its CSV folder, the inventory CSV and the run
+    /// manifest carry the same time as the HTML, PDF and PNGs beside them, and the time
+    /// `dateFromFilename` reads back. The Config screen's example comes from here.
     static func workbookTimestamp(_ date: Date = Date()) -> String {
-        // The internet date-time form less its trailing "Z".
-        return String(ISO8601Time.string(date).dropLast())
-            .replacingOccurrences(of: ":", with: "")
-            .replacingOccurrences(of: "T", with: "_")
+        ExportNaming.timestamp(date)
     }
 
     /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.
