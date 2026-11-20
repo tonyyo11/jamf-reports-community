@@ -186,4 +186,28 @@ final class WorkbookTimestampTests: XCTestCase {
         let written = try XCTUnwrap(reader.date(from: stamp), stamp)
         XCTAssertLessThan(abs(written.timeIntervalSinceNow), 5)
     }
+    /// Every generated report starts with `jamf_` (2.12), and the names before it still read
+    /// back to their profile and label.
+    func testGeneratedReportsStartWithJamfAndOldNamesStillRead() {
+        for type in GenerateOutputType.allCases {
+            for school in [false, true] {
+                XCTAssertTrue(ExportNaming.reportKind(for: type, schoolMode: school)
+                    .hasPrefix("jamf_"), "\(type) school=\(school)")
+            }
+        }
+        for name in ["report_prod_2026-11-03_090000.xlsx", "jamf_report_prod_2026-11-03_090000.xlsx",
+                     "school-report_prod_2026-11-03_090000.xlsx",
+                     "jamf_school_report_prod_2026-11-03_090000.xlsx"] {
+            XCTAssertEqual(ReportsView.profile(fromReportFilename: name), "prod", name)
+        }
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "jamf_school_report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "school-report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "jamf_inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+    }
+
 }

@@ -412,7 +412,8 @@ extension DemoData {
         let macs = Int((totalDevicesTrend[safe: lastWeek] ?? Double(totalDevices)).rounded())
         // A CSV folder is the workbook's name with `_csv` (`ReportEngine.csvFolderURL`).
         let name = ext == ReportEngine.csvFolderSuffix
-            ? "report_\(org.profile)_\(stamp)\(ext)" : "report_\(org.profile)_\(stamp).\(ext)"
+            ? "jamf_report_\(org.profile)_\(stamp)\(ext)"
+            : "jamf_report_\(org.profile)_\(stamp).\(ext)"
         return ReportFile(
             name: name, bytes: bytes, date: date,
             source: source, sheets: isWorkbook ? sheets : 0, devices: isWorkbook ? macs : nil)

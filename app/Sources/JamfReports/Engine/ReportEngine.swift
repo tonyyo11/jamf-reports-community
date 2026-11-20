@@ -299,9 +299,12 @@ struct ReportEngine: Sendable {
             options: [.skipsHiddenFiles]
         ) else { return }
 
-        let candidates = files.filter {
-            $0.pathExtension == "xlsx"
-                && Self.isRun(named: $0.deletingPathExtension().lastPathComponent, of: stem)
+        // Runs named before 2.12 count toward `keep` too, or they would never leave.
+        let stems = [stem] + [ExportNaming.legacyStem(of: stem)].compactMap { $0 }
+        let candidates = files.filter { file in
+            file.pathExtension == "xlsx" && stems.contains {
+                Self.isRun(named: file.deletingPathExtension().lastPathComponent, of: $0)
+            }
         }
 
         let sorted = candidates.sorted {

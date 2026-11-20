@@ -198,7 +198,7 @@ struct Html: AsyncParsableCommand {
         // swapping the extension — there's no HTML-specific path resolver.
         let defaultURL = try ReportEngine(
             config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-            .resolveOutputURL(stem: "report",
+            .resolveOutputURL(stem: ExportNaming.reportKind(for: .html, schoolMode: false),
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL

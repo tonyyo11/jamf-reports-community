@@ -587,11 +587,11 @@ struct ReportsView: View {
     nonisolated static let reportPrefixes: [String] = Set(
         GenerateOutputType.allCases.flatMap { type in
             [false, true].map { ExportNaming.reportKind(for: type, schoolMode: $0) + "_" }
-        }
+        } + ExportNaming.legacyReportKinds.values.map { $0 + "_" }
     ).sorted { ($0.count, $0) > ($1.count, $1) }
 
     /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
-    /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
+    /// ("jamf_report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
     /// prefix and the last date is the profile, decoded with `ProfileName`, so any
     /// name reads back exactly. Without a date, the first `_` segment is taken.
     /// `ExportNaming` files (`<kind>-<profile>-<yyyy-MM-dd_HHmmss>`) are read only for

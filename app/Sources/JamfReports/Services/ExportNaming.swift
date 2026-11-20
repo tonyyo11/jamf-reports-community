@@ -25,10 +25,25 @@ enum ExportNaming {
     /// definition the writers and the Generate sheet's "What will be written" share.
     static func reportKind(for type: GenerateOutputType, schoolMode: Bool) -> String {
         switch type {
-        case .xlsx, .csvFolder: schoolMode ? "school-report" : "report"
+        case .xlsx, .csvFolder: schoolMode ? "jamf_school_report" : "jamf_report"
         case .html, .pdf: "jamf_report"
-        case .csv: "inventory"
+        case .csv: "jamf_inventory"
         }
+    }
+
+    /// The kinds builds before 2.12 wrote, new kind to old, so their files still read back,
+    /// keep their label and rotate out with the runs that replaced them.
+    static let legacyReportKinds: [String: String] = [
+        "jamf_report": "report", "jamf_school_report": "school-report", "jamf_inventory": "inventory",
+    ]
+
+    /// `stem` with a pre-2.12 kind in place of its current one, or nil when it has none:
+    /// `jamf_report_prod` → `report_prod`.
+    static func legacyStem(of stem: String) -> String? {
+        legacyReportKinds
+            .filter { stem.hasPrefix($0.key + "_") || stem == $0.key }
+            .max { $0.key.count < $1.key.count }
+            .map { $0.value + stem.dropFirst($0.key.count) }
     }
 
     /// A generated report's file name before its timestamp and extension: `report_prod`.
