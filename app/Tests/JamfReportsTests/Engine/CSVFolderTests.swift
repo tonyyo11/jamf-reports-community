@@ -515,7 +515,7 @@ final class CSVFolderTests: XCTestCase {
         XCTAssertEqual(state.offeredTypes, [.xlsx, .csvFolder])
         let line = GenerateSheetState.writtenFiles(
             for: .csvFolder, profile: "acme", schoolMode: false)
-        XCTAssertTrue(line.hasPrefix("report_acme_<date>_csv/"), line)
+        XCTAssertTrue(line.hasPrefix("jamf_report_acme_<date>_csv/"), line)
         state.csvFolderConfigured = true
         state.selectedTypes = [.html]
         XCTAssertFalse(state.writesCSVFolderFromConfig, "no workbook is asked for")

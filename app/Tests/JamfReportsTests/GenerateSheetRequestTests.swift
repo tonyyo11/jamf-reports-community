@@ -142,17 +142,17 @@ final class GenerateSheetRequestTests: XCTestCase {
             }
         }
         XCTAssertEqual(names("acme"), [
-            "report_acme_<date>.xlsx + integrity sidecar (.sha256, manifest)",
+            "jamf_report_acme_<date>.xlsx + integrity sidecar (.sha256, manifest)",
             "jamf_report_acme_<date>.html + integrity manifest",
             "jamf_report_acme_<date>.pdf + integrity manifest",
-            "inventory_acme_<date>.csv",
-            "report_acme_<date>_csv/ (one .csv per workbook tab, with the workbook)",
+            "jamf_inventory_acme_<date>.csv",
+            "jamf_report_acme_<date>_csv/ (one .csv per workbook tab, with the workbook)",
         ])
         XCTAssertEqual(names("acme", school: true).first,
-                       "school-report_acme_<date>.xlsx + integrity sidecar (.sha256)")
+                       "jamf_school_report_acme_<date>.xlsx + integrity sidecar (.sha256)")
         let part = ExportNaming.profilePart("acme/prod")
         XCTAssertNotEqual(part, "acme/prod")
-        XCTAssertEqual(names("acme/prod")[3], "inventory_\(part)_<date>.csv")
+        XCTAssertEqual(names("acme/prod")[3], "jamf_inventory_\(part)_<date>.csv")
     }
 
     /// With `html.with_workbook` on, "What will be written" says the HTML report goes with the
@@ -181,7 +181,7 @@ final class GenerateSheetRequestTests: XCTestCase {
 
         XCTAssertEqual(
             GenerateSheetState.htmlWithWorkbookLine(profile: "acme"),
-            "report_acme_<date>.html (the HTML report, written with every workbook)")
+            "jamf_report_acme_<date>.html (the HTML report, written with every workbook)")
     }
 
     // MARK: - The run

@@ -1581,7 +1581,8 @@ try await ReportEngine.schoolGenerateReport(
         } else {
             let engine = ReportEngine(
                 config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-            outputURL = try engine.resolveOutputURL(stem: "report", onLine: onLine)
+            outputURL = try engine.resolveOutputURL(
+                stem: ExportNaming.reportKind(for: .html, schoolMode: false), onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
