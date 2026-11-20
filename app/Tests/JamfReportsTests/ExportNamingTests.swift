@@ -124,11 +124,11 @@ final class ReportNamingProfileTests: XCTestCase {
         func stem(_ type: GenerateOutputType, school: Bool = false) -> String {
             ExportNaming.stem(for: type, profile: "a/b", schoolMode: school)
         }
-        XCTAssertEqual(stem(.xlsx), "report_a%2Fb")
-        XCTAssertEqual(stem(.xlsx, school: true), "school-report_a%2Fb")
+        XCTAssertEqual(stem(.xlsx), "jamf_report_a%2Fb")
+        XCTAssertEqual(stem(.xlsx, school: true), "jamf_school_report_a%2Fb")
         XCTAssertEqual(stem(.html), "jamf_report_a%2Fb")
         XCTAssertEqual(stem(.pdf, school: true), "jamf_report_a%2Fb")
-        XCTAssertEqual(stem(.csv), "inventory_a%2Fb")
+        XCTAssertEqual(stem(.csv), "jamf_inventory_a%2Fb")
     }
 
     /// The workbook writers name their file through `resolveOutputURL`, which appends the
