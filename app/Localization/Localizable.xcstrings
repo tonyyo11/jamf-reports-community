@@ -122557,6 +122557,46 @@
         }
       }
     },
+    "Starts every report's file name: %@_<date>.xlsx. Letters, digits and hyphens, up to 24. Blank uses jamf." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beginn jedes Berichtsdateinamens: %@_<date>.xlsx. Buchstaben, Ziffern und Bindestriche, bis zu 24. Leer verwendet jamf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio del nombre de cada informe: %@_<date>.xlsx. Letras, dígitos y guiones, hasta 24. Vacío usa jamf."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Début du nom de chaque rapport : %@_<date>.xlsx. Lettres, chiffres et tirets, jusqu’à 24. Vide utilise jamf."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inizio del nome di ogni report: %@_<date>.xlsx. Lettere, cifre e trattini, fino a 24. Vuoto usa jamf."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各レポートのファイル名の先頭: %@_<date>.xlsx。英字、数字、ハイフンで 24 文字まで。空欄の場合は jamf を使用します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Início do nome de cada relatório: %@_<date>.xlsx. Letras, dígitos e hifens, até 24. Vazio usa jamf."
+          }
+        }
+      }
+    },
     "State" : {
       "localizations" : {
         "de" : {
@@ -130017,6 +130057,46 @@
         }
       }
     },
+    "This prefix cannot start a file name, so reports keep jamf." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit diesem Präfix kann kein Dateiname beginnen, daher bleiben Berichte bei jamf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este prefijo no puede iniciar un nombre de archivo, así que los informes siguen con jamf."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce préfixe ne peut pas commencer un nom de fichier, les rapports gardent donc jamf."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo prefisso non può iniziare un nome di file, quindi i report mantengono jamf."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この接頭辞はファイル名の先頭に使えないため、レポートは jamf のままです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este prefixo não pode iniciar um nome de arquivo, então os relatórios mantêm jamf."
+          }
+        }
+      }
+    },
     "This profile has Platform API access. Saving with the switch off removes it." : {
       "localizations" : {
         "de" : {
@@ -135917,6 +135997,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mude o Secure Boot para Segurança total."
+          }
+        }
+      }
+    },
+    "Use 1 to 24 letters, digits or hyphens (no underscores or spaces), or clear it in Config › Output." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwenden Sie 1 bis 24 Buchstaben, Ziffern oder Bindestriche (keine Unterstriche oder Leerzeichen), oder leeren Sie das Feld unter Konfiguration › Ausgabe."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use de 1 a 24 letras, dígitos o guiones (sin guiones bajos ni espacios), o déjelo vacío en Configuración › Salida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisez de 1 à 24 lettres, chiffres ou tirets (sans tiret bas ni espace), ou videz-le dans Config › Sortie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa da 1 a 24 lettere, cifre o trattini (senza trattini bassi né spazi), oppure svuotalo in Config › Output."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1〜24 文字の英字、数字、ハイフンを使用してください（アンダースコアと空白は不可）。または 構成 › 出力 で空にしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use de 1 a 24 letras, dígitos ou hifens (sem sublinhados nem espaços), ou deixe vazio em Config › Saída."
           }
         }
       }
@@ -151462,6 +151582,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "output.archive_dir aponta para %@, mas output.output_dir não, então os relatórios rotacionados saem do computador enquanto os atuais permanecem — o oposto do que a maioria das pessoas pretende."
+          }
+        }
+      }
+    },
+    "output.file_prefix (%@) cannot start a file name, so reports are named jamf_report_…." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) kann keinen Dateinamen beginnen, daher heißen Berichte jamf_report_…."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) no puede iniciar un nombre de archivo, así que los informes se llaman jamf_report_…."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) ne peut pas commencer un nom de fichier, les rapports s’appellent donc jamf_report_…."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) non può iniziare un nome di file, quindi i report si chiamano jamf_report_…."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) はファイル名の先頭に使えないため、レポート名は jamf_report_… になります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) não pode iniciar um nome de arquivo, então os relatórios se chamam jamf_report_…."
+          }
+        }
+      }
+    },
+    "output.file_prefix is not text, so reports are named jamf_report_…." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix ist kein Text, daher heißen Berichte jamf_report_…."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix no es texto, así que los informes se llaman jamf_report_…."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix n’est pas du texte, les rapports s’appellent donc jamf_report_…."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix non è testo, quindi i report si chiamano jamf_report_…."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix がテキストではないため、レポート名は jamf_report_… になります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix não é texto, então os relatórios se chamam jamf_report_…."
           }
         }
       }

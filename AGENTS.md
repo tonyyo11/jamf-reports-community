@@ -578,7 +578,16 @@ output:
   archive_enabled: true          # move older runs to archive_dir
   archive_dir: ""                # defaults to "archive" next to output file
   keep_latest_runs: 10           # how many timestamped runs to keep in output_dir
+  file_prefix: "jamf"            # starts every generated report's name (2.12)
 ```
+
+`output.file_prefix` (2.12, default `jamf`, Config › Output) names every generated report:
+`<prefix>_report_`, `<prefix>_school_report_`, `<prefix>_inventory_` (`ExportNaming.reportKind`;
+engine and CLI writers pass `ReportConfig.filePrefix`, screens `ExportNaming.filePrefix(profile:)`).
+`ExportNaming.validFilePrefix` allows 1-24 ASCII letters, digits or hyphens; anything else reads
+as `jamf` and Config Doctor warns. `ExportNaming.reportNameParts` is the one reader of a report
+name: any prefix and the pre-2.12 names with none (`report_`, `school-report_`, `inventory_`), so
+Reports lists them and `archiveOldRuns` rotates runs of a profile whatever prefix wrote them.
 
 Paths are read ONE way (2.9). `WorkspacePaths` reads `output.output_dir`,
 `output.archive_dir`, `jamf_cli.data_dir`, `charts.historical_csv_dir` and

@@ -210,4 +210,31 @@ final class WorkbookTimestampTests: XCTestCase {
             forFilename: "inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
     }
 
+    /// `output.file_prefix` names every generated report and falls back to `jamf` when it
+    /// could not start a file name.
+    func testFilePrefixNamesEveryReportAndFallsBackToJamf() throws {
+        XCTAssertEqual(ExportNaming.validFilePrefix(" Acme-1 "), "Acme-1")
+        let tooLong = String(repeating: "a", count: 25)
+        for bad in ["", "   ", "acme_co", "acme co", "acme/co", "ÄCME", tooLong] {
+            XCTAssertNil(ExportNaming.validFilePrefix(bad), bad)
+        }
+        let stem = { ExportNaming.stem(for: $0, profile: "prod", schoolMode: $1, prefix: "acme") }
+        XCTAssertEqual(stem(.xlsx, true), "acme_school_report_prod")
+        XCTAssertEqual(stem(.csv, false), "acme_inventory_prod")
+        let yaml = { (value: String) in "output:\n  file_prefix: \(value)\n" }
+        func decoded(_ text: String) throws -> String {
+            try ConfigLoader.loadFromString(text).filePrefix
+        }
+        XCTAssertEqual(try decoded(yaml("acme")), "acme")
+        XCTAssertEqual(try decoded(yaml("\"acme_co\"")), "jamf")
+        XCTAssertEqual(try decoded(yaml("2026")), "jamf")
+        XCTAssertEqual(try decoded("output:\n  keep_latest_runs: 3\n"), "jamf")
+        XCTAssertEqual(ReportsView.profile(
+            fromReportFilename: "acme_report_prod_2026-11-03_090000.xlsx"), "prod")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "acme_school_report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "acme_inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+    }
+
 }

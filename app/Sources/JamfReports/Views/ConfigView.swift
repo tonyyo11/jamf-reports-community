@@ -1001,6 +1001,28 @@ private struct OutputTab: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
 
+    /// `output.file_prefix`, with the name it gives so a prefix the app cannot use shows here.
+    private var filePrefixField: some View {
+        @Bindable var ws = workspace
+        let typed = ws.configState.filePrefix
+        let prefix = ExportNaming.validFilePrefix(typed) ?? ExportNaming.defaultFilePrefix
+        let example = ExportNaming.stem(
+            for: .xlsx, profile: ws.profile, schoolMode: false, prefix: prefix)
+        return VStack(alignment: .leading, spacing: 4) {
+            FieldLabel(label: "file_prefix")
+            PNPTextField(
+                value: $ws.configState.filePrefix,
+                placeholder: ExportNaming.defaultFilePrefix, mono: true)
+                .frame(maxWidth: 240)
+            FieldHelp(text: L("Starts every report's file name: \(example)_<date>.xlsx. Letters, digits and hyphens, up to 24. Blank uses jamf."))
+            if !typed.trimmingCharacters(in: .whitespaces).isEmpty,
+               ExportNaming.validFilePrefix(typed) == nil {
+                FieldHelp(text: L("This prefix cannot start a file name, so reports keep jamf."))
+                    .foregroundStyle(Theme.Colors.warn)
+            }
+        }
+    }
+
     var body: some View {
         @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
@@ -1026,6 +1048,7 @@ private struct OutputTab: View {
                         FieldHelp(text: L("Optional. Leave blank to use 'archive' next to output_dir."))
                     }
                     .padding(.top, 14)
+                    filePrefixField.padding(.top, 14)
 
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     outputToggleRow(

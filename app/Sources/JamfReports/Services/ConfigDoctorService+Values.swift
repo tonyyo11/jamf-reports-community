@@ -23,6 +23,7 @@ extension ConfigDoctorService {
     ) -> [DoctorRow] {
         var rows = notifyValueRows(config.notify)
         rows += timestampAuthorityRows(config.output, raw: raw)
+        rows += filePrefixRows(config.output, raw: raw)
         rows += retentionValueRows(config.retention, workspace: workspace)
         rows += sharedWorkspaceValueRows(config.sharedWorkspace)
         rows += limitValueRows(config, profile: profile)
@@ -86,6 +87,20 @@ extension ConfigDoctorService {
             "output.timestamp_authority",
             detail,
             L("Set it to the https:// address of an RFC 3161 time-stamp authority, or remove it."))]
+    }
+
+    /// `output.file_prefix` that cannot start a file name reads as `jamf`; say what was typed.
+    private static func filePrefixRows(_ output: OutputConfig?, raw: [String: Any]) -> [DoctorRow] {
+        guard let value = ConfigLoader.rawValue(at: ["output", "file_prefix"], in: raw),
+              !(value is NSNull) else { return [] }
+        let typed = (value as? String)?.trimmingCharacters(in: .whitespaces)
+        guard typed?.isEmpty != true, ExportNaming.validFilePrefix(typed) == nil else { return [] }
+        let detail = typed.map {
+            L("output.file_prefix (\(shown($0))) cannot start a file name, so reports are named jamf_report_….")
+        } ?? L("output.file_prefix is not text, so reports are named jamf_report_….")
+        return [valueRow(
+            "output.file_prefix", detail,
+            L("Use 1 to 24 letters, digits or hyphens (no underscores or spaces), or clear it in Config › Output."))]
     }
 
     /// Warns, never refuses: a relay or proxy may front a webhook. The host only is shown; the

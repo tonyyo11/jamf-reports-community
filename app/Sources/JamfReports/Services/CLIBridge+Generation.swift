@@ -406,7 +406,9 @@ extension CLIBridge {
                 \(desc, privacy: .private)
                 """)
         }
-        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: type, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         let ext = type.rawValue.lowercased()
         return dir.appendingPathComponent("\(stem)_\(ExportNaming.timestamp()).\(ext)")
     }

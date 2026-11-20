@@ -93,6 +93,8 @@ struct ConfigState: Equatable, Sendable {
     var timestampOutputs: Bool
     var archiveEnabled: Bool
     var keepLatestRuns: String
+    /// `output.file_prefix` as typed; blank means the default, `jamf`.
+    var filePrefix: String = ""
     var jamfCLIUseCachedData: Bool
     var jamfCLIRequireManifest: Bool
     var orgName: String
@@ -776,6 +778,7 @@ enum ConfigService {
             state.timestampOutputs = output.value(for: "timestamp_outputs")?.boolValue ?? state.timestampOutputs
             state.archiveEnabled = output.value(for: "archive_enabled")?.boolValue ?? state.archiveEnabled
             state.keepLatestRuns = string(output, "keep_latest_runs", fallback: state.keepLatestRuns)
+            state.filePrefix = string(output, "file_prefix")
         }
 
         if let jamfCLI = root.value(for: "jamf_cli")?.mapping {
@@ -835,6 +838,7 @@ enum ConfigService {
         output.set("timestamp_outputs", value: .scalar(.bool(state.timestampOutputs)))
         output.set("archive_enabled", value: .scalar(.bool(state.archiveEnabled)))
         setWholeNumbers(state, in: "output", to: &output)
+        setFilePrefix(state.filePrefix, in: &output)
         root.set("output", value: .mapping(output))
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
@@ -849,6 +853,18 @@ enum ConfigService {
         root.set("branding", value: .mapping(branding))
 
         document.root = .mapping(root)
+    }
+
+    /// A blank prefix removes `file_prefix` (the default, `jamf`, applies); `jamf` is written
+    /// only where the file already sets the key, so a save adds nothing the user did not type.
+    private static func setFilePrefix(_ value: String, in output: inout YAMLCodec.YAMLMapping) {
+        let typed = value.trimmingCharacters(in: .whitespaces)
+        if typed.isEmpty {
+            output.entries.removeAll { $0.key == "file_prefix" }
+        } else if output.value(for: "file_prefix") != nil
+                    || typed != ExportNaming.defaultFilePrefix {
+            output.set("file_prefix", value: scalar(typed))
+        }
     }
 
     /// Writes a pinned folder key only when the file already sets it or the value is not the

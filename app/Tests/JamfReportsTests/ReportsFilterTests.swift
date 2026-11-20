@@ -41,7 +41,9 @@ final class ReportsFilterTests {
         }
         #expect(profile("compliance_main_2024-05-02.html") == nil)
         #expect(profile("mobile_devices_2024-05-04.pdf") == nil)
-        #expect(profile("school_report_edu_2024-05-05.xlsx") == nil)
+        // Any `output.file_prefix` reads back ("school" here); one with an underscore cannot.
+        #expect(profile("school_report_edu_2024-05-05.xlsx") == "edu")
+        #expect(profile("acme_co_report_edu_2024-05-05.xlsx") == nil)
     }
 
     /// `ExportNaming` files saved into a reports folder: `<kind>-<profile>-<timestamp>`.

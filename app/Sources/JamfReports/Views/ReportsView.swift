@@ -445,7 +445,9 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let stem = ExportNaming.stem(for: .pdf, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: .pdf, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         panel.nameFieldStringValue = "\(stem)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
@@ -502,7 +504,9 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let stem = ExportNaming.stem(for: .csv, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: .csv, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         panel.nameFieldStringValue = "\(stem)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
@@ -582,17 +586,10 @@ struct ReportsView: View {
         )
     }
 
-    /// What a generated report's name starts with: each `ExportNaming.reportKind` and `_`,
-    /// longest first, so "jamf_report_prod_..." yields "prod", not "report".
-    nonisolated static let reportPrefixes: [String] = Set(
-        GenerateOutputType.allCases.flatMap { type in
-            [false, true].map { ExportNaming.reportKind(for: type, schoolMode: $0) + "_" }
-        } + ExportNaming.legacyReportKinds.values.map { $0 + "_" }
-    ).sorted { ($0.count, $0) > ($1.count, $1) }
-
-    /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
-    /// ("jamf_report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
-    /// prefix and the last date is the profile, decoded with `ProfileName`, so any
+    /// The profile in a report's filename, written `<prefix>_<kind>_<profile>_<yyyy-MM-dd>…`
+    /// ("jamf_report_meridian-prod_2026-04-24_073305.xlsx"; any `output.file_prefix`, and
+    /// the pre-2.12 names with none, through `ExportNaming.reportNameParts`). Everything
+    /// between the kind and the last date is the profile, decoded with `ProfileName`, so any
     /// name reads back exactly. Without a date, the first `_` segment is taken.
     /// `ExportNaming` files (`<kind>-<profile>-<yyyy-MM-dd_HHmmss>`) are read only for
     /// the kinds that save into a reports folder: kinds and profiles both have hyphens.
@@ -610,11 +607,7 @@ struct ReportsView: View {
         if let match = stem.wholeMatch(of: exportName) {
             return ProfileName.name(fromPathComponent: String(match.1))
         }
-        let lowered = stem.lowercased()
-        guard let prefix = reportPrefixes.first(where: { lowered.hasPrefix($0) }) else {
-            return nil
-        }
-        let rest = String(stem.dropFirst(prefix.count))
+        guard let rest = ExportNaming.reportNameParts(stem)?.rest else { return nil }
         let part: Substring
         if let date = rest.matches(of: #/(?:^|_)\d{4}-\d{2}-\d{2}/#).last {
             part = rest[..<date.range.lowerBound]
