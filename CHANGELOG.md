@@ -140,6 +140,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Every percentage trend on the Trends screen now uses a 0 to 100% axis, so a small change no longer looks like a drop. Device counts keep an axis fitted to their data.
+
 - A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
   with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
   Each is still checked once a week, and Data Sources says which sources are left out and why.

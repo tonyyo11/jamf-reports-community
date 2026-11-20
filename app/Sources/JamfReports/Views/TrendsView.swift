@@ -104,10 +104,15 @@ struct TrendsView: View {
         if metric.isDeviceCount, let dataMax {
             return 0...deviceCountAxisTop(dataMax)
         }
+        // A share or score is always drawn on 0–100%, so a small move is not a cliff.
+        if metric.unit == "%" { return percentAxisDomain }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
     }
+
+    nonisolated static let percentAxisDomain: ClosedRange<Double> = 0...100
+    nonisolated static let percentAxisTicks: [Double] = [0, 25, 50, 75, 100]
 
     /// A pill's line: the whole range, as the pill's change and the chart cover it, thinned to
     /// at most `limit` evenly spaced points with the first and last kept.
@@ -780,11 +785,18 @@ struct TrendsView: View {
                         trendXAxisMarks(for: range)
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading) {
-                            AxisGridLine().foregroundStyle(Theme.Colors.hairline)
-                            // WCAG 1.4.4: .caption is a Dynamic Type style; scales with text size.
-                            AxisValueLabel().font(.caption.monospaced())
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        if metric.unit == "%" {
+                            AxisMarks(position: .leading, values: Self.percentAxisTicks) {
+                                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                                AxisValueLabel().font(.caption.monospaced())
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                            }
+                        } else {
+                            AxisMarks(position: .leading) {
+                                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                                AxisValueLabel().font(.caption.monospaced())
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                            }
                         }
                     }
                     .chartForegroundStyleScale(
@@ -1733,7 +1745,6 @@ private struct ChartExportView: View {
     private var isPercentMetric: Bool { metric.unit == "%" }
     private var lastPoint: ExportPoint? { points.last }
     private var values: [Double] { points.map(\.value) }
-    private var minValue: Double { values.min() ?? 0 }
     private var maxValue: Double { values.max() ?? 0 }
 
     private var yDomain: ClosedRange<Date> {
@@ -1742,10 +1753,7 @@ private struct ChartExportView: View {
 
     private var yValueDomain: ClosedRange<Double> {
         guard !values.isEmpty else { return 0...100 }
-        if isPercentMetric {
-            let lower = min(metric.minY, max(0, floor((minValue - 5) / 10) * 10))
-            return lower...100
-        }
+        if isPercentMetric { return TrendsView.percentAxisDomain }
         return 0...niceCeiling(max(maxValue * 1.18, 1))
     }
 
