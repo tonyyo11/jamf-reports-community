@@ -57,7 +57,33 @@ struct DevicesView: View {
 
     enum DeviceFilter: String, CaseIterable, Identifiable {
         case all, stale, contactGap, binaryMissing, management, patch, security, priorityAction
+        /// One control reading off, opened from the Security Posture tiles; not a segment.
+        case fileVaultOff, sipOff, firewallOff, gatekeeperOff
         var id: String { rawValue }
+
+        /// The filters the segmented bar offers; the per-control ones show as a chip instead.
+        static let segments: [DeviceFilter] = allCases.filter { $0.offControl == nil }
+
+        /// The control a per-control filter keeps the Macs with off.
+        var offControl: SecurityControl? {
+            switch self {
+            case .fileVaultOff: .fileVault
+            case .sipOff: .sip
+            case .firewallOff: .firewall
+            case .gatekeeperOff: .gatekeeper
+            default: nil
+            }
+        }
+
+        /// The filter for Macs with `control` off.
+        static func off(_ control: SecurityControl) -> DeviceFilter {
+            switch control {
+            case .fileVault: .fileVaultOff
+            case .sip: .sipOff
+            case .firewall: .firewallOff
+            case .gatekeeper: .gatekeeperOff
+            }
+        }
 
         var label: String {
             switch self {
@@ -69,6 +95,10 @@ struct DevicesView: View {
             case .patch:          L("Patch")
             case .security:       L("Security")
             case .priorityAction: L("Priority")
+            case .fileVaultOff:   L("FileVault off")
+            case .sipOff:         L("SIP off")
+            case .firewallOff:    L("Firewall off")
+            case .gatekeeperOff:  L("Gatekeeper off")
             }
         }
 
@@ -82,6 +112,7 @@ struct DevicesView: View {
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
+            case .fileVaultOff, .sipOff, .firewallOff, .gatekeeperOff: "lock.open"
             }
         }
 
@@ -440,8 +471,14 @@ struct DevicesView: View {
     private var filterControls: some View {
         SegmentedControl(
             selection: $filter,
-            options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
+            options: DeviceFilter.segments.map { ($0, $0.label, $0.icon) }
         )
+
+        if let control = filter.offControl {
+            filterChip(label: filter.label, hint: L("Show all computers, not only those with \(control.displayName) off")) {
+                filter = .all
+            }
+        }
 
         if let osFilter {
             Button {
@@ -474,14 +511,45 @@ struct DevicesView: View {
         }
     }
 
+    /// A removable chip for a filter the segmented bar does not offer.
+    private func filterChip(label: String, hint: String, clear: @escaping () -> Void) -> some View {
+        Button(action: clear) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                Mono(text: label, color: Theme.Colors.goldBright)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .help(hint)
+        .accessibilityHint(hint)
+    }
+
+    /// Filters the table to what a tile counts: the search and the macOS chip are cleared so
+    /// the rows are exactly the tile's set.
+    private func show(_ requested: DeviceFilter) {
+        filter = requested
+        osFilter = nil
+        query = ""
+    }
+
     private var summary: some View {
         HStack(spacing: 12) {
             StatTile(label: L("Computers"), value: "\(activeSnapshot.totalDevices)",
-                     sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"))
+                     sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"),
+                     action: { show(.all) },
+                     actionHint: L("Shows every computer in the table below"))
             StatTile(label: L("Stale"), value: "\(figures.staleCount)",
-                     sub: staleTileSub)
+                     sub: staleTileSub,
+                     action: { show(.stale) },
+                     actionHint: L("Filters the table below to stale Macs"))
             StatTile(label: L("Patch Issues"), value: "\(figures.patchIssueCount)",
-                     sub: L("\(activeSnapshot.patchTitles.count) patch titles"))
+                     sub: L("\(activeSnapshot.patchTitles.count) patch titles"),
+                     action: { show(.patch) },
+                     actionHint: L("Filters the table below to Macs with patch failures"))
+            // Inert: the value is a share of Macs with FileVault on, which no filter lists.
             StatTile(label: L("FileVault"),
                      value: Self.fileVaultTileValue(figures.fileVaultPercent),
                      sub: fileVaultTileSub)
@@ -621,22 +689,30 @@ struct DevicesView: View {
                 }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
-                        Button("Copy Serial Number") {
+                        Button(L("Copy name")) {
+                            SystemActions.copyToClipboard(device.displayName)
+                        }
+                        Button(L("Copy serial number")) {
                             SystemActions.copyToClipboard(device.serial)
                         }
-                        Button("Copy User Email") {
+                        Button(L("Copy user email")) {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
-                        if let jamfID = device.numericJamfID,
-                           let url = workspace.consoleURL(forComputerID: jamfID) {
-                            Button("Open in Jamf Pro") {
+                        if let url = consoleURL(for: device) {
+                            Button(L("Open in Jamf Pro")) {
                                 SystemActions.open(url)
                             }
+                            .disabled(workspace.demoMode)
                         }
                     }
                 }
             }
         }
+    }
+
+    /// The Jamf Pro console page of a computer, or nil without a Jamf ID or a server URL.
+    private func consoleURL(for device: DeviceInventoryRecord) -> URL? {
+        device.numericJamfID.flatMap { workspace.consoleURL(forComputerID: $0) }
     }
 
     private var riskLegend: some View {
@@ -655,9 +731,17 @@ struct DevicesView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
-                            SectionHeader(title: device.displayName)
-                            Mono(text: device.displaySerial, color: Theme.Colors.goldBright)
-                                .textSelection(.enabled)
+                            HStack(spacing: 6) {
+                                SectionHeader(title: device.displayName)
+                                CopyButton(text: device.displayName, what: L("computer name"))
+                            }
+                            HStack(spacing: 6) {
+                                Mono(text: device.displaySerial, color: Theme.Colors.goldBright)
+                                    .textSelection(.enabled)
+                                if !device.serial.isEmpty {
+                                    CopyButton(text: device.serial, what: L("serial number"))
+                                }
+                            }
                         }
                         Spacer()
                         riskPill(priorityRisk(for: device).level)
@@ -721,10 +805,18 @@ struct DevicesView: View {
                             .truncationMode(.middle)
                             .help(device.source)
                         Spacer()
-                        PNPButton(title: L("Copy Serial"), icon: "doc.on.doc", size: .sm) {
-                            SystemActions.copyToClipboard(device.serial)
+                        if let url = consoleURL(for: device) {
+                            PNPButton(
+                                title: L("Open in Jamf Pro"), icon: "arrow.up.right.square",
+                                size: .sm
+                            ) {
+                                SystemActions.open(url)
+                            }
+                            .disabled(workspace.demoMode)
+                            .help(workspace.demoMode
+                                  ? DemoData.liveOnlyHelp
+                                  : L("Open this computer's record in the Jamf Pro console."))
                         }
-                        .help("Copy this computer's serial number to the clipboard.")
                     }
                 }
                 .textSelection(.enabled)
