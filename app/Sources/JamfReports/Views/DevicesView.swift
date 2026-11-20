@@ -536,23 +536,26 @@ struct DevicesView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 200) {
             StatTile(label: L("Computers"), value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"),
+                     fillsHeight: true,
                      action: { show(.all) },
                      actionHint: L("Shows every computer in the table below"))
             StatTile(label: L("Stale"), value: "\(figures.staleCount)",
                      sub: staleTileSub,
+                     fillsHeight: true,
                      action: { show(.stale) },
                      actionHint: L("Filters the table below to stale Macs"))
             StatTile(label: L("Patch Issues"), value: "\(figures.patchIssueCount)",
                      sub: L("\(activeSnapshot.patchTitles.count) patch titles"),
+                     fillsHeight: true,
                      action: { show(.patch) },
                      actionHint: L("Filters the table below to Macs with patch failures"))
             // Inert: the value is a share of Macs with FileVault on, which no filter lists.
             StatTile(label: L("FileVault"),
                      value: Self.fileVaultTileValue(figures.fileVaultPercent),
-                     sub: fileVaultTileSub)
+                     sub: fileVaultTileSub, fillsHeight: true)
         }
     }
 

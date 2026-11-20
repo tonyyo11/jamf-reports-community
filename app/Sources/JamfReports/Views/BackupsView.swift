@@ -498,15 +498,19 @@ struct BackupsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
-            StatTile(label: L("Backups"), value: "\(backups.count)", sub: L("Configuration snapshots"))
-            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes), sub: L("JSON backup files"))
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: L("Backups"), value: "\(backups.count)",
+                     sub: L("Configuration snapshots"), fillsHeight: true)
+            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes),
+                     sub: L("JSON backup files"), fillsHeight: true)
             StatTile(
                 label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"),
                 sub: latestBackup?.name ?? L("No backup"),
+                fillsHeight: true,
                 action: latestBackup.map { latest in { selectedBackups = [latest.id] } },
                 actionHint: L("Selects the latest backup in the list"))
-            StatTile(label: L("Selected"), value: "\(selectedBackups.count)", sub: L("Choose two to diff"))
+            StatTile(label: L("Selected"), value: "\(selectedBackups.count)",
+                     sub: L("Choose two to diff"), fillsHeight: true)
         }
     }
 

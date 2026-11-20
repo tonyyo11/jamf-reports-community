@@ -335,6 +335,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The summary tiles on Backups, Computers and Generated reports line up at the top and share one height. A tile whose value wraps, such as the latest backup's date, no longer sits higher than its neighbours.
 - The "needs attention" banner asking for a Jamf Pro backup choice on a synced folder now goes away as soon as you make the choice on the Backups screen, instead of staying until the next backup or until you dismiss it. Turning on "Back up Jamf Protect in this folder" clears its warning the same way.
 - The workbook's charts (and the PNG copies written beside reports) no longer put the legend on
   top of the title, show 0.8 or 3.2 Macs on a count axis, repeat a date, or stop a percentage axis
