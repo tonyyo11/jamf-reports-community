@@ -537,12 +537,12 @@ struct HtmlReport: Sendable {
         let history = loadHistory(path: histPath)
         guard history.count >= 2 else {
             return HtmlSectionFormatters.block(
-                id: "os-adoption-trend", title: "OS adoption trend",
+                id: "os-adoption-trend", title: "Mac count history",
                 body: "<p class=\"empty-note\">Not enough history yet (\(history.count) "
                     + "snapshot(s)). Run again after collecting more data.</p>")
         }
         return HtmlSectionFormatters.block(
-            id: "os-adoption-trend", title: "OS adoption trend",
+            id: "os-adoption-trend", title: "Mac count history",
             body: renderHistorySVG(history: history))
     }
 
@@ -662,7 +662,8 @@ struct HtmlReport: Sendable {
 
     /// Render a small inline SVG line chart from history entries.
     /// Shows total device count over time. No external dependencies.
-    func renderHistorySVG(history: [HistoryEntry]) -> String {
+    func renderHistorySVG(history rawHistory: [HistoryEntry]) -> String {
+        let history = HtmlSectionFormatters.newestPerDay(rawHistory) { String($0.timestamp.prefix(10)) }
         guard history.count >= 2 else { return "<p class=\"empty-note\">Not enough data.</p>" }
 
         let totals: [Int] = history.map { entry in
@@ -681,9 +682,11 @@ struct HtmlReport: Sendable {
         let plotW = svgWidth - leftPad - rightPad
         let plotH = svgHeight - topPad - bottomPad
 
-        let maxVal = Double(totals.max() ?? 1)
-        let minVal = Double(totals.min() ?? 0)
-        let yRange = max(maxVal - minVal, 1)
+        // A count axis starts at 0 and steps by whole numbers, so no tick repeats.
+        let axis = HtmlSectionFormatters.countAxis(max: totals.max() ?? 1)
+        let maxVal = Double(axis.top)
+        let minVal = 0.0
+        let yRange = maxVal
 
         func xPos(_ i: Int) -> Double {
             leftPad + (Double(i) / Double(totals.count - 1)) * plotW
@@ -699,11 +702,9 @@ struct HtmlReport: Sendable {
 
         // Y-axis grid lines (4 lines)
         var gridLines = ""
-        for idx in 0...4 {
-            let yFrac = Double(idx) / 4.0
-            let yVal = maxVal - yFrac * (maxVal - minVal)
-            let yCoord = topPad + plotH * yFrac
-            let label = "\(Int(yVal.rounded()))"
+        for (idx, tick) in axis.ticks.reversed().enumerated() {
+            let yCoord = topPad + plotH * Double(idx) / 4.0
+            let label = "\(tick)"
             gridLines += """
             <line x1="\(String(format: "%.1f", leftPad))" y1="\(String(format: "%.1f", yCoord))" \
             x2="\(String(format: "%.1f", svgWidth - rightPad))" y2="\(String(format: "%.1f", yCoord))" \
@@ -715,9 +716,7 @@ struct HtmlReport: Sendable {
 
         // X-axis labels (show at most 6)
         var xLabels = ""
-        let labelStep = max(1, totals.count / 6)
-        for i in totals.indices {
-            guard i % labelStep == 0 || i == totals.count - 1 else { continue }
+        for i in HtmlSectionFormatters.labelIndices(count: totals.count) {
             let xCoord = xPos(i)
             xLabels += """
             <text x="\(String(format: "%.1f", xCoord))" y="\(String(format: "%.1f", svgHeight - 4))" \
@@ -735,7 +734,7 @@ struct HtmlReport: Sendable {
 
         return """
         <svg viewBox="0 0 \(Int(svgWidth)) \(Int(svgHeight))" class="history-svg" \
-        role="img" aria-label="OS adoption trend">
+        role="img" aria-label="Mac count history">
           \(gridLines)
           <polyline fill="none" stroke="var(--accent)" stroke-width="2" \
           stroke-linejoin="round" points="\(polylinePoints)"/>

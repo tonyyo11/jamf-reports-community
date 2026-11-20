@@ -313,6 +313,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The HTML and PDF report charts read cleanly: the history chart's legend no longer overlaps the dates, its first and last dates are always shown, repeated axis values and same-day duplicate points are gone, and the Mac count history chart is named for what it shows. Long bar labels are shortened with an ellipsis instead of pushing the bar off the page.
+
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
   Total Titles tile now reads "Patch titles tracked" instead of "Patch policies tracked". The
   EA definitions table (it stopped at 100) and the OS Updates failed-plans and error-devices
