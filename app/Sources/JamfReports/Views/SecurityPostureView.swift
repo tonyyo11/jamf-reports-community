@@ -260,7 +260,9 @@ struct SecurityPostureView: View {
             StatTile(
                 label: L("Total Computers"),
                 value: "\(snapshot.totalDevices)",
-                sub: L("Across active and recently inactive")
+                sub: L("Across active and recently inactive"),
+                action: { openComputers(.all) },
+                actionHint: L("Opens Computers, every Mac")
             )
         }
     }
@@ -270,11 +272,18 @@ struct SecurityPostureView: View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
+            let counted = snapshot.fleetCounts.controls[control]?.level != .ignore
             StatTile(
                 label: label,
                 value: percentFormat.text(pct),
                 sub: Self.kpiTileSub(
-                    control, on: count, total: total, fleet: snapshot.fleetCounts)
+                    control, on: count, total: total, fleet: snapshot.fleetCounts),
+                // The tile is the share with the control on; the rows are the Macs that read
+                // off, the rest of the Macs that report it. A control the policy ignores has
+                // no gap to list.
+                action: counted ? { openComputers(.off(control)) } : nil,
+                actionHint: counted
+                    ? L("Opens Computers, filtered to Macs with \(control.displayName) off") : nil
             )
         } else {
             StatTile(
@@ -329,11 +338,14 @@ struct SecurityPostureView: View {
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Spacer()
             PNPButton(title: L("Open Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
-                NotificationCenter.default.post(
-                    name: .navigateToTab, object: nil,
-                    userInfo: DevicesView.DeviceFilter.security.navigationUserInfo())
+                openComputers(.security)
             }
         }
+    }
+
+    private func openComputers(_ filter: DevicesView.DeviceFilter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: filter.navigationUserInfo())
     }
 
     private func actionTile(level: String, count: Int, caption: String,

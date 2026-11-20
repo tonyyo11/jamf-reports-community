@@ -11,6 +11,9 @@ versions in this repository map to git tags.
 
 - Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
 - Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
+- Tiles on Computers, Security Posture, Fleet Overview, Offline Outreach and the Overview open what they count. FileVault, SIP, Firewall and Gatekeeper tiles open Computers filtered to the Macs with that control off, with a removable chip; the Overview's metric pages name the filter on their button. A tile that no list can match stays plain.
+- Computers can copy a Mac's name and serial number from the detail panel and the row's right-click menu, and Offline Outreach can copy name, serial number and email. Open in Jamf Pro appears only when the Mac has a Jamf ID and the server address is known, and is off in demo mode. Device Lookup's candidates can copy a serial number, and its stale-data banner has a Collect now button.
+- Offline Outreach's empty state has a Collect now button.
 
 - Data Sources has a switch for each source the app collects, so an organization whose server
   cannot answer a source can stop collecting it without editing config.yaml. A source turned off
@@ -143,6 +146,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Every percentage and score trend, on the Overview's metric pages, the Overview tiles and Trends, is drawn on a 0 to 100 axis, so a small move no longer looks drastic. Device counts keep an axis fitted to their data.
 - A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
   with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
   Each is still checked once a week, and Data Sources says which sources are left out and why.

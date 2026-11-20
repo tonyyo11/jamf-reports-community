@@ -177,6 +177,31 @@ struct DeviceLookupView: View {
     }
 
     private func candidateRow(_ cand: DeviceLookupIndex.Candidate) -> some View {
+        HStack(spacing: 4) {
+            candidateButton(cand)
+            if let serial = cand.serial, !serial.isEmpty {
+                CopyButton(text: serial, what: L("serial number"))
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .contextMenu {
+            Button(L("Copy name")) { SystemActions.copyToClipboard(cand.name) }
+            if let serial = cand.serial, !serial.isEmpty {
+                Button(L("Copy serial number")) { SystemActions.copyToClipboard(serial) }
+            }
+            // A computer's candidate id is its Jamf ID; a mobile device has another console path.
+            if cand.kind == .computer, let url = workspace.consoleURL(forComputerID: cand.id) {
+                Button(L("Open in Jamf Pro")) { SystemActions.open(url) }
+            }
+        }
+    }
+
+    private func candidateButton(_ cand: DeviceLookupIndex.Candidate) -> some View {
         Button {
             fetchDetail(id: cand.id, kind: cand.kind)
         } label: {
@@ -208,12 +233,6 @@ struct DeviceLookupView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                     .accessibilityHidden(true)  // decorative navigation affordance
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.03))
-            )
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -292,7 +311,10 @@ struct DeviceLookupView: View {
                     // `.stale(at:)` case carries the same icon, copy
                     // template ("Stale data — last fetched X ago"), and
                     // warn-toned chrome.
-                    StaleDataBanner(source: .stale(at: since))
+                    StaleDataBanner(
+                        source: .stale(at: since),
+                        onCollect: { refreshIndex() },
+                        isCollecting: refreshing)
                 }
                 HStack {
                     SectionHeader(title: detailTitle(detail))

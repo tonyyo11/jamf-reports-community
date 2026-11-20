@@ -1105,7 +1105,11 @@ struct OverviewView: View {
             value: "\(total)",
             sub: caption,
             sparkValues: spark,
-            sparkColor: Color(hex: sparkMetric.colorHex)
+            sparkColor: Color(hex: sparkMetric.colorHex),
+            // The total adds mobile devices, which Computers does not list, so only a fleet
+            // with none opens there.
+            action: mobile == nil ? { navigate(to: .devices, userInfo: DevicesView.DeviceFilter.all.navigationUserInfo()) } : nil,
+            actionHint: L("Opens Computers, every Mac")
         )
         .lineLimit(1)
         .truncationMode(.tail)
@@ -1254,7 +1258,9 @@ struct OverviewView: View {
             // title is the operator's baseline label, often one long audit-plist file name
             // with no break to wrap at; it takes one line so its figure stays level with
             // its neighbours, and the tooltip carries the whole name.
-            labelLineLimit: Self.scoreCardLabelLineLimit(for: metric)
+            labelLineLimit: Self.scoreCardLabelLineLimit(for: metric),
+            // A share or score plots on 0-100, so a small move stays small.
+            sparkDomain: metric.unit == "%" ? 0...100 : nil
         )
         .help(title)
         // The label can be an operator-configured string (compliance baseline
@@ -1697,8 +1703,11 @@ struct OverviewView: View {
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
-                        Sparkline(values: values, color: Color(hex: metric.colorHex))
-                            .frame(height: 90)
+                        Sparkline(
+                            values: values, color: Color(hex: metric.colorHex),
+                            domain: metric.unit == "%" ? 0...100 : nil
+                        )
+                        .frame(height: 90)
                         HStack {
                             Mono(text: L("First \(metricValueLabel(first, metric: metric))"))
                             Spacer()
@@ -1710,10 +1719,13 @@ struct OverviewView: View {
                     HStack {
                         detailHint(for: metric)
                         Spacer()
-                        ForEach(relatedTabs(for: metric), id: \.self) { tab in
-                            PNPButton(title: tab.label, icon: tab.sfSymbol, size: .sm) {
-                                navigate(to: tab)
+                        ForEach(Self.relatedDestinations(for: metric)) { destination in
+                            PNPButton(
+                                title: destination.title, icon: destination.tab.sfSymbol, size: .sm
+                            ) {
+                                navigate(to: destination.tab, userInfo: destination.userInfo)
                             }
+                            .help(destination.help)
                         }
                     }
                 }
@@ -1741,11 +1753,11 @@ struct OverviewView: View {
                     }
                     Divider().background(Theme.Colors.hairline)
                     HStack {
-                        Text("Use Computers to inspect individual records and filter by OS version.")
+                        Text("Computers lists every Mac; its macOS card filters the table by version.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
-                        PNPButton(title: L("Open Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
+                        PNPButton(title: L("Open all Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
                             navigate(to: .devices)
                         }
                     }
@@ -1940,27 +1952,68 @@ struct OverviewView: View {
             .foregroundStyle(Theme.Text.tertiary(contrast))
     }
 
-    private func relatedTabs(for metric: TrendSeries.Metric) -> [Tab] {
+    /// A metric drill-down's buttons: where it leads, and the Computers filter that lists the
+    /// Macs behind the metric when there is one.
+    struct RelatedDestination: Identifiable, Equatable {
+        let tab: Tab
+        let filter: DevicesView.DeviceFilter?
+        var id: String { "\(tab.rawValue)|\(filter?.rawValue ?? "")" }
+
+        init(_ tab: Tab, filter: DevicesView.DeviceFilter? = nil) {
+            self.tab = tab
+            self.filter = filter
+        }
+
+        /// The `.navigateToTab` post; a filter rides only on a post to Computers.
+        var userInfo: [String: String] {
+            filter?.navigationUserInfo() ?? ["tab": tab.rawValue]
+        }
+
+        var title: String {
+            guard let filter, filter != .all else { return tab.label }
+            return L("\(tab.label): \(filter.label)")
+        }
+
+        var help: String {
+            guard let filter, filter != .all else { return L("Opens \(tab.label)") }
+            return L("Opens \(tab.label), filtered to \(filter.label)")
+        }
+    }
+
+    /// Every filter here lists the Macs the metric is about or its complement (Computers has
+    /// no filter for Macs that are on a current macOS or have an agent installed), and the
+    /// button's title names the filter, so none claims to open the metric's own set.
+    nonisolated static func relatedDestinations(
+        for metric: TrendSeries.Metric
+    ) -> [RelatedDestination] {
         switch metric {
         case .stability:
-            return [.trends, .audit]
-        case .activeDevices, .fileVault, .osCurrent, .stale, .patch:
-            return [.devices]
+            [.init(.trends), .init(.audit)]
+        case .stale:
+            [.init(.devices, filter: .stale)]
+        case .patch:
+            [.init(.devices, filter: .patch)]
+        case .fileVault:
+            [.init(.devices, filter: .fileVaultOff)]
+        case .activeDevices, .osCurrent, .managedDevices:
+            [.init(.devices, filter: .all)]
         case .compliance, .securityScore, .mscpBandTrend:
-            return [.securityPosture, .compliancePosture]
+            [.init(.securityPosture), .init(.compliancePosture)]
         case .edrAgent, .agent:
-            return [.devices, .config]
-        case .managedDevices:
-            return [.devices]
+            [.init(.devices, filter: .all), .init(.config)]
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
-            return [.mobileFleet]
+            [.init(.mobileFleet)]
         case .protectComputers, .protectMatched, .protectOpenAlerts:
-            return [.protectDashboard]
+            [.init(.protectDashboard)]
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
-            return [.sources]
-        case .sip, .firewall, .gatekeeper:
-            return [.securityPosture, .devices]
+            [.init(.sources)]
+        case .sip:
+            [.init(.securityPosture), .init(.devices, filter: .sipOff)]
+        case .firewall:
+            [.init(.securityPosture), .init(.devices, filter: .firewallOff)]
+        case .gatekeeper:
+            [.init(.securityPosture), .init(.devices, filter: .gatekeeperOff)]
         }
     }
 

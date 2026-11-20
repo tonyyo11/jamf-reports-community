@@ -86,7 +86,9 @@ struct FleetOverviewView: View {
                 label: L("Macs"),
                 value: row.summary.map { "\($0.totalDevices)" } ?? "--",
                 sub: L("Latest successful summary"),
-                fillsHeight: true
+                fillsHeight: true,
+                action: row.summary == nil ? nil : { openComputers(.all) },
+                actionHint: L("Opens Computers, every Mac")
             )
             StatTile(
                 label: L("Stability"),
@@ -98,6 +100,8 @@ struct FleetOverviewView: View {
                 label: L("Stale"),
                 value: row.summary?.staleCount.map { "\($0)" } ?? "--",
                 sub: L("Stale after \(staleDays) days"),
+                // Inert: the summary's count includes Macs without the Jamf binary, which
+                // Computers' Stale filter lists apart.
                 fillsHeight: true
             )
             StatTile(
@@ -349,6 +353,11 @@ struct FleetOverviewView: View {
                 }
             }
         }
+    }
+
+    private func openComputers(_ filter: DevicesView.DeviceFilter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: filter.navigationUserInfo())
     }
 
     private func navigate(to tab: Tab) {
