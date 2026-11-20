@@ -275,12 +275,12 @@ struct OutreachView: View {
                     .pageTableHeight(rows: devices.count)
                     .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { ids in
                         if let id = ids.first, let device = devices.first(where: { $0.id == id }) {
-                            Button(L("Copy name")) { copy(text: device.displayName, then: L("Copied name")) }
-                            Button(L("Copy serial number")) {
+                            Button(L("Copy Name")) { copy(text: device.displayName, then: L("Copied name")) }
+                            Button(L("Copy Serial Number")) {
                                 copy(text: device.serial, then: L("Copied serial number"))
                             }
                             if !device.email.isEmpty {
-                                Button(L("Copy email")) { copy(text: device.email, then: L("Copied email")) }
+                                Button(L("Copy Email")) { copy(text: device.email, then: L("Copied email")) }
                             }
                         }
                     }

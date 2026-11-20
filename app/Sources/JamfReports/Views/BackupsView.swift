@@ -372,7 +372,11 @@ struct BackupsView: View {
         } catch {
             errorMessage = L("Couldn't save the backup setting: \(error.localizedDescription)")
         }
-        Task { await refreshSyncedChoice() }
+        Task {
+            await refreshSyncedChoice()
+            // The save cleared the attention item its choice settles; redraw the banner now.
+            await workspace.refreshDataFreshness()
+        }
     }
 
     /// Off the main actor: it decodes config.yaml and probes the volume.
@@ -412,7 +416,7 @@ struct BackupsView: View {
                             } else if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Text.tertiary(contrast).opacity(0.65))
+                                    .foregroundStyle(.cellSecondary.opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }
@@ -494,15 +498,19 @@ struct BackupsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
-            StatTile(label: L("Backups"), value: "\(backups.count)", sub: L("Configuration snapshots"))
-            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes), sub: L("JSON backup files"))
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: L("Backups"), value: "\(backups.count)",
+                     sub: L("Configuration snapshots"), fillsHeight: true)
+            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes),
+                     sub: L("JSON backup files"), fillsHeight: true)
             StatTile(
                 label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"),
                 sub: latestBackup?.name ?? L("No backup"),
+                fillsHeight: true,
                 action: latestBackup.map { latest in { selectedBackups = [latest.id] } },
                 actionHint: L("Selects the latest backup in the list"))
-            StatTile(label: L("Selected"), value: "\(selectedBackups.count)", sub: L("Choose two to diff"))
+            StatTile(label: L("Selected"), value: "\(selectedBackups.count)",
+                     sub: L("Choose two to diff"), fillsHeight: true)
         }
     }
 

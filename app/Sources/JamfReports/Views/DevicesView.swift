@@ -536,23 +536,26 @@ struct DevicesView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 200) {
             StatTile(label: L("Computers"), value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"),
+                     fillsHeight: true,
                      action: { show(.all) },
                      actionHint: L("Shows every computer in the table below"))
             StatTile(label: L("Stale"), value: "\(figures.staleCount)",
                      sub: staleTileSub,
+                     fillsHeight: true,
                      action: { show(.stale) },
                      actionHint: L("Filters the table below to stale Macs"))
             StatTile(label: L("Patch Issues"), value: "\(figures.patchIssueCount)",
                      sub: L("\(activeSnapshot.patchTitles.count) patch titles"),
+                     fillsHeight: true,
                      action: { show(.patch) },
                      actionHint: L("Filters the table below to Macs with patch failures"))
             // Inert: the value is a share of Macs with FileVault on, which no filter lists.
             StatTile(label: L("FileVault"),
                      value: Self.fileVaultTileValue(figures.fileVaultPercent),
-                     sub: fileVaultTileSub)
+                     sub: fileVaultTileSub, fillsHeight: true)
         }
     }
 
@@ -620,7 +623,7 @@ struct DevicesView: View {
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                                    .foregroundStyle(.cellSecondary)
                                     .lineLimit(1)
                             }
                         }
@@ -640,7 +643,7 @@ struct DevicesView: View {
                         if !isCompact {
                             Text(row.device.user.isEmpty ? "Unassigned" : row.device.user)
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .foregroundStyle(.cellSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -689,13 +692,13 @@ struct DevicesView: View {
                 }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
-                        Button(L("Copy name")) {
+                        Button(L("Copy Name")) {
                             SystemActions.copyToClipboard(device.displayName)
                         }
-                        Button(L("Copy serial number")) {
+                        Button(L("Copy Serial Number")) {
                             SystemActions.copyToClipboard(device.serial)
                         }
-                        Button(L("Copy user email")) {
+                        Button(L("Copy User Email")) {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
                         if let url = consoleURL(for: device) {

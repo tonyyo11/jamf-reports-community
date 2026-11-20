@@ -357,27 +357,25 @@ struct ReportsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 200) {
             StatTile(
                 label: L("Total reports"),
                 value: "\(reportStats.count)",
-                sub: L("Generated outputs")
-            )
+                sub: L("Generated outputs"), fillsHeight: true)
             StatTile(
                 label: L("Disk used"),
                 value: FileDisplay.size(reportStats.totalBytes),
-                sub: L("xlsx · html · pdf · csv")
-            )
+                sub: L("xlsx · html · pdf · csv"), fillsHeight: true)
             StatTile(
                 label: L("Snapshots archived"),
                 value: "\(snapshotCount)",
-                sub: snapshotFamilies.count == 1 ? L("1 family") : L("\(snapshotFamilies.count) families")
-            )
+                sub: snapshotFamilies.count == 1
+                    ? L("1 family") : L("\(snapshotFamilies.count) families"),
+                fillsHeight: true)
             StatTile(
                 label: L("Auto-archived"),
                 value: "\(reportStats.archivedCount)",
-                sub: L("Moved to /archive")
-            )
+                sub: L("Moved to /archive"), fillsHeight: true)
         }
     }
 

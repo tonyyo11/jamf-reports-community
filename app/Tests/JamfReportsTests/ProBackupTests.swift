@@ -626,6 +626,35 @@ final class ProBackupTests: XCTestCase {
         XCTAssertTrue(SharedConfigPin.check(profile: ctx.profile).drifts.isEmpty)
     }
 
+    /// Making the choice ends the "needs a choice" item at once, not at the next backup run.
+    func test_savingAChoiceClearsTheItemItSettles() throws {
+        let ctx = try makeContext(config: shared)
+        try FileManager.default.createDirectory(
+            at: ctx.workspace.appendingPathComponent("automation"),
+            withIntermediateDirectories: true)
+        func open(_ codes: AttentionCode...) {
+            let log = AttentionLog(profile: ctx.profile, usesAppRecord: true)
+            AttentionLog.$current.withValue(log) {
+                for code in codes { AttentionLog.raise(code, "needs a choice") }
+            }
+            log.commit()
+        }
+        let openCodes = { Set(AttentionLog.openItems(profile: ctx.profile).map(\.code)) }
+
+        open(.proBackupChoiceNeeded, .protectBackupSkipped)
+        try BackupChoiceConfigWriter.save(.pro, on: false, profile: ctx.profile)
+        XCTAssertEqual(openCodes(), [.protectBackupSkipped], "a declined Pro choice is a choice")
+
+        try BackupChoiceConfigWriter.save(.protect, on: false, profile: ctx.profile)
+        XCTAssertEqual(openCodes(), [.protectBackupSkipped], "Protect declined is still skipped")
+        try BackupChoiceConfigWriter.save(.protect, on: true, profile: ctx.profile)
+        XCTAssertEqual(openCodes(), [])
+
+        open(.proBackupChoiceNeeded)
+        try BackupChoiceConfigWriter.save(.pro, on: true, profile: ctx.profile)
+        XCTAssertEqual(openCodes(), [])
+    }
+
     func test_aPeersOptInIsDriftAndAFalseAppliesAtOnce() throws {
         let ctx = try makeContext(config: shared)
         _ = SharedConfigPin.check(profile: ctx.profile)

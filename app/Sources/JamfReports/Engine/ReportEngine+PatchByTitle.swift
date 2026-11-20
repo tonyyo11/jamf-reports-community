@@ -108,6 +108,13 @@ extension ReportEngine {
         return KindCollectResult(outcome: CollectOutcome(kind: kind, exitCode: 0), saved: true)
     }
 
+    /// Exits every later title of a per-title walk would repeat (3, 5, 6, 8), so the walk stops
+    /// at the first one: the patch summaries above and the release-date walk.
+    static let repeatingTitleExits: Set<Int32> = [
+        CLIBridge.exitCodeUnauthorized, CLIBridge.exitCodePermissionDenied,
+        CLIBridge.exitCodeRateLimited, CLIBridge.exitCodeRefusedByPolicy,
+    ]
+
     private struct PatchSummaryAnswers {
         var rows: [String: [String: Any]] = [:]
         var lastFailure: Int32?
@@ -126,10 +133,7 @@ extension ReportEngine {
         var answers = PatchSummaryAnswers()
         var timeoutStreak = 0
         let stop = runStop
-        let repeating: Set<Int32> = [
-            CLIBridge.exitCodeUnauthorized, CLIBridge.exitCodePermissionDenied,
-            CLIBridge.exitCodeRateLimited, CLIBridge.exitCodeRefusedByPolicy,
-        ]
+        let repeating = repeatingTitleExits
         await withTaskGroup(of: (String, Int32, Data).self) { group in
             var inFlight = 0
             func take(_ done: (String, Int32, Data)) {

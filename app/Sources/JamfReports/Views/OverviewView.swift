@@ -1557,7 +1557,7 @@ struct OverviewView: View {
             TableColumn("Serial") { d in Mono(text: d.serial) }
             TableColumn("macOS") { d in Mono(text: d.os) }
             TableColumn("User") { d in
-                Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
+                Text(d.user).font(.footnote).foregroundStyle(.cellSecondary)
             }
             TableColumn("Department") { d in Text(d.department ?? "—").font(.footnote) }
             TableColumn("FV") { d in fileVaultMark(d.fileVault) }
@@ -1674,7 +1674,6 @@ struct OverviewView: View {
         let previousLabel = dates.count > 1
             ? Self.comparisonDateFormatter.string(from: dates[dates.count - 2])
             : nil
-        let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: metricDetailTitle(metric),
@@ -1691,7 +1690,7 @@ struct OverviewView: View {
                          fillsHeight: true)
                 StatTile(label: L("Change"), value: figures.change,
                          sub: figures.hasChange
-                            ? firstLabel.map { L("Since \($0)") } ?? L("Since first snapshot")
+                            ? previousLabel.map { L("vs \($0)") } ?? L("vs the previous snapshot")
                             : nil,
                          fillsHeight: true)
             }
@@ -2358,14 +2357,16 @@ struct MetricDetailFigures: Equatable {
                 current: noData, previous: noData, change: "—", hasChange: false)
         }
         let run = comparable ?? values
-        guard run.count > 1, let first = run.first else {
+        guard run.count > 1 else {
             return MetricDetailFigures(
                 current: value(latest), previous: "—",
                 change: values.count > 1 ? L("Not comparable") : "—", hasChange: false)
         }
+        // Against the previous figure, as the Overview tiles do; the chart shows first and latest.
+        let previous = run[run.count - 2]
         return MetricDetailFigures(
-            current: value(latest), previous: value(run[run.count - 2]),
-            change: delta(latest - first), hasChange: true)
+            current: value(latest), previous: value(previous),
+            change: delta(latest - previous), hasChange: true)
     }
 
     /// "1 summary", "0 summaries".

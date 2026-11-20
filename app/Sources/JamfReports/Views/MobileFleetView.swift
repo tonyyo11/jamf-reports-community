@@ -783,21 +783,21 @@ struct MobileFleetView: View {
                     TableColumn("Serial") { device in
                         Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 120, ideal: 140)
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 100, ideal: 130)
 
                     TableColumn("OS") { device in
                         Text(getOSVersion(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 80, ideal: 100)
 
@@ -808,7 +808,7 @@ struct MobileFleetView: View {
                     TableColumn("Last Inventory") { device in
                         Text(getLastInventoryRelative(device))
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 100, ideal: 120)
                 }
@@ -1010,9 +1010,6 @@ struct MobileFleetView: View {
 
     // MARK: - Helpers
 
-    /// Header, its separator and the inset above the first row, measured from
-    /// a screenshot at the default text size.
-    private nonisolated static let tableChromeHeight: CGFloat = 33
     /// The devices table's rows hold a Type pill, which makes them 26 pt.
     nonisolated static let deviceRowHeight: CGFloat = 26
     /// Text-only rows; 24 pt is the table's own row height.
@@ -1023,7 +1020,7 @@ struct MobileFleetView: View {
     /// at the rows it has; an empty list keeps one row's height under its
     /// header. Larger text makes rows taller than this, and they scroll.
     nonisolated static func tableHeight(rows: Int, rowHeight: CGFloat, cap: CGFloat) -> CGFloat {
-        min(cap, tableChromeHeight + CGFloat(max(rows, 1)) * rowHeight)
+        min(cap, PageTableMetrics.contentHeight(rows: rows, rowHeight: rowHeight))
     }
 
     /// The rows the devices table can list before its 50-row cap: inventory rows
