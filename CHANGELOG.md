@@ -11,6 +11,10 @@ versions in this repository map to git tags.
 
 - Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
 - Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
+- Tiles open what they count: the Compliant and Failing tiles on Patch Compliance filter the titles table, the Jailbreak Detected tile on Mobile Devices filters its list, the Latest tile on Backups selects the newest backup, and on Jamf School the Devices, Managed, Supervised and Stale tiles open the matching devices (Supervised is a new filter on the School Devices list).
+- Banners that point somewhere have a button: Backups warnings open Run History, the unreadable mSCP and Jamf Protect banners open Settings or refresh, a failed report generation can be retried, and the stale-data banners on Jamf Protect and Health Audit can collect right there.
+- Empty screens that ask you to collect have a Collect now button (Patch Compliance, Policies and Profiles, Compliance Posture, Mobile Devices, OS Updates, Extension Attributes, Groups, Jamf Protect, Jamf School), and Compliance Benchmarks offers Open Data Sources.
+- Right-click rows to copy or open: mobile devices (serial, name, Open in Jamf Pro), Jamf School devices (serial, name), update error devices and failed plans (serial), policy findings (name, Open in Jamf Pro), profile failures (name) and computer groups (name, Open in Jamf Pro). Open in Jamf Pro is hidden without a server and disabled in demo mode.
 
 - Data Sources has a switch for each source the app collects, so an organization whose server
   cannot answer a source can stop collecting it without editing config.yaml. A source turned off
@@ -316,6 +320,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- PNG exports of the patch titles table list the first 12 titles and say how many are left, the mobile OS bars show 8 versions, a long mSCP baseline name no longer wraps over the export title (titles shrink to fit one line), the donut export buttons are disabled when there is nothing to draw, and an Extension Attribute value chart with every count at zero draws instead of failing.
 - A link or button that pointed at a screen the sidebar does not show (hidden in Settings, or not offered for a Jamf School workspace) no longer opens that screen. The app says why instead, with a button to Settings when you hid it yourself.
 
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
