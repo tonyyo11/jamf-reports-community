@@ -335,6 +335,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The "needs attention" banner asking for a Jamf Pro backup choice on a synced folder now goes away as soon as you make the choice on the Backups screen, instead of staying until the next backup or until you dismiss it. Turning on "Back up Jamf Protect in this folder" clears its warning the same way.
 - The workbook's charts (and the PNG copies written beside reports) no longer put the legend on
   top of the title, show 0.8 or 3.2 Macs on a count axis, repeat a date, or stop a percentage axis
   at 90%. A compliance trend with one day of history was drawn as empty axes; it now shows that

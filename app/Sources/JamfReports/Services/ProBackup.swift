@@ -247,6 +247,22 @@ enum BackupChoiceConfigWriter {
         }.report
         SharedConfigPin.confirmWritten(
             String(on), key: choice.pinKey, profile: profile, appSupport: appSupport)
+        if let code = attentionSettled(by: choice, on: on) {
+            // The next backup would clear it; the banner should not wait for that run.
+            let log = AttentionLog(profile: profile, usesAppRecord: true)
+            AttentionLog.$current.withValue(log) { AttentionLog.clear(code) }
+            log.commit()
+        }
         return report
+    }
+
+    /// The attention item a saved choice settles, as the next backup run would decide it: any
+    /// Jamf Pro choice ends `proBackupChoiceNeeded`; Protect allowed ends `protectBackupSkipped`,
+    /// while Protect declined is still not backed up, so its item stays.
+    static func attentionSettled(by choice: Choice, on: Bool) -> AttentionCode? {
+        switch choice {
+        case .pro: .proBackupChoiceNeeded
+        case .protect: on ? .protectBackupSkipped : nil
+        }
     }
 }

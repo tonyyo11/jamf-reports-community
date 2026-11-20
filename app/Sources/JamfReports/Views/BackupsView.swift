@@ -372,7 +372,11 @@ struct BackupsView: View {
         } catch {
             errorMessage = L("Couldn't save the backup setting: \(error.localizedDescription)")
         }
-        Task { await refreshSyncedChoice() }
+        Task {
+            await refreshSyncedChoice()
+            // The save cleared the attention item its choice settles; redraw the banner now.
+            await workspace.refreshDataFreshness()
+        }
     }
 
     /// Off the main actor: it decodes config.yaml and probes the volume.
