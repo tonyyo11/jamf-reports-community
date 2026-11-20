@@ -400,6 +400,89 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
         XCTAssertFalse(svg.contains("<polyline"))
     }
 
+    // MARK: - timeline: axis, labels, dedupe
+
+    private func snap(_ d: String, _ fv: Double?) -> HtmlReport.SummarySnapshot {
+        HtmlReport.SummarySnapshot(date: d, totalDevices: 10, fileVaultPct: fv, sipPct: nil, compliancePct: nil)
+    }
+
+    private func axisLabels(_ svg: String) -> [String] {
+        svg.components(separatedBy: "text-anchor=\"end\"").dropFirst().compactMap {
+            $0.components(separatedBy: ">").dropFirst().first?.components(separatedBy: "<").first
+        }
+    }
+
+    func testTimelinePercentAxisIsFixedZeroToHundredWithUniqueTicks() {
+        let svg = makeReport().renderTimelineSVG(summaries: [snap("2026-04-01", 50.0), snap("2026-04-02", 50.3)])
+        XCTAssertEqual(axisLabels(svg), ["0%", "25%", "50%", "75%", "100%"])
+    }
+
+    func testTimelineKeepsNewestPerDayAndLabelsFirstAndLast() {
+        let days = (1 ... 14).map { snap(String(format: "2026-04-%02d", $0), 90) }
+        let dup = days + [snap("2026-04-14", 80)]
+        let svg = makeReport().renderTimelineSVG(summaries: dup)
+        XCTAssertEqual(svg.components(separatedBy: "<circle").count - 1, 14, "one dot per day")
+        XCTAssertEqual(svg.components(separatedBy: ">2026-04-01<").count - 1, 1)
+        XCTAssertEqual(svg.components(separatedBy: ">2026-04-14<").count - 1, 1)
+        XCTAssertTrue(svg.contains("80.0%") || svg.contains("80%"), "newest value kept")
+        XCTAssertEqual(
+            HtmlSectionFormatters.labelIndices(count: 14).last, 13)
+    }
+
+    func testTimelineSameDayOnlyShowsNote() {
+        let svg = makeReport().renderTimelineSVG(summaries: [snap("2026-04-01", 90), snap("2026-04-01", 91)])
+        XCTAssertTrue(svg.contains("empty-note"))
+    }
+
+    func testLegendSitsBelowDateLabels() {
+        let svg = makeReport().renderTimelineSVG(summaries: [snap("2026-04-01", 90), snap("2026-04-02", 91)])
+        func y(_ marker: String) -> Double? {
+            guard let r = svg.range(of: marker) else { return nil }
+            let head = svg[..<r.lowerBound]
+            guard let yr = head.range(of: "y=\"", options: .backwards) else { return nil }
+            return Double(head[yr.upperBound...].prefix { $0 != "\"" })
+        }
+        guard let dateY = y(">2026-04-01<"),
+              let g = svg.range(of: "translate(")
+        else { return XCTFail("missing date or legend") }
+        let ty = svg[g.upperBound...].split(separator: ",").dropFirst().first?.split(separator: ")").first
+        XCTAssertGreaterThan(Double(ty ?? "") ?? 0, dateY + 6)
+    }
+
+    func testHistoryCountAxisStartsAtZeroWithUniqueWholeTicks() {
+        let entries = [
+            HtmlReport.HistoryEntry(timestamp: "2026-01-01T00:00:00Z", versions: [("15", 2)]),
+            HtmlReport.HistoryEntry(timestamp: "2026-01-02T00:00:00Z", versions: [("15", 3)]),
+        ]
+        let svg = makeReport().renderHistorySVG(history: entries)
+        let labels = axisLabels(svg)
+        XCTAssertEqual(labels.first, "4")
+        XCTAssertEqual(labels.last, "0")
+        XCTAssertEqual(Set(labels).count, labels.count)
+        let flat = [
+            HtmlReport.HistoryEntry(timestamp: "2026-01-01T00:00:00Z", versions: [("15", 5)]),
+            HtmlReport.HistoryEntry(timestamp: "2026-01-02T00:00:00Z", versions: [("15", 5)]),
+        ]
+        let l2 = axisLabels(makeReport().renderHistorySVG(history: flat))
+        XCTAssertEqual(Set(l2).count, l2.count)
+    }
+
+    func testHistorySameDayEntriesCollapse() {
+        let e = { (t: String, c: Int) in HtmlReport.HistoryEntry(timestamp: t, versions: [("15", c)]) }
+        let svg = makeReport().renderHistorySVG(history: [
+            e("2026-01-01T01:00:00Z", 5), e("2026-01-01T09:00:00Z", 6), e("2026-01-02T00:00:00Z", 7),
+        ])
+        XCTAssertEqual(svg.components(separatedBy: "<circle").count - 1, 2)
+    }
+
+    func testPercentBarsClampAndKeyIsTruncatable() {
+        let html = HtmlSectionFormatters.renderPercentBars([("A very long title", 250), ("B", -5)])
+        XCTAssertTrue(html.contains("width:100%"))
+        XCTAssertFalse(html.contains("250"))
+        XCTAssertTrue(html.contains("title=\"A very long title\""))
+        XCTAssertTrue(HtmlSectionFormatters.additionalCSS.contains("text-overflow: ellipsis"))
+    }
+
     // MARK: - timeline: XSS in date labels
 
     func testTimelineSVGXSSInDateEscaped() {

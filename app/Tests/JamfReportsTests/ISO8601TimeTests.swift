@@ -14,13 +14,9 @@ final class ISO8601TimeTests: XCTestCase {
         }
     }
 
-    func testWorkbookTimestampMatchesTheLegacyFormatter() {
-        let legacy = ISO8601DateFormatter()
-        legacy.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
+    func testWorkbookTimestampIsTheExportStampInLocalTime() {
         for date in sampleDates {
-            let expected = legacy.string(from: date)
-                .replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "T", with: "_")
-            XCTAssertEqual(ReportEngine.workbookTimestamp(date), expected)
+            XCTAssertEqual(ReportEngine.workbookTimestamp(date), ExportNaming.timestamp(date))
         }
     }
 

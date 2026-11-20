@@ -245,6 +245,15 @@ final class CloudStorageTests: XCTestCase {
         XCTAssertNil(CloudStorage.backupDirectoryTimestamp(name: "manual-before-upgrade"))
     }
 
+    /// `CLIBridge.backup` names a folder in UTC; the prune order and the Backups screen read it
+    /// back the same way, so a backup's date is one instant on both.
+    func testBackupFolderNamesReadAsUTCLikeTheBackupsScreen() throws {
+        let name = "20260820T060000"
+        let pruneDate = try XCTUnwrap(CloudStorage.backupDirectoryTimestamp(name: name)?.date)
+        XCTAssertEqual(pruneDate, BackupRecord.dateInName(name))
+        XCTAssertEqual(pruneDate, ISO8601Time.parse("2026-08-20T06:00:00Z"))
+    }
+
     // MARK: - Provider detection
 
     func testProviderDetection() {
