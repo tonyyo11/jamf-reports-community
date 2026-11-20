@@ -140,6 +140,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The workbook, its CSV folder, the inventory CSV and the run manifest are named with this Mac's
+  local time, like the HTML, PDF and chart images of the same run. They used UTC, so one run's
+  files could read hours apart (`report_…_214708.xlsx` beside `jamf_report_…_164709.html`).
 - A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
   with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
   Each is still checked once a week, and Data Sources says which sources are left out and why.
