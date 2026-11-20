@@ -406,16 +406,11 @@ extension CLIBridge {
                 \(desc, privacy: .private)
                 """)
         }
-        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: type, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         let ext = type.rawValue.lowercased()
-        return dir.appendingPathComponent("\(stem)_\(htmlTimestamp()).\(ext)")
-    }
-
-    private nonisolated func htmlTimestamp() -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd_HHmmss"
-        return f.string(from: Date())
+        return dir.appendingPathComponent("\(stem)_\(ExportNaming.timestamp()).\(ext)")
     }
 
 }

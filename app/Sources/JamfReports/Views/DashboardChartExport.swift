@@ -179,7 +179,8 @@ public struct DashboardExportHeader<Trailing: View>: View {
                 Text(title)
                     .font(.system(size: 28, weight: .bold, design: .serif))
                     .foregroundStyle(Color(hex: 0x111827))
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .multilineTextAlignment(.leading)
             }
             Spacer()

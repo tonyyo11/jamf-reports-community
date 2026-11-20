@@ -638,7 +638,8 @@ private func scheduledRunSingleBody(
         // workbook with every sheet skipped.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
         let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), onLine: onLine)
+            stem: ExportNaming.reportKind(
+                for: .xlsx, schoolMode: isSchool, prefix: config.filePrefix), onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.

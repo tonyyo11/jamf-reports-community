@@ -52,6 +52,11 @@ final class DevicesViewListCacheTests: XCTestCase {
             case .patch: return device.patchFailureCount > 0
             case .security: return device.securityGapCount(policy: policy) > 0
             case .priorityAction: return risk(device).level >= .high
+            case .fileVaultOff: return policy.reading(device.fileVault, for: .fileVault) == false
+            case .sipOff: return policy.reading(device.sip, for: .sip) == false
+            case .firewallOff: return policy.reading(device.firewall, for: .firewall) == false
+            case .gatekeeperOff:
+                return policy.reading(device.gatekeeper, for: .gatekeeper) == false
             }
         }
         return DeviceSortRow.sorted(

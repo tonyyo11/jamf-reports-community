@@ -303,17 +303,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let cmd = cliInstallCommand {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(cmd)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        PNPButton(title: L("Copy command"), icon: "doc.on.doc", size: .sm) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(cmd, forType: .string)
-                        }
-                        .help("Copy the install command to the clipboard.")
-                    }
+                    CommandText(command: cmd)
                 }
             }
         }

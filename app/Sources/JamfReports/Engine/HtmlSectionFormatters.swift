@@ -241,6 +241,30 @@ enum HtmlSectionFormatters {
         }, limit: limit, expanded: expanded)
     }
 
+    /// Keeps the newest item of each day, in order. `items` run oldest first.
+    nonisolated static func newestPerDay<T>(_ items: [T], day: (T) -> String) -> [T] {
+        var out: [T] = []
+        for item in items {
+            if let last = out.last, day(last) == day(item) { out[out.count - 1] = item } else { out.append(item) }
+        }
+        return out
+    }
+
+    /// Indices to label on a time axis: at most `maxLabels`, always the first and the last,
+    /// and never one so near the last that the two overlap.
+    nonisolated static func labelIndices(count: Int, maxLabels: Int = 6) -> [Int] {
+        guard count > 1 else { return Array(0 ..< max(count, 0)) }
+        let step = max(1, Int((Double(count - 1) / Double(maxLabels - 1)).rounded(.up)))
+        let inner = stride(from: 0, to: count - 1, by: step).filter { count - 1 - $0 >= step }
+        return inner + [count - 1]
+    }
+
+    /// A count axis from 0: four equal whole-number steps, so every tick is distinct.
+    nonisolated static func countAxis(max peak: Int) -> (top: Int, ticks: [Int]) {
+        let step = Swift.max(1, Int((Double(Swift.max(peak, 1)) / 4).rounded(.up)))
+        return (step * 4, (0 ... 4).map { $0 * step })
+    }
+
     private struct BarRow {
         let label: String
         /// Bar length, 0–100.
@@ -273,7 +297,7 @@ enum HtmlSectionFormatters {
                 } ?? ""
                 return """
                 <div class="cohort-bar-row">
-                  <span class="cohort-bar-key">\(key)</span>
+                  <span class="cohort-bar-key" title="\(key)">\(key)</span>
                   <div class="cohort-bar-bg">
                     <div class="cohort-bar-fill" style="width:\(width)%\(tint)"
                          aria-label="\(key): \(escapeHTML(row.spoken))"></div>
@@ -405,8 +429,9 @@ enum HtmlSectionFormatters {
     .svg-bar-chart { display: block; width: 100%; max-width: 640px; height: auto; }
     .cohort-bar-section { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
     .cohort-bar-row { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
-    .cohort-bar-key { min-width: 6rem; color: var(--subtext); }
-    .cohort-bar-bg  { flex: 1; height: 16px; background: var(--border);
+    .cohort-bar-key { min-width: 6rem; max-width: 40%; flex: 0 1 auto; overflow: hidden;
+                      text-overflow: ellipsis; white-space: nowrap; color: var(--subtext); }
+    .cohort-bar-bg  { flex: 1; min-width: 0; height: 16px; background: var(--border);
                       border-radius: 3px; overflow: hidden; }
     .cohort-bar-fill { height: 100%; background: var(--bar, var(--accent)); border-radius: 3px; }
     [data-theme="dark"] .cohort-bar-fill { background: var(--bar-dark, var(--accent)); }
@@ -415,7 +440,7 @@ enum HtmlSectionFormatters {
       [data-theme="dark"] .cohort-bar-fill { background: var(--bar, var(--accent)); }
       [data-theme="dark"] .chart-series { color: var(--c); }
     }
-    .cohort-bar-n   { min-width: 3rem; text-align: right; }
+    .cohort-bar-n   { min-width: 3rem; flex: none; text-align: right; white-space: nowrap; }
     /* Cleanup Analysis tab strip */
     .cleanup-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;
                     border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }

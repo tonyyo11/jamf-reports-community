@@ -37,12 +37,12 @@ final class LightModeRenderTests: XCTestCase {
         _ = Card { Text("Test content") }
         _ = StatTile(label: "Test", value: "123")
         _ = Pill(text: "Test")
-        _ = PNPButton(title: "Test")
+        _ = PNPButton(title: "Test", action: {})
         _ = PNPToggle(isOn: .constant(false))
         _ = StatusBar(status: "Ready")
 
         _ = Kicker(text: "TEST", tone: .muted)
         _ = Pill(text: "TEST", tone: .gold)
-        _ = PNPButton(title: "TEST", style: .gold)
+        _ = PNPButton(title: "TEST", style: .gold, action: {})
     }
 }

@@ -427,4 +427,54 @@ final class ArchiveRotationTests: XCTestCase {
             .filter { $0.hasSuffix(".xlsx") }
             .sorted()
     }
+    // MARK: - Names from before 2.12
+
+    /// A run written as `report_prod_…` before 2.12 counts toward `keep` beside the new
+    /// `jamf_report_prod_…` runs, so the old workbooks leave in date order.
+    func testRunsNamedBefore2_12RotateWithTheNewOnes() throws {
+        try createFiles(names: [
+            "report_prod_2026-11-01_090000.xlsx",
+            "report_prod_2026-11-02_090000.xlsx",
+            "jamf_report_prod_2026-11-03_090000.xlsx",
+            "report_prod-eu_2026-11-01_090000.xlsx",
+        ], in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "jamf_report_prod", keep: 2)
+        XCTAssertEqual(try xlsxNames(in: outputDir), [
+            "jamf_report_prod_2026-11-03_090000.xlsx",
+            "report_prod-eu_2026-11-01_090000.xlsx",
+            "report_prod_2026-11-02_090000.xlsx",
+        ])
+        XCTAssertEqual(try xlsxNames(in: archiveDir), ["report_prod_2026-11-01_090000.xlsx"])
+    }
+
+    /// Runs written under another `output.file_prefix` rotate with the current prefix's.
+    func testRunsUnderAnEarlierPrefixRotateWithTheNewOnes() throws {
+        try createFiles(names: [
+            "jamf_report_prod_2026-11-01_090000.xlsx",
+            "acme_report_prod_2026-11-02_090000.xlsx",
+            "acme_report_prod_2026-11-03_090000.xlsx",
+            "acme_school_report_prod_2026-11-01_090000.xlsx",
+        ], in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "acme_report_prod", keep: 2)
+        XCTAssertEqual(try xlsxNames(in: archiveDir), ["jamf_report_prod_2026-11-01_090000.xlsx"])
+        XCTAssertTrue(try xlsxNames(in: outputDir)
+            .contains("acme_school_report_prod_2026-11-01_090000.xlsx"),
+                      "another kind is not a run")
+    }
+
+    func testReportNamePartsReadEveryPrefixAndTheOldNames() {
+        let parts = ExportNaming.reportNameParts
+        XCTAssertEqual(parts("acme-co_report_prod_2026")?.key, "report_prod_2026")
+        XCTAssertEqual(parts("acme-co_report_prod_2026")?.prefix, "acme-co")
+        XCTAssertEqual(parts("jamf_school_report_k12")?.key, "schoolReport_k12")
+        XCTAssertEqual(parts("school-report_k12")?.key, "schoolReport_k12")
+        XCTAssertNil(parts("school-report_k12")?.prefix)
+        XCTAssertEqual(parts("report_prod")?.key, "report_prod")
+        XCTAssertEqual(parts("jamf_inventory_prod")?.kind, .inventory)
+        XCTAssertEqual(parts("automation_inventory_prod")?.kind, .inventory)
+        XCTAssertNil(parts("devices-prod-2026-11-03_090000"))
+    }
+
 }

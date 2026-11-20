@@ -144,7 +144,8 @@ struct PolicyProfileView: View {
                 title: L("No policy data yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["policy-status"])]
+                    profile: workspace.profile, kinds: ["policy-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh, .inventory])
             )
         }
     }
@@ -224,6 +225,13 @@ struct PolicyProfileView: View {
                     }
                     .width(min: 150, ideal: 200)
                 }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let finding = sortedFindings.first(where: { $0.id == ids.first }) {
+                        Button(L("Copy Policy Name")) { SystemActions.copyToClipboard(finding.policy) }
+                        OpenInJamfProItem(
+                            url: Int(finding.policyId).flatMap { workspace.consoleURL(forPolicyID: $0) })
+                    }
+                }
                 .pageTableHeight(rows: sortedFindings.count)
             }
         }
@@ -270,7 +278,8 @@ struct PolicyProfileView: View {
                 title: L("No profile data yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["profile-status"])]
+                    profile: workspace.profile, kinds: ["profile-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh, .inventory])
             )
         }
     }
@@ -367,6 +376,11 @@ struct PolicyProfileView: View {
                             .help(profile.topError)
                     }
                     .width(min: 180, ideal: 260)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let profile = snapshot.profiles.first(where: { $0.id == ids.first }) {
+                        Button(L("Copy Profile Name")) { SystemActions.copyToClipboard(profile.name) }
+                    }
                 }
                 .frame(minHeight: 200)
             }

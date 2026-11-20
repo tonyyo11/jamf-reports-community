@@ -578,4 +578,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         }
         try body(root, workspace)
     }
+    func testAFilePrefixThatCannotStartAFileNameIsNamed() throws {
+        let id = "config.value.output.file_prefix"
+        XCTAssertTrue(try rows("output:\n  file_prefix: acme_co\n").contains { $0.id == id })
+        XCTAssertTrue(try rows("output:\n  file_prefix: 2026\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  file_prefix: acme-co\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  keep_latest_runs: 3\n").contains { $0.id == id })
+    }
+
 }

@@ -494,7 +494,7 @@ final class CLIBridge {
         let engine = ReportEngine(
             config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false),
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false, prefix: config.filePrefix),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
@@ -646,7 +646,7 @@ await engine.writeHTMLWithWorkbook(
         // A folder chosen on the Generate sheet takes the School workbook too, as it does the
         // Jamf Pro one, so the run's files share one folder and one manifest.
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true),
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true, prefix: config.filePrefix),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) }
             ?? defaultURL
@@ -1581,7 +1581,9 @@ try await ReportEngine.schoolGenerateReport(
         } else {
             let engine = ReportEngine(
                 config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-            outputURL = try engine.resolveOutputURL(stem: "report", onLine: onLine)
+            outputURL = try engine.resolveOutputURL(
+                stem: ExportNaming.reportKind(
+                    for: .html, schoolMode: false, prefix: config.filePrefix), onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1727,7 +1729,8 @@ try await ReportEngine.generatePDF(
             let engine = ReportEngine(
                 config: config, dataDir: workspace, workspace: try WorkspaceID(validating: profile))
             outputURL = try engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .csv, schoolMode: false),
+                stem: ExportNaming.reportKind(
+                    for: .csv, schoolMode: false, prefix: config.filePrefix),
                 onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
