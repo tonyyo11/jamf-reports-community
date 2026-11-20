@@ -135,7 +135,7 @@ struct PatchView: View {
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["patch-status"])],
-                primaryAction: workspace.collectEmptyAction(tiers: [.refresh, .scan])
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }

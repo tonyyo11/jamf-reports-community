@@ -183,7 +183,7 @@ struct CompliancePostureView: View {
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["security"])],
-                primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }

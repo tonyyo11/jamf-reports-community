@@ -39,7 +39,7 @@ struct SchoolDevicesView: View {
                 } else {
                     SchoolDeviceTiles(
                         snapshot: snapshot, staleDays: staleDays, now: now,
-                        opens: { filter = $0 })
+                        opens: { filter = $0; search = "" })
                     devicesCard
                 }
                 if !snapshot.depDevices.isEmpty { depCard }
