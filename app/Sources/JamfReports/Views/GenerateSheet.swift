@@ -888,7 +888,17 @@ struct GenerateSheet: View {
     }
 
     private func errorBanner(_ message: String) -> some View {
-        InlineBanner(icon: "exclamationmark.triangle.fill", tone: .danger) {
+        InlineBanner(
+            icon: "exclamationmark.triangle.fill", tone: .danger,
+            action: InlineBannerAction(
+                label: L("Retry"), icon: "arrow.clockwise",
+                isDisabled: workspace.demoMode || state.isRunning || !state.canGenerate,
+                help: workspace.demoMode ? DemoData.liveOnlyHelp : L("Run the same request again.")
+            ) {
+                guard state.canGenerate else { return }
+                Task { await runGenerate() }
+            }
+        ) {
             Text(message)
                 .font(Theme.Fonts.label)
                 .foregroundStyle(Theme.Colors.danger)

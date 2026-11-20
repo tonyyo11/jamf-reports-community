@@ -119,7 +119,8 @@ struct GroupsView: View {
                     profile: workspace.profile, kinds: [
                         "classic-computer-groups", "classic-mobile-device-groups",
                         "advanced-mobile-device-searches",
-                    ])]
+                    ])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
             )
         }
     }
@@ -244,6 +245,7 @@ struct GroupsView: View {
 
 /// One platform's group table, with member counts and Empty / Unused flags.
 private struct GroupTableCard: View {
+    @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     let title: String
     let emptyText: String
@@ -327,6 +329,18 @@ private struct GroupTableCard: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             .width(min: 50, ideal: 60)
+        }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let wrapper = visible.first(where: { $0.id == ids.first }) {
+                if let name = wrapper.group.name {
+                    Button(L("Copy Group Name")) { SystemActions.copyToClipboard(name) }
+                }
+                // Only computer groups have a console link helper.
+                if platform == .computer, let id = wrapper.group.id {
+                    OpenInJamfProItem(url: workspace.consoleURL(
+                        forComputerGroupID: id, isStatic: !wrapper.group.isSmart))
+                }
+            }
         }
         .font(.callout)
         .pageTableHeight(rows: visible.count, rowHeight: PageTableMetrics.richRowHeight)

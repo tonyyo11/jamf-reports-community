@@ -35,7 +35,8 @@ struct SchoolOverviewView: View {
                 if snapshot.devicesDate != nil {
                     SchoolDeviceTiles(
                         snapshot: snapshot, staleDays: staleDays,
-                        now: workspace.demoMode ? DemoData.referenceDate : Date())
+                        now: workspace.demoMode ? DemoData.referenceDate : Date(),
+                        filters: [.all], opens: openDevices)
                 }
                 if let health = SchoolDeviceHealth(snapshot, scanTurnedOff: scanTurnedOff) {
                     SchoolDeviceHealthCard(health: health)
@@ -56,7 +57,8 @@ struct SchoolOverviewView: View {
             EmptyStateView(
                 systemImage: "graduationcap",
                 title: L("No Jamf School data yet"),
-                message: L("Collect from Jamf School to see its devices, users and classes here.")
+                message: L("Collect from Jamf School to see its devices, users and classes here."),
+                primaryAction: workspace.firstCollectEmptyAction()
             )
         }
     }
@@ -119,6 +121,12 @@ struct SchoolOverviewView: View {
             connected: connected, collected: loaded.isDetected,
             scheduled: scheduled, reported: reported)
         loadedSource = source
+    }
+
+    /// Only the unfiltered list opens from here: the Devices screen's filters are its own.
+    private func openDevices(_ filter: SchoolDevicesView.Filter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: ["tab": Tab.schoolDevices.rawValue])
     }
 
     private func perform(_ step: GettingStartedStep) {

@@ -14,6 +14,10 @@ versions in this repository map to git tags.
 - Tiles on Computers, Security Posture, Fleet Overview, Offline Outreach and the Overview open what they count. FileVault, SIP, Firewall and Gatekeeper tiles open Computers filtered to the Macs with that control off, with a removable chip; the Overview's metric pages name the filter on their button. A tile that no list can match stays plain.
 - Computers can copy a Mac's name and serial number from the detail panel and the row's right-click menu, and Offline Outreach can copy name, serial number and email. Open in Jamf Pro appears only when the Mac has a Jamf ID and the server address is known, and is off in demo mode. Device Lookup's candidates can copy a serial number, and its stale-data banner has a Collect now button.
 - Offline Outreach's empty state has a Collect now button.
+- Tiles open what they count: the Compliant and Failing tiles on Patch Compliance filter the titles table, the Jailbreak Detected tile on Mobile Devices filters its list, the Latest tile on Backups selects the newest backup, and on Jamf School the Devices, Managed, Supervised and Stale tiles open the matching devices (Supervised is a new filter on the School Devices list).
+- Banners that point somewhere have a button: Backups warnings open Run History, the unreadable mSCP and Jamf Protect banners open Settings or refresh, a failed report generation can be retried, and the stale-data banners on Jamf Protect and Health Audit can collect right there.
+- Empty screens that ask you to collect have a Collect now button (Patch Compliance, Policies and Profiles, Compliance Posture, Mobile Devices, OS Updates, Extension Attributes, Groups, Jamf Protect, Jamf School), and Compliance Benchmarks offers Open Data Sources.
+- Right-click rows to copy or open: mobile devices (serial, name, Open in Jamf Pro), Jamf School devices (serial, name), update error devices and failed plans (serial), policy findings (name, Open in Jamf Pro), profile failures (name) and computer groups (name, Open in Jamf Pro). Open in Jamf Pro is hidden without a server and disabled in demo mode.
 
 - Data Sources has a switch for each source the app collects, so an organization whose server
   cannot answer a source can stop collecting it without editing config.yaml. A source turned off
@@ -320,6 +324,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- PNG exports of the patch titles table list the first 12 titles and say how many are left, the mobile OS bars show 8 versions, a long mSCP baseline name no longer wraps over the export title (titles shrink to fit one line), the donut export buttons are disabled when there is nothing to draw, and an Extension Attribute value chart with every count at zero draws instead of failing.
 - A link or button that pointed at a screen the sidebar does not show (hidden in Settings, or not offered for a Jamf School workspace) no longer opens that screen. The app says why instead, with a button to Settings when you hid it yourself.
 
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
