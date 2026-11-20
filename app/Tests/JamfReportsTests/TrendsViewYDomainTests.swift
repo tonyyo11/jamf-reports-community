@@ -30,6 +30,20 @@ final class TrendsViewYDomainTests: XCTestCase {
         XCTAssertEqual(domain.upperBound, 16, accuracy: 0.0001)
     }
 
+    func testEveryPercentMetricIsZeroToHundred() {
+        let all = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
+        let percent = all.filter { !$0.isDeviceCount && $0 != .mscpBandTrend }
+        XCTAssertFalse(percent.isEmpty)
+        for metric in percent {
+            XCTAssertEqual(TrendsView.chartYDomain(metric: metric, values: [97, 97.3]), 0...100,
+                           "\(metric)")
+            XCTAssertEqual(TrendsView.chartYDomain(metric: metric, values: []), 0...100)
+        }
+        XCTAssertEqual(TrendsView.chartYDomain(metric: .securityScore, values: [12]), 0...100)
+        XCTAssertEqual(TrendsView.percentAxisTicks, [0, 25, 50, 75, 100])
+        XCTAssertNotEqual(TrendsView.chartYDomain(metric: .stale, values: [3]), 0...100)
+    }
+
     func testEveryDeviceCountMetricFollowsTheData() {
         let counts = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
         XCTAssertEqual(
@@ -56,9 +70,9 @@ final class TrendsViewYDomainTests: XCTestCase {
         XCTAssertEqual(domain, metric.minY...metric.maxY)
     }
 
-    func testPercentMetricKeepsItsPreferredFrame() {
+    func testPercentMetricIgnoresItsOldPreferredFrame() {
         let domain = TrendsView.chartYDomain(metric: .stability, values: [70, 72])
-        XCTAssertEqual(domain, 40...100)
+        XCTAssertEqual(domain, 0...100)
     }
 
     func testPercentMetricStillExpandsBelowItsFloor() {

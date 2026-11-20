@@ -1117,17 +1117,20 @@ extension HtmlReport {
     /// Plots up to 3 percentage series (FileVault, SIP, Compliance) on a 0–100 scale
     /// on the left y-axis. Total devices is omitted from the SVG to keep the y-axis
     /// coherent; it appears in the accompanying table.
-    func renderTimelineSVG(summaries: [SummarySnapshot]) -> String {
+    func renderTimelineSVG(summaries rawSummaries: [SummarySnapshot]) -> String {
+        // Oldest first; two runs on one day draw one point, the newest.
+        let summaries = HtmlSectionFormatters.newestPerDay(rawSummaries) { String($0.date.prefix(10)) }
         guard summaries.count >= 2 else {
             return "<p class=\"empty-note\">Not enough data for a trend chart.</p>"
         }
 
         let svgW: Double = 620
-        let svgH: Double = 200
+        let svgH: Double = 220
         let leftPad: Double = 48
         let topPad: Double = 16
         let rightPad: Double = 16
-        let bottomPad: Double = 36
+        // Room for the date row and, below it, the legend.
+        let bottomPad: Double = 56
         let plotW = svgW - leftPad - rightPad
         let plotH = svgH - topPad - bottomPad
         let n = summaries.count
@@ -1175,16 +1178,14 @@ extension HtmlReport {
             """
         }
 
-        // X-axis labels (show at most 6)
+        // X-axis labels: at most 6, the first and last date always among them.
         var xLabels = ""
-        let labelStep = max(1, n / 6)
-        for i in 0 ..< n {
-            guard i % labelStep == 0 || i == n - 1 else { continue }
+        for i in HtmlSectionFormatters.labelIndices(count: n) {
             let xCoord = xPos(i)
             let dateLabel = String(summaries[i].date.prefix(10))
             xLabels += """
             <text x="\(String(format: "%.1f", xCoord))" \
-            y="\(String(format: "%.1f", svgH - 4))" \
+            y="\(String(format: "%.1f", topPad + plotH + 14))" \
             text-anchor="middle" \
             style="font-size:9px;fill:var(--subtext)">\(f.escapeHTML(dateLabel))</text>
             """
@@ -1243,7 +1244,7 @@ extension HtmlReport {
             """
         }
         var legendX: Double = leftPad
-        let legendY = topPad + plotH + bottomPad - 4
+        let legendY = svgH - 6
         var legendHTML = ""
         for item in legendItems {
             legendHTML += "<g transform=\"translate(\(String(format: "%.0f", legendX)),\(String(format: "%.0f", legendY)))\">"
