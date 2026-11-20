@@ -80,7 +80,8 @@ enum FleetWorkbookEmitter {
             categories: withFV.map(\.profile),
             values: withFV.map { $0.fileVaultPct ?? 0 },
             colors: withFV.map { _ in ChartPalette.cgColor(forMetric: .fileVault) })
-        if let png = ChartRenderer.barChart(data: bar, title: "FileVault % by Profile") {
+        if let png = ChartRenderer.barChart(data: bar, yAxis: .percent,
+                                            title: "FileVault % by Profile", yLabel: "Percent of Macs") {
             ws.insertImage(row: head + model.universal.count + 3 + notes.count, col: 0,
                            data: png, filename: "fleet-fv-by-profile.png")
         }
@@ -129,7 +130,8 @@ enum FleetWorkbookEmitter {
             categories: present.map(\.label),
             values: present.map { $0.value ?? 0 },
             colors: present.map { controlColor($0.key) })
-        if let png = ChartRenderer.barChart(data: bar, title: "Fleet Security Posture") {
+        if let png = ChartRenderer.barChart(data: bar, yAxis: .percent,
+                                            title: "Fleet Security Posture", yLabel: "Percent of Macs") {
             ws.insertImage(row: controls.count + 3, col: 0, data: png, filename: "fleet-posture.png")
         }
     }
@@ -207,7 +209,7 @@ enum FleetWorkbookEmitter {
                 label: bk.label, color: ChartPalette.complianceBandColors[idx], points: points)
         }
         return ChartRenderer.stackedAreaChart(
-            series: series, title: "\(group.baseline) — Bands Over Time")
+            series: series, title: "\(group.baseline) — Bands Over Time", yLabel: "Macs")
     }
 
     // MARK: - Fleet Trend
@@ -253,7 +255,8 @@ enum FleetWorkbookEmitter {
                 : ChartSeries(label: kpi.label,
                               color: ChartPalette.cgColor(forMetric: kpi.metric), points: points)
         }
-        return series.isEmpty ? nil : ChartRenderer.lineChart(series: series, title: "Fleet Trend")
+        return series.isEmpty ? nil : ChartRenderer.lineChart(series: series, yAxis: .percent,
+                                                               title: "Fleet Trend", yLabel: "Percent, or score out of 100")
     }
 
     // MARK: - Cell formatting

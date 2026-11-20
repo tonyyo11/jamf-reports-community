@@ -1448,6 +1448,16 @@ plotted 1.0 for the band it landed in, so it never showed device counts; the mSC
 covers it with fixed bands. `bands` is a retired key (`ConfigSchema.retiredKeys`), so `ChartsConfigWriter`
 drops it on the next Customize save.
 
+**Chart images (2.12).** `ChartRenderer` draws every workbook chart and PNG from one `Layout` per
+chart (title, legend rows wrapping downward, y-axis title, plot, x labels, footnote; no two share a
+band). `lineChart` and `barChart` take a required `ChartYAxis` (`.count`: whole round steps with
+room above; `.percent`: 0–100, growing only past 100); x labels are calendar days in the summaries'
+own zone (`chartCalendar`), one label per day; one day of history draws as points or a column with a
+note. The OS chart is `OSAdoptionChart`: majors named from the cached SOFA feed, an unreported
+version as its own bar, and "on the latest release" by `SOFAFeedService.isCurrent`, so it agrees
+with the OS-current figure. `ChartRendererTests` checks the layout for overlaps and decodes PNGs;
+`JRC_CHART_PREVIEW_DIR=<folder> swift test --filter ChartRendererTests` writes one of each chart.
+
 ### branding config (2.9)
 
 `BrandingConfig.sanitizedAccentColor` is the one accent every

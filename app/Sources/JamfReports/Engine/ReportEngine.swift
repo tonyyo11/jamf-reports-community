@@ -1389,7 +1389,8 @@ struct ReportEngine: Sendable {
                 let series = ChartSeries(
                     label: "Total Computers",
                     color: ChartPalette.cgColor(forMetric: .managedDevices), points: fleetPoints)
-                if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
+                if let png = ChartRenderer.lineChart(series: [series], yAxis: .count,
+                                                     title: "Fleet Size Trend", yLabel: "Macs") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
                     writePNG(png, kind: "fleet-trend", profile: profile, to: pngOutputDir)
@@ -1412,16 +1413,14 @@ struct ReportEngine: Sendable {
                     color: ChartPalette.cgColor(forMetric: .fileVault), points: fvPoints))
             }
             if !patchPoints.isEmpty {
-                // The line-chart legend keeps only 14 characters of a label
-                // (ChartRenderer.drawLegend): "Patch Compliance %" showed as "Patch Complian".
                 secSeries.append(ChartSeries(
                     label: "Patch %",
                     color: ChartPalette.cgColor(forMetric: .patch), points: patchPoints))
             }
             if !secSeries.isEmpty {
-                if let png = ChartRenderer.lineChart(series: secSeries,
+                if let png = ChartRenderer.lineChart(series: secSeries, yAxis: .percent,
                                                       title: "Security Metric Trends",
-                                                      yLabel: "Percent") {
+                                                      yLabel: "Percent of Macs") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
                     embedRow += 20
                     writePNG(png, kind: "security-trend", profile: profile, to: pngOutputDir)
@@ -1437,8 +1436,9 @@ struct ReportEngine: Sendable {
                     let series = ChartSeries(
                         label: "Stale Devices",
                         color: ChartPalette.cgColor(forMetric: .stale), points: stalePoints)
-                    if let png = ChartRenderer.lineChart(series: [series],
-                                                          title: "Stale Device Count Trend") {
+                    if let png = ChartRenderer.lineChart(series: [series], yAxis: .count,
+                                                          title: "Stale Device Count Trend",
+                                                          yLabel: "Macs") {
                         ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
                         embedRow += 20
                         writePNG(png, kind: "stale-trend", profile: profile, to: pngOutputDir)
@@ -1447,39 +1447,14 @@ struct ReportEngine: Sendable {
             }
 
             // --- OS adoption (on unless per_major_charts is false, like the Customize screen) ---
-            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts {
-                var majorData: [String: Double] = [:]
-                if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
-                                                                  dataDir: dataDir),
-                   let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
-                    let total = rows.reduce(0) { $0 + $1.count }
-                    for invRow in rows {
-                        let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
-                        majorData[major, default: 0] += Double(invRow.count)
-                    }
-                    if total > 0 {
-                        majorData = majorData.mapValues { $0 / Double(total) * 100 }
-                    }
-                } else if let pct = summaries.last?.osCurrentPct {
-                    majorData["Current"] = pct
-                    majorData["Other"] = max(0, 100 - pct)
-                }
-                if !majorData.isEmpty {
-                    let sortedMajor = majorData.sorted { $0.key > $1.key }
-                    let barData = BarChartData(
-                        categories: sortedMajor.map(\.key),
-                        values: sortedMajor.map(\.value),
-                        colors: ChartPalette
-                            .hexes(for: .version, keys: sortedMajor.map(\.key), scheme: .light)
-                            .map(ChartPalette.cgColor(hex:))
-                    )
-                    if let png = ChartRenderer.barChart(data: barData,
-                                                         title: "OS Adoption by Major Version") {
-                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
-                        embedRow += 20
-                        writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
-                    }
-                }
+            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts,
+               let os = osAdoptionBarData(summaries: summaries),
+               let png = ChartRenderer.barChart(data: os.data, yAxis: .percent,
+                                                title: "macOS Adoption by Major Version",
+                                                yLabel: "Percent of Macs", footnote: os.footnote) {
+                ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
+                embedRow += 20
+                writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
             }
         }
 
@@ -1491,6 +1466,28 @@ struct ReportEngine: Sendable {
             profile: profile, pngOutputDir: pngOutputDir
         )
         _ = embedRow  // final row count not needed outside this scope
+    }
+
+    /// The OS adoption chart's bars: one per macOS major from the newest `inventory-summary`,
+    /// named and judged against the cached SOFA feed (`OSAdoptionChart`). Without inventory,
+    /// the newest summary's OS-current share as two bars, as before.
+    private func osAdoptionBarData(summaries: [DailySummary]) -> (data: BarChartData, footnote: String?)? {
+        if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary", dataDir: dataDir),
+           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+            let sofaRows = SOFAFeedService.load(dataDir: dataDir).rows
+            let bars = OSAdoptionChart.bars(rows: rows, sofaRows: sofaRows)
+            guard !bars.isEmpty else { return nil }
+            let hasFeed = sofaRows.contains { $0.platform == SOFAFeedService.platformLabels["macos"] }
+            return (OSAdoptionChart.chartData(bars), OSAdoptionChart.footnote(bars, hasFeed: hasFeed))
+        }
+        guard let pct = summaries.last?.osCurrentPct else { return nil }
+        let other = max(0, 100 - pct)
+        let data = BarChartData(
+            categories: ["On the latest release", "Other"], values: [pct, other],
+            colors: ChartPalette.hexes(for: .version, keys: ["Current", "Other"], scheme: .light)
+                .map(ChartPalette.cgColor(hex:)),
+            valueLabels: [PercentFormat.whole.text(pct), PercentFormat.whole.text(other)])
+        return (data, "From the newest daily summary; no inventory summary collected.")
     }
 
     /// Renders mSCP/STIG compliance charts and embeds them in `ws`.
@@ -1524,7 +1521,7 @@ struct ReportEngine: Sendable {
             if let rc = baseline?.ruleCount { footer += " · Baseline: \(rc) auditable rules" }
 
             // Per spec: all six legend rows rendered ("No Data: N (P%)", "Pass (0): N (P%)", …).
-            let donutTitle = "Compliance Donut — \(result.name) All Devices"
+            let donutTitle = "\(result.name) — compliance bands, all Macs"
             if let png = ChartRenderer.donutChart(slices: slices,
                                                    title: donutTitle, footer: footer) {
                 let fname = "mscp-donut-\(idx).png"
@@ -1548,7 +1545,14 @@ struct ReportEngine: Sendable {
 
         let stackSeries = MSCPChartDataBuilder.toStackedSeries(points: points)
         let trendTitle = "mSCP/STIG Compliance Trend — \(primaryBaseline.name)"
-        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle) {
+        // The trend leaves No Data out (no area to stack it in); say how many, so its total
+        // is not read against the donut's.
+        let noData = points.last?.counts.noData ?? 0
+        let note = noData > 0
+            ? "Not shown: \(noData) \(noData == 1 ? "Mac" : "Macs") with no compliance data on the last day."
+            : nil
+        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle,
+                                                    yLabel: "Macs", footnote: note) {
             ws.insertImage(row: embedRow, col: 0, data: png, filename: "mscp-band-trend.png")
             embedRow += 20
             writePNG(png, kind: "mscp-band-trend", profile: profile, to: pngOutputDir)

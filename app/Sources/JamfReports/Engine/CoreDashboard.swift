@@ -460,8 +460,9 @@ struct CoreDashboard: Sendable {
         }
         guard let png = ChartRenderer.lineChart(
             series: series,
+            yAxis: .percent,
             title: "Lowest-Adoption Titles — Adoption %",
-            yLabel: "Adoption %"
+            yLabel: "Percent of Macs on the latest version"
         ) else { return }
 
         row += 1
