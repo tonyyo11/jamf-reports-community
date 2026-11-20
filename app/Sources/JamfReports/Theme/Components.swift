@@ -307,7 +307,7 @@ struct PNPButton: View {
     var icon: String? = nil
     var style: Style = .neutral
     var size: Size = .md
-    var action: () -> Void = {}
+    var action: () -> Void
 
     var body: some View {
         Button(action: action) {
@@ -482,12 +482,33 @@ struct StatTile: View {
     /// a caller that holds the caption to one line can still let a long title
     /// wrap. Nil leaves the label to the surrounding `lineLimit`.
     var labelLineLimit: Int? = nil
+    /// The sparkline's vertical scale; pass `0...100` for a share so a small move stays small.
+    var sparkDomain: ClosedRange<Double>? = nil
+    /// Opens what the number counts. Nil leaves the tile inert, laid out as before.
+    var action: (() -> Void)? = nil
+    /// Where `action` goes, for the tooltip and VoiceOver ("Opens Computers, filtered to stale").
+    var actionHint: String? = nil
+
+    @State private var hovering = false
 
     // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
     // to Accessibility text size while keeping the design baseline at 32pt.
     @ScaledMetric(relativeTo: .largeTitle) private var displaySize: CGFloat = 32
 
     var body: some View {
+        if let action {
+            Button(action: action) { surface }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .pointerStyle(.link)
+                .help(actionHint ?? "")
+                .accessibilityHint(actionHint ?? "")
+        } else {
+            surface
+        }
+    }
+
+    private var surface: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
                 .transformEnvironment(\.lineLimit) { limit in
@@ -515,7 +536,7 @@ struct StatTile: View {
                 Text(sub).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
             if let sparkValues, !sparkValues.isEmpty {
-                Sparkline(values: sparkValues, color: defaultSparklineColor)
+                Sparkline(values: sparkValues, color: defaultSparklineColor, domain: sparkDomain)
                     .frame(height: 32)
                     .padding(.top, 2)
             }
@@ -528,8 +549,19 @@ struct StatTile: View {
         .background(Theme.Colors.winBG2)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                .strokeBorder(hovering ? Theme.Colors.gold.opacity(0.7) : Theme.Colors.hairlineStrong,
+                              lineWidth: hovering ? 1 : 0.5)
         )
+        .overlay(alignment: .topTrailing) {
+            // An overlay, so an actionable tile is laid out exactly as an inert one.
+            if action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hovering ? Theme.Colors.gold : Theme.Colors.fgMuted)
+                    .padding(10)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(fullAccessibilityLabel)

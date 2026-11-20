@@ -428,6 +428,13 @@ extension WorkspaceStore {
             case .settingsLogging: L("see Settings › Logging")
             }
         }
+
+        var action: ToastAction {
+            switch self {
+            case .runHistory: .runHistory
+            case .settingsLogging: .settings
+            }
+        }
     }
 
     /// The toast for a GUI collect that exited 0, which does not mean every source landed:
@@ -437,7 +444,8 @@ extension WorkspaceStore {
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
         return Toast(
-            message: L("Refresh finished with warnings — \(warningsAt.pointer)"), style: .warning)
+            message: L("Refresh finished with warnings — \(warningsAt.pointer)"), style: .warning,
+            action: warningsAt.action)
     }
 
     /// `sink`, after feeding each run line to `honesty`.
@@ -556,7 +564,7 @@ extension WorkspaceStore {
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(
                 message: L("Collect failed — jamf-cli credentials expired; re-authenticate from Settings → Connections"),
-                style: .danger
+                style: .danger, action: .settings
             )
         }
         // Only point at Run History when this run was actually recorded;
@@ -566,7 +574,7 @@ extension WorkspaceStore {
             : L("check the app log")
         return Toast(
             message: L("Collect finished with errors (exit \(exitCode)) — \(tail)"),
-            style: .danger
+            style: .danger, action: runRecorded ? .runHistory : nil
         )
     }
 

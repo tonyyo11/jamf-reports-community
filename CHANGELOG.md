@@ -9,6 +9,9 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
+- Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
+
 - Data Sources has a switch for each source the app collects, so an organization whose server
   cannot answer a source can stop collecting it without editing config.yaml. A source turned off
   stops updating: screens keep showing what was last collected, with its date, and the daily
@@ -312,6 +315,8 @@ versions in this repository map to git tags.
   included) for every demo workspace, and Reports lists the workbooks' CSV folders.
 
 ### Fixed
+
+- A link or button that pointed at a screen the sidebar does not show (hidden in Settings, or not offered for a Jamf School workspace) no longer opens that screen. The app says why instead, with a button to Settings when you hid it yourself.
 
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
   Total Titles tile now reads "Patch titles tracked" instead of "Patch policies tracked". The

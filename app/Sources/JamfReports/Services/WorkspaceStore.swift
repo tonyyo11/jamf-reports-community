@@ -1550,6 +1550,16 @@ struct TabVisibility: Sendable, Equatable {
         !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
     }
 
+    /// Why a jump to `tab` cannot land, or nil when it can. A tile, banner or toast that posts
+    /// `.navigateToTab` never moves the window onto a screen the sidebar does not show.
+    func navigationRefusal(to tab: Tab) -> String? {
+        if !isAvailable(tab) { return L("\(tab.label) is not available for this workspace") }
+        if !isVisible(tab) {
+            return L("\(tab.label) is hidden; show it in Settings › Sidebar Visibility")
+        }
+        return nil
+    }
+
     /// The tabs the environment's products can fill, never stored (R5, R6, R8).
     func limited(to environment: EnvironmentProducts) -> TabVisibility {
         var copy = self
@@ -1658,9 +1668,27 @@ struct Toast: Identifiable, Sendable {
     enum Style: Sendable { case info, success, warning, danger }
     /// How long a toast stays up before it clears itself.
     static let displaySeconds: Double = 4
+    /// Long enough to read the message and reach the button.
+    static let actionDisplaySeconds: Double = 10
     let id: UUID = UUID()
     let message: String
     let style: Style
+    var action: ToastAction? = nil
+
+    var displaySeconds: Double { action == nil ? Self.displaySeconds : Self.actionDisplaySeconds }
+}
+
+/// A toast's button: a screen to open, posted through `.navigateToTab` like every other jump.
+struct ToastAction: Sendable, Equatable {
+    let label: String
+    let navigation: [String: String]
+
+    static func open(_ tab: Tab, label: String) -> ToastAction {
+        ToastAction(label: label, navigation: ["tab": tab.rawValue])
+    }
+
+    static var runHistory: ToastAction { .open(.runs, label: L("Open Run History")) }
+    static var settings: ToastAction { .open(.settings, label: L("Open Settings")) }
 }
 
 extension WorkspaceStore {
