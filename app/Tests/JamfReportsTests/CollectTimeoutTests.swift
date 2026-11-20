@@ -215,6 +215,75 @@ final class CollectTimeoutTests: XCTestCase {
                        CLIBridge.exitCodeTimedOut)
     }
 
+    /// Runs the refresh tier with every patch definition call answering `definitionScript`;
+    /// returns the definition calls made, the log and the release-date snapshots written.
+    private func runDefinitionWalk(
+        _ definitionScript: String
+    ) async throws -> (attempts: Int, texts: [String], snapshots: [String]) {
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let calls = root.appendingPathComponent("definition-calls.log")
+        let rows = (1...12).map {
+            #"{"title":"T\#($0)","id":"\#($0)","on_latest":1,"on_other":0,"total":1,"#
+                + #""latest":"1.0","compliance_pct":"100%"}"#
+        }.joined(separator: ",")
+        let stub = root.appendingPathComponent("bin/stub-cli")
+        try """
+        #!/bin/sh
+        [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
+        case "$*" in
+          *patch-software-title-configurations*) echo x >> '\(calls.path)'; \(definitionScript) ;;
+          *--scan-failures*) printf '[]'; exit 0 ;;
+          *"report patch-status"*) printf '%s' '[\(rows)]'; exit 0 ;;
+        esac
+        printf '[]'
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let collector = LogTextCollector()
+        _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh], force: true,
+            authConfirmationProbe: { _, _ in false }, locateJamfCLI: { stub },
+            refreshSOFA: { _ in (.empty, []) },
+            patchDefinitionLimits: .init(timeout: 5, stopAfterTimeouts: 3),
+            onLine: collector.append)
+        let attempts = ((try? String(contentsOf: calls, encoding: .utf8)) ?? "")
+            .split(separator: "\n").count
+        let folder = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("patch-release-dates")
+        let snapshots = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return (attempts, collector.texts, snapshots.filter { $0.hasSuffix(".json") })
+    }
+
+    /// A rejected token is rejected for every title: one call, then the walk stops (Nov 16
+    /// production: 139 calls, then "[ok] patch-release-dates: 0 title(s)").
+    func testARefusedPatchDefinitionEndsTheWalkAndWritesNothing() async throws {
+        let walk = try await runDefinitionWalk("exit 3")
+        XCTAssertEqual(walk.attempts, 1, "every later title would repeat exit 3")
+        XCTAssertTrue(walk.texts.contains { $0.contains("stopped patch-release-dates: exit 3") },
+                      "\(walk.texts)")
+        XCTAssertTrue(walk.texts.contains {
+            $0.hasPrefix("[partial]") && $0.contains("patch-release-dates") }, "\(walk.texts)")
+        XCTAssertFalse(walk.texts.contains { $0.contains("[ok] patch-release-dates") })
+        XCTAssertEqual(walk.snapshots, [])
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.lastFailureExitCode(for: "patch-release-dates"),
+                       CLIBridge.exitCodeUnauthorized)
+    }
+
+    /// Titles that all fail with an exit a retry might fix are each tried, then the walk is a
+    /// failure, never an empty snapshot that reads as "no release dates".
+    func testAWalkWhereNoTitleAnsweredIsNotWritten() async throws {
+        let walk = try await runDefinitionWalk("exit 1")
+        XCTAssertEqual(walk.attempts, 12)
+        XCTAssertTrue(walk.texts.contains {
+            $0.contains("patch-release-dates: no title answered — not written") }, "\(walk.texts)")
+        XCTAssertTrue(walk.texts.contains {
+            $0.hasPrefix("[partial]") && $0.contains("patch-release-dates") }, "\(walk.texts)")
+        XCTAssertEqual(walk.snapshots, [])
+    }
+
     func testATimedOutAttemptIsAFailureForTheVerdictsButNotAuthOrUsage() {
         let timedOut = [ReportEngine.CollectOutcome(
             kind: "computers", exitCode: CLIBridge.exitCodeTimedOut)]

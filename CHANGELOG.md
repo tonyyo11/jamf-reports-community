@@ -335,6 +335,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Collecting patch release dates stops at the first title Jamf Pro refuses (expired credentials, a missing privilege, throttling or a refused command) instead of asking for every title, and a run where no title answered is recorded as failed, shown as Partial in Run History, and keeps the previous release dates. Before, a rejected token made one call per patch title and then saved an empty set of release dates as a success, so Patch Compliance's Released and Days Behind columns went blank until the next good run.
 - The summary tiles on Backups, Computers and Generated reports line up at the top and share one height. A tile whose value wraps, such as the latest backup's date, no longer sits higher than its neighbours.
 - The "needs attention" banner asking for a Jamf Pro backup choice on a synced folder now goes away as soon as you make the choice on the Backups screen, instead of staying until the next backup or until you dismiss it. Turning on "Back up Jamf Protect in this folder" clears its warning the same way.
 - The workbook's charts (and the PNG copies written beside reports) no longer put the legend on

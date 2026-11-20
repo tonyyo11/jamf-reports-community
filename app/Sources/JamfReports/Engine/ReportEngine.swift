@@ -2906,6 +2906,8 @@ struct ReportEngine: Sendable {
                 case .failed(let exitCode):
                     stateStore?.record(
                         .failed(exitCode: exitCode), report: "patch-release-dates", at: Date())
+                    onLine(.init(timestamp: Date(), level: .warn, text: Self.unlandedSourcesLine(
+                        [Self.patchReleaseDatesKind], attempted: 1)))
                 }
             }
         }
@@ -3650,9 +3652,10 @@ struct ReportEngine: Sendable {
     }
 
     /// `pro patch-software-title-configurations definitions <id>` for each title.
-    /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
-    /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
-    /// out `limits.stopAfterTimeouts` times in a row end the loop, as in the device scan.
+    /// A title that fails is warned and skipped. Calls that time out `limits.stopAfterTimeouts`
+    /// times in a row, or an exit every later title would repeat (`repeatingTitleExits`), end
+    /// the walk as failed, as in the patch summaries; a walk where no title answered is failed,
+    /// never an empty snapshot.
     private static func collectPatchReleaseDates(
         profile: String,
         bin: URL,
@@ -3678,6 +3681,9 @@ struct ReportEngine: Sendable {
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
         let ts = formatter.string(from: Date())
         var timeoutStreak = 0
+        var attempted = 0
+        var answered = 0
+        var lastFailure: Int32?
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3689,19 +3695,28 @@ struct ReportEngine: Sendable {
                              text: "[warn] patch-definitions: skipping title with an unsafe id"))
                 continue
             }
+            attempted += 1
             let args = patchDefinitionArguments(profile: profile, titleId: titleId)
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: limits.timeout, onLine: { _ in })
-            let timedOut = captureResult.map {
+            let exit = captureResult.map {
                 FailureCause.exitCountingServerTimeout($0.0, stdout: $0.1)
-            } == CLIBridge.exitCodeTimedOut
-            timeoutStreak = timedOut ? timeoutStreak + 1 : 0
+            }
+            timeoutStreak = exit == CLIBridge.exitCodeTimedOut ? timeoutStreak + 1 : 0
             guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
                 let what = Self.patchDefinitionFailureText(captureResult.map { ($0.0, $0.1) })
                 onLine(.init(timestamp: Date(), level: .warn,
                              text: "[warn] patch-definitions: title \(titleId) \(what) — skipping"))
+                lastFailure = exit ?? launchFailureExitCode
+                if let exit, repeatingTitleExits.contains(exit) {
+                    onLine(.init(
+                        timestamp: Date(), level: .warn,
+                        text: "[warn] stopped \(patchReleaseDatesKind): \(exitText(exit)), which "
+                            + "every later title would repeat"))
+                    return .failed(exitCode: exit)
+                }
                 if timeoutStreak >= limits.stopAfterTimeouts {
                     onLine(.init(
                         timestamp: Date(), level: .warn,
@@ -3712,6 +3727,7 @@ struct ReportEngine: Sendable {
                 continue
             }
 
+            answered += 1
             // Extract latest definition date.
             guard let definitions = try? JSONSerialization.jsonObject(with: data)
                     as? [[String: Any]]
@@ -3727,6 +3743,11 @@ struct ReportEngine: Sendable {
             ])
         }
 
+        if attempted > 0, answered == 0 {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] \(patchReleaseDatesKind): no title answered — not written"))
+            return .failed(exitCode: lastFailure)
+        }
         // Write merged snapshot.
         do {
             try writePatchReleaseDates(merged, stamp: ts, dataDir: dataDir)
