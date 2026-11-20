@@ -637,6 +637,8 @@ struct OutputConfig: Decodable, Sendable {
     /// `timestamp_authority`: an RFC 3161 authority's https URL; each run's manifest hash is
     /// sent there and the reply saved as `<stem>.tsr`. Absent is off.
     var timestampAuthority: String?
+    /// `file_prefix`: what every generated report's name starts with (default `jamf`).
+    var filePrefix: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
@@ -646,6 +648,7 @@ struct OutputConfig: Decodable, Sendable {
         case keepLatestRuns = "keep_latest_runs"
         case csvFolder = "csv_folder"
         case timestampAuthority = "timestamp_authority"
+        case filePrefix = "file_prefix"
     }
 
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
@@ -655,6 +658,10 @@ struct OutputConfig: Decodable, Sendable {
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
     var writesCSVFolder: Bool { csvFolder ?? false }
+    /// `file_prefix` when it can start a file name, else `jamf` (`ExportNaming.validFilePrefix`).
+    var resolvedFilePrefix: String {
+        ExportNaming.validFilePrefix(filePrefix) ?? ExportNaming.defaultFilePrefix
+    }
     /// `timestamp_authority` when it is an https URL with a host; anything else is off.
     var timestampAuthorityURL: URL? {
         let typed = (timestampAuthority ?? "").trimmingCharacters(in: .whitespaces)
@@ -676,6 +683,7 @@ extension OutputConfig {
         // A mistyped value reads as off instead of failing the whole config.yaml decode.
         csvFolder = try? c.decodeIfPresent(Bool.self, forKey: .csvFolder)
         timestampAuthority = try? c.decodeIfPresent(String.self, forKey: .timestampAuthority)
+        filePrefix = try? c.decodeIfPresent(String.self, forKey: .filePrefix)
     }
 }
 

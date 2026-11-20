@@ -31,6 +31,8 @@ final class GenerateSheetState {
     var htmlWithWorkbook: Bool = false
     /// `output.csv_folder` as config.yaml holds it. False until the sheet has read it.
     var csvFolderConfigured: Bool = false
+    /// `output.file_prefix`, read with the other output options, for "What will be written".
+    var filePrefix: String = ExportNaming.defaultFilePrefix
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -176,17 +178,21 @@ final class GenerateSheetState {
     }
 
     /// The "What will be written" line for the HTML report that goes with the workbook.
-    nonisolated static func htmlWithWorkbookLine(profile: String) -> String {
-        let stem = ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false)
+    nonisolated static func htmlWithWorkbookLine(
+        profile: String, prefix: String = ExportNaming.defaultFilePrefix
+    ) -> String {
+        let stem = ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false, prefix: prefix)
         return L("\(stem)_<date>.html (the HTML report, written with every workbook)")
     }
 
     /// What one format writes, as "What will be written" lists it: the stem the generators
     /// write (`ExportNaming.stem`) and what they write beside it.
     nonisolated static func writtenFiles(
-        for type: GenerateOutputType, profile: String, schoolMode: Bool
+        for type: GenerateOutputType, profile: String, schoolMode: Bool,
+        prefix: String = ExportNaming.defaultFilePrefix
     ) -> String {
-        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
+        let stem = ExportNaming.stem(
+            for: type, profile: profile, schoolMode: schoolMode, prefix: prefix)
         let name = "\(stem)_<date>.\(type.rawValue.lowercased())"
         switch type {
         case .csvFolder: return L("\(stem)_<date>_csv/ (one .csv per workbook tab, with the workbook)")
@@ -501,21 +507,24 @@ struct GenerateSheet: View {
 
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
                 Text("• " + GenerateSheetState.writtenFiles(
-                    for: type, profile: profile, schoolMode: state.schoolMode))
+                    for: type, profile: profile, schoolMode: state.schoolMode,
+                    prefix: state.filePrefix))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             if state.writesCSVFolderFromConfig {
                 Text("• " + GenerateSheetState.writtenFiles(
-                    for: .csvFolder, profile: profile, schoolMode: state.schoolMode)
+                    for: .csvFolder, profile: profile, schoolMode: state.schoolMode,
+                    prefix: state.filePrefix)
                     + " (output.csv_folder is on)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             if state.writesHTMLWithWorkbook {
-                Text("• " + GenerateSheetState.htmlWithWorkbookLine(profile: profile))
+                Text("• " + GenerateSheetState.htmlWithWorkbookLine(
+                    profile: profile, prefix: state.filePrefix))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -1052,6 +1061,9 @@ struct GenerateSheet: View {
         }.value
         state.csvFolderConfigured = await Task.detached(priority: .utility) {
             CSVFolderConfigLoader.isOn(profile: profile)
+        }.value
+        state.filePrefix = await Task.detached(priority: .utility) {
+            ExportNaming.filePrefix(profile: profile)
         }.value
     }
 

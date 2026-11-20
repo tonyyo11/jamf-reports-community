@@ -21,34 +21,81 @@ enum ExportNaming {
         return "\(kindPart)-\(profilePart)-\(stamp).\(ext)"
     }
 
+    /// What every generated report's name starts with unless `output.file_prefix` says otherwise.
+    static let defaultFilePrefix = "jamf"
+    static let maxFilePrefixLength = 24
+
+    /// `output.file_prefix` when it can start a file name: 1-24 ASCII letters, digits or
+    /// hyphens. No underscore, which separates the prefix from the kind when a name is read
+    /// back (`reportNameParts`). Nil for anything else, which reads as `jamf`.
+    static func validFilePrefix(_ raw: String?) -> String? {
+        guard let typed = raw?.trimmingCharacters(in: .whitespaces), !typed.isEmpty,
+              typed.count <= maxFilePrefixLength,
+              typed.unicodeScalars.allSatisfy({
+                  $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-")
+              })
+        else { return nil }
+        return typed
+    }
+
+    /// The prefix the profile's config.yaml sets, for a screen that has no decoded config.
+    static func filePrefix(profile: String) -> String {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            return defaultFilePrefix
+        }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path),
+              let output = (try? ConfigLoader.load(from: url))?.output
+        else { return defaultFilePrefix }
+        return output.resolvedFilePrefix
+    }
+
     /// What a generated report's file name starts with, before the profile: the one
     /// definition the writers and the Generate sheet's "What will be written" share.
-    static func reportKind(for type: GenerateOutputType, schoolMode: Bool) -> String {
+    static func reportKind(
+        for type: GenerateOutputType, schoolMode: Bool, prefix: String = defaultFilePrefix
+    ) -> String {
         switch type {
-        case .xlsx, .csvFolder: schoolMode ? "jamf_school_report" : "jamf_report"
-        case .html, .pdf: "jamf_report"
-        case .csv: "jamf_inventory"
+        case .xlsx, .csvFolder: schoolMode ? "\(prefix)_school_report" : "\(prefix)_report"
+        case .html, .pdf: "\(prefix)_report"
+        case .csv: "\(prefix)_inventory"
         }
     }
 
-    /// The kinds builds before 2.12 wrote, new kind to old, so their files still read back,
-    /// keep their label and rotate out with the runs that replaced them.
-    static let legacyReportKinds: [String: String] = [
-        "jamf_report": "report", "jamf_school_report": "school-report", "jamf_inventory": "inventory",
-    ]
+    /// A generated report's name split at its kind: `acme_report_prod_2026-…` is prefix
+    /// `acme`, kind `report`, rest `prod_2026-…`. Names from before 2.12 have no prefix
+    /// (`report_…`, `school-report_…`, `inventory_…`), so any prefix and the old names read
+    /// back. Nil for a name that is not a generated report.
+    struct ReportNameParts: Equatable {
+        enum Kind: String { case report, schoolReport, inventory }
+        let prefix: String?
+        let kind: Kind
+        let rest: String
 
-    /// `stem` with a pre-2.12 kind in place of its current one, or nil when it has none:
-    /// `jamf_report_prod` → `report_prod`.
-    static func legacyStem(of stem: String) -> String? {
-        legacyReportKinds
-            .filter { stem.hasPrefix($0.key + "_") || stem == $0.key }
-            .max { $0.key.count < $1.key.count }
-            .map { $0.value + stem.dropFirst($0.key.count) }
+        /// The name without its prefix, so runs of one profile match whatever prefix wrote them.
+        var key: String { "\(kind.rawValue)_\(rest)" }
     }
 
-    /// A generated report's file name before its timestamp and extension: `report_prod`.
-    static func stem(for type: GenerateOutputType, profile: String, schoolMode: Bool) -> String {
-        let kind = reportKind(for: type, schoolMode: schoolMode)
+    static func reportNameParts(_ stem: String) -> ReportNameParts? {
+        let pattern = #/
+            (?i)^ (?: ([A-Za-z0-9-]{1,24}) _ )?
+            (school_report | school-report | report | inventory) _ (.+) $
+            /#
+        guard let match = stem.wholeMatch(of: pattern) else { return nil }
+        let kind: ReportNameParts.Kind = switch match.2.lowercased() {
+        case "school_report", "school-report": .schoolReport
+        case "inventory": .inventory
+        default: .report
+        }
+        return ReportNameParts(prefix: match.1.map(String.init), kind: kind, rest: String(match.3))
+    }
+
+    /// A generated report's file name before its timestamp and extension: `jamf_report_prod`.
+    static func stem(
+        for type: GenerateOutputType, profile: String, schoolMode: Bool,
+        prefix: String = defaultFilePrefix
+    ) -> String {
+        let kind = reportKind(for: type, schoolMode: schoolMode, prefix: prefix)
         let part = profilePart(profile)
         return part.isEmpty ? kind : "\(kind)_\(part)"
     }
@@ -86,4 +133,9 @@ enum ExportNaming {
         // hidden on the filesystem.
         return result.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
     }
+}
+
+extension ReportConfig {
+    /// What this workspace's generated reports are named with (`output.file_prefix`).
+    var filePrefix: String { output?.resolvedFilePrefix ?? ExportNaming.defaultFilePrefix }
 }

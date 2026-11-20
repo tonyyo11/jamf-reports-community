@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Report file names can start with your organization's own word instead of `jamf`: set it in Config › Output (`output.file_prefix`, letters, digits and hyphens, up to 24). Workbooks become `acme_report_<profile>_<date>`, the Jamf School workbook `acme_school_report_…` and the inventory CSV `acme_inventory_…`. Reports written under an earlier prefix still show in Reports and still move to the archive. A prefix that cannot start a file name keeps `jamf`, and Config Doctor says why.
 - Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
 - Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
 - Tiles on Computers, Security Posture, Fleet Overview, Offline Outreach and the Overview open what they count. FileVault, SIP, Firewall and Gatekeeper tiles open Computers filtered to the Macs with that control off, with a removable chip; the Overview's metric pages name the filter on their button. A tile that no list can match stays plain.

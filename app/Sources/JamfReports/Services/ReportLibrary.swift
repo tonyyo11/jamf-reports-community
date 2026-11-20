@@ -256,22 +256,21 @@ struct ReportLibrary {
             ("audit-findings-", L("Audit findings CSV")),
             ("outreach-stale-devices-", L("Offline outreach CSV")),
             ("devices-", L("Devices CSV")),
-            ("jamf_school_report_", L("Jamf School workbook")),
-            ("school-report_", L("Jamf School workbook")),
         ]
         if let match = exports.first(where: { lowered.hasPrefix($0.prefix) }) {
             return match.label
         }
+        // Any `output.file_prefix`, and the pre-2.12 names with none.
+        let parts = ExportNaming.reportNameParts(
+            URL(fileURLWithPath: lowered).deletingPathExtension().lastPathComponent)
+        if parts?.kind == .schoolReport { return L("Jamf School workbook") }
         if ReportEngine.isCSVFolderName(lowered) { return L("CSV folder") }
         switch URL(fileURLWithPath: lowered).pathExtension {
         case "xlsx": return L("Workbook")
         case "html": return L("HTML report")
         case "pdf": return L("PDF report")
         case "csv":
-            let isInventory = lowered.hasPrefix("jamf_inventory_")
-                || lowered.hasPrefix("inventory_")
-                || lowered.hasPrefix("automation_inventory_")
-            return isInventory ? L("Inventory CSV") : L("CSV export")
+            return parts?.kind == .inventory ? L("Inventory CSV") : L("CSV export")
         default: return L("Report file")
         }
     }

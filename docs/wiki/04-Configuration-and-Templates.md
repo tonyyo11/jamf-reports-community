@@ -363,6 +363,13 @@ folder in use (and its archive), its header names it, and Reveal in Finder, Open
 save panels start there. `retention.archive_dir` follows the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
 takes `#RRGGBB` or `#RGB`; anything else uses the default.
 
+`output.file_prefix` (default `jamf`) starts every generated report's file name:
+`jamf_report_<profile>_<date>` for workbooks, CSV folders, HTML and PDF,
+`jamf_school_report_…` for a Jamf School workbook and `jamf_inventory_…` for the inventory
+CSV. Set it to your organization's own word in Config › Output: 1 to 24 letters, digits or
+hyphens. Reports written under an earlier prefix, or before 2.12 with none, still show in
+Reports and still move to the archive as new runs replace them.
+
 `output.csv_folder: true` (default off) also writes one CSV per workbook tab into a
 `<workbook name>_csv` folder beside every workbook, including a scheduled run's; the Generate
 sheet's **CSV folder** format and `jamf-reports generate --csv-folder` do it for one run.

@@ -65,7 +65,8 @@ struct Generate: AsyncParsableCommand {
         signals.bindAttention()
         let outputURL = try output.map { URL(fileURLWithPath: $0) }
             ?? engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool),
+                stem: ExportNaming.reportKind(
+                    for: .xlsx, schoolMode: isSchool, prefix: config.filePrefix),
                 onLine: signals.teeing(CLIRun.printLogLine))
         do {
             let onLine = signals.teeing(CLIRun.printLogLine)
@@ -198,7 +199,8 @@ struct Html: AsyncParsableCommand {
         // swapping the extension — there's no HTML-specific path resolver.
         let defaultURL = try ReportEngine(
             config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-            .resolveOutputURL(stem: ExportNaming.reportKind(for: .html, schoolMode: false),
+            .resolveOutputURL(stem: ExportNaming.reportKind(
+                for: .html, schoolMode: false, prefix: config.filePrefix),
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
