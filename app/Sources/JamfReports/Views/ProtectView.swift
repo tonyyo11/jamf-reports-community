@@ -276,7 +276,9 @@ struct ProtectView: View {
         let total = buckets.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: L("Kill-Chain Stage"))
+                // Every alert, resolved ones too, unlike the open-alert severity card above.
+                SectionHeader(title: L("Kill-Chain Stage"),
+                              trailingTag: L("All alerts, open and resolved"))
                 if total == 0 {
                     Text("No alert event types to bucket.")
                         .font(.caption.monospaced())

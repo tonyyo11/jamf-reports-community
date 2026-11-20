@@ -1077,7 +1077,8 @@ final class MobileFleetServiceTests: XCTestCase {
     func testTableHeightFitsItsRowsUpToTheCap() {
         let row = MobileFleetView.deviceRowHeight
         let three = MobileFleetView.tableHeight(rows: 3, rowHeight: row, cap: 430)
-        XCTAssertEqual(three, 33 + 3 * row)
+        let chrome = PageTableMetrics.headerHeight + PageTableMetrics.rowInsets
+        XCTAssertEqual(three, chrome + 3 * row)
         XCTAssertLessThan(three, 430)
         XCTAssertEqual(
             MobileFleetView.tableHeight(rows: 4, rowHeight: row, cap: 430) - three, row
@@ -1086,7 +1087,7 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(
             MobileFleetView.tableHeight(rows: 8, rowHeight: MobileFleetView.profileRowHeight,
                                         cap: 280),
-            33 + 8 * 24
+            chrome + 8 * 24
         )
     }
 

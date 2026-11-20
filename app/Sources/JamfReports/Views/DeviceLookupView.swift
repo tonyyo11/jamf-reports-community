@@ -190,9 +190,9 @@ struct DeviceLookupView: View {
                 .fill(Color.white.opacity(0.03))
         )
         .contextMenu {
-            Button(L("Copy name")) { SystemActions.copyToClipboard(cand.name) }
+            Button(L("Copy Name")) { SystemActions.copyToClipboard(cand.name) }
             if let serial = cand.serial, !serial.isEmpty {
-                Button(L("Copy serial number")) { SystemActions.copyToClipboard(serial) }
+                Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(serial) }
             }
             // A computer's candidate id is its Jamf ID; a mobile device has another console path.
             if cand.kind == .computer, let url = workspace.consoleURL(forComputerID: cand.id) {

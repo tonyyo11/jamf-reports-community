@@ -274,3 +274,18 @@ extension Theme {
         }
     }
 }
+
+/// A table cell's secondary text: the theme's tertiary grey, and the system's secondary style on
+/// a selected row, where grey on the selection colour cannot be read. A `ShapeStyle`, so each
+/// cell resolves it in its own row's environment (`backgroundProminence`).
+struct CellSecondaryStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
+        environment.backgroundProminence == .increased
+            ? AnyShapeStyle(.secondary)
+            : AnyShapeStyle(Theme.Text.tertiary(environment.colorSchemeContrast))
+    }
+}
+
+extension ShapeStyle where Self == CellSecondaryStyle {
+    static var cellSecondary: CellSecondaryStyle { CellSecondaryStyle() }
+}

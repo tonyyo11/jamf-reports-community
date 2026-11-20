@@ -335,6 +335,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Right-click menus use one capitalisation everywhere (Copy Name, Copy Serial Number, Copy User Email, Copy Email); Computers, Offline Outreach and Device Lookup used sentence case.
+- A metric's detail page measures Change against the Previous figure shown beside it, as the Overview tiles do, instead of against the first day in the history.
+- Jamf Protect's Kill-Chain Stage card says it counts all alerts, open and resolved, so it no longer reads as disagreeing with the open-alert card above it.
+- On a selected row in Computers, Mobile Devices, the Overview's recent activity and Backups, grey text turns to the system's secondary colour instead of grey on blue.
+- Short tables, such as a device's configuration profiles on Mobile Devices, are sized for the space macOS keeps above the first row and below the last, so their first row is no longer clipped under the header.
 - Collecting patch release dates stops at the first title Jamf Pro refuses (expired credentials, a missing privilege, throttling or a refused command) instead of asking for every title, and a run where no title answered is recorded as failed, shown as Partial in Run History, and keeps the previous release dates. Before, a rejected token made one call per patch title and then saved an empty set of release dates as a success, so Patch Compliance's Released and Days Behind columns went blank until the next good run.
 - The summary tiles on Backups, Computers and Generated reports line up at the top and share one height. A tile whose value wraps, such as the latest backup's date, no longer sits higher than its neighbours.
 - The "needs attention" banner asking for a Jamf Pro backup choice on a synced folder now goes away as soon as you make the choice on the Backups screen, instead of staying until the next backup or until you dismiss it. Turning on "Back up Jamf Protect in this folder" clears its warning the same way.

@@ -416,7 +416,7 @@ struct BackupsView: View {
                             } else if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Text.tertiary(contrast).opacity(0.65))
+                                    .foregroundStyle(.cellSecondary.opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }

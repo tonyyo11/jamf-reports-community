@@ -623,7 +623,7 @@ struct DevicesView: View {
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                                    .foregroundStyle(.cellSecondary)
                                     .lineLimit(1)
                             }
                         }
@@ -643,7 +643,7 @@ struct DevicesView: View {
                         if !isCompact {
                             Text(row.device.user.isEmpty ? "Unassigned" : row.device.user)
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .foregroundStyle(.cellSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -692,13 +692,13 @@ struct DevicesView: View {
                 }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
-                        Button(L("Copy name")) {
+                        Button(L("Copy Name")) {
                             SystemActions.copyToClipboard(device.displayName)
                         }
-                        Button(L("Copy serial number")) {
+                        Button(L("Copy Serial Number")) {
                             SystemActions.copyToClipboard(device.serial)
                         }
-                        Button(L("Copy user email")) {
+                        Button(L("Copy User Email")) {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
                         if let url = consoleURL(for: device) {
