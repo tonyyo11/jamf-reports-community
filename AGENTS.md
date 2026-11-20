@@ -1815,7 +1815,7 @@ P0/P1/P2 action items + OS donut), `CompliancePostureView` (compliance band
 donut + control-gap bars + per-OS breakdown), `OutreachView` (stale tier cards
 + devices table + clipboard mail-merge).
 
-Operations group: `PatchView` (titles table with CSV + PNG export, per-title failure drawer),
+Operations group: `PatchView` (titles table with CSV + PNG export, Compliant and Failing tiles that filter it, velocity card, recent failures card),
 `UpdatesView` (plan state donut + failed-plans table + error-devices table),
 `PolicyProfileView` (two-tab segment: Policies findings + Profiles status),
 `ExtensionAttributesView` (coverage grid + value-distribution chart).

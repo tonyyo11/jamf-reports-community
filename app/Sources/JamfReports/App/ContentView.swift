@@ -181,6 +181,13 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTab)) { note in
             if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
+                let visibility = workspace.tabVisibility(hiddenRaw: hiddenTabsRaw)
+                if let refusal = visibility.navigationRefusal(to: newTab) {
+                    workspace.toast = Toast(
+                        message: refusal, style: .info,
+                        action: visibility.isAvailable(newTab) ? .settings : nil)
+                    return
+                }
                 workspace.pendingDevicesFilter = DevicesView.DeviceFilter.pending(
                     from: note.userInfo, destination: newTab)
                 workspace.pendingMobileFilter = MobileFinding.pending(
@@ -352,6 +359,14 @@ struct ContentView: View {
                 .font(.body.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
 
+            if let action = toast.action {
+                PNPButton(title: action.label, style: .ghost, size: .sm) {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab, object: nil, userInfo: action.navigation)
+                    workspace.toast = nil
+                }
+            }
+
             Button {
                 workspace.toast = nil
             } label: {
@@ -373,7 +388,7 @@ struct ContentView: View {
         // One timer per toast: onAppear ran once, when the first toast appeared, so a toast
         // that replaced another while it was up never cleared and sat over the page.
         .task(id: toast.id) {
-            try? await Task.sleep(for: .seconds(Toast.displaySeconds))
+            try? await Task.sleep(for: .seconds(toast.displaySeconds))
             guard !Task.isCancelled else { return }
             workspace.dismissToast(ifShowing: toast.id)
         }

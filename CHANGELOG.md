@@ -9,6 +9,16 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
+- Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
+- Tiles on Computers, Security Posture, Fleet Overview, Offline Outreach and the Overview open what they count. FileVault, SIP, Firewall and Gatekeeper tiles open Computers filtered to the Macs with that control off, with a removable chip; the Overview's metric pages name the filter on their button. A tile that no list can match stays plain.
+- Computers can copy a Mac's name and serial number from the detail panel and the row's right-click menu, and Offline Outreach can copy name, serial number and email. Open in Jamf Pro appears only when the Mac has a Jamf ID and the server address is known, and is off in demo mode. Device Lookup's candidates can copy a serial number, and its stale-data banner has a Collect now button.
+- Offline Outreach's empty state has a Collect now button.
+- Tiles open what they count: the Compliant and Failing tiles on Patch Compliance filter the titles table, the Jailbreak Detected tile on Mobile Devices filters its list, the Latest tile on Backups selects the newest backup, and on Jamf School the Devices, Managed, Supervised and Stale tiles open the matching devices (Supervised is a new filter on the School Devices list).
+- Banners that point somewhere have a button: Backups warnings open Run History, the unreadable mSCP and Jamf Protect banners open Settings or refresh, a failed report generation can be retried, and the stale-data banners on Jamf Protect and Health Audit can collect right there.
+- Empty screens that ask you to collect have a Collect now button (Patch Compliance, Policies and Profiles, Compliance Posture, Mobile Devices, OS Updates, Extension Attributes, Groups, Jamf Protect, Jamf School), and Compliance Benchmarks offers Open Data Sources.
+- Right-click rows to copy or open: mobile devices (serial, name, Open in Jamf Pro), Jamf School devices (serial, name), update error devices and failed plans (serial), policy findings (name, Open in Jamf Pro), profile failures (name) and computer groups (name, Open in Jamf Pro). Open in Jamf Pro is hidden without a server and disabled in demo mode.
+
 - Data Sources has a switch for each source the app collects, so an organization whose server
   cannot answer a source can stop collecting it without editing config.yaml. A source turned off
   stops updating: screens keep showing what was last collected, with its date, and the daily
@@ -140,6 +150,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The Overview's metric pages and tile trend lines draw every percentage and score on a 0 to 100 axis, so a small move no longer looks drastic. Device counts keep an axis fitted to their data.
 - Every percentage trend on the Trends screen now uses a 0 to 100% axis, so a small change no longer looks like a drop. Device counts keep an axis fitted to their data.
 - Every report the app writes now starts with `jamf_`: workbooks and CSV folders are named `jamf_report_<profile>_<date>` like the HTML and PDF reports, the Jamf School workbook `jamf_school_report_…` and the inventory CSV `jamf_inventory_…`. Reports made under the old names (`report_…`, `school-report_…`, `inventory_…`) still show in Reports with their kind and profile, and older workbooks still move to the archive as new runs replace them. The command-line `html` command and the HTML-only export, which still wrote `report_…html`, now use `jamf_report_…` too. Scripts or flows that watch the reports folder for `report_` names need the new prefix.
 - The workbook, its CSV folder, the inventory CSV and the run manifest are named with this Mac's
@@ -318,6 +329,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- PNG exports of the patch titles table list the first 12 titles and say how many are left, the mobile OS bars show 8 versions, a long mSCP baseline name no longer wraps over the export title (titles shrink to fit one line), the donut export buttons are disabled when there is nothing to draw, and an Extension Attribute value chart with every count at zero draws instead of failing.
+- A link or button that pointed at a screen the sidebar does not show (hidden in Settings, or not offered for a Jamf School workspace) no longer opens that screen. The app says why instead, with a button to Settings when you hid it yourself.
 - The HTML and PDF report charts read cleanly: the history chart's legend no longer overlaps the dates, its first and last dates are always shown, repeated axis values and same-day duplicate points are gone, and the Mac count history chart is named for what it shows. Long bar labels are shortened with an ellipsis instead of pushing the bar off the page.
 
 - Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The

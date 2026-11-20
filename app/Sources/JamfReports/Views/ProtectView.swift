@@ -56,7 +56,7 @@ struct ProtectView: View {
                 // Suppressed in demo mode (the demo dataset is intentionally static and
                 // not user-perceivably "stale"). Renders nothing when source is .fresh.
                 if !workspace.demoMode && protectConnected {
-                    StaleDataBanner(source: snapshot.cacheSource)
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
                     // A tenant that doesn't run Protect at all has no expected
                     // kinds — every one of them would render a false-alarm "never"
                     // chip. Only assert expectations once Protect is detected;
@@ -196,7 +196,18 @@ struct ProtectView: View {
 
     /// A newest file is there but cannot be read: the rows it would hold are unknown, not zero.
     private var unreadableBanner: some View {
-        InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+        InlineBanner(
+            icon: "exclamationmark.triangle.fill", tone: .warn,
+            action: InlineBannerAction(
+                label: L("Refresh"), icon: "arrow.clockwise",
+                help: L("Collect the Jamf Protect data again.")
+            ) {
+                Task {
+                    await workspace.runTierRefresh([.refresh])
+                    NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+                }
+            }
+        ) {
             Text("Could not be read: "
                 + snapshot.unreadableKinds.map { $0.replacingOccurrences(of: "protect-", with: "") }
                     .joined(separator: ", ")
@@ -210,7 +221,8 @@ struct ProtectView: View {
             EmptyStateView(
                 systemImage: "shield.lefthalf.filled",
                 title: L("No Jamf Protect data yet"),
-                message: L("Jamf Protect is connected. Its data arrives with the next collect: Refresh on the Overview, or the next scheduled run.")
+                message: L("Jamf Protect is connected. Its data arrives with the next collect: Refresh on the Overview, or the next scheduled run."),
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }

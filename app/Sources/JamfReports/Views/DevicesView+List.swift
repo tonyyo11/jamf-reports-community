@@ -138,6 +138,20 @@ extension DevicesView {
         }
     }
 
+    /// True when the workspace's policy reads the Mac's `control` value as off; a value Jamf
+    /// did not collect reads neither on nor off and is not a match.
+    nonisolated static func controlIsOff(
+        _ device: DeviceInventoryRecord, _ control: SecurityControl, policy: SecurityControlPolicy
+    ) -> Bool {
+        let raw: String = switch control {
+        case .fileVault: device.fileVault
+        case .sip: device.sip
+        case .firewall: device.firewall
+        case .gatekeeper: device.gatekeeper
+        }
+        return policy.reading(raw, for: control) == false
+    }
+
     /// The rows for `devices` under the screen's filters and sort order. `risk` is the screen's
     /// own rating, so the Priority filter, the Risk sort and the Risk pill cannot disagree.
     nonisolated static func buildRows(
@@ -171,6 +185,9 @@ extension DevicesView {
             case .priorityAction:
                 // The Critical or High band of the same score the Risk pill shows.
                 return risk(device).level >= .high
+            case .fileVaultOff, .sipOff, .firewallOff, .gatekeeperOff:
+                guard let control = filter.offControl else { return false }
+                return controlIsOff(device, control, policy: policy)
             }
         }
         return DeviceSortRow.sorted(
