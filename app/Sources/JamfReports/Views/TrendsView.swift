@@ -88,11 +88,9 @@ struct TrendsView: View {
         Self.chartYDomain(metric: metric, values: values)
     }
 
-    /// Y-axis domain that respects the metric's preferred "good frame" but
-    /// always expands to fit actual data. Without this, a Stability Index of
-    /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
-    /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
-    /// non-negative by construction (validated in the data layer).
+    /// Y-axis domain: 0-100 for a share or score; for other metrics the preferred "good frame"
+    /// expanded to fit actual data, so a Stale count of 100+ does not clip off the top of
+    /// `metric.maxY = 60`. Floor at 0 — values are non-negative by construction.
     /// Device counts (`isDeviceCount`) have no good frame: a fixed 0–1,000 flattened a small
     /// fleet, so their top follows the data.
     nonisolated static func chartYDomain(
@@ -104,6 +102,8 @@ struct TrendsView: View {
         if metric.isDeviceCount, let dataMax {
             return 0...deviceCountAxisTop(dataMax)
         }
+        // A share or score always plots on 0-100, so a small move does not look drastic.
+        if metric.unit == "%" { return 0...100 }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi

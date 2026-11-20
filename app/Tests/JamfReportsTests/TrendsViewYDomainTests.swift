@@ -56,13 +56,13 @@ final class TrendsViewYDomainTests: XCTestCase {
         XCTAssertEqual(domain, metric.minY...metric.maxY)
     }
 
-    func testPercentMetricKeepsItsPreferredFrame() {
-        let domain = TrendsView.chartYDomain(metric: .stability, values: [70, 72])
-        XCTAssertEqual(domain, 40...100)
-    }
-
-    func testPercentMetricStillExpandsBelowItsFloor() {
-        let domain = TrendsView.chartYDomain(metric: .stability, values: [0, 25])
-        XCTAssertEqual(domain, 0...100)
+    func testEveryPercentMetricPlotsOnZeroToOneHundred() {
+        let percents = (TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
+            .filter { $0.unit == "%" }
+        XCTAssertFalse(percents.isEmpty)
+        for metric in percents {
+            XCTAssertEqual(TrendsView.chartYDomain(metric: metric, values: [70, 72]), 0...100)
+            XCTAssertEqual(TrendsView.chartYDomain(metric: metric, values: []), 0...100)
+        }
     }
 }
