@@ -234,7 +234,9 @@ struct BackupsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let errorMessage {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -248,14 +250,18 @@ struct BackupsView: View {
     private var protectBanner: some View {
         if syncedChoice != nil || proChoice != nil { syncedStorageBanner }
         if latestBackup?.proSkipped == true, latestBackup?.noJamfPro != true, proChoice == nil {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text("The latest backup has no Jamf Pro part: it was skipped. Run History has the reason; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }
         }
         if latestBackup?.proFailed == true {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text("The latest backup's Jamf Pro part failed, so it holds only what Jamf Protect exported. Run History has the error; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -264,12 +270,21 @@ struct BackupsView: View {
         if let protect = latestBackup?.protect, !isSyncedStorageSkip(protect) {
             InlineBanner(
                 icon: protect.isIncomplete ? "exclamationmark.triangle.fill" : "shield",
-                tone: protect.isIncomplete ? .warn : .info
+                tone: protect.isIncomplete ? .warn : .info,
+                action: protect.isIncomplete ? runHistoryAction : nil
             ) {
                 Text(protect.protectSummary)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }
+        }
+    }
+
+    /// The banners that say Run History has the reason or the error.
+    private var runHistoryAction: InlineBannerAction {
+        InlineBannerAction(label: L("Open Run History"), icon: "clock.arrow.circlepath") {
+            NotificationCenter.default.post(
+                name: .navigateToTab, object: nil, userInfo: ["tab": Tab.runs.rawValue])
         }
     }
 
@@ -482,7 +497,11 @@ struct BackupsView: View {
         HStack(spacing: 12) {
             StatTile(label: L("Backups"), value: "\(backups.count)", sub: L("Configuration snapshots"))
             StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes), sub: L("JSON backup files"))
-            StatTile(label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"), sub: latestBackup?.name ?? L("No backup"))
+            StatTile(
+                label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"),
+                sub: latestBackup?.name ?? L("No backup"),
+                action: latestBackup.map { latest in { selectedBackups = [latest.id] } },
+                actionHint: L("Selects the latest backup in the list"))
             StatTile(label: L("Selected"), value: "\(selectedBackups.count)", sub: L("Choose two to diff"))
         }
     }

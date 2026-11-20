@@ -120,7 +120,14 @@ struct ComplianceBenchmarksView: View {
                     systemImage: "lock.shield",
                     title: L("Platform API profile required"),
                     message: ComplianceBenchmarksView.lockReason(),
-                    commands: ComplianceBenchmarksView.setupCommands
+                    commands: ComplianceBenchmarksView.setupCommands,
+                    primaryAction: EmptyStateAction(
+                        label: L("Open Data Sources"), icon: "externaldrive.connected.to.line.below"
+                    ) {
+                        NotificationCenter.default.post(
+                            name: .navigateToTab, object: nil,
+                            userInfo: ["tab": Tab.sources.rawValue])
+                    }
                 )
             }
         }
@@ -137,7 +144,8 @@ struct ComplianceBenchmarksView: View {
                         "jamf-cli pro compliance-benchmarks list --output json",
                         "jamf-cli pro report compliance-rules \"<title>\" --output json",
                         "jamf-cli pro report compliance-devices \"<title>\" --output json",
-                    ]
+                    ],
+                    primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
                 )
             }
         }

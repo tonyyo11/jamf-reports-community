@@ -271,7 +271,8 @@ struct ExtensionAttributesView: View {
                 title: L("No Extension Attribute data yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["ea-results", "computer-extension-attributes"])]
+                    profile: workspace.profile, kinds: ["ea-results", "computer-extension-attributes"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
             )
         }
     }
@@ -677,7 +678,8 @@ private struct BarChartExportView: View {
                         .foregroundStyle(Theme.Chart.textPrimary)
                 }
             }
-            .chartXScale(domain: 0...(Double(maxCount) * 1.18))
+            // Every value zero would make a zero-width domain.
+            .chartXScale(domain: 0...max(1, Double(maxCount) * 1.18))
             .chartXAxis {
                 AxisMarks(position: .bottom) { value in
                     AxisGridLine().foregroundStyle(Theme.Chart.borders)

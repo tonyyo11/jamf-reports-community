@@ -212,8 +212,13 @@ struct AuditView: View {
             if !workspace.demoMode && selectedTab != 2 {
                 let auditCacheSource = CacheSource.from(snapshotDate: lastAuditDate, withinHours: 36)
                 let hygieneCacheSource = CacheSource.from(snapshotDate: lastHygieneDate, withinHours: 36)
-                let activeSource = selectedTab == 0 ? auditCacheSource : hygieneCacheSource
-                StaleDataBanner(source: activeSource)
+                // The audit snapshot comes from the refresh tier; group hygiene is only written by
+                // its own Analyze Groups run, which a collect does not repeat.
+                if selectedTab == 0 {
+                    CollectNowBanner(source: auditCacheSource, tiers: [.refresh])
+                } else {
+                    StaleDataBanner(source: hygieneCacheSource)
+                }
             }
 
             HStack(spacing: 16) {

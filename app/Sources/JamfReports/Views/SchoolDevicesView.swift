@@ -15,7 +15,8 @@ struct SchoolDevicesView: View {
     @State private var rowCache = RowCache()
 
     enum Filter: String, CaseIterable, Identifiable {
-        case all = "All", managed = "Managed", unmanaged = "Unmanaged", stale = "Stale"
+        case all = "All", managed = "Managed", supervised = "Supervised", unmanaged = "Unmanaged",
+             stale = "Stale"
         var id: String { rawValue }
     }
 
@@ -36,7 +37,9 @@ struct SchoolDevicesView: View {
                 if snapshot.devicesDate == nil {
                     emptyState
                 } else {
-                    SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays, now: now)
+                    SchoolDeviceTiles(
+                        snapshot: snapshot, staleDays: staleDays, now: now,
+                        opens: { filter = $0 })
                     devicesCard
                 }
                 if !snapshot.depDevices.isEmpty { depCard }
@@ -83,7 +86,8 @@ struct SchoolDevicesView: View {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
                 title: L("No devices collected yet"),
-                message: L("Collect from Jamf School (Data Sources › Collect now) to list its devices.")
+                message: L("Collect from Jamf School (Data Sources › Collect now) to list its devices."),
+                primaryAction: workspace.firstCollectEmptyAction()
             )
         }
     }
@@ -145,6 +149,11 @@ struct SchoolDevicesView: View {
                     TableColumn("Profile") { Text($0.profile.isEmpty ? "—" : $0.profile) }
                         .width(min: 100, ideal: 160)
                 }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let device = snapshot.depDevices.first(where: { $0.id == ids.first }) {
+                        SchoolCopyItems(serial: device.serial, name: device.name)
+                    }
+                }
                 .font(.callout)
                 .pageTableHeight(rows: snapshot.depDevices.count)
             }
@@ -167,6 +176,9 @@ extension SchoolDevicesView {
             switch filter {
             case .all: break
             case .managed: guard device.isManaged == true else { return false }
+            // The Supervised tile's rule: supervised over managed devices.
+            case .supervised:
+                guard device.isManaged == true, device.isSupervised == true else { return false }
             case .unmanaged: guard device.isManaged == false else { return false }
             case .stale: guard device.isStale(atDays: staleDays, now: now) else { return false }
             }
@@ -227,23 +239,43 @@ struct SchoolDeviceTiles: View {
     let snapshot: SchoolFleetService.Snapshot
     let staleDays: Int
     var now = Date()
+    /// The filters a tile may open; a screen that cannot apply one leaves its tile inert.
+    var filters: Set<SchoolDevicesView.Filter> = Set(SchoolDevicesView.Filter.allCases)
+    var opens: ((SchoolDevicesView.Filter) -> Void)? = nil
 
     var body: some View {
         let total = snapshot.devices.count
         EqualHeightTileGrid(minTileWidth: 200) {
-            StatTile(label: L("Devices"), value: "\(total)", sub: platformLine, fillsHeight: true)
+            StatTile(label: L("Devices"), value: "\(total)", sub: platformLine, fillsHeight: true,
+                     action: action(.all, available: true),
+                     actionHint: hint(.all, L("all devices")))
             StatTile(label: L("Managed"), value: snapshot.managed.map { "\($0.met)" } ?? "—",
                      sub: snapshot.managed.map { L("\(percent($0)) of devices reporting") }
                          ?? L("Not reported"),
-                     fillsHeight: true)
+                     fillsHeight: true,
+                     action: action(.managed, available: snapshot.managed != nil),
+                     actionHint: hint(.managed, L("managed devices")))
             StatTile(label: L("Supervised"), value: snapshot.supervised.map { "\($0.met)" } ?? "—",
                      sub: snapshot.supervised.map { L("\(percent($0)) of managed devices reporting") }
                          ?? L("Not reported"),
-                     fillsHeight: true)
+                     fillsHeight: true,
+                     action: action(.supervised, available: snapshot.supervised != nil),
+                     actionHint: hint(.supervised, L("supervised devices")))
             StatTile(label: L("Stale"),
                      value: "\(snapshot.staleCount(atDays: staleDays, now: now))",
-                     sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true)
+                     sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true,
+                     action: action(.stale, available: true),
+                     actionHint: hint(.stale, L("stale devices")))
         }
+    }
+
+    private func action(_ filter: SchoolDevicesView.Filter, available: Bool) -> (() -> Void)? {
+        guard available, filters.contains(filter), let opens else { return nil }
+        return { opens(filter) }
+    }
+
+    private func hint(_ filter: SchoolDevicesView.Filter, _ what: String) -> String? {
+        opens != nil && filters.contains(filter) ? L("Opens Devices, showing \(what)") : nil
     }
 
     private var platformLine: String {
@@ -301,6 +333,11 @@ struct SchoolDevicesTable: View {
             }
             .width(min: 100, ideal: 130)
         }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let device = rows.first(where: { $0.id == ids.first }) {
+                SchoolCopyItems(serial: device.serial, name: device.name)
+            }
+        }
         .font(.callout)
     }
 
@@ -319,5 +356,20 @@ struct SchoolDevicesTable: View {
     static func checkinText(_ device: SchoolFleetService.Device, now: Date) -> String {
         guard let days = device.daysSinceCheckin(now: now) else { return L("Unknown") }
         return days == 0 ? L("Today") : (days == 1 ? L("\(days) day ago") : L("\(days) days ago"))
+    }
+}
+
+/// Copy serial and name for a School device row; an empty value has no item.
+private struct SchoolCopyItems: View {
+    let serial: String
+    let name: String
+
+    var body: some View {
+        if !serial.isEmpty {
+            Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(serial) }
+        }
+        if !name.isEmpty {
+            Button(L("Copy Name")) { SystemActions.copyToClipboard(name) }
+        }
     }
 }
