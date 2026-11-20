@@ -197,6 +197,7 @@ struct DeviceLookupView: View {
             // A computer's candidate id is its Jamf ID; a mobile device has another console path.
             if cand.kind == .computer, let url = workspace.consoleURL(forComputerID: cand.id) {
                 Button(L("Open in Jamf Pro")) { SystemActions.open(url) }
+                    .disabled(workspace.demoMode)
             }
         }
     }

@@ -1109,7 +1109,7 @@ struct OverviewView: View {
             // The total adds mobile devices, which Computers does not list, so only a fleet
             // with none opens there.
             action: mobile == nil ? { navigate(to: .devices, userInfo: DevicesView.DeviceFilter.all.navigationUserInfo()) } : nil,
-            actionHint: L("Opens Computers, every Mac")
+            actionHint: L("Opens Computers, every Mac in the latest inventory")
         )
         .lineLimit(1)
         .truncationMode(.tail)

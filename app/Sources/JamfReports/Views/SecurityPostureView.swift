@@ -125,6 +125,12 @@ struct SecurityPostureView: View {
 
     /// An Action Items caption with the values the tile leaves out because Jamf did not
     /// report them.
+    /// The list counts device rows, the tile Jamf's security report, so the hint says which.
+    static func controlDrillHint(_ control: SecurityControl, notReported: Int) -> String {
+        let base = L("Opens Computers, listing the Macs whose inventory reads \(control.displayName) off")
+        return notReported > 0 ? L("\(base); \(notReported) not reported are not listed") : base
+    }
+
     static func actionCaption(_ base: String, notReported: Int) -> String {
         notReported > 0 ? L("\(base) · not reported: \(notReported)") : base
     }
@@ -262,7 +268,7 @@ struct SecurityPostureView: View {
                 value: "\(snapshot.totalDevices)",
                 sub: L("Across active and recently inactive"),
                 action: { openComputers(.all) },
-                actionHint: L("Opens Computers, every Mac")
+                actionHint: L("Opens Computers, every Mac in the latest inventory")
             )
         }
     }
@@ -282,8 +288,9 @@ struct SecurityPostureView: View {
                 // off, the rest of the Macs that report it. A control the policy ignores has
                 // no gap to list.
                 action: counted ? { openComputers(.off(control)) } : nil,
-                actionHint: counted
-                    ? L("Opens Computers, filtered to Macs with \(control.displayName) off") : nil
+                actionHint: counted ? Self.controlDrillHint(
+                    control, notReported: snapshot.fleetCounts.controls[control]?.notReported ?? 0)
+                    : nil
             )
         } else {
             StatTile(

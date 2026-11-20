@@ -88,7 +88,7 @@ struct FleetOverviewView: View {
                 sub: L("Latest successful summary"),
                 fillsHeight: true,
                 action: row.summary == nil ? nil : { openComputers(.all) },
-                actionHint: L("Opens Computers, every Mac")
+                actionHint: L("Opens Computers, every Mac in the latest inventory")
             )
             StatTile(
                 label: L("Stability"),
