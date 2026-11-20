@@ -141,7 +141,10 @@ versions in this repository map to git tags.
 ### Changed
 
 - Every percentage trend on the Trends screen now uses a 0 to 100% axis, so a small change no longer looks like a drop. Device counts keep an axis fitted to their data.
-
+- Every report the app writes now starts with `jamf_`: workbooks and CSV folders are named `jamf_report_<profile>_<date>` like the HTML and PDF reports, the Jamf School workbook `jamf_school_report_…` and the inventory CSV `jamf_inventory_…`. Reports made under the old names (`report_…`, `school-report_…`, `inventory_…`) still show in Reports with their kind and profile, and older workbooks still move to the archive as new runs replace them. The command-line `html` command and the HTML-only export, which still wrote `report_…html`, now use `jamf_report_…` too. Scripts or flows that watch the reports folder for `report_` names need the new prefix.
+- The workbook, its CSV folder, the inventory CSV and the run manifest are named with this Mac's
+  local time, like the HTML, PDF and chart images of the same run. They used UTC, so one run's
+  files could read hours apart (`report_…_214708.xlsx` beside `jamf_report_…_164709.html`).
 - A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
   with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
   Each is still checked once a week, and Data Sources says which sources are left out and why.

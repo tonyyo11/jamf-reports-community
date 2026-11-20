@@ -332,7 +332,7 @@ final class DemoDataOperationsTests: XCTestCase {
     /// or before the reference date, newest first, each dated by its name.
     func testDemoReportsAreNamedLikeEngineReports() {
         let reports = DemoData.generatedReports
-        let prefix = "report_\(DemoData.org.profile)_"
+        let prefix = "jamf_report_\(DemoData.org.profile)_"
         let pattern = "^\(prefix)\\d{4}-\\d{2}-\\d{2}_\\d{6}(\\.xlsx|\\.html|_csv)$"
         let stamps = reports.map { String($0.name.dropFirst(prefix.count).prefix(17)) }
         let parser = DateFormatter()

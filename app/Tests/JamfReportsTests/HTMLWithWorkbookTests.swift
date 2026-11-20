@@ -212,7 +212,7 @@ final class HTMLWithWorkbookGUITests: XCTestCase {
             let stems = fixture.stems()
             XCTAssertEqual(stems.workbooks.count, 1, "\(lines.all)")
             XCTAssertEqual(stems.pages, stems.workbooks)
-            XCTAssertTrue(try XCTUnwrap(stems.pages.first).hasPrefix("report_htmlwb_"))
+            XCTAssertTrue(try XCTUnwrap(stems.pages.first).hasPrefix("jamf_report_htmlwb_"))
         }
     }
 
@@ -326,7 +326,7 @@ final class HTMLWithWorkbookGUITests: XCTestCase {
     func testAnHTMLFailureLeavesTheGenerateSucceededAndTheLogHonest() async throws {
         try await withHTMLWorkbookFixture { fixture in
             try fixture.writeConfig("output:\n  timestamp_outputs: false\n" + withWorkbookOn)
-            let blocked = fixture.reports.appendingPathComponent("report_htmlwb.html")
+            let blocked = fixture.reports.appendingPathComponent("jamf_report_htmlwb.html")
             try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
             try Data("x".utf8).write(to: blocked.appendingPathComponent("held"))
             let lines = HTMLWorkbookLines()
@@ -336,7 +336,7 @@ final class HTMLWithWorkbookGUITests: XCTestCase {
 
             XCTAssertTrue(result.allSucceeded, "the workbook's result stands: \(lines.all)")
             XCTAssertEqual(result.succeeded, [.xlsx])
-            XCTAssertEqual(fixture.files(ending: ".xlsx"), ["report_htmlwb.xlsx"])
+            XCTAssertEqual(fixture.files(ending: ".xlsx"), ["jamf_report_htmlwb.xlsx"])
             XCTAssertEqual(
                 lines.all.filter { $0.hasPrefix("[warn] HTML report not written: ") }.count, 1,
                 "\(lines.all)")
@@ -415,7 +415,7 @@ final class HTMLWithWorkbookHeadlessTests: XCTestCase {
     func testAScheduledRunWhoseHTMLFailsStillSucceedsAndIsNotPartial() async throws {
         try await withHTMLWorkbookFixture { fixture in
             try fixture.writeConfig("output:\n  timestamp_outputs: false\n" + withWorkbookOn)
-            let blocked = fixture.reports.appendingPathComponent("report_htmlwb.html")
+            let blocked = fixture.reports.appendingPathComponent("jamf_report_htmlwb.html")
             try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
             try Data("x".utf8).write(to: blocked.appendingPathComponent("held"))
 
@@ -423,7 +423,7 @@ final class HTMLWithWorkbookHeadlessTests: XCTestCase {
 
             XCTAssertEqual(outcome.exitCode, 0)
             XCTAssertFalse(outcome.incomplete, "a [warn] line does not read as Partial")
-            XCTAssertEqual(fixture.files(ending: ".xlsx"), ["report_htmlwb.xlsx"])
+            XCTAssertEqual(fixture.files(ending: ".xlsx"), ["jamf_report_htmlwb.xlsx"])
             let status = try Self.statusPayload(in: fixture.workspace)
             XCTAssertEqual(status["success"] as? Bool, true)
             XCTAssertNil(status["html_report_path"])

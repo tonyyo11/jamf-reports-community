@@ -427,4 +427,32 @@ final class ArchiveRotationTests: XCTestCase {
             .filter { $0.hasSuffix(".xlsx") }
             .sorted()
     }
+    // MARK: - Names from before 2.12
+
+    /// A run written as `report_prod_…` before 2.12 counts toward `keep` beside the new
+    /// `jamf_report_prod_…` runs, so the old workbooks leave in date order.
+    func testRunsNamedBefore2_12RotateWithTheNewOnes() throws {
+        try createFiles(names: [
+            "report_prod_2026-11-01_090000.xlsx",
+            "report_prod_2026-11-02_090000.xlsx",
+            "jamf_report_prod_2026-11-03_090000.xlsx",
+            "report_prod-eu_2026-11-01_090000.xlsx",
+        ], in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "jamf_report_prod", keep: 2)
+        XCTAssertEqual(try xlsxNames(in: outputDir), [
+            "jamf_report_prod_2026-11-03_090000.xlsx",
+            "report_prod-eu_2026-11-01_090000.xlsx",
+            "report_prod_2026-11-02_090000.xlsx",
+        ])
+        XCTAssertEqual(try xlsxNames(in: archiveDir), ["report_prod_2026-11-01_090000.xlsx"])
+    }
+
+    func testLegacyStemMapsEachKind() {
+        XCTAssertEqual(ExportNaming.legacyStem(of: "jamf_report_prod"), "report_prod")
+        XCTAssertEqual(ExportNaming.legacyStem(of: "jamf_school_report_k12"), "school-report_k12")
+        XCTAssertEqual(ExportNaming.legacyStem(of: "jamf_inventory_prod"), "inventory_prod")
+        XCTAssertNil(ExportNaming.legacyStem(of: "devices-prod"))
+    }
+
 }
