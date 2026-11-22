@@ -542,12 +542,17 @@ struct AuditView: View {
                             .motionSafeAnimation(.spring(response: 0.35, dampingFraction: 0.7),
                                        value: newFindingKeys.contains(f.driftKey))
                         }
+                        // The two text columns take the width the fixed ones leave; unsized,
+                        // all five shared it equally and truncated both.
+                        .width(min: 130, ideal: 180)
                         TableColumn("Severity", value: \.severity) { f in
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
+                        .width(min: 70, ideal: 78, max: 110)
                         TableColumn("Category", value: \.category) { f in
                             Text(LShown(f.category).capitalized).font(.footnote)
                         }
+                        .width(min: 64, ideal: 68, max: 140)
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(
                                 value: f.affected,
@@ -556,6 +561,7 @@ struct AuditView: View {
                                 displayText: f.affectedDisplay
                             )
                         }
+                        .width(min: 80, ideal: 90, max: 180)
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
@@ -568,6 +574,7 @@ struct AuditView: View {
                                 }
                             }
                         }
+                        .width(min: 130, ideal: 130)
                     }
                     .pageTableHeight(
                         rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)

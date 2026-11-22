@@ -307,6 +307,8 @@ struct PNPButton: View {
     var icon: String? = nil
     var style: Style = .neutral
     var size: Size = .md
+    /// Draws only the icon (a narrow row); the title stays the VoiceOver label and tooltip.
+    var iconOnly = false
     var action: () -> Void
 
     var body: some View {
@@ -317,10 +319,12 @@ struct PNPButton: View {
                         .font(.system(fontStyle, weight: .semibold))
                         .imageScale(.small)
                 }
-                Text(title)
-                    .font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                if !(iconOnly && icon != nil) {
+                    Text(title)
+                        .font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .padding(.horizontal, hPad)
             .frame(minHeight: height)
@@ -514,6 +518,8 @@ struct StatTile: View {
                 .transformEnvironment(\.lineLimit) { limit in
                     if let labelLineLimit { limit = labelLineLimit }
                 }
+                // Keeps a long title out from under the chevron overlay.
+                .padding(.trailing, action != nil ? 14 : 0)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
                     .font(Theme.Fonts.serif(displaySize, weight: .bold))

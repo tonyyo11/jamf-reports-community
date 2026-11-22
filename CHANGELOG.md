@@ -28,6 +28,12 @@ versions in this repository map to git tags.
 - Check on a Jamf Security Cloud login now says jamf-cli has no connection check for it, instead of "Unreachable".
 - The "Profiles not in an environment" card no longer shows the "not a workspace" explanation above a Security Cloud login's Add to this environment button.
 - The Security Posture template description in the catalog matches the template again.
+- Overview: the Recent Activity table fits its card at the narrowest window, and a Mac with no inventory shows a dash in every empty cell.
+- Data Sources: the jamf-cli card now takes the full width on a Jamf Pro workspace, so command lines no longer wrap mid-word.
+- Overview: the hover arrow no longer covers the "versions" pill on macOS Distribution or the "View all" pill on Top Failing Rules.
+- Backups: Reveal, Diff Latest and Delete stay reachable at narrow widths (icons alone when the row is tight), and the Created column no longer truncates.
+- Health Audit: the Finding and Recommendation columns use the available width.
+- Data Sources: the Snapshot Archive Families table fits its card and shows every row.
 
 ## [2.12.0] - 2026-11-13
 
