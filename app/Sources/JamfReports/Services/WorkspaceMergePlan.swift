@@ -425,7 +425,7 @@ private final class Builder {
                 return try ConfigLoader.rawMapping(fromYAML: ConfigLoader.readText(at: file))
             } catch {
                 throw WorkspaceMergePlan.PlanError.unreadable(
-                    area: "config", reason: "\(ws.lastPathComponent)/config.yaml: "
+                    area: "config", reason: "\(ConfigSchema.displayText(ws.lastPathComponent))/config.yaml: "
                         + error.localizedDescription)
             }
         }
@@ -461,7 +461,7 @@ private final class Builder {
             }
             guard let a = BoundedFile.sha256Hex(src), let b = BoundedFile.sha256Hex(tgt) else {
                 throw WorkspaceMergePlan.PlanError.unreadable(
-                    area: area.rawValue, reason: "could not hash \(rel)")
+                    area: area.rawValue, reason: "could not hash \(ConfigSchema.displayText(rel))")
             }
             steps.append(step(area, a == b ? .skipIdentical : .archiveSource,
                               srcRoot, tgtRoot, rel, archived: a != b, archiveArea: archiveArea))
@@ -480,7 +480,7 @@ private final class Builder {
             if index == parts.count - 1, FileManager.default.fileExists(atPath: current.path),
                !isRegular(current) {
                 throw WorkspaceMergePlan.PlanError.unreadable(
-                    area: area.rawValue, reason: "\(rel) in the target is not a regular file")
+                    area: area.rawValue, reason: "\(ConfigSchema.displayText(rel)) in the target is not a regular file")
             }
         }
         return isRegular(current)

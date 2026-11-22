@@ -163,8 +163,7 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
             let journal = WorkspaceMergeJournal(
                 plan: plan, done: min(progress.done, note.done))
             guard journal.isFinished else { return (.pending(journal), planData) }
-            try journal.retire(progressAt: progressURL, planAt: planURL, planData: planData,
-                               appSupport: appSupport)
+            try journal.retire(planData: planData, appSupport: appSupport)
             return (.none, nil)
         } catch {
             return (unreadable(error.localizedDescription), nil)
@@ -211,8 +210,7 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
     }
 
     /// Both record files go beside the archive, then the pending ones go.
-    func retire(progressAt progressURL: URL, planAt planURL: URL, planData: Data,
-                appSupport: URL) throws {
+    func retire(planData: Data, appSupport: URL) throws {
         try plan.requireConfined()
         // `_merged` is peer-writable: a link there must not redirect the two record files.
         try WorkspaceMergeExecutor.requireNoLinkedAncestor(recordURL)
@@ -220,8 +218,9 @@ struct WorkspaceMergeJournal: Equatable, Sendable {
         let hash = try Self.write(planData: planData, to: recordPlanURL)
         try Self.write(Progress(done: done, planSHA256: hash, mergedFolder: plan.mergedFolder),
                        to: recordURL)
-        try FileManager.default.removeItem(at: progressURL)
-        try FileManager.default.removeItem(at: planURL)
+        // Resolved again: the folder saved at the start may have become a link since.
+        try FileManager.default.removeItem(at: try Self.location(target: plan.target))
+        try FileManager.default.removeItem(at: try Self.planLocation(target: plan.target))
         Self.clearStarted(target: plan.target, appSupport: appSupport)
     }
 

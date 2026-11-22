@@ -171,6 +171,27 @@ final class AtomicInstallWritersTests: XCTestCase {
         XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: link.path), "a link is kept")
     }
 
+    func testScaffoldIntoAChosenFolderLeavesForeignStagedFiles() throws {
+        let fm = FileManager.default
+        let foreign = root.appendingPathComponent(".notes.tmp-\(UUID().uuidString)")
+        try Data("theirs".utf8).write(to: foreign)
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(-3 * 86_400)],
+                             ofItemAtPath: foreign.path)
+        try ScaffoldService.writeMinimalConfig(
+            to: root.appendingPathComponent("config.yaml"), profile: "test")
+        XCTAssertTrue(fm.fileExists(atPath: foreign.path), "another tool's file is not swept")
+    }
+
+    func testAWorkspaceWriteReplacesAnExistingFileWithMode0600() throws {
+        let file = root.appendingPathComponent("snapshot.json")
+        try Data("old".utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        try AtomicInstall.write(Data("new".utf8), to: file, mode: 0o600)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "new")
+        let attrs = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.int16Value, 0o600)
+    }
+
     func testAnExclusiveWriteNeverReplacesAFileOrALink() throws {
         let file = root.appendingPathComponent("config.yaml")
         try Data("mine".utf8).write(to: file)

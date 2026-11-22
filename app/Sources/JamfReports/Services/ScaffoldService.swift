@@ -56,7 +56,7 @@ enum ScaffoldService {
 
     private static func write(_ yaml: String, to url: URL) throws {
         // 0600: config.yaml may embed column names that reflect org EA naming.
-        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600)
+        try AtomicInstall.write(Data(yaml.utf8), to: url, mode: 0o600, sweeping: nil)
     }
 
     // MARK: - Private helpers

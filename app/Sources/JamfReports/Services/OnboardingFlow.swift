@@ -527,11 +527,7 @@ final class OnboardingFlow {
         let neverIndex = workspace.appendingPathComponent(".metadata_never_index")
         if !fm.fileExists(atPath: neverIndex.path) {
             do {
-                try Data().write(to: neverIndex, options: .atomic)
-                try? fm.setAttributes(
-                    [.posixPermissions: NSNumber(value: Int16(0o600))],
-                    ofItemAtPath: neverIndex.path
-                )
+                try AtomicInstall.write(Data(), to: neverIndex, mode: 0o600)
             } catch {
                 AppLogger.auth.warning(
                     "OnboardingFlow: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
