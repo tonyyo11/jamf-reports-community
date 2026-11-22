@@ -37,6 +37,14 @@ final class CLIDoctorServiceTests: XCTestCase {
         XCTAssertNil(CLIDoctorService.parse(Data("[]".utf8)), "doctor is an object, not an array")
     }
 
+    func testSecurityLoginWithNoProbeAndNoURLIsNotChecked() throws {
+        let json = #"{"version":"9.9.9","configPath":"/x","profile":{"name":"sec","product":"security","url":"","authMethod":"security"}}"#
+        let report = try XCTUnwrap(CLIDoctorService.parse(Data(json.utf8)))
+        XCTAssertEqual(report.health, .notChecked)
+        let withURL = #"{"profile":{"name":"p","url":"https://a.example.com"}}"#
+        XCTAssertEqual(CLIDoctorService.parse(Data(withURL.utf8))?.health, .unreachable)
+    }
+
     // MARK: - health derivation
 
     func testHealthHealthyWhenReachableAndCredentialsResolved() throws {

@@ -566,7 +566,8 @@ struct SourcesView: View {
             doctorRow(L("Server"), report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
             doctorRow(L("Auth method"), report.profile?.authMethod ?? "—")
             doctorRow(L("Credentials"), Self.credentialSummary(report))
-            doctorRow(L("Connectivity"), Self.connectivitySummary(report.connectivity))
+            doctorRow(L("Connectivity"), report.health == .notChecked
+                ? Self.noConnectionCheckNote : Self.connectivitySummary(report.connectivity))
 
             if report.health == .environmentReference {
                 doctorMessageRow(Self.environmentReferenceNote, tone: .warn)
@@ -598,7 +599,7 @@ struct SourcesView: View {
         switch health {
         case .credentialsUnresolved, .unauthorized, .noProfile, .environmentReference:
             return true
-        case .healthy, .unreachable:
+        case .healthy, .unreachable, .notChecked:
             return false
         }
     }
@@ -638,6 +639,8 @@ struct SourcesView: View {
             return (L("Credentials unresolved"), .warn, "key.slash")
         case .unauthorized:
             return (L("Unauthorized"), .danger, "lock.trianglebadge.exclamationmark")
+        case .notChecked:
+            return (L("Not checked"), .muted, "questionmark.circle")
         case .unreachable:
             return (L("Unreachable"), .danger, "wifi.slash")
         case .noProfile:
@@ -652,6 +655,10 @@ struct SourcesView: View {
         guard !creds.isEmpty else { return L("none resolved") }
         let resolved = creds.filter { $0.resolved == true }.count
         return L("\(resolved)/\(creds.count) resolved")
+    }
+
+    static var noConnectionCheckNote: String {
+        L("jamf-cli has no connection check for this login")
     }
 
     static func connectivitySummary(_ c: CLIDoctorReport.Connectivity?) -> String {

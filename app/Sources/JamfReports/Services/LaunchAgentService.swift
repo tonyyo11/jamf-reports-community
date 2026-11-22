@@ -687,7 +687,7 @@ enum LaunchAgentService {
             case .backup: return "Configuration Backup"
             }
         }
-        return slug.replacingOccurrences(of: "-", with: " ").capitalized
+        return RunHistoryService.displayName(fromSlug: slug)
     }
 
     // MARK: - Run Status

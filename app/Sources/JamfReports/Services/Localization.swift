@@ -48,7 +48,7 @@ private let shownKeys = [
     LK("Asset view for asset managers: purchase-date cohorts and building/department breakdowns. The device inventory is in the workbook."),
     LK("Asset managers, finance teams, IT procurement"),
     LK("Security Posture"),
-    LK("Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, agent coverage, and insights drift."),
+    LK("Security-engineer deep-dive: Protect alerts, mSCP findings, FileVault/SIP/Gatekeeper/Firewall health, and agent coverage."),
     LK("Security engineers, CISO staff"),
     LK("School (Jamf School)"),
     LK("Inventory, classes, users, profiles, and device status for Jamf School-managed iPads and Macs."),

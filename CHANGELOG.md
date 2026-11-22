@@ -22,6 +22,12 @@ versions in this repository map to git tags.
   line when no framework is set (the row stays, so the table below does not move).
 - The HTML report's Mobile devices group no longer repeats the device count as a tile, and
   counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
+- A single device now reads "1 device" instead of "1 devices" on the Overview mobile card, the failing-rules list, the Security Agents card, Recent Activity and the unused-groups pill.
+- Run names such as "CLI Generate" keep their acronyms upper case in Reports and Run History.
+- The file prefix example on Config > Output shows the Jamf School name (`<prefix>_school_report_...`) on a School workspace.
+- Check on a Jamf Security Cloud login now says jamf-cli has no connection check for it, instead of "Unreachable".
+- The "Profiles not in an environment" card no longer shows the "not a workspace" explanation above a Security Cloud login's Add to this environment button.
+- The Security Posture template description in the catalog matches the template again.
 
 ## [2.12.0] - 2026-11-13
 

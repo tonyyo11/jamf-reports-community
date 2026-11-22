@@ -167,7 +167,21 @@ enum RunHistoryService {
         if slug.hasSuffix(".out") || slug.hasSuffix(".err") {
             slug = String(slug.dropLast(4))
         }
-        return slug.replacingOccurrences(of: "-", with: " ").capitalized
+        return displayName(fromSlug: slug)
+    }
+
+    /// Words of a run-label slug that are acronyms, shown upper case.
+    private static let slugAcronyms: Set<String> = [
+        "cli", "csv", "html", "pdf", "ea", "eas", "mdm", "ddm", "sofa", "api", "xlsx", "ui",
+    ]
+
+    /// "cli-generate" -> "CLI Generate": title case as `capitalized` gave, acronyms upper case.
+    static func displayName(fromSlug slug: String) -> String {
+        slug.split(separator: "-").map { part in
+            let word = String(part)
+            if slugAcronyms.contains(word.lowercased()) { return word.uppercased() }
+            return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+        }.joined(separator: " ")
     }
 
     /// Read the last 1 KB of a log to infer exit code, duration, and tail text

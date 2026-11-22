@@ -28,10 +28,12 @@ extension MobileSummary {
         var tiles = [
             Self.devicesTile(formFactors, managed: managed),
             Self.shareTile(L("OS current"), osCurrent, format: format) {
-                L("\($0.met) of \($0.of) devices with a listed version")
+                $0.of == 1 ? L("\($0.met) of \($0.of) device with a listed version")
+                    : L("\($0.met) of \($0.of) devices with a listed version")
             },
             Self.shareTile(L("Passcode compliant"), passcode, format: format) {
-                L("\($0.met) of \($0.of) devices reporting")
+                $0.of == 1 ? L("\($0.met) of \($0.of) device reporting")
+                    : L("\($0.met) of \($0.of) devices reporting")
             },
         ]
         if let attention = needsAttentionTile { tiles.append(attention) }

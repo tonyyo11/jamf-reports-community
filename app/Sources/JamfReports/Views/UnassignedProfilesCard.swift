@@ -13,7 +13,12 @@ enum UnassignedProfilesCardText {
 
     /// Why the profile cannot be a workspace. App text, so it is shown whole, not cut by
     /// `ConfigSchema.displayText`.
-    static func reason(for row: AddSheetPlan.UnassignedProfile) -> String? {
+    /// A Security Cloud row that offers Add to this environment needs no reason: the adoption
+    /// text ("not a workspace, add it from...") is for the Add sheet and adoption.
+    static func reason(
+        for row: AddSheetPlan.UnassignedProfile, acceptsSecurityCloud: Bool = false, demo: Bool = true
+    ) -> String? {
+        if offersAttach(row, acceptsSecurityCloud: acceptsSecurityCloud, demo: demo) { return nil }
         if case .unavailable(let reason) = row.use { return reason }
         return nil
     }
@@ -84,7 +89,8 @@ struct UnassignedProfilesCard: View {
             Text(UnassignedProfilesCardText.subtitle(for: row)).font(.caption)
                 .foregroundStyle(Theme.Text.secondary)
                 .lineLimit(1).truncationMode(.middle)
-            if let reason = UnassignedProfilesCardText.reason(for: row) {
+            if let reason = UnassignedProfilesCardText.reason(
+                for: row, acceptsSecurityCloud: acceptsSecurityCloud, demo: demo) {
                 Text(reason).font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
