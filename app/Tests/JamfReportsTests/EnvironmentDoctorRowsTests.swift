@@ -138,17 +138,17 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
     func testTheScanCapsAfterFilteringToWorkspaces() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("jrc-cap-\(UUID().uuidString)")
-        for index in 0..<210 {
+        for index in 0..<3000 {
             try fm.createDirectory(
                 at: root.appendingPathComponent("data\(index)"), withIntermediateDirectories: true)
         }
         try fm.createDirectory(
-            at: root.appendingPathComponent("Zebracorp"), withIntermediateDirectories: true)
+            at: root.appendingPathComponent("zzzcorp"), withIntermediateDirectories: true)
         fm.createFile(
-            atPath: root.appendingPathComponent("Zebracorp/config.yaml").path, contents: Data())
+            atPath: root.appendingPathComponent("zzzcorp/config.yaml").path, contents: Data())
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
-        XCTAssertTrue(LogRedactor.localWorkspaceNameForms().contains("Zebracorp"))
+        XCTAssertTrue(LogRedactor.localWorkspaceNameForms().contains("zzzcorp"))
     }
 
     func testTheFilePrefixIsSeededAndTheDefaultIsNot() throws {
