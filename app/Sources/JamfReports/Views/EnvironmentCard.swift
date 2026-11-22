@@ -271,6 +271,10 @@ struct EnvironmentCard: View {
             case .notInstalled: checks[profile] = L("jamf-cli is not installed.")
             case .failed(let reason): checks[profile] = ConfigSchema.displayText(reason)
             case .report(let report):
+                if report.health == .notChecked {
+                    checks[profile] = SourcesView.noConnectionCheckNote
+                    return
+                }
                 checks[profile] = SourcesView.healthPill(report.health).label + " · "
                     + SourcesView.connectivitySummary(report.connectivity)
             }
