@@ -140,8 +140,7 @@ enum WorkspaceMergeExecutor {
                 done: journal.done, appSupport: deps.appSupport)
             if journal.done == total {
                 do {
-                    try journal.retire(progressAt: files.progress, planAt: files.plan,
-                                       planData: files.planData, appSupport: deps.appSupport)
+                    try journal.retire(planData: files.planData, appSupport: deps.appSupport)
                 } catch {
                     // The next Resume reruns the last step, then retires.
                     AppLogger.event(.collect, .error,
@@ -151,7 +150,7 @@ enum WorkspaceMergeExecutor {
                 try WorkspaceMergeJournal.write(
                     .init(done: journal.done, planSHA256: files.planSHA256,
                           mergedFolder: plan.mergedFolder),
-                    to: files.progress)
+                    to: try WorkspaceMergeJournal.location(target: plan.target))
             }
             progress(journal.done, total)
             ran += 1
@@ -204,7 +203,7 @@ enum WorkspaceMergeExecutor {
             where: { exists(url.appendingPathComponent($0)) }) {
             return url
         }
-        guard let id = WorkspaceID(target) else { throw StepError("\(target) is not a workspace") }
+        guard let id = WorkspaceID(target) else { throw StepError("\(ConfigSchema.displayText(target)) is not a workspace") }
         let stamp = WorkspaceMergePlan.stampFormatter.string(from: now)
         return mergedRoot.appendingPathComponent("\(id.pathComponent)-unfinished-\(stamp)",
                                                  isDirectory: true)
@@ -327,7 +326,7 @@ enum WorkspaceMergeExecutor {
                     try place(target, at: archive)
                 } else if !sameBytes(target, archive) {
                     // Changed since the archive copy (after a crash): never replace it unseen.
-                    throw StepError("\(target.lastPathComponent) changed since the merge began")
+                    throw StepError("\(ConfigSchema.displayText(target.lastPathComponent)) changed since the merge began")
                 }
             }
             try install(source, over: target)
@@ -335,7 +334,7 @@ enum WorkspaceMergeExecutor {
             guard exists(target) else { break }
             let archive = try required(archive)
             guard !exists(archive) else {
-                throw StepError("the archive already holds \(target.lastPathComponent)")
+                throw StepError("the archive already holds \(ConfigSchema.displayText(target.lastPathComponent))")
             }
             try requireNoLinkedAncestor(target)
             try requireRegular(target)
@@ -385,11 +384,14 @@ enum WorkspaceMergeExecutor {
             }
             try prepareParent(of: destination)
             try requireNoLinkedAncestor(sourceWS)
+            guard !FileManager.isLink(sourceWS) else {
+                throw StepError("\(ConfigSchema.displayText(sourceWS.lastPathComponent)) is a link")
+            }
             // Moved while still claimed; this Mac's claim then leaves the merged folder.
             try FileManager.default.moveItem(at: sourceWS, to: destination)
-            let claimFile = destination.appendingPathComponent(
-                "automation/\(SharedWorkspace.claimFilename)")
-            if isRegular(claimFile) {
+            let claimFile = (try? WorkspacePaths.confinedFolder(["automation"], under: destination))?
+                .appendingPathComponent(SharedWorkspace.claimFilename)
+            if let claimFile, isRegular(claimFile) {
                 do { try FileManager.default.removeItem(at: claimFile) } catch {
                     AppLogger.event(.collect, .error,
                                     "merge claim not removed: \(error.englishDescription)")
@@ -436,7 +438,7 @@ enum WorkspaceMergeExecutor {
         let current = BoundedFile.sha256Hex(target)
         guard isRegular(target), current == BoundedFile.sha256Hex(targetArchive)
                 || current == SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined()
-        else { throw StepError("\(target.lastPathComponent) changed since the merge began") }
+        else { throw StepError("\(ConfigSchema.displayText(target.lastPathComponent)) changed since the merge began") }
         try requireNoLinkedAncestor(target)
         try AtomicInstall.write(data, to: target)
     }
@@ -480,7 +482,7 @@ enum WorkspaceMergeExecutor {
 
     private static func workspace(_ name: String) throws -> URL {
         guard let url = ProfileService.workspaceURL(for: name) else {
-            throw StepError("\(name) is not a workspace name")
+            throw StepError("\(ConfigSchema.displayText(name)) is not a workspace name")
         }
         return url
     }
@@ -501,7 +503,7 @@ enum WorkspaceMergeExecutor {
 
     private static func requireRegular(_ url: URL) throws {
         guard isRegular(url) else {
-            throw StepError("\(url.lastPathComponent) is not a regular file")
+            throw StepError("\(ConfigSchema.displayText(url.lastPathComponent)) is not a regular file")
         }
     }
 
@@ -518,7 +520,7 @@ enum WorkspaceMergeExecutor {
         try requireRegular(source)
         if exists(destination) {
             guard sameBytes(destination, source) else {
-                throw StepError("\(destination.lastPathComponent) already holds other content")
+                throw StepError("\(ConfigSchema.displayText(destination.lastPathComponent)) already holds other content")
             }
             return
         }
@@ -540,7 +542,7 @@ enum WorkspaceMergeExecutor {
         try requireRegular(source)
         let data = try BoundedFile.read(source, limit: BoundedFile.documentLimit, followSymlinks: false)
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw StepError("\(source.lastPathComponent) is not a status record")
+            throw StepError("\(ConfigSchema.displayText(source.lastPathComponent)) is not a status record")
         }
         object["attention"] = nil
         object["attention_at"] = nil
@@ -585,7 +587,7 @@ enum WorkspaceMergeExecutor {
     private static func copyFolder(_ source: URL, to destination: URL) throws {
         guard !exists(destination) else { return }
         guard !FileManager.isLink(source) else {
-            throw StepError("\(source.lastPathComponent) is a link")
+            throw StepError("\(ConfigSchema.displayText(source.lastPathComponent)) is a link")
         }
         try requireNoLinkedAncestor(source)
         try prepareParent(of: destination)
@@ -635,7 +637,7 @@ enum WorkspaceMergeExecutor {
         var current = url.deletingLastPathComponent().standardizedFileURL
         while !stops.contains(current.path) {
             if FileManager.isLink(current) {
-                throw StepError("\(current.lastPathComponent) is a link")
+                throw StepError("\(ConfigSchema.displayText(current.lastPathComponent)) is a link")
             }
             current = current.deletingLastPathComponent()
         }

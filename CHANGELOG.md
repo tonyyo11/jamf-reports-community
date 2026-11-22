@@ -662,6 +662,11 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A workspace merge now re-checks its journal folder before every journal write and removal, and
+  refuses a source workspace that has become a link. Snapshots, backup manifests, the device
+  cache and config.yaml backups are installed without following a link at their name, and
+  `jamf-reports scaffold --out` no longer removes other tools' leftover temp files from the
+  folder you chose.
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected
