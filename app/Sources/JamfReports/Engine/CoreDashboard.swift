@@ -920,7 +920,9 @@ struct CoreDashboard: Sendable {
             let errors = asInt(item["errors"]) ?? 0
             let id = item["id"] as? String ?? asInt(item["id"]).map(String.init) ?? ""
             ws.write(id, row: row, col: 0, format: .cell)
-            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(FailureRowName.display(name: item["name"] as? String, id: id.isEmpty ? nil : id,
+                                            noun: subject == "Apps" ? "app" : "profile"),
+                     row: row, col: 1, format: .cell)
             ws.write(item["device_type"] as? String ?? "", row: row, col: 2, format: .cell)
             ws.write(errors, row: row, col: 3, format: errors >= warnAtErrors ? .yellow : .cell)
             ws.write(asInt(item["devices"]) ?? 0, row: row, col: 4, format: .cell)
@@ -3277,7 +3279,7 @@ struct CoreDashboard: Sendable {
     func writeCompliancePosture() throws {
         let ws = workbook.addSheet("Compliance Posture")
         let ts = ISO8601Time.string(Date())
-        let framework = config.compliance?.resolvedFramework ?? "Compliance Benchmark"
+        let framework = config.compliance?.resolvedFramework ?? ""
         var row = ws.writeSheetHeader(title: t("Compliance Posture"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 36)
@@ -3370,7 +3372,10 @@ struct CoreDashboard: Sendable {
             ws.write(note, row: row, col: 0, format: .subtitle)
             row += 1
         }
-        ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
+        // No framework chosen: leave the line blank, keeping the table on its usual row.
+        if !framework.isEmpty {
+            ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
+        }
         row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)
     }

@@ -370,6 +370,11 @@ extension HtmlReport {
           /* A table never runs past the page: print cannot scroll it, so it was cut off.
              Long values wrap where the table renderer marks them (`breakable`). */
           .block { overflow: visible; }
+          /* A group's first block may break: when it is nearly a page tall it did not fit
+             beside the heading, which was then left alone on a page. The chart is narrower
+             so a day-by-day table below it still fits the page with the heading. */
+          .group-body > .block:first-child { break-inside: auto; page-break-inside: auto; }
+          .history-svg { max-width: 440px; }
           .block table { font-size: 0.8rem; }
           .block td { overflow-wrap: break-word; }
           .glance-tile, .tile, .count-card, .compliance-hero, .attention-list li, .block {
@@ -384,8 +389,11 @@ extension HtmlReport {
           .tiles-row .tile-value { font-size: 1.5rem; }
           .count-card { flex: 1 1 8rem; min-width: 0; }
           a { color: #000 !important; text-decoration: none; }
-          /* Its bottom padding alone could start an empty last page. */
-          footer { padding-bottom: 0; }
+          /* A footer that spills past the last page printed its note alone, or cut in two. */
+          footer { padding: 0; break-inside: avoid; page-break-inside: avoid; }
+          footer p { margin: 0.1rem 0; }
+          footer .verify-footer { font-size: 8px !important; margin-top: 0 !important; line-height: 1.2; }
+          main > section:last-child { margin-bottom: 0; }
         }
         </style>
         """

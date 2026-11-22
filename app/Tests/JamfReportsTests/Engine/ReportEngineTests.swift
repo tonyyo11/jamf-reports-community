@@ -691,6 +691,47 @@ final class ReportEngineTests: XCTestCase {
                        "\t\t=cmd|calc,\t=1+1,\"\t=HYPERLINK(\"\"http://x\"\")\",MacBook Pro")
     }
 
+    /// Sectioned `computers` rows (2.8.0 on) must fill `section.key` columns, with EA columns
+    /// last and the EA matched through `general.name`.
+    func testInventoryCSVFlattensSectionsAndMergesEAByGeneralName() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-inventory-flat-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testonly-inventory-flat"
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        let computers = dataDir.appendingPathComponent("computers", isDirectory: true)
+        let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        for dir in [computers, eaDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let rows: [[String: Any]] = [[
+            "id": "7", "udid": "U-1",
+            "general": ["name": "Lab Mac", "remoteManagement": ["managed": true]],
+            "hardware": ["totalRamMegabytes": 16384, "apps": ["a", "b"], "empty": [String: String]()],
+        ]]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: computers.appendingPathComponent("computers_20260101T000000.json"))
+        let eas: [[String: Any]] = [["device": "Lab Mac", "ea_name": "Dept", "value": "IT"]]
+        try JSONSerialization.data(withJSONObject: eas)
+            .write(to: eaDir.appendingPathComponent("ea-results_20260101T000000.json"))
+        let output = root.appendingPathComponent("inventory.csv")
+
+        try await ReportEngine.inventoryCSV(
+            profile: profile, workspacePaths: WorkspacePaths.self, outputURL: output)
+
+        let lines = try String(contentsOf: output, encoding: .utf8)
+            .components(separatedBy: "\n")
+        XCTAssertEqual(lines.first,
+                       "general.name,general.remoteManagement.managed,hardware.totalRamMegabytes,id,udid,Dept")
+        XCTAssertEqual(lines.dropFirst().first, "Lab Mac,true,16384,7,U-1,IT")
+    }
+
     // MARK: - S2: collectPatchReleaseDates rejects an unsafe title id
 
     /// `titleId` lands in a bare positional argv slot in `collectPatchReleaseDates`;

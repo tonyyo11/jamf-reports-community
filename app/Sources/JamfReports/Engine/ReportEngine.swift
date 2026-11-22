@@ -3822,7 +3822,7 @@ struct ReportEngine: Sendable {
         // Merge EA results snapshot when available.
         // Groups EA results by device name (Python uses computer_id; the fixture
         // and live CLI output both have device names and may have computer_id).
-        rows = mergeEAResults(into: rows, dataDir: dataDir)
+        rows = mergeEAResults(into: rows, dataDir: dataDir).map(flattenedInventoryRow)
 
         // Collect base inventory columns first, then sorted EA columns.
         var baseCols: [String] = []
@@ -3848,15 +3848,7 @@ struct ReportEngine: Sendable {
         }.joined(separator: ","))
         for row in rows {
             let cells = columns.map { col -> String in
-                let val = row[col]
-                let str: String
-                switch val {
-                case let s as String: str = s
-                case let n as Int: str = "\(n)"
-                case let d as Double: str = "\(d)"
-                case let b as Bool: str = b ? "true" : "false"
-                default: str = ""
-                }
+                let str = row[col] as? String ?? ""
                 return StaleDeviceService.csvField(str)
             }
             lines.append(cells.joined(separator: ","))
@@ -3869,6 +3861,29 @@ struct ReportEngine: Sendable {
             withIntermediateDirectories: true
         )
         try csv.write(to: outputURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Since 2.8.0 the `computers` rows nest their fields in sections, so a CSV of the
+    /// top-level keys left every column but `id` and `udid` blank. Scalar leaves become
+    /// `section.key` strings; arrays and empty values are dropped.
+    static func flattenedInventoryRow(_ row: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        func visit(_ value: Any, _ path: String) {
+            switch value {
+            case let dict as [String: Any]:
+                for (key, inner) in dict { visit(inner, path.isEmpty ? key : "\(path).\(key)") }
+            case let s as String:
+                if !s.isEmpty { out[path] = s }
+            case let n as NSNumber:
+                // JSON booleans bridge to NSNumber; CFBoolean is the only way to tell them apart.
+                out[path] = CFGetTypeID(n) == CFBooleanGetTypeID()
+                    ? (n.boolValue ? "true" : "false") : n.stringValue
+            default:
+                break
+            }
+        }
+        for (key, value) in row { visit(value, key) }
+        return out
     }
 
     // MARK: - Public API: generateHTML
@@ -5211,12 +5226,15 @@ struct ReportEngine: Sendable {
         }
 
         return rows.map { row -> [String: Any] in
-            let deviceId = (row["id"] as? String)
-                ?? (row["id"] as? Int).map { "\($0)" }
-                ?? (row["name"] as? String)
-                ?? ""
-            guard !deviceId.isEmpty,
-                  let eas = eaByDevice[deviceId] else { return row }
+            // Every candidate is tried: the id first, then the name (top level, or under
+            // `general` in the sectioned rows), since an EA row may carry either.
+            let general = row["general"] as? [String: Any]
+            let candidates = [
+                row["id"] as? String, (row["id"] as? Int).map { "\($0)" },
+                row["name"] as? String, general?["name"] as? String,
+            ]
+            guard let eas = candidates.compactMap({ $0 }).lazy
+                .compactMap({ eaByDevice[$0] }).first else { return row }
             var merged = row
             for (eaName, value) in eas {
                 merged["ea:\(eaName)"] = value
