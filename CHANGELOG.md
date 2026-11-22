@@ -670,8 +670,10 @@ versions in this repository map to git tags.
 - Config Doctor and the Add sheet no longer ask jamf-cli for a Jamf Pro address as a login another Mac named in `profiles.jamf_pro`, and saving the webhook, report folders or logo now confirms exactly what this Mac wrote, so a peer's copy that lands just after is still flagged for confirmation.
 - Shared logs and diagnostic bundles no longer carry your report file prefix, other workspaces' names past the first 200 folders, or the Extension Attribute names in a `_csv` report folder's listing. Copying a schedule's live output is now redacted like Run History's, and an error logged by the tips setup stays private.
 - A planted file in a shared workspace can no longer crash every collect with an absurd device count
-  (overview, inventory summary or patch summary), and mobile snapshots a peer Mac on an older build
-  writes with lost-mode text are cleaned on later collects too.
+  (overview, inventory summary, patch summary, security report, policy status or update status),
+  and mobile snapshots a peer Mac on an older build writes with lost-mode text are cleaned on later
+  collects too. Config Doctor no longer names this Mac's other workspaces for a login a peer wrote
+  into a shared config.yaml and this Mac has not confirmed.
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected
