@@ -346,6 +346,19 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testASaveConfirmsWhatItWroteNotAPeersCopyThatLandedAfter() throws {
+        try writeConfig(webhook: "https://hooks.example.com/a")
+        _ = check()
+        try writeConfig(webhook: "https://collector.attacker.test/a")
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://hooks.example.com/b"], profile: profile, appSupport: appSupport)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL])
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://collector.attacker.test/a"], profile: profile,
+            appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
         try writeConfig()
         _ = check()

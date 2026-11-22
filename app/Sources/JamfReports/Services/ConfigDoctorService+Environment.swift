@@ -212,17 +212,24 @@ extension ConfigDoctorService {
         return (name, EnvironmentProfiles.resolve(config: other, workspace: name))
     }
 
+    /// The Platform login worth probing, or nil. The Jamf Pro side is the workspace itself, so a
+    /// `profiles.jamf_pro` a peer pointed at another login (`refusal`) is never asked for a URL.
+    static func platformProbeTarget(profile: String, environment: EnvironmentProfiles) -> String? {
+        guard environment.jamfPro != nil, environment.refusal(workspace: profile) == nil,
+              let platform = environment.platform, platform != profile else { return nil }
+        return platform
+    }
+
     static func platformHostRows(
         profile: String, config: ReportConfig, includeProbes: Bool = true
     ) -> [DoctorRow] {
         guard includeProbes, let environment = blockEnvironment(profile, config),
-              let platform = environment.platform, let jamfPro = environment.jamfPro,
-              platform != profile,
+              let platform = platformProbeTarget(profile: profile, environment: environment),
               // The probe sends a request as `platform`: never for a name this Mac has not confirmed.
               SharedConfigPin.platformAllowed(profile: profile, name: platform),
               let bin = ExecutableLocator.locate("jamf-cli") else { return [] }
         return platformHostRows(
             profile: profile, environment: environment,
-            hosts: PlatformHostCheck.live(jamfPro, platform, bin))
+            hosts: PlatformHostCheck.live(profile, platform, bin))
     }
 }
