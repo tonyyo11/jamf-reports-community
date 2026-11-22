@@ -3372,12 +3372,11 @@ struct CoreDashboard: Sendable {
             ws.write(note, row: row, col: 0, format: .subtitle)
             row += 1
         }
-        // No framework chosen: no line, rather than a label with nothing after it.
+        // No framework chosen: leave the line blank, keeping the table on its usual row.
         if !framework.isEmpty {
             ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
-            row += 1
         }
-        row += 1
+        row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)
     }
 

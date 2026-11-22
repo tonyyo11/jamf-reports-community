@@ -19,7 +19,7 @@ versions in this repository map to git tags.
   is still counted, since its install errors are real.
 - The Missing Secure Token tab and other Boolean EA tabs show a percentage on the "Other" row as
   well as on the pass row. The Compliance Posture tab no longer writes an empty "Framework:"
-  line when no framework is set.
+  line when no framework is set (the row stays, so the table below does not move).
 - The HTML report's Mobile devices group no longer repeats the device count as a tile, and
   counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
 
