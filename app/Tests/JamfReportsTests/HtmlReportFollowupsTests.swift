@@ -295,6 +295,31 @@ final class HtmlReportFollowupsTests: XCTestCase {
         XCTAssertFalse(html.contains("Secret-Name") || html.contains("MSER"))
     }
 
+    func testASingleMobileDeviceHasNoRedundantTotalTile() throws {
+        let report = try workspace(snapshots: [(MobileFleetService.deviceKind, Array(mobileFleet.prefix(1)))])
+        let html = mobileSection(report).html
+        XCTAssertTrue(html.contains("Mobile devices (1)"), html)
+        XCTAssertFalse(html.contains("<div class=\"count-label\">Mobile devices</div>"), html)
+    }
+
+    func testAnUnresolvedAppIsListedAsUnknownNotByItsId() throws {
+        let failures: [[String: Any]] = [
+            ["device_type": "Computer", "devices": 1, "errors": 2, "id": "21",
+             "name": "Test App A", "top_error": "x"],
+            ["device_type": "Computer", "devices": 1, "errors": 1, "id": "-5",
+             "name": "-5", "top_error": "y"],
+        ]
+        let report = try workspace(snapshots: [("app-status", [[
+            "summary": ["days": 30, "total_errors": 3, "unique_apps": 2, "unique_devices": 1],
+            "failures": failures, "device_failures": [], "device_pending": [],
+        ]])])
+        let html = report.buildAppStatusSection(
+            report.loadInputs(for: [.appTable]).appStatus).html
+        XCTAssertTrue(html.contains("Unknown app (ID -5)"), html)
+        XCTAssertTrue(html.contains("Apps failing to install (2)"), html)
+        XCTAssertFalse(html.contains(">-5<"), html)
+    }
+
     func testAListOnlySnapshotCountsDevicesAndSaysWhatItLacks() throws {
         let list: [[String: Any]] = [
             ["id": "1", "name": "n1", "model": "iPad Air", "type": "iPad"],
