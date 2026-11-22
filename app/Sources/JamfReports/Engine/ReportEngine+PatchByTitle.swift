@@ -25,7 +25,8 @@ extension ReportEngine {
     /// The share is rounded as the report rounds it (2 of 3 is "67%"); no devices is "N/A".
     static func patchStatusRow(id: String, summary: [String: Any]) -> [String: Any]? {
         guard let upToDate = summary["upToDate"] as? Int, let outOfDate = summary["outOfDate"] as? Int,
-              upToDate >= 0, outOfDate >= 0 else { return nil }
+              (0...SummaryJSONParser.maxSummaryNumber).contains(upToDate),
+              (0...SummaryJSONParser.maxSummaryNumber).contains(outOfDate) else { return nil }
         let total = upToDate + outOfDate
         let share = total > 0
             ? "\(Int((Double(upToDate) * 100 / Double(total)).rounded()))%" : "N/A"
