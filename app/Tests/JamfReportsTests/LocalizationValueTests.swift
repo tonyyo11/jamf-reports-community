@@ -14,6 +14,7 @@ final class LocalizationValueTests: XCTestCase {
             { BinaryMissing.shortLabel },
             { FailureCause.keychainLockedHint },
             { FailureCause.retiredGatewayHint },
+            { FailureCause.serverTimeoutHint },
             { CLIBridge.keychainLockedDetail },
             { PlatformScopeLevel.organizationLevelReason },
         ]

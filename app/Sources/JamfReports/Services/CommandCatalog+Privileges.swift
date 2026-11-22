@@ -42,6 +42,8 @@ extension CommandCatalog {
             "Read Patch Management Software Titles", "Read Patch Policies", "Read Computers",
             "Read Mobile Devices",
         ],
+        // The title-by-title path behind patch-status; the same area's read privilege.
+        "pro classic-patch-titles list": ["Read Patch Management Software Titles"],
         "pro report update-status": [
             "Read Managed Software Updates", "Read Computers", "Read Mobile Devices",
         ],

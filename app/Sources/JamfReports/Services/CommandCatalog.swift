@@ -163,6 +163,8 @@ struct CommandCatalog: Sendable {
             (ReportEngine.historyArguments(profile: "p", id: "1"), 1),
             (ReportEngine.statusItemsArguments(profile: "p", managementId: "1"), 1),
             (ReportEngine.patchDefinitionArguments(profile: "p", titleId: "1"), 1),
+            (ReportEngine.patchTitleListArguments(profile: "p"), 0),
+            (ReportEngine.patchSummaryArguments(profile: "p", titleId: "1"), 1),
         ]
     }
 

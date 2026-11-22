@@ -36,6 +36,12 @@ extension WorkspaceStore {
         return new
     }
 
+    /// Unforced, like self-repair and catch-up: the coordinator starts it only once the probe
+    /// snapshot is past its cadence, so the due check skips only what is fresh, and a source that
+    /// keeps timing out keeps its hold (on a 5,900-Mac server a forced run waited on the patch
+    /// request each time the app came forward). Collect now still forces.
+    nonisolated static let backgroundRefreshForces = false
+
     /// The coordinator's collect, shown and recorded like every other GUI collect. It holds the
     /// lock that makes Generate refuse, so it must not run unseen (#368). A refusal comes first:
     /// `beginCollect` would replace the status line of the collect that is running.
@@ -43,12 +49,17 @@ extension WorkspaceStore {
         if let refusal = generateRefusal() { throw refusal }
         beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
         defer { endCollect(for: profile) }
+        Self.automaticCollectsRunning.withLock { $0 += 1 }
+        defer { Self.automaticCollectsRunning.withLock { $0 -= 1 } }
         let (exit, _) = try await Self.recordingCollect(
             profile: profile, label: Self.appRefreshRunLabel, keep: Self.keptAppRefreshRuns,
             honesty: CollectHonestyWatcher()
         ) { onLine in
-            try await CLIBridge().collect(
-                profile: profile, tiers: [tier], force: true, onLine: onLine)
+            try await ReportEngine.stoppingBetweenSources(profile: profile) {
+                try await CLIBridge().collect(
+                    profile: profile, tiers: [tier], force: Self.backgroundRefreshForces,
+                    onLine: onLine)
+            }
         }
         await refreshDataFreshness()
         return exit
@@ -161,7 +172,7 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
@@ -210,7 +221,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
@@ -260,7 +271,7 @@ extension WorkspaceStore {
             toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
-        guard !manualCollectMustWait() else { return }
+        guard await manualCollectMayStart() else { return }
         let activeProfile = profile
         beginCollect(
             for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
@@ -290,6 +301,48 @@ extension WorkspaceStore {
     /// process — the bundled `--tick` agent — holds the tick lock (#226 5c), or a collect is
     /// already running in this app, for any profile. `CLIBridge.collect` would refuse the
     /// collect anyway; asking first keeps a refused button from touching any state.
+    /// `manualCollectMustWait`, except that an automatic collect (a scheduled run in another
+    /// process, or this app's own background refresh, self-repair or catch-up) is asked to
+    /// stop at its next source (`ManualRefreshRequest`) and waited for, up to
+    /// `manualRefreshWait`. True when the collect may start.
+    func manualCollectMayStart() async -> Bool {
+        let scheduledElsewhere = CLIBridge.collectRefusal() == .tickLockHeld
+        let automaticHere = Self.automaticCollectsRunning.withLock { $0 > 0 }
+        guard scheduledElsewhere || automaticHere, manualRefreshWait > 0,
+              !isWaitingForScheduledRun else {
+            return !manualCollectMustWait()
+        }
+        isWaitingForScheduledRun = true
+        ManualRefreshRequest.post()
+        globalStatus = L("Waiting for the automatic collect to finish its current source…")
+        defer {
+            isWaitingForScheduledRun = false
+            ManualRefreshRequest.clear()
+            globalStatus = nil
+        }
+        let deadline = Date().addingTimeInterval(manualRefreshWait)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(manualRefreshPoll))
+            guard await CLIBridge.collectRefusalOffMain() != nil || isAnyCollectInFlight
+                    || Self.automaticCollectsRunning.withLock({ $0 > 0 }) else {
+                toast = Toast(
+                    message: L("""
+                        The automatic collect stopped for this refresh. It will pick up what \
+                        is left on its next run.
+                        """),
+                    style: .info)
+                return true
+            }
+        }
+        toast = Toast(
+            message: L("""
+                The automatic collect is still on one source. Try again when it finishes; \
+                Run History shows what it is collecting.
+                """),
+            style: .info)
+        return false
+    }
+
     func manualCollectMustWait() -> Bool {
         let refusal = CLIBridge.collectRefusal()
             ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
@@ -375,6 +428,13 @@ extension WorkspaceStore {
             case .settingsLogging: L("see Settings › Logging")
             }
         }
+
+        var action: ToastAction {
+            switch self {
+            case .runHistory: .runHistory
+            case .settingsLogging: .settings
+            }
+        }
     }
 
     /// The toast for a GUI collect that exited 0, which does not mean every source landed:
@@ -384,7 +444,8 @@ extension WorkspaceStore {
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
         return Toast(
-            message: L("Refresh finished with warnings — \(warningsAt.pointer)"), style: .warning)
+            message: L("Refresh finished with warnings — \(warningsAt.pointer)"), style: .warning,
+            action: warningsAt.action)
     }
 
     /// `sink`, after feeding each run line to `honesty`.
@@ -503,7 +564,7 @@ extension WorkspaceStore {
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(
                 message: L("Collect failed — jamf-cli credentials expired; re-authenticate from Settings → Connections"),
-                style: .danger
+                style: .danger, action: .settings
             )
         }
         // Only point at Run History when this run was actually recorded;
@@ -513,7 +574,7 @@ extension WorkspaceStore {
             : L("check the app log")
         return Toast(
             message: L("Collect finished with errors (exit \(exitCode)) — \(tail)"),
-            style: .danger
+            style: .danger, action: runRecorded ? .runHistory : nil
         )
     }
 
@@ -548,6 +609,12 @@ extension WorkspaceStore {
             else {
                 return false
             }
+            // `audit` turned off in this workspace: the sweep must not run it behind the switch.
+            let typed = ProfileService.workspaceURL(for: activeProfile).flatMap {
+                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+            }?.jamfCli?.collectSkip
+            guard !SharedConfigPin.collectSkip(configured: typed, profile: activeProfile)
+                .contains("audit") else { return false }
             return Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
                 .map { $0 >= threshold } ?? true
         }.value
@@ -649,7 +716,15 @@ extension WorkspaceStore {
         let protectCollected = environment.protect.map {
             protectPinAllows(profile, $0) && protectResolved($0)?.protectRefusal(profile: $0) == nil
         } ?? false
-        let collectSkip = ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip)
+        // Jamf Pro's fleet sides; School, Protect and Security Cloud are not affected.
+        let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
+        let fleet = environment.isProtectOnly || isSchool
+            ? FleetState.unknown
+            : FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
+        let collectSkip = SharedConfigPin.collectSkip(
+            configured: config?.jamfCli?.collectSkip, profile: profile,
+            protectOnly: environment.isConfirmedProtectOnly(workspace: profile), fleet: fleet)
+        let protectKinds = DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) }
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
             securityCloudPinAllows(profile, $0)
@@ -661,7 +736,7 @@ extension WorkspaceStore {
         // A Protect-only environment collects Protect alone (P8); unconfirmed on this Mac (a
         // peer's edit, which `protectCollected` checks), it expects nothing.
         if environment.isProtectOnly {
-            return protectCollected ? DataFreshnessHealth.protectKinds : []
+            return protectCollected ? protectKinds : []
         }
         // config.yaml unreadable and the login known to be School or Protect: no Jamf Pro kinds.
         if config == nil, let product = auth?.product, !product.canBeProWorkspace { return [] }
@@ -670,10 +745,10 @@ extension WorkspaceStore {
         // it follows a Pro one (2.11), so its kinds still count, and so does `sofa`, which a
         // School collect fetches as a Pro one does unless `collect_skip` lists it. Its own kinds count
         // too (#207), less `school-blueprints`, which needs Platform fields.
-        if ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool {
-            return DataFreshnessHealth.schoolKinds
+        if isSchool {
+            return DataFreshnessHealth.schoolKinds.filter { !collectSkip.contains($0) }
                 + (collectSkip.contains(ReportEngine.sofaKind) ? [] : [ReportEngine.sofaKind])
-                + (protectCollected ? DataFreshnessHealth.protectKinds : []) + securityKinds
+                + (protectCollected ? protectKinds : []) + securityKinds
         }
         // The Platform kinds follow the same route `collect` takes, so the strip never expects
         // what collect will not run, nor judges them by the workspace login's auth method.
@@ -691,7 +766,8 @@ extension WorkspaceStore {
             dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
-            platformUnavailable: platform.unavailable != nil
+            platformUnavailable: platform.unavailable != nil,
+            skippedSides: fleet.skipped
         )
     }
 

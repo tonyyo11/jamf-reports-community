@@ -20,6 +20,8 @@ struct PatchView: View {
     /// Per-title adoption velocity, computed off-main from dated patch-status
     /// history. Empty until a few days of collected history exist.
     @State private var velocity: [TitleVelocity] = []
+    /// Band the titles table is filtered to; a tile sets it and its chip clears it.
+    @State private var titleFilter: TitleFilter?
 
     var body: some View {
         PageScaffold {
@@ -86,6 +88,7 @@ struct PatchView: View {
             snapshot = .empty
             releaseLookup = [:]
             velocity = []
+            titleFilter = nil
         }
         // Demo mode shows no velocity card: the static demo dataset has no dated
         // history to derive a trend from.
@@ -131,7 +134,8 @@ struct PatchView: View {
                 title: L("No patch data yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["patch-status"])]
+                    profile: workspace.profile, kinds: ["patch-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }
@@ -142,7 +146,7 @@ struct PatchView: View {
             StatTile(
                 label: L("Total Titles"),
                 value: "\(snapshot.totalTitles)",
-                sub: L("Patch policies tracked")
+                sub: L("Patch titles tracked")
             )
             StatTile(
                 label: L("Fleet Compliance"),
@@ -152,12 +156,16 @@ struct PatchView: View {
             StatTile(
                 label: L("Compliant Titles"),
                 value: "\(snapshot.compliantTitleCount)",
-                sub: L("≥90% compliance rate")
+                sub: L("≥90% compliance rate"),
+                action: titleFilterAction(.compliant, count: snapshot.compliantTitleCount),
+                actionHint: L("Filters the patch titles table to compliant titles")
             )
             StatTile(
                 label: L("Failing Titles"),
                 value: "\(snapshot.failingTitleCount)",
-                sub: L("<50% compliance rate")
+                sub: L("<50% compliance rate"),
+                action: titleFilterAction(.failing, count: snapshot.failingTitleCount),
+                actionHint: L("Filters the patch titles table to failing titles")
             )
             StatTile(
                 label: L("Devices With Failures"),
@@ -167,11 +175,34 @@ struct PatchView: View {
         }
     }
 
-    /// Cap shown rows so the table stays responsive in tenants with hundreds
-    /// of patch titles. SwiftUI Tables are virtualized at the row-render
-    /// level but data-source construction is eager, so this cap also bounds
-    /// the SwiftUI diff cost on every state change.
-    private static let titlesDisplayCap = 50
+    /// Rows in the PNG export, which draws every row it is given into a fixed-height image.
+    nonisolated static let pngExportRowCap = 12
+
+    /// The two title bands the KPI tiles count.
+    enum TitleFilter {
+        case compliant, failing
+
+        var label: String {
+            switch self {
+            case .compliant: L("Compliant titles")
+            case .failing: L("Failing titles")
+            }
+        }
+    }
+
+    /// The titles a tile counts: the same ratios `PatchStatusService.Snapshot` counts with.
+    nonisolated static func titles(_ titles: [PatchStatusRow], in filter: TitleFilter?) -> [PatchStatusRow] {
+        guard let filter else { return titles }
+        return titles.filter { title in
+            guard title.total > 0 else { return false }
+            let pct = Double(title.onLatest) / Double(title.total) * 100.0
+            return filter == .compliant ? pct >= 90.0 : pct < 50.0
+        }
+    }
+
+    private func titleFilterAction(_ filter: TitleFilter, count: Int) -> (() -> Void)? {
+        count > 0 ? { titleFilter = filter } : nil
+    }
 
     private var patchTitlesCard: some View {
         Card {
@@ -179,10 +210,11 @@ struct PatchView: View {
                 HStack {
                     SectionHeader(
                         title: L("Patch Titles"),
-                        trailing: sortedTitles.count > Self.titlesDisplayCap
-                            ? L("\(Self.titlesDisplayCap) of \(sortedTitles.count) shown")
-                            : nil
-                    )
+                        trailing: titleFilter == nil
+                            ? nil : L("\(sortedTitles.count) of \(snapshot.titles.count) shown"))
+                    if let titleFilter {
+                        FilterChip(label: titleFilter.label) { self.titleFilter = nil }
+                    }
                     PNPButton(
                         title: L("Export CSV"),
                         icon: "tablecells",
@@ -203,7 +235,7 @@ struct PatchView: View {
                     .help("Save the patch titles table as a PNG image")
                 }
                 let failingDevices = snapshot.failingDevicesByTitle
-                Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
+                Table(sortedTitles) {
                     TableColumn("Title") { title in
                         Text(title.title)
                             .font(.callout.weight(.medium))
@@ -281,18 +313,13 @@ struct PatchView: View {
                     }
                     .width(min: 80, ideal: 90)
                 }
-                .pageTableHeight(rows: min(sortedTitles.count, Self.titlesDisplayCap))
-                if sortedTitles.count > Self.titlesDisplayCap {
-                    Text("Generated reports include every patch title.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                .pageTableHeight(rows: sortedTitles.count)
             }
         }
     }
 
     private var sortedTitles: [PatchStatusRow] {
-        snapshot.titles.sorted(by: PatchStatusService.sortsBefore)
+        Self.titles(snapshot.titles, in: titleFilter).sorted(by: PatchStatusService.sortsBefore)
     }
 
     // MARK: - Patch Velocity
@@ -529,7 +556,9 @@ struct PatchView: View {
             suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile),
             percentFormat: percentFormat
         ) {
-            PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+            PatchTitlesTableExport(
+                titles: Array(sortedTitles.prefix(Self.pngExportRowCap)),
+                omitted: max(0, sortedTitles.count - Self.pngExportRowCap))
         }
         if case .failure(let error) = result {
             workspace.toast = Toast(message: error.userMessage, style: .danger)
@@ -568,6 +597,8 @@ struct PatchView: View {
 
 struct PatchTitlesTableExport: View {
     let titles: [PatchStatusRow]
+    /// Titles past the export's row cap, named under the table.
+    var omitted = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -648,6 +679,11 @@ struct PatchTitlesTableExport: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(.gray.opacity(0.3), lineWidth: 1)
             )
+            if omitted > 0 {
+                Text(L("+ \(omitted) more titles not shown"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.gray)
+            }
         }
         .padding(24)
         .frame(width: 848, height: 448)

@@ -74,14 +74,26 @@ enum CloudStorage {
         snapshotTimestamp(stem: url.deletingPathExtension().lastPathComponent)
     }
 
-    /// Timestamp leading a backup directory name (`20260820T060000`), plus the
+    /// Backup folder names are UTC (`CLIBridge.backup` builds them from `ISO8601Time`), unlike
+    /// snapshot names, so they get their own formatter; `BackupRecord.dateInName` reads them
+    /// the same way.
+    private static let backupStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .iso8601)
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// Timestamp leading a backup directory name (`20260820T060000`, UTC), plus the
     /// `-N` disambiguator `CLIBridge.uniqueBackupDirectoryName` appends when two
     /// backups land in the same second. Returns nil for any name that is not a
     /// canonical backup directory — the caller must treat that as "cannot order
     /// safely", never as "oldest".
     static func backupDirectoryTimestamp(name: String) -> (date: Date, sequence: Int)? {
         guard let range = name.range(of: #"^\d{8}T\d{6}"#, options: .regularExpression),
-              let date = snapshotStampFormatter.date(from: String(name[range])) else {
+              let date = backupStampFormatter.date(from: String(name[range])) else {
             return nil
         }
         let rest = String(name[range.upperBound...])

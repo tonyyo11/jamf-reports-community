@@ -69,9 +69,19 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// jamf-cli's wording (1.32+) when a request got no response headers within its own limit,
     /// after it had shrunk the page size as far as it goes. It exits 1.
     static let serverTimeoutMarker = "the server did not answer in time"
+    static var serverTimeoutHint: String {
+        L("The server did not answer in time. Collect now tries again at once; after two timeouts in a row, automatic runs leave this source to the next day, and to the next week if it keeps timing out. To stop collecting it, turn it off in Data Sources.")
+    }
 
     /// True for a failed call whose error envelope says the server never answered. Another try
     /// in the same run waits out the same limit, so `invokeWithRetry` skips it.
+    /// `exit`, or the app's timeout code when jamf-cli gave up on a server that never answered:
+    /// jamf-cli's own limit ends first, with exit 1, so a walk that counts only the app's
+    /// timeout would wait out every item on a hung server.
+    static func exitCountingServerTimeout(_ exit: Int32, stdout: Data) -> Int32 {
+        exit != 0 && isServerTimeout(stdout: stdout) ? CLIBridge.exitCodeTimedOut : exit
+    }
+
     static func isServerTimeout(stdout: Data) -> Bool {
         JamfCLIErrorEnvelope.parse(stdout)?.message?.contains(serverTimeoutMarker) == true
     }
@@ -151,7 +161,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .noDeclarationData:
             L("no DDM declaration data: the environment has none, or each device's report was refused (Deployment > Declarations reporting)")
         case .softwareUpdatePlansOff:
-            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this source to jamf_cli.collect_skip")
+            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or turn this source off in Data Sources")
         case .noConfiguredBenchmark:
             names.isEmpty
                 ? L("no benchmark in platform.compliance_benchmarks can be collected")
@@ -217,8 +227,11 @@ struct FailureCause: Codable, Equatable, Sendable {
             return cause(.missingPermission)
         }
         guard exitCode == 0 else {
-            var other = cause(.other)
-            if message.contains(serverTimeoutMarker) { other.serverTimedOut = true }
+            guard message.contains(serverTimeoutMarker) else { return cause(.other) }
+            // Our hint, not jamf-cli's: its advice names flags, and the app chooses the flags.
+            var other = FailureCause(
+                kind: .other, names: [], hint: serverTimeoutHint, exitCode: exitCode)
+            other.serverTimedOut = true
             return other
         }
         if sawForbiddenOnStderr { return cause(.missingPermission) }

@@ -145,10 +145,9 @@ final class RefreshCoordinator {
 
         // Backfill only the requested tier — a profile-switch refresh should
         // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
-        // force: true bypasses the per-kind cadence filter (ReportEngine.collect
-        // skips a kind that isn't due yet); the coordinator already gates on
-        // staleness, so the filter is redundant and would silently no-op a
-        // user-triggered profile-switch refresh that ran after a scheduled collect.
+        // The collect is unforced (`WorkspaceStore.backgroundRefreshForces`): this runs only
+        // once the probe snapshot is past its cadence, so the due check skips only fresh
+        // sources, and the timeout hold still applies.
         let exitCode: Int32
         do {
             exitCode = try await collect(profile, tier)

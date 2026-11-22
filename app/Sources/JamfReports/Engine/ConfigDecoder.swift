@@ -103,14 +103,32 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
-    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
-    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
-    /// screen save keeps it.
+    /// Sources `collect` never runs: any but the core ones (`ReportEngine.optionalKinds`).
+    /// Read only through `SharedConfigPin.collectSkip`; written by the Data Sources switches
+    /// (`CollectSkipConfigWriter`), and a Config screen save keeps it.
     var collectSkip: [String]?
     /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
     /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
     var keepAccountNames: Bool?
+    /// `run_budget_minutes`: how long a scheduled run may hold the lock before it leaves the
+    /// rest for the next run. `scan_budget_minutes`: the same for one pass of a per-device
+    /// scan. Absent or not a whole number reads as the default.
+    var runBudgetMinutes: Int?
+    var scanBudgetMinutes: Int?
+
+    static let defaultRunBudgetMinutes = 45
+    static let defaultScanBudgetMinutes = 30
+    static let runBudgetRange = 10...240
+    static let scanBudgetRange = 5...240
+
+    var resolvedRunBudgetMinutes: Int {
+        min(max(runBudgetMinutes ?? Self.defaultRunBudgetMinutes,
+                Self.runBudgetRange.lowerBound), Self.runBudgetRange.upperBound)
+    }
+    var resolvedScanBudgetMinutes: Int {
+        min(max(scanBudgetMinutes ?? Self.defaultScanBudgetMinutes,
+                Self.scanBudgetRange.lowerBound), Self.scanBudgetRange.upperBound)
+    }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case dataDir = "data_dir"
@@ -120,6 +138,8 @@ struct JamfCLIConfig: Decodable, Sendable {
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
         case keepAccountNames = "keep_account_names"
+        case runBudgetMinutes = "run_budget_minutes"
+        case scanBudgetMinutes = "scan_budget_minutes"
     }
 
     var keepsAccountNames: Bool { keepAccountNames ?? false }
@@ -154,6 +174,8 @@ extension JamfCLIConfig {
         maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
         collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
         keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+        runBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .runBudgetMinutes)
+        scanBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .scanBudgetMinutes)
     }
 }
 
@@ -615,6 +637,8 @@ struct OutputConfig: Decodable, Sendable {
     /// `timestamp_authority`: an RFC 3161 authority's https URL; each run's manifest hash is
     /// sent there and the reply saved as `<stem>.tsr`. Absent is off.
     var timestampAuthority: String?
+    /// `file_prefix`: what every generated report's name starts with (default `jamf`).
+    var filePrefix: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
@@ -624,6 +648,7 @@ struct OutputConfig: Decodable, Sendable {
         case keepLatestRuns = "keep_latest_runs"
         case csvFolder = "csv_folder"
         case timestampAuthority = "timestamp_authority"
+        case filePrefix = "file_prefix"
     }
 
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
@@ -633,6 +658,10 @@ struct OutputConfig: Decodable, Sendable {
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
     var writesCSVFolder: Bool { csvFolder ?? false }
+    /// `file_prefix` when it can start a file name, else `jamf` (`ExportNaming.validFilePrefix`).
+    var resolvedFilePrefix: String {
+        ExportNaming.validFilePrefix(filePrefix) ?? ExportNaming.defaultFilePrefix
+    }
     /// `timestamp_authority` when it is an https URL with a host; anything else is off.
     var timestampAuthorityURL: URL? {
         let typed = (timestampAuthority ?? "").trimmingCharacters(in: .whitespaces)
@@ -654,6 +683,7 @@ extension OutputConfig {
         // A mistyped value reads as off instead of failing the whole config.yaml decode.
         csvFolder = try? c.decodeIfPresent(Bool.self, forKey: .csvFolder)
         timestampAuthority = try? c.decodeIfPresent(String.self, forKey: .timestampAuthority)
+        filePrefix = try? c.decodeIfPresent(String.self, forKey: .filePrefix)
     }
 }
 

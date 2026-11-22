@@ -64,13 +64,15 @@ enum AtomicInstall {
     /// file or the new one. `mode` is the file's permission bits; nil keeps those of a regular
     /// file already at `final` (as `replaceItemAt` did), else the process default. `exclusive`
     /// never replaces anything at `final` and throws `CocoaError(.fileWriteFileExists)` instead.
+    /// `scope` is what the first write into a folder sweeps; nil sweeps nothing (a folder a
+    /// person chose, where another tool's `.tmp-` files may sit).
     static func write(
         _ data: Data, to final: URL, mode: mode_t? = nil, exclusive: Bool = false,
-        now: Date = Date()
+        now: Date = Date(), sweeping scope: StagingScope? = .workspace
     ) throws {
         let folder = final.deletingLastPathComponent()
-        if sweptFolders.withLock({ $0.insert(folder.path).inserted }) {
-            removeStaleStaging(in: folder, now: now, scope: .workspace)
+        if let scope, sweptFolders.withLock({ $0.insert(folder.path).inserted }) {
+            removeStaleStaging(in: folder, now: now, scope: scope)
         }
         var existing = stat()
         let held = lstat(final.path, &existing) == 0 && (existing.st_mode & S_IFMT) == S_IFREG

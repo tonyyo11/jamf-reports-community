@@ -124,11 +124,11 @@ final class ReportNamingProfileTests: XCTestCase {
         func stem(_ type: GenerateOutputType, school: Bool = false) -> String {
             ExportNaming.stem(for: type, profile: "a/b", schoolMode: school)
         }
-        XCTAssertEqual(stem(.xlsx), "report_a%2Fb")
-        XCTAssertEqual(stem(.xlsx, school: true), "school-report_a%2Fb")
+        XCTAssertEqual(stem(.xlsx), "jamf_report_a%2Fb")
+        XCTAssertEqual(stem(.xlsx, school: true), "jamf_school_report_a%2Fb")
         XCTAssertEqual(stem(.html), "jamf_report_a%2Fb")
         XCTAssertEqual(stem(.pdf, school: true), "jamf_report_a%2Fb")
-        XCTAssertEqual(stem(.csv), "inventory_a%2Fb")
+        XCTAssertEqual(stem(.csv), "jamf_inventory_a%2Fb")
     }
 
     /// The workbook writers name their file through `resolveOutputURL`, which appends the
@@ -157,8 +157,14 @@ final class WorkbookTimestampTests: XCTestCase {
     /// 2026-10-05 15:15:06 UTC.
     private let sample = Date(timeIntervalSince1970: 1_791_213_306)
 
-    func testStampIsDateUnderscoreTimeInUTC() {
-        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), "2026-10-05_151506")
+    func testStampIsDateUnderscoreTimeInThisMacsZone() {
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        local.dateFormat = "yyyy-MM-dd_HHmmss"
+        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), local.string(from: sample))
+        // The HTML, PDF and PNGs a run writes beside the workbook use this stamp too.
+        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), ExportNaming.timestamp(sample))
     }
 
     func testWorkbookNameEndsInTheStampTheConfigExampleShows() throws {
@@ -172,12 +178,63 @@ final class WorkbookTimestampTests: XCTestCase {
             .lastPathComponent
         let stamp = String(name.dropFirst("report_".count))
 
-        // Read back as UTC, the stamp is now: the example and the file agree on the zone.
+        // Read back in this Mac's zone, as run rotation reads it, the stamp is now.
         let reader = DateFormatter()
         reader.locale = Locale(identifier: "en_US_POSIX")
-        reader.timeZone = TimeZone(identifier: "UTC")
+        reader.timeZone = .current
         reader.dateFormat = "yyyy-MM-dd_HHmmss"
         let written = try XCTUnwrap(reader.date(from: stamp), stamp)
         XCTAssertLessThan(abs(written.timeIntervalSinceNow), 5)
     }
+    /// Every generated report starts with `jamf_` (2.12), and the names before it still read
+    /// back to their profile and label.
+    func testGeneratedReportsStartWithJamfAndOldNamesStillRead() {
+        for type in GenerateOutputType.allCases {
+            for school in [false, true] {
+                XCTAssertTrue(ExportNaming.reportKind(for: type, schoolMode: school)
+                    .hasPrefix("jamf_"), "\(type) school=\(school)")
+            }
+        }
+        for name in ["report_prod_2026-11-03_090000.xlsx", "jamf_report_prod_2026-11-03_090000.xlsx",
+                     "school-report_prod_2026-11-03_090000.xlsx",
+                     "jamf_school_report_prod_2026-11-03_090000.xlsx"] {
+            XCTAssertEqual(ReportsView.profile(fromReportFilename: name), "prod", name)
+        }
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "jamf_school_report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "school-report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "jamf_inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+    }
+
+    /// `output.file_prefix` names every generated report and falls back to `jamf` when it
+    /// could not start a file name.
+    func testFilePrefixNamesEveryReportAndFallsBackToJamf() throws {
+        XCTAssertEqual(ExportNaming.validFilePrefix(" Acme-1 "), "Acme-1")
+        let tooLong = String(repeating: "a", count: 25)
+        for bad in ["", "   ", "acme_co", "acme co", "acme/co", "ÄCME", tooLong] {
+            XCTAssertNil(ExportNaming.validFilePrefix(bad), bad)
+        }
+        let stem = { ExportNaming.stem(for: $0, profile: "prod", schoolMode: $1, prefix: "acme") }
+        XCTAssertEqual(stem(.xlsx, true), "acme_school_report_prod")
+        XCTAssertEqual(stem(.csv, false), "acme_inventory_prod")
+        let yaml = { (value: String) in "output:\n  file_prefix: \(value)\n" }
+        func decoded(_ text: String) throws -> String {
+            try ConfigLoader.loadFromString(text).filePrefix
+        }
+        XCTAssertEqual(try decoded(yaml("acme")), "acme")
+        XCTAssertEqual(try decoded(yaml("\"acme_co\"")), "jamf")
+        XCTAssertEqual(try decoded(yaml("2026")), "jamf")
+        XCTAssertEqual(try decoded("output:\n  keep_latest_runs: 3\n"), "jamf")
+        XCTAssertEqual(ReportsView.profile(
+            fromReportFilename: "acme_report_prod_2026-11-03_090000.xlsx"), "prod")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "acme_school_report_k12_2026-11-03_090000.xlsx"), "Jamf School workbook")
+        XCTAssertEqual(ReportLibrary.kindLabel(
+            forFilename: "acme_inventory_prod_2026-11-03_090000.csv"), "Inventory CSV")
+    }
+
 }

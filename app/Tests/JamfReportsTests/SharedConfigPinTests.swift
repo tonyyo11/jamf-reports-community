@@ -346,6 +346,19 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testASaveConfirmsWhatItWroteNotAPeersCopyThatLandedAfter() throws {
+        try writeConfig(webhook: "https://hooks.example.com/a")
+        _ = check()
+        try writeConfig(webhook: "https://collector.attacker.test/a")
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://hooks.example.com/b"], profile: profile, appSupport: appSupport)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL])
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://collector.attacker.test/a"], profile: profile,
+            appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
         try writeConfig()
         _ = check()
@@ -383,7 +396,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: config,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect: protect.profile changed") })
@@ -418,7 +431,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: config,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains {
@@ -458,7 +471,7 @@ final class SharedConfigPinTests: XCTestCase {
         try await CollectRouter.run(
             workspace: WorkspaceID(validating: profile), config: loaded,
             proCollect: { _, _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect:") })

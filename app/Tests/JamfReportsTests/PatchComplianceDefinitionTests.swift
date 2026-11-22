@@ -113,7 +113,9 @@ final class PatchComplianceDefinitionTests: XCTestCase {
 
     // MARK: - The summary writer
 
-    private func writeSummary(patchRows: [[String: Any]]) throws -> (DailySummary, URL) {
+    private func writeSummary(
+        patchRows: [[String: Any]], turnedOff: Set<String>? = nil
+    ) throws -> (DailySummary, URL) {
         let root = makeRoot()
         let dataDir = root.appendingPathComponent("data", isDirectory: true)
         let summariesDir = root.appendingPathComponent("summaries", isDirectory: true)
@@ -125,10 +127,18 @@ final class PatchComplianceDefinitionTests: XCTestCase {
                 .appendingPathComponent("security_\(GoldenFleetClock.stamp(anchor)).json"))
         try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: anchor, rows: patchRows)
 
-        ReportEngine(config: ReportConfig(), dataDir: dataDir)
-            .emitSummaryJSON(summariesDir: summariesDir)
+        var engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        engine.turnedOffKinds = turnedOff
+        engine.emitSummaryJSON(summariesDir: summariesDir)
         let summary = try XCTUnwrap(SummaryJSONParser.parseDirectory(summariesDir).first)
         return (summary, summariesDir)
+    }
+
+    /// A turned-off source stops updating: its last snapshot must not read as today's figure.
+    func testATurnedOffPatchSourceIsAbsentFromTheSummary() throws {
+        let (summary, _) = try writeSummary(
+            patchRows: threeTitleSnapshotRows, turnedOff: ["patch-status"])
+        XCTAssertNil(summary.patchPct)
     }
 
     func testSummaryRecordsTheDeviceWeightedFigureAndItsBasis() throws {

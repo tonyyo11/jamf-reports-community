@@ -36,14 +36,10 @@ final class PlatformSlotConnectModel {
                     await ConnectionCheck.run(
                         profile: profile, runner: ConnectionCheck.runner(binary: binary))
                 },
-                hostVerdict: { workspace, platform, binary in
+                hostVerdict: { workspace, platform, _ in
                     // jamf-cli blocks, so it runs off the main actor.
                     await Task.detached {
-                        guard let jamfPro = EnvironmentProfiles.read(workspace: workspace).jamfPro
-                        else { return PlatformHostCheck.Verdict.unknown }
-                        let urls = PlatformHostCheck.live(jamfPro, platform, binary)
-                        return PlatformHostCheck.verdict(
-                            jamfProURL: urls.jamfPro, platformJamfProURL: urls.platform)
+                        AddSheetPlan.liveHostVerdict(workspace: workspace, platform: platform)
                     }.value
                 },
                 writeSlot: { workspace, platform in

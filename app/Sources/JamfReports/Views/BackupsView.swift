@@ -234,7 +234,9 @@ struct BackupsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let errorMessage {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -248,14 +250,18 @@ struct BackupsView: View {
     private var protectBanner: some View {
         if syncedChoice != nil || proChoice != nil { syncedStorageBanner }
         if latestBackup?.proSkipped == true, latestBackup?.noJamfPro != true, proChoice == nil {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text("The latest backup has no Jamf Pro part: it was skipped. Run History has the reason; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }
         }
         if latestBackup?.proFailed == true {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text("The latest backup's Jamf Pro part failed, so it holds only what Jamf Protect exported. Run History has the error; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -264,12 +270,21 @@ struct BackupsView: View {
         if let protect = latestBackup?.protect, !isSyncedStorageSkip(protect) {
             InlineBanner(
                 icon: protect.isIncomplete ? "exclamationmark.triangle.fill" : "shield",
-                tone: protect.isIncomplete ? .warn : .info
+                tone: protect.isIncomplete ? .warn : .info,
+                action: protect.isIncomplete ? runHistoryAction : nil
             ) {
                 Text(protect.protectSummary)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }
+        }
+    }
+
+    /// The banners that say Run History has the reason or the error.
+    private var runHistoryAction: InlineBannerAction {
+        InlineBannerAction(label: L("Open Run History"), icon: "clock.arrow.circlepath") {
+            NotificationCenter.default.post(
+                name: .navigateToTab, object: nil, userInfo: ["tab": Tab.runs.rawValue])
         }
     }
 
@@ -357,7 +372,11 @@ struct BackupsView: View {
         } catch {
             errorMessage = L("Couldn't save the backup setting: \(error.localizedDescription)")
         }
-        Task { await refreshSyncedChoice() }
+        Task {
+            await refreshSyncedChoice()
+            // The save cleared the attention item its choice settles; redraw the banner now.
+            await workspace.refreshDataFreshness()
+        }
     }
 
     /// Off the main actor: it decodes config.yaml and probes the volume.
@@ -397,7 +416,7 @@ struct BackupsView: View {
                             } else if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Text.tertiary(contrast).opacity(0.65))
+                                    .foregroundStyle(.cellSecondary.opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }
@@ -479,11 +498,19 @@ struct BackupsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
-            StatTile(label: L("Backups"), value: "\(backups.count)", sub: L("Configuration snapshots"))
-            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes), sub: L("JSON backup files"))
-            StatTile(label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"), sub: latestBackup?.name ?? L("No backup"))
-            StatTile(label: L("Selected"), value: "\(selectedBackups.count)", sub: L("Choose two to diff"))
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: L("Backups"), value: "\(backups.count)",
+                     sub: L("Configuration snapshots"), fillsHeight: true)
+            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes),
+                     sub: L("JSON backup files"), fillsHeight: true)
+            StatTile(
+                label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"),
+                sub: latestBackup?.name ?? L("No backup"),
+                fillsHeight: true,
+                action: latestBackup.map { latest in { selectedBackups = [latest.id] } },
+                actionHint: L("Selects the latest backup in the list"))
+            StatTile(label: L("Selected"), value: "\(selectedBackups.count)",
+                     sub: L("Choose two to diff"), fillsHeight: true)
         }
     }
 

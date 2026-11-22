@@ -2924,6 +2924,46 @@
         }
       }
     },
+    "%@ are always collected: the daily summary and most screens are built from them." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ werden immer erfasst: Die tägliche Zusammenfassung und die meisten Ansichten beruhen auf ihnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se recopilan siempre: el resumen diario y la mayoría de las pantallas se basan en ellas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sont toujours collectées : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vengono sempre raccolte: il riepilogo giornaliero e la maggior parte delle schermate si basano su di esse."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は常に収集されます。日次サマリーとほとんどの画面がこれらから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ são sempre coletadas: o resumo diário e a maioria das telas são criados a partir delas."
+          }
+        }
+      }
+    },
     "%@ are behind the current iOS or iPadOS release." : {
       "localizations" : {
         "de" : {
@@ -2964,46 +3004,6 @@
         }
       }
     },
-    "%@ are not kinds collect can skip, so they skip nothing and the stall guard does not apply to them." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ sind keine Arten, die die Erfassung überspringen kann; sie überspringen daher nichts, und der Stall-Schutz gilt nicht für sie."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ no son tipos que collect pueda omitir, así que no omiten nada y la protección contra bloqueos no se aplica a ellos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ne font pas partie des types que la collecte peut ignorer ; ils n’ignorent donc rien et la protection contre le blocage ne s’y applique pas."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ non sono tipi che la raccolta può ignorare, quindi non ignorano nulla e la protezione anti-stallo non si applica."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@は収集でスキップできる種類ではないため、何もスキップされず、停止ガードも適用されません。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ não são tipos que a coleta pode ignorar, portanto não ignoram nada e a proteção contra travamento não se aplica a eles."
-          }
-        }
-      }
-    },
     "%@ are not managed." : {
       "localizations" : {
         "de" : {
@@ -3040,6 +3040,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não são gerenciados."
+          }
+        }
+      }
+    },
+    "%@ are not sources this app collects, so they turn nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sind keine Quellen, die diese App erfasst, daher schalten sie nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no son fuentes que esta app recopile, así que no desactivan nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne sont pas des sources collectées par cette app, elles ne désactivent donc rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non sono fonti raccolte da questa app, quindi non disattivano nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではないため、何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não são fontes que este app coleta, então não desativam nada."
           }
         }
       }
@@ -5370,6 +5410,46 @@
         }
       }
     },
+    "%@ is always collected: the daily summary and most screens are built from it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird immer erfasst: Die tägliche Zusammenfassung und die meisten Ansichten beruhen darauf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se recopila siempre: el resumen diario y la mayoría de las pantallas se basan en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est toujours collectée : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene sempre raccolta: il riepilogo giornaliero e la maggior parte delle schermate si basano su di essa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は常に収集されます。日次サマリーとほとんどの画面がこれから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ é sempre coletada: o resumo diário e a maioria das telas são criados a partir dela."
+          }
+        }
+      }
+    },
     "%@ is behind the current iOS or iPadOS release." : {
       "localizations" : {
         "de" : {
@@ -5446,6 +5526,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ é false, portanto os backups aqui ignoram o Jamf Pro."
+          }
+        }
+      }
+    },
+    "%@ is hidden; show it in Settings › Sidebar Visibility" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist ausgeblendet; blenden Sie es unter Einstellungen › Sichtbarkeit der Seitenleiste ein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ está oculto; muéstrelo en Ajustes › Visibilidad de la barra lateral"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ est masqué ; affichez-le dans Réglages › Visibilité de la barre latérale"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ è nascosto; mostralo in Impostazioni › Visibilità barra laterale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は非表示です。設定 › サイドバーの表示で表示できます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ está oculto; mostre-o em Ajustes › Visibilidade da barra lateral"
           }
         }
       }
@@ -5690,6 +5810,86 @@
         }
       }
     },
+    "%@ is not a source this app collects, so it turns nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist keine Quelle, die diese App erfasst, daher schaltet es nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es una fuente que esta app recopile, así que no desactiva nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas une source collectée par cette app, elle ne désactive donc rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è una fonte raccolta da questa app, quindi non disattiva nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではないため、何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é uma fonte que este app coleta, então não desativa nada."
+          }
+        }
+      }
+    },
+    "%@ is not a source this app collects." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist keine Quelle, die diese App erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es una fuente que esta app recopile."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas une source collectée par cette app."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è una fonte raccolta da questa app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのアプリが収集するソースではありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é uma fonte que este app coleta."
+          }
+        }
+      }
+    },
     "%@ is not a whole number from 1 to 365. The app uses %lld." : {
       "localizations" : {
         "de" : {
@@ -5864,6 +6064,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não é uma data no formato yyyy-MM-dd. O relatório nunca marca esta exceção como expirada."
+          }
+        }
+      }
+    },
+    "%@ is not available for this workspace" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist für diesen Arbeitsbereich nicht verfügbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no está disponible para este espacio de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas disponible pour cet espace de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è disponibile per questo workspace"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ はこのワークスペースでは使用できません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não está disponível para este espaço de trabalho"
           }
         }
       }
@@ -10730,6 +10970,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@: nunca coletado"
+          }
+        }
+      }
+    },
+    "%@; %lld not reported are not listed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@; %lld ohne Meldung sind nicht aufgeführt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@; no se muestran %lld sin datos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ; %lld sans données ne sont pas listés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@; %lld senza dati non sono elencati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。未報告の %lld 台は表示されません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@; %lld sem dados não são listados"
           }
         }
       }
@@ -21108,6 +21388,46 @@
         }
       }
     },
+    "+ %lld more titles not shown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld weitere Titel nicht angezeigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld títulos más no mostrados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld autres titres non affichés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ altri %lld titoli non mostrati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ 表示されていないタイトル %lld 件"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+ %lld títulos a mais não exibidos"
+          }
+        }
+      }
+    },
     "+ %lld more versions not shown" : {
       "localizations" : {
         "de" : {
@@ -29165,6 +29485,46 @@
         }
       }
     },
+    "All alerts, open and resolved" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Alarme, offen und gelöst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las alertas, abiertas y resueltas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toutes les alertes, ouvertes et résolues"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutti gli avvisi, aperti e risolti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのアラート（未解決と解決済み）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos os alertas, abertos e resolvidos"
+          }
+        }
+      }
+    },
     "All profiles" : {
       "localizations" : {
         "de" : {
@@ -36361,6 +36721,46 @@
         }
       }
     },
+    "Changed on another Mac; confirm in Config Doctor" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf einem anderen Mac geändert; in Config Doctor bestätigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiado en otro Mac; confírmalo en Config Doctor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifié sur un autre Mac ; confirmez dans Config Doctor"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modificato su un altro Mac; conferma in Config Doctor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の Mac で変更されました。Config Doctor で確認してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alterado em outro Mac; confirme no Config Doctor"
+          }
+        }
+      }
+    },
     "Chart and HTML options for generated reports, and where to change what else a report shows" : {
       "localizations" : {
         "de" : {
@@ -38807,6 +39207,46 @@
         }
       }
     },
+    "Collect %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ erfassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recopilar %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecter %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccogli %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を収集"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coletar %@"
+          }
+        }
+      }
+    },
     "Collect %@ inventory to match Protect computers to %@." : {
       "localizations" : {
         "de" : {
@@ -39575,6 +40015,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estado da coleta"
+          }
+        }
+      }
+    },
+    "Collect the Jamf Protect data again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfassen Sie die Jamf Protect-Daten erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelva a recopilar los datos de Jamf Protect."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collectez à nouveau les données Jamf Protect."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccogli di nuovo i dati di Jamf Protect."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect のデータを再度収集してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colete os dados do Jamf Protect novamente."
           }
         }
       }
@@ -41179,6 +41659,46 @@
         }
       }
     },
+    "Compliant titles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konforme Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos conformes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titres conformes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titoli conformi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準拠タイトル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos em conformidade"
+          }
+        }
+      }
+    },
     "Composite index" : {
       "localizations" : {
         "de" : {
@@ -41735,6 +42255,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computadores e dispositivos móveis no resumo diário mais recente."
+          }
+        }
+      }
+    },
+    "Computers lists every Mac; its macOS card filters the table by version." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer listet jeden Mac auf; die macOS-Karte filtert die Tabelle nach Version."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenadores muestra todos los Mac; su tarjeta de macOS filtra la tabla por versión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordinateurs liste chaque Mac ; sa carte macOS filtre le tableau par version."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer elenca ogni Mac; la scheda macOS filtra la tabella per versione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータにはすべての Mac が表示されます。macOS カードで表をバージョン別に絞り込めます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computadores lista todos os Macs; o cartão do macOS filtra a tabela por versão."
           }
         }
       }
@@ -44705,6 +45265,126 @@
         }
       }
     },
+    "Copied email" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-Mail kopiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correo copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-mail copié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email copiata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールをコピーしました"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-mail copiado"
+          }
+        }
+      }
+    },
+    "Copied name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name kopiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom copié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nome copiato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前をコピーしました"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nome copiado"
+          }
+        }
+      }
+    },
+    "Copied serial number" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seriennummer kopiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número de serie copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numéro de série copié"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numero di serie copiato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シリアル番号をコピーしました"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Número de série copiado"
+          }
+        }
+      }
+    },
     "Copied table data" : {
       "localizations" : {
         "de" : {
@@ -44825,6 +45505,86 @@
         }
       }
     },
+    "Copy Email" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-Mail kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar correo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier l’e-mail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia email"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールをコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar e-mail"
+          }
+        }
+      }
+    },
+    "Copy Group Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gruppennamen kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nombre del grupo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le nom du groupe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia nome gruppo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "グループ名をコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nome do grupo"
+          }
+        }
+      }
+    },
     "Copy IDs" : {
       "localizations" : {
         "de" : {
@@ -44865,6 +45625,126 @@
         }
       }
     },
+    "Copy Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Namen kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nombre"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le nom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia nome"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前をコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nome"
+          }
+        }
+      }
+    },
+    "Copy Policy Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richtliniennamen kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nombre de la política"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le nom de la stratégie"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia nome policy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポリシー名をコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nome da política"
+          }
+        }
+      }
+    },
+    "Copy Profile Name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profilnamen kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nombre del perfil"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le nom du profil"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia nome profilo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイル名をコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar nome do perfil"
+          }
+        }
+      }
+    },
     "Copy SHA-256 for %@" : {
       "localizations" : {
         "de" : {
@@ -44901,46 +45781,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar SHA-256 de %@"
-          }
-        }
-      }
-    },
-    "Copy Serial" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seriennummer kopieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiar número de serie"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier le numéro de série"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia numero di serie"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シリアルをコピー"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiar número de série"
           }
         }
       }
@@ -45505,6 +46345,46 @@
         }
       }
     },
+    "Copy the %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ をコピー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar: %@"
+          }
+        }
+      }
+    },
     "Copy the comma-separated list of unused group IDs to the clipboard." : {
       "localizations" : {
         "de" : {
@@ -45585,46 +46465,6 @@
         }
       }
     },
-    "Copy the install command to the clipboard." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Den Installationsbefehl in die Zwischenablage kopieren."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia el comando de instalación al portapapeles."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiez la commande d’installation dans le presse-papiers."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia il comando di installazione negli appunti."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インストールコマンドをクリップボードにコピーします。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia o comando de instalação para a área de transferência."
-          }
-        }
-      }
-    },
     "Copy the whole diff to the clipboard" : {
       "localizations" : {
         "de" : {
@@ -45661,46 +46501,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar o diff completo para a área de transferência"
-          }
-        }
-      }
-    },
-    "Copy this computer's serial number to the clipboard." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Seriennummer dieses Computers in die Zwischenablage kopieren."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia al portapapeles el número de serie de este ordenador."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiez le numéro de série de cet ordinateur dans le presse-papiers."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia negli appunti il numero di serie di questo computer."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このコンピュータのシリアル番号をクリップボードにコピーします。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia o número de série deste computador para a área de transferência."
           }
         }
       }
@@ -59429,6 +60229,46 @@
         }
       }
     },
+    "Extension attribute data stops updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary and security agent coverage stop using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten der Erweiterungsattribute werden nicht mehr aktualisiert. Ansichten und Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und die Abdeckung der Sicherheitsagenten verwenden sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de atributos de extensión dejan de actualizarse. Las pantallas y pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario y la cobertura de agentes de seguridad dejan de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données des attributs d’extension ne sont plus mises à jour. Les écrans et onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien et la couverture des agents de sécurité ne les utilisent plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati degli attributi di estensione non vengono più aggiornati. Le schermate e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e la copertura degli agenti di sicurezza smettono di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拡張属性のデータは更新されなくなります。画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーとセキュリティエージェントのカバー率では使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de atributos de extensão deixam de ser atualizados. As telas e abas do relatório continuam mostrando a última coleta, com a data; o resumo diário e a cobertura dos agentes de segurança deixam de usá-los."
+          }
+        }
+      }
+    },
     "External boot" : {
       "localizations" : {
         "de" : {
@@ -60213,6 +61053,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Titoli in errore"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗しているタイトル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos com falha"
+          }
+        }
+      }
+    },
+    "Failing titles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlerhafte Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos con errores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titres en échec"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titoli con errori"
           }
         },
         "ja" : {
@@ -61441,6 +62321,206 @@
         }
       }
     },
+    "Filters the devices table to jailbreak detected" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtert die Gerätetabelle auf erkannten Jailbreak"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabla de dispositivos por jailbreak detectado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtre le tableau des appareils sur jailbreak détecté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabella dei dispositivi per jailbreak rilevato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスの表を脱獄検出で絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra a tabela de dispositivos por jailbreak detectado"
+          }
+        }
+      }
+    },
+    "Filters the patch titles table to compliant titles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtert die Patch-Titeltabelle auf konforme Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabla de títulos de parches por títulos conformes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtre le tableau des titres de correctifs sur les titres conformes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabella dei titoli patch per titoli conformi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッチタイトルの表を準拠タイトルで絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra a tabela de títulos de patch por títulos em conformidade"
+          }
+        }
+      }
+    },
+    "Filters the patch titles table to failing titles" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtert die Patch-Titeltabelle auf fehlerhafte Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabla de títulos de parches por títulos con errores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtre le tableau des titres de correctifs sur les titres en échec"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabella dei titoli patch per titoli con errori"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッチタイトルの表を失敗しているタイトルで絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra a tabela de títulos de patch por títulos com falha"
+          }
+        }
+      }
+    },
+    "Filters the table below to Macs with patch failures" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtert die Tabelle unten auf Macs mit Patch-Fehlern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabla de abajo por Mac con errores de parches"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtre le tableau ci-dessous sur les Mac en échec de correctif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabella qui sotto per Mac con errori patch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下の表をパッチ失敗のある Mac で絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra a tabela abaixo por Macs com falhas de patch"
+          }
+        }
+      }
+    },
+    "Filters the table below to stale Macs" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtert die Tabelle unten auf veraltete Macs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabla de abajo por Mac obsoletos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtre le tableau ci-dessous sur les Mac obsolètes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra la tabella qui sotto per Mac obsoleti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下の表を長期未接続の Mac で絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtra a tabela abaixo por Macs desatualizados"
+          }
+        }
+      }
+    },
     "Find computer groups not referenced by any policy or profile." : {
       "localizations" : {
         "de" : {
@@ -61917,6 +62997,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Firewall ativado"
+          }
+        }
+      }
+    },
+    "Firewall off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firewall aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firewall desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pare-feu désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firewall disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイアウォールオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firewall desligado"
           }
         }
       }
@@ -64081,6 +65201,46 @@
         }
       }
     },
+    "Gatekeeper off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper オフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gatekeeper desligado"
+          }
+        }
+      }
+    },
     "Gateway: %@" : {
       "localizations" : {
         "de" : {
@@ -65163,86 +66323,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Os relatórios gerados são gravados em %@ enquanto o espaço de trabalho permanece no disco local — a forma mais restrita de compartilhar a saída, já que apenas os relatórios finalizados saem deste Mac."
-          }
-        }
-      }
-    },
-    "Generated reports include every definition." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erstellte Berichte enthalten jede Definition."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los informes generados incluyen todas las definiciones."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les rapports générés incluent toutes les définitions."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I report generati includono ogni definizione."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "生成されたレポートにはすべての定義が含まれます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Os relatórios gerados incluem todas as definições."
-          }
-        }
-      }
-    },
-    "Generated reports include every patch title." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erstellte Berichte enthalten jeden Patch-Titel."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los informes generados incluyen todos los títulos de parches."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les rapports générés incluent tous les titres de correctifs."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I report generati includono ogni titolo patch."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "生成されたレポートにはすべてのパッチタイトルが含まれます。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Os relatórios gerados incluem todos os títulos de patch."
           }
         }
       }
@@ -73535,46 +74615,6 @@
         }
       }
     },
-    "Kinds that can be skipped: %@." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quellen, die übersprungen werden können: %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos que se pueden omitir: %@."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Types pouvant être ignorés : %@."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipi che possono essere saltati: %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スキップできる種類: %@。"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos que podem ser ignorados: %@."
-          }
-        }
-      }
-    },
     "LICENSE" : {
       "localizations" : {
         "de" : {
@@ -78227,42 +79267,42 @@
         }
       }
     },
-    "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this source to jamf_cli.collect_skip" : {
+    "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or turn this source off in Data Sources" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwaltete Software-Update-Pläne sind in Jamf Pro ausgeschaltet; schalten Sie sie ein oder fügen Sie diese Quelle zu jamf_cli.collect_skip hinzu"
+            "value" : "Managed Software Update Plans ist in Jamf Pro ausgeschaltet; schalten Sie es ein oder diese Quelle unter Data Sources aus"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans está desactivado en Jamf Pro; actívelo o añada esta fuente a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans está desactivado en Jamf Pro; actívalo o desactiva esta fuente en Data Sources"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans est désactivé dans Jamf Pro ; activez-le ou ajoutez cette source à jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans est désactivé dans Jamf Pro ; activez-le ou désactivez cette source dans Data Sources"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Managed Software Update Plans è disattivato in Jamf Pro; attivarlo oppure aggiungere questa origine a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans è disattivato in Jamf Pro; attivalo oppure disattiva questa fonte in Data Sources"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jamf Proで“管理対象ソフトウェアアップデートプラン”がオフになっています。オンにするか、このソースをjamf_cli.collect_skipに追加してください"
+            "value" : "Jamf Pro で Managed Software Update Plans がオフです。オンにするか、Data Sources でこのソースをオフにしてください"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Managed Software Update Plans está desativado no Jamf Pro; ative-o ou adicione esta fonte a jamf_cli.collect_skip"
+            "value" : "Managed Software Update Plans está desativado no Jamf Pro; ative-o ou desative esta fonte em Data Sources"
           }
         }
       }
@@ -84349,6 +85389,46 @@
         }
       }
     },
+    "No computers in Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Computer in Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ordenadores en Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun ordinateur dans Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun computer in Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro にコンピュータがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum computador no Jamf Pro"
+          }
+        }
+      }
+    },
     "No config.yaml at %@" : {
       "localizations" : {
         "de" : {
@@ -86111,6 +87191,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nenhum grupo de dispositivos móveis encontrado."
+          }
+        }
+      }
+    },
+    "No mobile devices in Jamf Pro" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Mobilgeräte in Jamf Pro"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay dispositivos móviles en Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun appareil mobile dans Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun dispositivo mobile in Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro にモバイルデバイスがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum dispositivo móvel no Jamf Pro"
           }
         }
       }
@@ -90161,6 +91281,46 @@
         }
       }
     },
+    "OS update data stops updating. The OS Updates screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS-Update-Daten werden nicht mehr aktualisiert. Die Ansicht OS Updates und die Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de actualizaciones del sistema dejan de actualizarse. La pantalla OS Updates y las pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario deja de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de mises à jour du système ne sont plus mises à jour. L’écran OS Updates et les onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien ne les utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I dati sugli aggiornamenti del sistema non vengono più aggiornati. La schermata OS Updates e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero smette di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS アップデートのデータは更新されなくなります。OS Updates 画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de atualizações do sistema deixam de ser atualizados. A tela OS Updates e as abas do relatório continuam mostrando a última coleta, com a data; o resumo diário deixa de usá-los."
+          }
+        }
+      }
+    },
     "OS updates" : {
       "localizations" : {
         "de" : {
@@ -92927,6 +94087,46 @@
         }
       }
     },
+    "Open Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir Réglages"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Impostazioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を開く"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes"
+          }
+        }
+      }
+    },
     "Open Settings, where the command-line tool is installed." : {
       "localizations" : {
         "de" : {
@@ -93043,6 +94243,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Tendências"
+          }
+        }
+      }
+    },
+    "Open all Computers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Computer öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir todos los Ordenadores"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir tous les Ordinateurs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri tutti i Computer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのコンピュータを開く"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir todos os Computadores"
           }
         }
       }
@@ -94007,6 +95247,46 @@
         }
       }
     },
+    "Open this computer's record in the Jamf Pro console." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den Eintrag dieses Computers in der Jamf Pro-Konsole öffnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir el registro de este ordenador en la consola de Jamf Pro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir la fiche de cet ordinateur dans la console Jamf Pro."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri la scheda di questo computer nella console di Jamf Pro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このコンピュータのレコードを Jamf Pro コンソールで開きます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir o registro deste computador no console do Jamf Pro."
+          }
+        }
+      }
+    },
     "Open this group in the Jamf Pro console." : {
       "localizations" : {
         "de" : {
@@ -94087,6 +95367,86 @@
         }
       }
     },
+    "Opens %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を開きます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre %@"
+          }
+        }
+      }
+    },
+    "Opens %@, filtered to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet %@, gefiltert auf %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre %@, filtrado por %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre %@, filtré sur %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre %@, filtrato per %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を開き、%@ で絞り込みます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre %@, filtrado por %@"
+          }
+        }
+      }
+    },
     "Opens %@." : {
       "localizations" : {
         "de" : {
@@ -94163,6 +95523,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre Computadores com o filtro Gerenciamento."
+          }
+        }
+      }
+    },
+    "Opens Computers, every Mac in the latest inventory" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet Computer mit jedem Mac im neuesten Inventar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Ordenadores con todos los Mac del inventario más reciente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Ordinateurs avec chaque Mac du dernier inventaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre Computer con ogni Mac dell’inventario più recente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新のインベントリのすべての Mac をコンピュータで開きます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Computadores com todos os Macs do inventário mais recente"
+          }
+        }
+      }
+    },
+    "Opens Computers, listing the Macs whose inventory reads %@ off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet Computer mit den Macs, deren Inventar %@ als aus meldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Ordenadores con los Mac cuyo inventario indica %@ desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Ordinateurs avec les Mac dont l’inventaire indique %@ désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre Computer con i Mac il cui inventario indica %@ disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インベントリで %@ がオフの Mac をコンピュータで表示します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Computadores com os Macs cujo inventário indica %@ desligado"
+          }
+        }
+      }
+    },
+    "Opens Devices, showing %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet Geräte mit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Dispositivos con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Appareils avec %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre Dispositivi con %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスを開き、%@ を表示します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Dispositivos com %@"
           }
         }
       }
@@ -96419,42 +97899,82 @@
         }
       }
     },
-    "Patch policies tracked" : {
+    "Patch data stops updating. Patch screens and report tabs keep showing what was last collected, with its date; the daily summary and the patch part of the Security Score stop using it." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verfolgte Patch-Richtlinien"
+            "value" : "Patch-Daten werden nicht mehr aktualisiert. Patch-Ansichten und Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und der Patch-Anteil des Security Score verwenden sie nicht mehr."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Políticas de parches con seguimiento"
+            "value" : "Los datos de parches dejan de actualizarse. Las pantallas y pestañas del informe de parches siguen mostrando lo último recopilado, con su fecha; el resumen diario y la parte de parches del Security Score dejan de usarlos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stratégies de correctifs suivies"
+            "value" : "Les données des correctifs ne sont plus mises à jour. Les écrans et onglets correctifs du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien et la part correctifs du Security Score ne les utilisent plus."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Policy di patch monitorate"
+            "value" : "I dati delle patch non vengono più aggiornati. Le schermate e le schede patch del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e la parte patch del Security Score smettono di usarli."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "追跡中のパッチポリシー"
+            "value" : "パッチのデータは更新されなくなります。パッチの画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーと Security Score のパッチ部分では使われなくなります。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Políticas de patch monitoradas"
+            "value" : "Os dados de patches deixam de ser atualizados. As telas e abas de patches do relatório continuam mostrando a última coleta, com a data; o resumo diário e a parte de patches do Security Score deixam de usá-los."
+          }
+        }
+      }
+    },
+    "Patch titles tracked" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verfolgte Patch-Titel"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos de parches con seguimiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titres de correctifs suivis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titoli di patch monitorati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追跡中のパッチタイトル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Títulos de patch monitorados"
           }
         }
       }
@@ -96779,42 +98299,42 @@
         }
       }
     },
-    "Per-device details are turned off (jamf_cli.collect_skip)" : {
+    "Per-device details are turned off in Data Sources" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details pro Gerät sind ausgeschaltet (jamf_cli.collect_skip)"
+            "value" : "Gerätedetails sind unter Data Sources ausgeschaltet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los detalles por dispositivo están desactivados (jamf_cli.collect_skip)"
+            "value" : "Los detalles por dispositivo están desactivados en Data Sources"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les détails par appareil sont désactivés (jamf_cli.collect_skip)"
+            "value" : "Les détails par appareil sont désactivés dans Data Sources"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I dettagli per dispositivo sono disattivati (jamf_cli.collect_skip)"
+            "value" : "I dettagli per dispositivo sono disattivati in Data Sources"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デバイスごとの詳細はオフです (jamf_cli.collect_skip)"
+            "value" : "デバイスごとの詳細は Data Sources でオフになっています"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Os detalhes por dispositivo estão desativados (jamf_cli.collect_skip)"
+            "value" : "Os detalhes por dispositivo estão desativados em Data Sources"
           }
         }
       }
@@ -104199,6 +105719,46 @@
         }
       }
     },
+    "Remove it from the list; it turns nothing off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus der Liste entfernen; es schaltet nichts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quítalo de la lista; no desactiva nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirez-le de la liste ; il ne désactive rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimuovilo dall’elenco; non disattiva nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リストから削除してください。何もオフにしません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remova-o da lista; ele não desativa nada."
+          }
+        }
+      }
+    },
     "Remove it in Terminal: jamf-cli config remove-profile -- " : {
       "localizations" : {
         "de" : {
@@ -108657,6 +110217,46 @@
         }
       }
     },
+    "Run the same request again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Führen Sie dieselbe Anfrage erneut aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelva a ejecutar la misma solicitud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relancez la même requête."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esegui di nuovo la stessa richiesta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同じリクエストをもう一度実行してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execute a mesma solicitação novamente."
+          }
+        }
+      }
+    },
     "Run this schedule now." : {
       "localizations" : {
         "de" : {
@@ -109459,6 +111059,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SIP desativado"
+          }
+        }
+      }
+    },
+    "SIP off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP オフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SIP desligado"
           }
         }
       }
@@ -110503,6 +112143,86 @@
         }
       }
     },
+    "Saved snapshots" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantáneas guardadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instantanés enregistrés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshot salvati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショット"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snapshots salvos"
+          }
+        }
+      }
+    },
+    "Saved snapshots use more than %lld GB and retention is off." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Snapshots belegen mehr als %lld GB und die Aufbewahrung ist deaktiviert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las instantáneas guardadas ocupan más de %lld GB y la retención está desactivada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les instantanés enregistrés occupent plus de %lld Go et la conservation est désactivée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli snapshot salvati occupano più di %lld GB e la conservazione è disattivata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みスナップショットが %lld GB を超えており、保持設定はオフです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os snapshots salvos ocupam mais de %lld GB e a retenção está desativada."
+          }
+        }
+      }
+    },
     "Saved to %@" : {
       "localizations" : {
         "de" : {
@@ -110699,6 +112419,144 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dia da verificação"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld Mac scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Mac in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Mac scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysé sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Mac verificados nesta rodada"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld Macs scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Macs in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld Macs scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld Mac analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld Mac analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld Mac analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたMac %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld Macs verificados nesta rodada"
+          }
+        }
+      }
+    },
+    "Scan in progress: %lld of %lld devices scanned this round" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan läuft: %lld von %lld Geräten in dieser Runde gescannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scan in progress: %1$lld of %2$lld devices scanned this round"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis en curso: %lld de %lld dispositivos analizados en esta ronda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse en cours : %lld appareils analysés sur %lld dans ce cycle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione in corso: %lld di %lld dispositivi analizzati in questo ciclo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキャン中: このラウンドでスキャンしたデバイス %lld / %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificação em andamento: %lld de %lld dispositivos verificados nesta rodada"
           }
         }
       }
@@ -113395,6 +115253,46 @@
         }
       }
     },
+    "Selects the latest backup in the list" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählt das neueste Backup in der Liste aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona la copia de seguridad más reciente de la lista"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionne la sauvegarde la plus récente de la liste"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona il backup più recente nell’elenco"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一覧で最新のバックアップを選択します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleciona o backup mais recente da lista"
+          }
+        }
+      }
+    },
     "Send a daily heartbeat" : {
       "localizations" : {
         "de" : {
@@ -115835,6 +117733,46 @@
         }
       }
     },
+    "Settings › Logging names the file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen › Protokollierung nennt die Datei."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes › Registro de eventos indica el archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages › Journalisation indique le fichier."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostazioni › Logging indica il file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 › ログにファイル名が表示されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes › Registro informa o arquivo."
+          }
+        }
+      }
+    },
     "Setup finished — allow JamfReports under Login Items › Allow in the Background to start automation" : {
       "localizations" : {
         "de" : {
@@ -116721,6 +118659,46 @@
         }
       }
     },
+    "Show all computers, not only those with %@ off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Computer anzeigen, nicht nur die mit %@ aus"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar todos los ordenadores, no solo los que tienen %@ desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher tous les ordinateurs, pas seulement ceux avec %@ désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra tutti i computer, non solo quelli con %@ disattivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ がオフのものだけでなく、すべてのコンピュータを表示"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar todos os computadores, não apenas os com %@ desligado"
+          }
+        }
+      }
+    },
     "Show all profiles, %lld schedule" : {
       "localizations" : {
         "de" : {
@@ -117573,6 +119551,46 @@
         }
       }
     },
+    "Shows every computer in the table below" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt jeden Computer in der Tabelle unten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra todos los ordenadores en la tabla de abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche chaque ordinateur dans le tableau ci-dessous"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra ogni computer nella tabella qui sotto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下の表にすべてのコンピュータを表示します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra todos os computadores na tabela abaixo"
+          }
+        }
+      }
+    },
     "Shows its value distribution" : {
       "localizations" : {
         "de" : {
@@ -117609,6 +119627,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostra a distribuição de valores"
+          }
+        }
+      }
+    },
+    "Shows the %@ computers in the table below" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt die %@-Computer in der Tabelle unten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra los ordenadores de %@ en la tabla de abajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche les ordinateurs %@ dans le tableau ci-dessous"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra i computer %@ nella tabella qui sotto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下の表に %@ のコンピュータを表示します"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra os computadores de %@ na tabela abaixo"
           }
         }
       }
@@ -120455,6 +122513,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Iniciando…"
+          }
+        }
+      }
+    },
+    "Starts every report's file name: %@_<date>.xlsx. Letters, digits and hyphens, up to 24. Blank uses jamf." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beginn jedes Berichtsdateinamens: %@_<date>.xlsx. Buchstaben, Ziffern und Bindestriche, bis zu 24. Leer verwendet jamf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio del nombre de cada informe: %@_<date>.xlsx. Letras, dígitos y guiones, hasta 24. Vacío usa jamf."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Début du nom de chaque rapport : %@_<date>.xlsx. Lettres, chiffres et tirets, jusqu’à 24. Vide utilise jamf."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inizio del nome di ogni report: %@_<date>.xlsx. Lettere, cifre e trattini, fino a 24. Vuoto usa jamf."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各レポートのファイル名の先頭: %@_<date>.xlsx。英字、数字、ハイフンで 24 文字まで。空欄の場合は jamf を使用します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Início do nome de cada relatório: %@_<date>.xlsx. Letras, dígitos e hifens, até 24. Vazio usa jamf."
           }
         }
       }
@@ -124043,6 +126141,46 @@
         }
       }
     },
+    "The SOFA feed stops updating. OS currency keeps showing what was last collected, with its date; the daily summary and the macOS and XProtect current parts of the Security Score stop using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der SOFA-Feed wird nicht mehr aktualisiert. Die Aktualität des Betriebssystems zeigt weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung und die Anteile macOS aktuell und XProtect aktuell des Security Score verwenden ihn nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El feed de SOFA deja de actualizarse. La actualización del sistema sigue mostrando lo último recopilado, con su fecha; el resumen diario y las partes de macOS y XProtect al día del Security Score dejan de usarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le flux SOFA n’est plus mis à jour. L’actualité du système continue d’afficher la dernière collecte, avec sa date ; le résumé quotidien et les parts macOS et XProtect à jour du Security Score ne l’utilisent plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il feed SOFA non viene più aggiornato. L’aggiornamento del sistema continua a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero e le parti macOS e XProtect aggiornati del Security Score smettono di usarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOFA フィードは更新されなくなります。OS の最新状況には最後に収集したデータが日付付きで表示され続けます。日次サマリーと Security Score の macOS 最新と XProtect 最新の部分では使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O feed do SOFA deixa de ser atualizado. A atualização do sistema continua mostrando a última coleta, com a data; o resumo diário e as partes de macOS e XProtect atuais do Security Score deixam de usá-lo."
+          }
+        }
+      }
+    },
     "The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors)." : {
       "localizations" : {
         "de" : {
@@ -124359,6 +126497,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O app executa este espaço de trabalho como “%@” e ignora a chave."
+          }
+        }
+      }
+    },
+    "The automatic collect is still on one source. Try again when it finishes; Run History shows what it is collecting." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die automatische Erfassung arbeitet noch an einer Datenquelle. Versuchen Sie es erneut, wenn sie fertig ist; der Laufverlauf zeigt, was sie gerade erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La recopilación automática sigue en una fuente de datos. Inténtelo de nuevo cuando termine; Historial de ejecuciones muestra lo que está recopilando."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La collecte automatique traite encore une source de données. Réessayez à la fin ; Historique des exécutions montre ce qu’elle collecte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La raccolta automatica è ancora su un’origine dati. Riprovare al termine; Cronologia esecuzioni mostra cosa sta raccogliendo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動収集はまだ1つのデータソースを収集中です。完了後にもう一度お試しください。収集中の内容は実行履歴で確認できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A coleta automática ainda está em uma fonte de dados. Tente novamente quando ela terminar; o Histórico de execuções mostra o que está sendo coletado."
+          }
+        }
+      }
+    },
+    "The automatic collect stopped for this refresh. It will pick up what is left on its next run." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die automatische Erfassung wurde für diese Aktualisierung angehalten. Den Rest holt sie beim nächsten Lauf nach."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La recopilación automática se detuvo para esta actualización. Recogerá lo que falta en su próxima ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La collecte automatique s’est arrêtée pour cette actualisation. Elle reprendra le reste à sa prochaine exécution."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La raccolta automatica si è fermata per questo aggiornamento. Riprenderà il resto alla prossima esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この更新のために自動収集を停止しました。残りは次回の実行で収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A coleta automática parou para esta atualização. Ela coletará o restante na próxima execução."
           }
         }
       }
@@ -126181,6 +128399,46 @@
         }
       }
     },
+    "The server did not answer in time. Collect now tries again at once; after two timeouts in a row, automatic runs leave this source to the next day, and to the next week if it keeps timing out. To stop collecting it, turn it off in Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server hat nicht rechtzeitig geantwortet. „Jetzt erfassen“ versucht es sofort erneut; nach zwei Zeitüberschreitungen in Folge lassen automatische Läufe diese Quelle bis zum nächsten Tag aus, bei anhaltenden Zeitüberschreitungen bis zur nächsten Woche. Um sie nicht mehr zu erfassen, schalten Sie sie unter Datenquellen aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no respondió a tiempo. «Recopilar ahora» vuelve a intentarlo de inmediato; tras dos tiempos de espera agotados seguidos, las ejecuciones automáticas dejan esta fuente para el día siguiente, y para la semana siguiente si se sigue agotando el tiempo. Para dejar de recopilarla, desactívela en Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur n'a pas répondu à temps. « Collecter maintenant » réessaie immédiatement ; après deux dépassements de délai consécutifs, les exécutions automatiques reportent cette source au lendemain, puis à la semaine suivante si le délai continue d'être dépassé. Pour ne plus la collecter, désactivez-la dans Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server non ha risposto in tempo. «Raccogli ora» riprova subito; dopo due timeout consecutivi, le esecuzioni automatiche rimandano questa origine al giorno successivo, e alla settimana successiva se il timeout continua. Per non raccoglierla più, è possibile disattivarla in Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバーが時間内に応答しませんでした。「今すぐ収集」はすぐに再試行します。2 回続けてタイムアウトすると、自動実行はこのソースを翌日に回し、タイムアウトが続く場合は翌週に回します。収集を止めるには、データソースでオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor não respondeu a tempo. “Coletar agora” tenta de novo imediatamente; após dois tempos limite seguidos, as execuções automáticas deixam esta fonte para o dia seguinte, e para a semana seguinte se o tempo limite continuar. Para deixar de coletá-la, desative-a em Fontes de dados."
+          }
+        }
+      }
+    },
     "The software update scan found errors on these devices. Open OS Updates for the products and status, and check that the device can reach Apple." : {
       "localizations" : {
         "de" : {
@@ -127073,6 +129331,46 @@
         }
       }
     },
+    "This Jamf Protect data stops updating. The Jamf Protect screen and report tabs keep showing what was last collected, with its date; the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Jamf Protect-Daten werden nicht mehr aktualisiert. Die Ansicht Jamf Protect und die Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estos datos de Jamf Protect dejan de actualizarse. La pantalla Jamf Protect y las pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario deja de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces données Jamf Protect ne sont plus mises à jour. L’écran Jamf Protect et les onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien ne les utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questi dati di Jamf Protect non vengono più aggiornati. La schermata Jamf Protect e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero smette di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Protect のデータは更新されなくなります。Jamf Protect 画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estes dados do Jamf Protect deixam de ser atualizados. A tela Jamf Protect e as abas do relatório continuam mostrando a última coleta, com a data; o resumo diário deixa de usá-los."
+          }
+        }
+      }
+    },
     "This Jamf Protect login is an environment of its own." : {
       "localizations" : {
         "de" : {
@@ -127719,6 +130017,46 @@
         }
       }
     },
+    "This prefix cannot start a file name, so reports keep jamf." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit diesem Präfix kann kein Dateiname beginnen, daher bleiben Berichte bei jamf."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este prefijo no puede iniciar un nombre de archivo, así que los informes siguen con jamf."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce préfixe ne peut pas commencer un nom de fichier, les rapports gardent donc jamf."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo prefisso non può iniziare un nome di file, quindi i report mantengono jamf."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この接頭辞はファイル名の先頭に使えないため、レポートは jamf のままです。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este prefixo não pode iniciar um nome de arquivo, então os relatórios mantêm jamf."
+          }
+        }
+      }
+    },
     "This profile has Platform API access. Saving with the switch off removes it." : {
       "localizations" : {
         "de" : {
@@ -128115,6 +130453,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta configuração criou:"
+          }
+        }
+      }
+    },
+    "This source cannot be turned off: the daily summary and most screens are built from it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Quelle kann nicht ausgeschaltet werden: Die tägliche Zusammenfassung und die meisten Ansichten beruhen auf ihr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fuente no se puede desactivar: el resumen diario y la mayoría de las pantallas se basan en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette source ne peut pas être désactivée : le résumé quotidien et la plupart des écrans en dépendent."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa fonte non può essere disattivata: il riepilogo giornaliero e la maggior parte delle schermate si basano su di essa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このソースはオフにできません。日次サマリーとほとんどの画面がこのソースから作られます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fonte não pode ser desativada: o resumo diário e a maioria das telas são criados a partir dela."
+          }
+        }
+      }
+    },
+    "This source stops updating. Screens keep showing what was last collected, with its date, and the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Quelle wird nicht mehr aktualisiert. Ansichten zeigen weiter die zuletzt erfassten Daten mit ihrem Datum, und die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fuente deja de actualizarse. Las pantallas siguen mostrando lo último recopilado, con su fecha, y el resumen diario deja de usarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette source n’est plus mise à jour. Les écrans continuent d’afficher la dernière collecte, avec sa date, et le résumé quotidien ne l’utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa fonte non viene più aggiornata. Le schermate continuano a mostrare l’ultima raccolta, con la sua data, e il riepilogo giornaliero smette di usarla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このソースは更新されなくなります。画面には最後に収集したデータが日付付きで表示され続け、日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta fonte deixa de ser atualizada. As telas continuam mostrando a última coleta, com a data, e o resumo diário deixa de usá-la."
           }
         }
       }
@@ -130577,6 +132995,46 @@
         }
       }
     },
+    "Turn Off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausschalten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにする"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativar"
+          }
+        }
+      }
+    },
     "Turn already-collected fleet data into plain-language insight cards on Overview, Trends, Audit, Security Posture and Compliance Posture, using the On-Device Foundation Model (Apple Intelligence). Off by default. The model runs on this Mac and nothing leaves it." : {
       "localizations" : {
         "de" : {
@@ -130613,6 +133071,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme dados da frota já coletados em cartões de insight em linguagem simples na Visão geral, em Tendências, Auditoria, Postura de segurança e Postura de conformidade, usando o modelo de fundação no dispositivo (Apple Intelligence). Desativado por padrão. O modelo é executado neste Mac e nada sai dele."
+          }
+        }
+      }
+    },
+    "Turn off %@?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ausschalten?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desactivar %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver %@ ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivare %@?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ をオフにしますか?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativar %@?"
           }
         }
       }
@@ -130657,6 +133155,46 @@
         }
       }
     },
+    "Turn on retention in config.yaml (retention.enabled) to archive or remove old snapshots." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren Sie die Aufbewahrung in config.yaml (retention.enabled), um alte Snapshots zu archivieren oder zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active la retención en config.yaml (retention.enabled) para archivar o eliminar las instantáneas antiguas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez la conservation dans config.yaml (retention.enabled) pour archiver ou supprimer les anciens instantanés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attivare la conservazione in config.yaml (retention.enabled) per archiviare o rimuovere i vecchi snapshot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "古いスナップショットをアーカイブまたは削除するには、config.yaml で保持設定（retention.enabled）をオンにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ative a retenção no config.yaml (retention.enabled) para arquivar ou remover snapshots antigos."
+          }
+        }
+      }
+    },
     "Turn on verbose logs on this Mac" : {
       "localizations" : {
         "de" : {
@@ -130693,6 +133231,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ativar logs detalhados neste Mac"
+          }
+        }
+      }
+    },
+    "Turn sources off with the switches on Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quellen mit den Schaltern unter Data Sources ausschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactiva fuentes con los interruptores de Data Sources."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez des sources avec les interrupteurs de Data Sources."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva le fonti con gli interruttori in Data Sources."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data Sources のスイッチでソースをオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desative fontes com os botões em Data Sources."
           }
         }
       }
@@ -130773,6 +133351,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme os dados da frota de hoje em um resumo em linguagem simples usando inteligência no dispositivo."
+          }
+        }
+      }
+    },
+    "Turned off in this workspace" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In diesem Arbeitsbereich ausgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado en este espacio de trabajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé dans cet espace de travail"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivato in questo spazio di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースでオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativado neste espaço de trabalho"
+          }
+        }
+      }
+    },
+    "Turned off with patch-status" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit patch-status ausgeschaltet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado junto con patch-status"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé avec patch-status"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivato con patch-status"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "patch-status と一緒にオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativado com patch-status"
           }
         }
       }
@@ -133303,42 +135961,42 @@
         }
       }
     },
-    "Use Computers to inspect individual records and filter by OS version." : {
+    "Use 1 to 24 letters, digits or hyphens (no underscores or spaces), or clear it in Config › Output." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwenden Sie „Computer“, um einzelne Einträge zu prüfen und nach OS-Version zu filtern."
+            "value" : "Verwenden Sie 1 bis 24 Buchstaben, Ziffern oder Bindestriche (keine Unterstriche oder Leerzeichen), oder leeren Sie das Feld unter Konfiguration › Ausgabe."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use Ordenadores para inspeccionar registros individuales y filtrar por versión del SO."
+            "value" : "Use de 1 a 24 letras, dígitos o guiones (sin guiones bajos ni espacios), o déjelo vacío en Configuración › Salida."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisez Ordinateurs pour inspecter les enregistrements individuels et filtrer par version d’OS."
+            "value" : "Utilisez de 1 à 24 lettres, chiffres ou tirets (sans tiret bas ni espace), ou videz-le dans Config › Sortie."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usa Computer per esaminare i singoli record e filtrare per versione OS."
+            "value" : "Usa da 1 a 24 lettere, cifre o trattini (senza trattini bassi né spazi), oppure svuotalo in Config › Output."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "個別のレコードを確認したりOSバージョンで絞り込んだりするには、コンピュータを使用してください。"
+            "value" : "1〜24 文字の英字、数字、ハイフンを使用してください（アンダースコアと空白は不可）。または 構成 › 出力 で空にしてください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use Computadores para inspecionar registros individuais e filtrar por versão do OS."
+            "value" : "Use de 1 a 24 letras, dígitos ou hifens (sem sublinhados nem espaços), ou deixe vazio em Config › Saída."
           }
         }
       }
@@ -135339,6 +137997,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "RESUMO DO ESPAÇO DE TRABALHO"
+          }
+        }
+      }
+    },
+    "Waiting for the automatic collect to finish its current source…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warten, bis die automatische Erfassung ihre aktuelle Datenquelle abgeschlossen hat…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a que la recopilación automática termine su fuente de datos actual…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de la fin de la source de données en cours de la collecte automatique…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In attesa che la raccolta automatica termini l’origine dati corrente…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動収集が現在のデータソースを終えるのを待っています…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aguardando a coleta automática concluir a fonte de dados atual…"
           }
         }
       }
@@ -139921,6 +142619,46 @@
         }
       }
     },
+    "all devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "alle Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "todos los dispositivos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tous les appareils"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tutti i dispositivi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "todos os dispositivos"
+          }
+        }
+      }
+    },
     "and %lld more, in Mobile Devices" : {
       "localizations" : {
         "de" : {
@@ -140641,6 +143379,46 @@
         }
       }
     },
+    "command" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "comando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "commande"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "comando"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンド"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "comando"
+          }
+        }
+      }
+    },
     "compliance benchmarks" : {
       "localizations" : {
         "de" : {
@@ -140717,6 +143495,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "postura de conformidade"
+          }
+        }
+      }
+    },
+    "computer name" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computername"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nombre del ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nom de l’ordinateur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nome del computer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンピュータ名"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nome do computador"
           }
         }
       }
@@ -146688,6 +149506,46 @@
         }
       }
     },
+    "managed devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "verwaltete Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos gestionados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "appareils gérés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivi gestiti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理対象デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos gerenciados"
+          }
+        }
+      }
+    },
     "managed mobile devices" : {
       "localizations" : {
         "de" : {
@@ -148688,6 +151546,86 @@
         }
       }
     },
+    "output.file_prefix (%@) cannot start a file name, so reports are named jamf_report_…." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) kann keinen Dateinamen beginnen, daher heißen Berichte jamf_report_…."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) no puede iniciar un nombre de archivo, así que los informes se llaman jamf_report_…."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) ne peut pas commencer un nom de fichier, les rapports s’appellent donc jamf_report_…."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) non può iniziare un nome di file, quindi i report si chiamano jamf_report_…."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) はファイル名の先頭に使えないため、レポート名は jamf_report_… になります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix (%@) não pode iniciar um nome de arquivo, então os relatórios se chamam jamf_report_…."
+          }
+        }
+      }
+    },
+    "output.file_prefix is not text, so reports are named jamf_report_…." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix ist kein Text, daher heißen Berichte jamf_report_…."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix no es texto, así que los informes se llaman jamf_report_…."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix n’est pas du texte, les rapports s’appellent donc jamf_report_…."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix non è testo, quindi i report si chiamano jamf_report_…."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix がテキストではないため、レポート名は jamf_report_… になります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "output.file_prefix não é texto, então os relatórios se chamam jamf_report_…."
+          }
+        }
+      }
+    },
     "output.timestamp_authority (host %@) is not an https:// address. Run manifests are written but not timestamped." : {
       "localizations" : {
         "de" : {
@@ -150100,6 +153038,46 @@
         }
       }
     },
+    "serial number" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seriennummer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "número de serie"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "numéro de série"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "numero di serie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シリアル番号"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "número de série"
+          }
+        }
+      }
+    },
     "sha256: %@" : {
       "localizations" : {
         "de" : {
@@ -150540,6 +153518,46 @@
         }
       }
     },
+    "stale devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "veraltete Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos obsoletos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "appareils obsolètes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivi obsoleti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "長期未接続のデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos desatualizados"
+          }
+        }
+      }
+    },
     "stale_basis is an empty list. The app counts check_in." : {
       "localizations" : {
         "de" : {
@@ -150656,6 +153674,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "status %@"
+          }
+        }
+      }
+    },
+    "supervised devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "betreute Geräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos supervisados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "appareils supervisés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivi supervisionati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "監視対象デバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dispositivos supervisionados"
+          }
+        }
+      }
+    },
+    "text" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "texte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "testo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキスト"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "texto"
           }
         }
       }

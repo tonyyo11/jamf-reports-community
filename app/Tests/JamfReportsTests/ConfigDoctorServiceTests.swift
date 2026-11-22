@@ -908,6 +908,29 @@ final class ConfigDoctorServiceTests: XCTestCase {
             workspace: workspace.appendingPathComponent("elsewhere")), [], "no csv-inbox")
     }
 
+    func testALargeDataFolderWithRetentionOffSuggestsRetention() throws {
+        let data = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-doctor-size-\(UUID().uuidString)", isDirectory: true)
+        let kind = data.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: data) }
+        try Data(count: 200_000).write(to: kind.appendingPathComponent("computers_x.json"))
+
+        XCTAssertEqual(
+            ConfigDoctorService.dataFolderSizeRows(dataDir: data, retentionEnabled: false), [],
+            "well under the limit")
+        let rows = ConfigDoctorService.dataFolderSizeRows(
+            dataDir: data, retentionEnabled: false, limit: 100_000)
+        XCTAssertEqual(rows.map(\.id), ["retention.data_folder_size"])
+        XCTAssertEqual(rows.map(\.severity), [.suggest])
+        XCTAssertEqual(
+            ConfigDoctorService.dataFolderSizeRows(
+                dataDir: data, retentionEnabled: true, limit: 100_000), [],
+            "retention already on")
+        XCTAssertEqual(
+            ConfigDoctorService.dataFolderSizeRows(dataDir: nil, retentionEnabled: false), [])
+    }
+
     // MARK: Security policy rows read from a workspace
 
     private func withWorkspace(_ yaml: String, body: (String, URL) throws -> Void) throws {

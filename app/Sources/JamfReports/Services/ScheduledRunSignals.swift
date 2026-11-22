@@ -536,6 +536,8 @@ final class CollectHonestyWatcher: Sendable {
         var unexplainedPartial = false
         /// A `[partial]` line for a failure a retry repeats and no failure record can explain.
         var permanentPartial = false
+        /// The run stopped before its sources were done (`ReportEngine.stoppedEarlyMarker`).
+        var stoppedEarly = false
     }
     private let flags = Mutex(Flags())
 
@@ -543,6 +545,10 @@ final class CollectHonestyWatcher: Sendable {
 
     /// Feed one log line. Cheap enough to call on every line of a collect.
     func observe(_ line: String) {
+        if line.hasPrefix(ReportEngine.stoppedEarlyMarker) {
+            flags.withLock { $0.stoppedEarly = true }
+            return
+        }
         if line.hasPrefix(ReportEngine.standDownMarker) {
             // A peer's live claim may end before the same-day retry; "collected recently" won't.
             let liveClaim = line.hasSuffix(ReportEngine.liveClaimStandDownSuffix)
@@ -625,6 +631,9 @@ final class CollectHonestyWatcher: Sendable {
     /// no summary for today: if that peer is off, a later wake finds its data older than the
     /// window and collects.
     func retryCouldHelp(profile: String, now: Date = Date()) -> Bool {
+        // Not Partial, but sources were left for the next run: the background item's retry is
+        // that run.
+        if flags.withLock({ $0.stoppedEarly }) { return true }
         if flags.withLock({ $0.freshnessStandDown }),
            !SummaryJSONParser.hasSummary(profile: profile, on: now) { return true }
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }

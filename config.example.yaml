@@ -109,19 +109,26 @@ jamf_cli:
   # (.absent/.omitted) are tolerated. AuditView surfaces verify results
   # regardless of this setting. Threat-model T-11.
   require_manifest: false
-  # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
-  # any of patch-device-failures, profile-status, update-status and
-  # update-device-failures, the per-device-heavy queries known to stall an
-  # on-prem server, and dashboard, jamf-cli's HTML fleet dashboard (1.31.0+),
-  # which reads the whole inventory again for the HTML report's dashboard
-  # section; underscores and hyphens are interchangeable. Anything else is
-  # ignored, so core inventory always runs. A listed source is skipped even by a
-  # manual collect and is left out of the data freshness strip.
-  # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
-  # a cached feed stays in use.
-  # school-device-detail stops the weekly per-device scan of a Jamf School workspace.
+  # Sources collect never runs. Data Sources has a switch for each one; this is the
+  # list those switches write. Any source can be listed except the core ones the
+  # daily summary is built from (overview, security, inventory-summary,
+  # device-compliance, computers, school-devices; mobile-devices-list on a fleet of
+  # only mobile devices; protect-computers in a Protect-only environment);
+  # underscores and hyphens are interchangeable, and a core name or a typo is
+  # ignored. A listed source is
+  # skipped even by a manual collect and is left out of the data freshness strip.
+  # On a shared workspace each Mac follows the list it confirmed in Config Doctor.
+  # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.
+  # patch-status also stops patch-release-dates and patch-device-failures.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # How long a scheduled run may hold the lock before it leaves the rest of its sources for
+  # its next run (minutes, 10 to 240). Raise it for a slow server.
+  run_budget_minutes: 45
+  # How long one pass of the weekly per-device scan (Jamf Pro or Jamf School) may run before it
+  # leaves the rest of the fleet for the next day's pass (minutes, 5 to 240). Collect now scans
+  # a Jamf Pro fleet whole.
+  scan_budget_minutes: 30
 
 
 # =============================================================================
@@ -841,8 +848,16 @@ output:
   # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
+  # What every generated report's file name starts with: jamf_report_<profile>_<date>
+  # for workbooks, CSV folders, HTML and PDF, jamf_school_report_ for a Jamf School
+  # workbook and jamf_inventory_ for the inventory CSV. Use your organization's own word:
+  # 1 to 24 letters, digits or hyphens (no underscores). Anything else reads as jamf.
+  # Reports already written under another prefix keep showing in Reports and still move
+  # to archive_dir. Config > Output edits it.
+  file_prefix: "jamf"
+
   # Also write one CSV per workbook tab into a folder beside every report workbook,
-  # named like the workbook with _csv added (report_prod_2026-10-04_091500_csv). The
+  # named like the workbook with _csv added (jamf_report_prod_2026-10-04_091500_csv). The
   # folder is written from the same tabs as the workbook, so sheets.only / skip /
   # order apply to it, and it moves to archive_dir with its workbook. Off by default.
   # The Generate sheet's "CSV folder" format and `jamf-reports generate --csv-folder`

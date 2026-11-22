@@ -460,8 +460,9 @@ struct CoreDashboard: Sendable {
         }
         guard let png = ChartRenderer.lineChart(
             series: series,
+            yAxis: .percent,
             title: "Lowest-Adoption Titles — Adoption %",
-            yLabel: "Adoption %"
+            yLabel: "Percent of Macs on the latest version"
         ) else { return }
 
         row += 1
@@ -2037,13 +2038,14 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("DDM Device Status")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("DDM Device Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 10)
+                                      subtitle: "Generated: \(ts)", ncols: 11)
         ws.setColumnWidth(0, 0, 10)
         ws.setColumnWidth(1, 1, 30)
         ws.setColumnWidth(2, 5, 14)
-        ws.setColumnWidth(6, 9, 26)
+        ws.setColumnWidth(6, 10, 26)
         let hdrs = ["Device ID", "Name", "OS", "Reported", "Declarations", "Failing",
-                    "Pending Version", "Install State", "Failure Reason", "Report Date"]
+                    "Pending Version", "Install State", "Failure Reason", "Report Date", "Scanned"]
+        let fileStamp = scanFileStamp("ddm-device-status")
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -2065,6 +2067,7 @@ struct CoreDashboard: Sendable {
             ws.write(su["installState"] as? String ?? "", row: row, col: 7, format: .cell)
             ws.write(failure, row: row, col: 8, format: fmt)
             ws.write(item["reportDate"] as? String ?? "", row: row, col: 9, format: .cell)
+            ws.write(scannedText(item, fileStamp: fileStamp), row: row, col: 10, format: .cell)
             row += 1
         }
     }
@@ -2080,13 +2083,15 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("MDM Command Health")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("MDM Command Health"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
+                                      subtitle: "Generated: \(ts)", ncols: 7)
         ws.setColumnWidth(0, 0, 10)
         ws.setColumnWidth(1, 1, 30)
         ws.setColumnWidth(2, 4, 14)
         ws.setColumnWidth(5, 5, 60)
+        ws.setColumnWidth(6, 6, 26)
         let hdrs = ["Device ID", "Name", "Failed", "Pending",
-                    "Oldest Pending (days)", "Failed Commands"]
+                    "Oldest Pending (days)", "Failed Commands", "Scanned"]
+        let fileStamp = scanFileStamp("mdm-command-health")
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         // Worst first: most failures, then oldest pending.
@@ -2107,8 +2112,21 @@ struct CoreDashboard: Sendable {
             else { ws.write("", row: row, col: 4, format: .cell) }
             let names = (item["failedCommands"] as? [String]) ?? []
             ws.write(names.joined(separator: "; "), row: row, col: 5, format: .cell)
+            ws.write(scannedText(item, fileStamp: fileStamp), row: row, col: 6, format: .cell)
             row += 1
         }
+    }
+
+    /// The stamp of the scan snapshot the sheet reads, for rows an older build wrote.
+    private func scanFileStamp(_ kind: String) -> Date? {
+        FileManager.newestSnapshot(among: snapshotCandidates(names: [kind]))
+            .flatMap(CloudStorage.snapshotTimestamp(of:))
+    }
+
+    /// A row's scan time (`scannedAt`, else its file's stamp); blank when unknown.
+    private func scannedText(_ item: [String: Any], fileStamp: Date?) -> String {
+        DeviceScanPasses.scanDate(item["scannedAt"] as? String, fileStamp: fileStamp)
+            .map(ISO8601Time.string) ?? ""
     }
 
     // MARK: - Protect Overview
@@ -3651,6 +3669,17 @@ struct CoreDashboard: Sendable {
     /// systems / devices-evaluated / compliance % / rule count if configured)
     /// followed by six band rows (No Data → High) with Count and Percent columns.
     /// Skips when no baseline is configured or no ea-results snapshot is available.
+    /// Why a compliance tab has nothing to show: the snapshot is absent or was refused, or it
+    /// is there and holds no value for the configured baselines. The second is not "no
+    /// snapshot found".
+    private func noBaselineValues() -> CoreDashboardError {
+        guard (try? loadLatestJSONData(names: ["ea-results"])) != nil else {
+            return .noCachedData(names: ["ea-results"])
+        }
+        return .nothingToShow(
+            "the ea-results snapshot has no values for the configured compliance baselines")
+    }
+
     func writeMSCPCompliance() throws {
         let baselines = config.compliance?.resolvedBaselines ?? []
         guard !baselines.isEmpty else {
@@ -3668,9 +3697,7 @@ struct CoreDashboard: Sendable {
 
         let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: baselines)
         let hasAnyData = results.contains { $0.devicesWithData > 0 }
-        guard hasAnyData else {
-            throw CoreDashboardError.noCachedData(names: ["ea-results"])
-        }
+        guard hasAnyData else { throw noBaselineValues() }
 
         let ws = workbook.addSheet("mSCP Compliance")
         let ts = ISO8601Time.string(Date())
@@ -3772,9 +3799,7 @@ struct CoreDashboard: Sendable {
             dataDir: dataDir,
             summaries: []
         )
-        guard !points.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["ea-results"])
-        }
+        guard !points.isEmpty else { throw noBaselineValues() }
 
         let ws = workbook.addSheet("Compliance Trend")
         let ts = ISO8601Time.string(Date())
@@ -3817,14 +3842,21 @@ struct CoreDashboard: Sendable {
 enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
+    /// The snapshot was read and holds nothing this tab can use; the text says what.
+    case nothingToShow(String)
 
     var errorDescription: String? { skipReason }
 
     var skipReason: String {
         switch self {
+        case .nothingToShow(let reason):
+            return reason
         case .protectDisabled:
             return "protect.enabled is off"
         case .noCachedData(let names):
+            if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
+                return "\(refusal.sentence); left out"
+            }
             return "No cached jamf-cli snapshot found for: \(names.joined(separator: ", "))"
         }
     }

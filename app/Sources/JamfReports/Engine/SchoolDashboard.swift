@@ -19,6 +19,8 @@ struct SchoolDashboard: Sendable {
     var summaries: [DailySummary] = []
     /// The run's start: the "Generated" stamp and the age of a check-in.
     let now: Date
+    /// The kinds this Mac turns off (`SharedConfigPin.collectSkip`).
+    var collectSkip: Set<String> = []
 
     private var staleThreshold: Int { config.thresholds?.resolvedStaleDays ?? 30 }
 
@@ -102,8 +104,7 @@ struct SchoolDashboard: Sendable {
 
     /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
     func writeSchoolDeviceHealth() throws {
-        let off = ReportEngine.collectSkipKinds(config.jamfCli?.collectSkip)
-            .contains(ReportEngine.schoolDeviceDetailKind)
+        let off = collectSkip.contains(ReportEngine.schoolDeviceDetailKind)
         guard let health = SchoolDeviceHealth(
             SchoolFleetService.load(dataDir: dataDir), scanTurnedOff: off),
               !health.figures.isEmpty else {
@@ -482,17 +483,17 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 3, 16)
         ws.setColumnWidth(4, 5, 22)
-        ws.setColumnWidth(6, 8, 18)
+        ws.setColumnWidth(6, 9, 18)
         var row = ws.writeSheetHeader(
             title: "Device Inventory",
             subtitle: "Generated: \(ISO8601Time.string(now))",
-            ncols: 9
+            ncols: 10
         )
-        // The scan's three columns come last, so no existing column moves; blank when the
-        // device was not scanned or the scan is missing or unreadable.
+        // The scan's columns come last, so no existing column moves; blank when the device
+        // was not scanned or the scan is missing or unreadable.
         let detail = SchoolFleetService.loadDeviceDetail(dataDir: dataDir)
         let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin",
-                    "Enrollment", "Storage (GB)", "Battery (%) when scanned"]
+                    "Enrollment", "Storage (GB)", "Battery (%) when scanned", "Scanned"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -507,6 +508,9 @@ struct SchoolDashboard: Sendable {
             ws.write(scanned?.enrollType ?? "", row: row, col: 6, format: .cell)
             if let gb = scanned?.capacityGB { ws.write(gb, row: row, col: 7, format: .cell) }
             if let battery = scanned?.battery { ws.write(battery, row: row, col: 8, format: .cell) }
+            if let at = scanned?.scannedAt {
+                ws.write(ISO8601Time.string(at), row: row, col: 9, format: .cell)
+            }
             row += 1
         }
     }
@@ -767,6 +771,9 @@ enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     var skipReason: String {
         switch self {
         case .noCachedData(let names):
+            if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
+                return "\(refusal.sentence); left out"
+            }
             return "No cached school snapshot found for: \(names.joined(separator: ", "))"
         }
     }

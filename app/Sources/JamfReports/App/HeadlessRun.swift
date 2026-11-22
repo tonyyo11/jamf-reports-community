@@ -538,15 +538,20 @@ private func scheduledRunSingleBody(
             // Route to the correct collect function(s) based on profile product type.
             // Scheduled collects never bypass the Jamf Pro once-per-day guard; a School
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
-            try await CollectRouter.run(
-                workspace: try WorkspaceID(validating: profile),
-                tiers: resolvedTiers,
-                force: mode.forcesCollect(
-                    for: ProfileProductType.detect(from: routingConfig, profile: profile).type),
-                config: routingConfig,
-                now: runStart,
-                onLine: onLine
-            )
+            // A scheduled run gives the lock up between sources once its budget is used or
+            // someone asks for a refresh in the app; what is left stays due.
+            try await ReportEngine.stoppingBetweenSources(profile: profile) {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: resolvedTiers,
+                    force: mode.forcesCollect(
+                        for: ProfileProductType.detect(
+                            from: routingConfig, profile: profile).type),
+                    config: routingConfig,
+                    now: runStart,
+                    onLine: onLine
+                )
+            }
             // Tighten permissions on collected snapshots immediately after
             // collect, before generate, so a crash or early exit still
             // leaves collected files at 0600. Mirrors the GUI's tightenOnSuccess.
@@ -633,7 +638,8 @@ private func scheduledRunSingleBody(
         // workbook with every sheet skipped.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
         let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), onLine: onLine)
+            stem: ExportNaming.reportKind(
+                for: .xlsx, schoolMode: isSchool, prefix: config.filePrefix), onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
@@ -819,7 +825,7 @@ func runSchedule(
     let profiles = ProfileService.runnableWorkspaces(discovered, excluding: excluded)
     for p in discovered where p.status == .error && !excluded.contains(p.name) {
         let reason = p.unusableReason ?? "not usable"
-        fputs("[info] skipping \(p.name): \(reason)\n", stderr)
+        fputs("[info] skipping \(ConfigSchema.displayText(p.name)): \(reason)\n", stderr)
         // The background item's stderr goes nowhere; the log keeps the reason.
         AppLogger.schedule.notice(
             "skipping \(p.name, privacy: .private): \(reason, privacy: .private)"
@@ -828,7 +834,7 @@ func runSchedule(
     let runnable = Set(profiles.map(\.name))
     for p in discovered where p.status != .error && !ProfileService.neverAWorkspace(p)
         && !excluded.contains(p.name) && !runnable.contains(p.name) {
-        fputs("[info] skipping \(p.name): no workspace (add it from Data Sources)\n", stderr)
+        fputs("[info] skipping \(ConfigSchema.displayText(p.name)): no workspace (add it from Data Sources)\n", stderr)
         AppLogger.schedule.notice("skipping \(p.name, privacy: .private): no workspace")
     }
     guard !profiles.isEmpty else {
@@ -836,7 +842,7 @@ func runSchedule(
         return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {
-        fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
+        fputs("[info] excluding: \(excluded.sorted().map(ConfigSchema.displayText).joined(separator: ", "))\n", stderr)
     }
     let result = await TickScheduler.runProfiles(
         names: profiles.map(\.name), skipping: skipping

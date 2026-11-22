@@ -102,8 +102,10 @@ final class SchoolDeviceDetailTests: XCTestCase {
             ["batteryLevel": 40],
         ], date: .testNoon)
         XCTAssertEqual(parsed.rows.count, 2)
-        XCTAssertEqual(parsed.row(forUDID: "A"), .init(enrollType: nil, capacityGB: nil, battery: nil))
-        XCTAssertEqual(parsed.row(forUDID: "b"), .init(enrollType: "dep", capacityGB: 256, battery: 40))
+        XCTAssertEqual(parsed.row(forUDID: "A"),
+                       .init(enrollType: nil, capacityGB: nil, battery: nil, scannedAt: .testNoon))
+        XCTAssertEqual(parsed.row(forUDID: "b"),
+                       .init(enrollType: "dep", capacityGB: 256, battery: 40, scannedAt: .testNoon))
     }
 
     func testWorkbookAppendsThreeColumnsAndSummaryRows() throws {
@@ -128,6 +130,13 @@ final class SchoolDeviceDetailTests: XCTestCase {
         XCTAssertEqual(at("Last Checkin"), 5)
         XCTAssertEqual(at("Enrollment"), 6)
         XCTAssertEqual(at("Battery (%) when scanned"), 8)
+        // Scan passes (large-fleet L3): the row's scan time goes last, nothing else moves.
+        XCTAssertEqual(at("Scanned"), 9)
+        let fileDate = try XCTUnwrap(SchoolFleetService.loadDeviceDetail(dataDir: dir)?.date)
+        XCTAssertTrue(inventory.contains {
+            if case let .string(s) = $0.value { return $0.col == 9 && s == ISO8601Time.string(fileDate) }
+            return false
+        }, "a row without scannedAt takes its file's stamp")
         let healthCells = (try XCTUnwrap(book.sheet(named: "Device Health")).dedupedCells).compactMap {
             if case let .string(s) = $0.value { return s } else { return nil }
         }
@@ -142,7 +151,7 @@ final class SchoolDeviceDetailTests: XCTestCase {
         let off = try XCTUnwrap(SchoolDeviceHealth(
             SchoolFleetService.load(dataDir: dir), scanTurnedOff: true))
         XCTAssertEqual(off.detailLines,
-                       [L("Per-device details are turned off (jamf_cli.collect_skip)")])
+                       [L("Per-device details are turned off in Data Sources")])
         try scan([detail(1, ["deviceEnrollType": "dep", "totalCapacity": 64]),
                   detail(2, ["deviceEnrollType": "dep"])])
         let lines = try health().detailLines

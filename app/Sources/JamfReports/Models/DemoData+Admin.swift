@@ -232,7 +232,8 @@ extension DemoData {
     private static func reportWritten(_ run: PlannedRun) -> String {
         let written = stamp(run.finished.addingTimeInterval(-11), "yyyy-MM-dd_HHmmss")
         let profile = run.schedule.profile
-        let prefix = environmentProfiles(for: profile).isSchool ? "school-report" : "report"
+        let prefix = ExportNaming.reportKind(
+            for: .xlsx, schoolMode: environmentProfiles(for: profile).isSchool)
         return "[ok] scheduled run complete for '\(profile)': \(prefix)_\(profile)_\(written).xlsx"
     }
 

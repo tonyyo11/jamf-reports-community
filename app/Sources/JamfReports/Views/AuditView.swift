@@ -121,6 +121,8 @@ struct AuditView: View {
     @State private var unusedGroups: [UnusedGroup] = []
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
+    /// The open scan round's progress, for the in-progress line; nil when no round is open.
+    @State private var scanProgress: DeviceScanPasses.RoundProgress?
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
     @State private var managementCard: ManagementCard?
@@ -210,8 +212,13 @@ struct AuditView: View {
             if !workspace.demoMode && selectedTab != 2 {
                 let auditCacheSource = CacheSource.from(snapshotDate: lastAuditDate, withinHours: 36)
                 let hygieneCacheSource = CacheSource.from(snapshotDate: lastHygieneDate, withinHours: 36)
-                let activeSource = selectedTab == 0 ? auditCacheSource : hygieneCacheSource
-                StaleDataBanner(source: activeSource)
+                // The audit snapshot comes from the refresh tier; group hygiene is only written by
+                // its own Analyze Groups run, which a collect does not repeat.
+                if selectedTab == 0 {
+                    CollectNowBanner(source: auditCacheSource, tiers: [.refresh])
+                } else {
+                    StaleDataBanner(source: hygieneCacheSource)
+                }
             }
 
             HStack(spacing: 16) {
@@ -698,6 +705,10 @@ struct AuditView: View {
                         }
                     }
                     .padding(16)
+                    if let line = DeviceScanCoverage.line(scanProgress?.macs) {
+                        Text(line).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+                            .padding(.horizontal, 16).padding(.bottom, 12)
+                    }
                     Divider().background(Theme.Colors.hairline)
                     ForEach(commandFindings) { finding in
                         HStack(spacing: 10) {
@@ -1090,6 +1101,7 @@ struct AuditView: View {
             integritySummary = nil
             duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
+            scanProgress = nil
             commandFindings = []
             contactGapList = []
             managementCard = DemoData.managementCard
@@ -1105,6 +1117,7 @@ struct AuditView: View {
         resolvedFindings = []
         duplicateSerials = .empty
         commandHealth = .empty
+        scanProgress = nil
         contactGapList = []
         managementCard = nil
         mobileFindingList = []
@@ -1119,10 +1132,12 @@ struct AuditView: View {
         guard let integrity = await ScreenLoad.paint(
             stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
             read: { (DuplicateSerialService.load(profile: loadProfile),
-                     MDMCommandHealthService.load(profile: loadProfile)) }
+                     MDMCommandHealthService.load(profile: loadProfile),
+                     DeviceScanPasses.roundProgress(profile: loadProfile)) }
         ) else { return }
         duplicateSerials = integrity.0
         commandHealth = integrity.1
+        scanProgress = integrity.2
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: loadProfile, type: "audit", limit: 2)

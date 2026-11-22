@@ -213,20 +213,19 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                                 + "  min_collect_interval_hours: 12\n"), [])
     }
 
-    func testCollectSkipEntriesThatAreNotSkippableKindsAreNamed() throws {
+    func testCollectSkipNamesCoreAndUnknownEntries() throws {
         let found = try rows("jamf_cli:\n  collect_skip: [update_status, computers, Foo]\n")
         XCTAssertEqual(
-            detail(found, "jamf_cli.collect_skip"),
-            "\"computers\", \"Foo\" are not kinds collect can skip, so they skip nothing and "
-                + "the stall guard does not apply to them.")
+            found.first { $0.id == "config.value.jamf_cli.collect_skip.core" }?.detail,
+            "\"computers\" is always collected: the daily summary and most screens are built "
+                + "from it.")
         XCTAssertEqual(
-            detail(try rows("jamf_cli:\n  collect_skip: [computers]\n"), "jamf_cli.collect_skip"),
-            "\"computers\" is not a kind collect can skip, so it skips nothing and the stall "
-                + "guard does not apply to it.")
-        XCTAssertTrue(found.first?.hint?.contains("patch-device-failures") == true,
-                      "the hint lists what can be skipped")
-        XCTAssertTrue(found.first?.hint?.contains("sofa") == true, "sofa can be skipped")
+            found.first { $0.id == "config.value.jamf_cli.collect_skip" }?.detail,
+            "\"Foo\" is not a source this app collects, so it turns nothing off.")
+        XCTAssertFalse(found.contains { $0.detail.contains("stall guard") })
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [update_status, Profile-Status]\n"), [])
+        XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [protect-computers]\n"), [],
+                       "beside an MDM Protect's computer list is optional")
     }
 
     /// `sofa` was reported as "not a kind collect can skip" until it became skippable.
@@ -579,4 +578,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         }
         try body(root, workspace)
     }
+    func testAFilePrefixThatCannotStartAFileNameIsNamed() throws {
+        let id = "config.value.output.file_prefix"
+        XCTAssertTrue(try rows("output:\n  file_prefix: acme_co\n").contains { $0.id == id })
+        XCTAssertTrue(try rows("output:\n  file_prefix: 2026\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  file_prefix: acme-co\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  keep_latest_runs: 3\n").contains { $0.id == id })
+    }
+
 }

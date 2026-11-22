@@ -85,6 +85,18 @@ final class WorkspaceStore {
     var pendingDevicesFilter: String? = nil
     /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
     var pendingMobileFilter: String? = nil
+    /// How long a manual refresh waits for a scheduled run in another process to stop at its
+    /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
+    var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait
+    var manualRefreshPoll: TimeInterval = 2
+    var isWaitingForScheduledRun = false
+    static var defaultManualRefreshWait: TimeInterval {
+        #if DEBUG
+        // A test that holds the lock expects the refusal, not a half-hour wait.
+        if NSClassFromString("XCTestCase") != nil { return 0 }
+        #endif
+        return 1_800
+    }
     /// An Audit section to scroll to (`MobileDevicesSection.anchorID`), held the same way.
     var pendingAuditSection: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
@@ -862,16 +874,21 @@ final class WorkspaceStore {
             after: (configState.outputDir, configState.archiveDir))
         let changedBranding = SharedConfigPin.changedBrandingKeys(
             before: _savedState?.logoPath, after: configState.logoPath)
+        let writtenState = configState
         let saved = try ConfigService.save(
             profile: profile,
-            state: configState,
+            state: writtenState,
             existingDocument: _loadedDoc,
             ifUnchangedSince: _loadedStamp
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
         // A folder this save changed was typed on this Mac; one it left alone is not confirmed.
-        confirmSharedConfig(changedFolders.union(changedBranding))
+        confirmSharedConfig(
+            changedFolders.union(changedBranding), written: [
+                .outputDir: writtenState.outputDir, .archiveDir: writtenState.archiveDir,
+                .brandingLogoPath: writtenState.logoPath,
+            ])
         // A block left as typed was not written: the screen goes back to what the file holds
         // for it, rather than calling its own entries saved.
         if saved.report.keptBlocks.contains("custom_eas") {
@@ -888,16 +905,12 @@ final class WorkspaceStore {
         return saved.report
     }
 
-    /// A save on this Mac confirms the shared-config keys it wrote, and only those.
-    private func confirmSharedConfig(_ keys: Set<SharedConfigPin.Key>) {
-        guard !keys.isEmpty else { return }
-        do {
-            try SharedConfigPin.confirm(profile: profile, keys: keys)
-        } catch {
-            let reason = error.englishDescription
-            AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
-        }
+    /// A save on this Mac confirms the shared-config keys it wrote, and only those, each to the
+    /// value it wrote.
+    private func confirmSharedConfig(
+        _ keys: Set<SharedConfigPin.Key>, written: [SharedConfigPin.Key: String]
+    ) {
+        SharedConfigPin.confirmWritten(written.filter { keys.contains($0.key) }, profile: profile)
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
@@ -1538,6 +1551,16 @@ struct TabVisibility: Sendable, Equatable {
         !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
     }
 
+    /// Why a jump to `tab` cannot land, or nil when it can. A tile, banner or toast that posts
+    /// `.navigateToTab` never moves the window onto a screen the sidebar does not show.
+    func navigationRefusal(to tab: Tab) -> String? {
+        if !isAvailable(tab) { return L("\(tab.label) is not available for this workspace") }
+        if !isVisible(tab) {
+            return L("\(tab.label) is hidden; show it in Settings › Sidebar Visibility")
+        }
+        return nil
+    }
+
     /// The tabs the environment's products can fill, never stored (R5, R6, R8).
     func limited(to environment: EnvironmentProducts) -> TabVisibility {
         var copy = self
@@ -1646,9 +1669,27 @@ struct Toast: Identifiable, Sendable {
     enum Style: Sendable { case info, success, warning, danger }
     /// How long a toast stays up before it clears itself.
     static let displaySeconds: Double = 4
+    /// Long enough to read the message and reach the button.
+    static let actionDisplaySeconds: Double = 10
     let id: UUID = UUID()
     let message: String
     let style: Style
+    var action: ToastAction? = nil
+
+    var displaySeconds: Double { action == nil ? Self.displaySeconds : Self.actionDisplaySeconds }
+}
+
+/// A toast's button: a screen to open, posted through `.navigateToTab` like every other jump.
+struct ToastAction: Sendable, Equatable {
+    let label: String
+    let navigation: [String: String]
+
+    static func open(_ tab: Tab, label: String) -> ToastAction {
+        ToastAction(label: label, navigation: ["tab": tab.rawValue])
+    }
+
+    static var runHistory: ToastAction { .open(.runs, label: L("Open Run History")) }
+    static var settings: ToastAction { .open(.settings, label: L("Open Settings")) }
 }
 
 extension WorkspaceStore {

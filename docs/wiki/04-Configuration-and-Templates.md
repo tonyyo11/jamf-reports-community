@@ -363,6 +363,13 @@ folder in use (and its archive), its header names it, and Reveal in Finder, Open
 save panels start there. `retention.archive_dir` follows the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
 takes `#RRGGBB` or `#RGB`; anything else uses the default.
 
+`output.file_prefix` (default `jamf`) starts every generated report's file name:
+`jamf_report_<profile>_<date>` for workbooks, CSV folders, HTML and PDF,
+`jamf_school_report_…` for a Jamf School workbook and `jamf_inventory_…` for the inventory
+CSV. Set it to your organization's own word in Config › Output: 1 to 24 letters, digits or
+hyphens. Reports written under an earlier prefix, or before 2.12 with none, still show in
+Reports and still move to the archive as new runs replace them.
+
 `output.csv_folder: true` (default off) also writes one CSV per workbook tab into a
 `<workbook name>_csv` folder beside every workbook, including a scheduled run's; the Generate
 sheet's **CSV folder** format and `jamf-reports generate --csv-folder` do it for one run.
@@ -384,18 +391,24 @@ panel.
 
 ### jamf-cli collection, cache & integrity (`jamf_cli`)
 
-- **`collect_skip`** (default empty) — report types a collect never runs, a stall guard
-  for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
-  `update-status`, `update-device-failures` (the per-device-heavy queries known to
-  stall a server), `dashboard`, `sofa` (the one fetch from `sofafeed.macadmins.io`,
-  for networks that must not reach third-party hosts), `security-risk` (the Jamf
-  Security Cloud device list) and `school-device-detail` (the Jamf School per-device scan for
-  battery, enrollment type and storage, which otherwise runs at most once every 7 days).
-  Underscores work in place of
-  hyphens. Anything else in the list is ignored, so core inventory always runs. A listed
-  source is skipped even by a manual collect, the run log says so, and the data
-  freshness strip does not wait for it. Skipping SOFA leaves the cached feed in use;
-  without cache, the macOS currency score factors have no data.
+- **`collect_skip`** (default empty) — sources a collect never runs. **Data Sources** has a
+  switch for each source in the "jamf-cli · live" card, and this is the list the switches write;
+  you do not need to edit it by hand. Any source can be turned off except the ones the daily
+  summary and most screens are built from: `overview`, `security`, `inventory-summary`,
+  `device-compliance` and `computers` on Jamf Pro (`mobile-devices-list` too when the fleet has
+  only mobile devices), `school-devices` on Jamf School, and `protect-computers` in a
+  Protect-only environment. A Jamf Pro fleet with no mobile devices does not collect the mobile
+  sources, and one with no computers the Mac sources, until Jamf Pro's overview counts one (each
+  side is checked again weekly); Jamf School collects one device list for every platform and is
+  not affected. A login limited to some sites sees a server-wide count, so it may keep
+  collecting a list that is empty for its sites. Turning off `patch-status`
+  also turns off `patch-release-dates` and `patch-device-failures`, which start from it.
+  Underscores work in place of hyphens; a core name or anything that is not a source is
+  ignored, and Config Doctor names it. A listed source is skipped even by a manual collect, the
+  run log says so, and the data freshness strip does not wait for it. On a shared workspace a
+  change made on another Mac does not apply here until you confirm it in Config Doctor. Skipping
+  SOFA leaves the cached feed in use; without cache, the macOS currency score factors have no
+  data.
 - **`keep_account_names`** (default `false`) — whether new snapshots keep the account names
   and contact details that no screen or report reads. Leave it off unless your own tools read
   those fields from the saved snapshots. On a shared folder, `true` applies on a Mac only after

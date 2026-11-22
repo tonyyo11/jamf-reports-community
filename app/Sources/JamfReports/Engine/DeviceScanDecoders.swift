@@ -85,6 +85,9 @@ struct DDMDeviceStatusRecord: Codable, Sendable, Equatable {
     let ddmReported: Bool
     let declarations: [Declaration]
     let softwareUpdate: SoftwareUpdate
+    /// ISO 8601 time of the scan pass that wrote the row; absent in rows an older build wrote,
+    /// which take their file's snapshot stamp (`DeviceScanPasses.scanDate`).
+    var scannedAt: String? = nil
 
     struct Declaration: Codable, Sendable, Equatable {
         let identifier: String
@@ -110,4 +113,6 @@ struct MDMCommandHealthRecord: Codable, Sendable, Equatable {
     let failedCommands: [String]
     /// Age in days of the oldest pending command, nil when none is pending.
     let oldestPendingDays: Int?
+    /// As `DDMDeviceStatusRecord.scannedAt`.
+    var scannedAt: String? = nil
 }

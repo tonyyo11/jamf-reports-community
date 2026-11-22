@@ -121,13 +121,16 @@ collect reads them one device at a time and adds them to the card and the workbo
 Battery is the reading taken when the device was scanned, not a live value. The scan runs at
 most once every 7 days, on a run that includes the scan tier, and a manual collect does not
 force it sooner. A scan that fails never fails the School collect: the run still reads as
-successful and the card says the last attempt failed. To turn the scan off, add
-`school-device-detail` to `jamf_cli.collect_skip` in `config.yaml`:
+successful and the card says the last attempt failed. To turn the scan off, use its switch on
+**Data Sources**, which writes `school-device-detail` to `jamf_cli.collect_skip`:
 
 ```yaml
 jamf_cli:
   collect_skip: [school-device-detail]
 ```
+
+Jamf Pro workspaces skip the Mac or mobile sources when the fleet has none of those devices;
+a Jamf School workspace does not, because its one device list covers every platform.
 
 ### Jamf Protect with Jamf School (experimental)
 

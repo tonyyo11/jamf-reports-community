@@ -557,6 +557,24 @@ extension WorkspaceMergeExecutorTests {
         XCTAssertFalse(claims.all.contains("acquire \(src)"), "no claim at the moved name")
     }
 
+    func testMoveSourceRefusesASourceFolderSwappedForALink() async throws {
+        let j = try journal()
+        try await stopped(j, after: j.plan.steps.count - 2)
+        let ws = root.appendingPathComponent(src)
+        let elsewhere = root.appendingPathComponent("elsewhere-ws", isDirectory: true)
+        try fm.moveItem(at: ws, to: elsewhere)
+        try fm.createSymbolicLink(at: ws, withDestinationURL: elsewhere)
+        guard let pending = WorkspaceMergeJournal.pending(target: tgt, appSupport: support) else {
+            return XCTFail("no pending journal")
+        }
+        do {
+            try await WorkspaceMergeExecutor.run(pending, deps: deps())
+            XCTFail("a linked source workspace must not be moved")
+        } catch WorkspaceMergeExecutor.RunError.step {}
+        XCTAssertNotNil(try? fm.destinationOfSymbolicLink(atPath: ws.path))
+        XCTAssertFalse(fm.fileExists(atPath: merged(j).appendingPathComponent("workspace").path))
+    }
+
     func testBackupCopyRemovesAStaleStagedCopy() async throws {
         let backups = url(tgt, "backups")
         let leftover = backups.appendingPathComponent(".scheduled-1.tmp-\(UUID().uuidString)")
@@ -834,11 +852,11 @@ extension WorkspaceMergeExecutorTests {
         j.plan.mergedFolder = root.deletingLastPathComponent().path + "/jrc-retire-\(UUID().uuidString)"
         let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
         XCTAssertThrowsError(try j.retire(
-            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+            planData: data, appSupport: support))
         XCTAssertFalse(fm.fileExists(atPath: j.mergedFolder.path))
         j.plan.mergedFolder = root.path + "/../elsewhere"
         XCTAssertThrowsError(try j.retire(
-            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+            planData: data, appSupport: support))
     }
 
     func testRetireRefusesALinkedMergedRootAndWritesNothingOutside() throws {
@@ -851,7 +869,7 @@ extension WorkspaceMergeExecutorTests {
                                   withDestinationURL: outside)
         let data = try WorkspaceMergeJournal.encodedPlan(j.plan)
         XCTAssertThrowsError(try j.retire(
-            progressAt: url(tgt, "p"), planAt: url(tgt, "q"), planData: data, appSupport: support))
+            planData: data, appSupport: support))
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: outside.path), [])
     }
 

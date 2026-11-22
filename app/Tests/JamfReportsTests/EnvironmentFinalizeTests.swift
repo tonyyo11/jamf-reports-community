@@ -142,7 +142,7 @@ final class EnvironmentFinalizeTests: XCTestCase {
                 ReportEngine.landedSources?.record(.jamfSchool, ["school-devices"])
                 if o.writesMDMSummary { try Self.writeMDMSummary() }
             },
-            protectCollect: { _, dataDir, _ in
+            protectCollect: { _, dataDir, _, _ in
                 o.protectCalls.bump()
                 return o.protect
                     ? try Self.landProtect(

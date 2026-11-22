@@ -157,11 +157,7 @@ enum WorkspaceMigration {
         let marker = workspace.appendingPathComponent(".metadata_never_index")
         if fm.fileExists(atPath: marker.path) { return true }
         do {
-            try Data().write(to: marker, options: .atomic)
-            try? fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: marker.path
-            )
+            try AtomicInstall.write(Data(), to: marker, mode: 0o600)
             AppLogger.collect.info(
                 "WorkspaceMigration: dropped .metadata_never_index in \(workspace.lastPathComponent, privacy: .private)"
             )

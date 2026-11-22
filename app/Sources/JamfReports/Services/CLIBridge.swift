@@ -494,7 +494,7 @@ final class CLIBridge {
         let engine = ReportEngine(
             config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false),
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false, prefix: config.filePrefix),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
@@ -646,7 +646,7 @@ await engine.writeHTMLWithWorkbook(
         // A folder chosen on the Generate sheet takes the School workbook too, as it does the
         // Jamf Pro one, so the run's files share one folder and one manifest.
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true),
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true, prefix: config.filePrefix),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) }
             ?? defaultURL
@@ -1447,9 +1447,7 @@ try await ReportEngine.schoolGenerateReport(
     /// False (and a warning) when the write failed; the caller still has the live data.
     nonisolated private static func writeDeviceDetailCache(_ data: Data, to cache: URL) -> Bool {
         do {
-            try data.write(to: cache, options: .atomic)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: cache.path)
+            try AtomicInstall.write(data, to: cache, mode: 0o600)
             return true
         } catch {
             let reason = error.localizedDescription
@@ -1581,7 +1579,9 @@ try await ReportEngine.schoolGenerateReport(
         } else {
             let engine = ReportEngine(
                 config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
-            outputURL = try engine.resolveOutputURL(stem: "report", onLine: onLine)
+            outputURL = try engine.resolveOutputURL(
+                stem: ExportNaming.reportKind(
+                    for: .html, schoolMode: false, prefix: config.filePrefix), onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1727,7 +1727,8 @@ try await ReportEngine.generatePDF(
             let engine = ReportEngine(
                 config: config, dataDir: workspace, workspace: try WorkspaceID(validating: profile))
             outputURL = try engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .csv, schoolMode: false),
+                stem: ExportNaming.reportKind(
+                    for: .csv, schoolMode: false, prefix: config.filePrefix),
                 onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
@@ -1899,12 +1900,8 @@ try await ReportEngine.inventoryCSV(
             // mid-write leaves no truncated <type>_<ts>.json poisoning
             // the cached-fallback path. Mirrors the .atomic discipline
             // of every other JSON write in this file.
-            try data.write(to: file, options: .atomic)
-            // MFS-1: ensure the freshly-written snapshot is owner-only readable.
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: file.path
-            )
+            // MFS-1: owner-only, set on the staged file before it is installed.
+            try AtomicInstall.write(data, to: file, mode: 0o600)
         } catch {
             // C-07/MFS-4: route to unified logging instead of stdout.
             // %{public} for type (taxonomy), %{private} for the error chain.
@@ -2244,11 +2241,7 @@ try await ReportEngine.inventoryCSV(
         do {
             let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted])
             let manifestURL = validatedFinal.appendingPathComponent("manifest.json")
-            try manifestData.write(to: manifestURL, options: .atomic)
-            try? fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: manifestURL.path
-            )
+            try AtomicInstall.write(manifestData, to: manifestURL, mode: 0o600)
         } catch {
             AppLogger.cli.warning(
                 "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"

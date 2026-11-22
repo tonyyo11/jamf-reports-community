@@ -10,6 +10,8 @@ struct SchoolDeviceDetail: Sendable, Equatable {
         var capacityGB: Int?
         /// `batteryLevel`, 0 to 100; 0 may be an empty battery or a device that has none.
         var battery: Int?
+        /// The row's `scannedAt`, else the snapshot's date (rows written before scan passes).
+        var scannedAt: Date?
     }
 
     var rows: [String: Row] = [:]
@@ -34,7 +36,9 @@ struct SchoolDeviceDetail: Sendable, Equatable {
             rows[udid.lowercased()] = Row(
                 enrollType: Self.text(object["deviceEnrollType"]),
                 capacityGB: Self.whole(object["totalCapacity"], in: 0...Int.max),
-                battery: Self.whole(object["batteryLevel"], in: 0...100))
+                battery: Self.whole(object["batteryLevel"], in: 0...100),
+                scannedAt: DeviceScanPasses.scanDate(
+                    object["scannedAt"] as? String, fileStamp: date))
         }
         self.init(rows: rows, date: date)
     }

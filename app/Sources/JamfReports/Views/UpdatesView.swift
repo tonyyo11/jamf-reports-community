@@ -149,7 +149,8 @@ struct UpdatesView: View {
                 title: L("No update status data yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or collect the Inventory and Scan tiers from the command line."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["update-status", "update-device-failures"])]
+                    profile: workspace.profile, kinds: ["update-status", "update-device-failures"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory, .scan])
             )
         }
     }
@@ -201,6 +202,7 @@ struct UpdatesView: View {
                             size: .sm,
                             action: exportPlanStateDonut
                         )
+                        .disabled(snapshot.planStateBreakdown.allSatisfy { $0.count == 0 })
                         .accessibilityLabel("Export plan state distribution chart as PNG")
                         .help("Save the update plan state distribution donut as a PNG image")
                     }
@@ -368,7 +370,7 @@ struct UpdatesView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Table(Array(snapshot.failedPlans.prefix(50))) {
+                Table(snapshot.failedPlans) {
                     TableColumn("Device") { plan in
                         Text(plan.name)
                             .font(.footnote)
@@ -409,14 +411,13 @@ struct UpdatesView: View {
                     }
                     .width(min: 150, ideal: 200)
                 }
-                .frame(minHeight: 200)
-
-                if snapshot.failedPlans.count > 50 {
-                    Text("+ \(snapshot.failedPlans.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let plan = snapshot.failedPlans.first(where: { $0.id == ids.first }),
+                       !plan.serial.isEmpty {
+                        Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(plan.serial) }
+                    }
                 }
+                .frame(minHeight: 200)
             }
         }
     }
@@ -426,7 +427,7 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: L("Error Devices"), trailing: L("\(snapshot.errorDevices.count) total"))
-                Table(Array(snapshot.errorDevices.prefix(50))) {
+                Table(snapshot.errorDevices) {
                     TableColumn("Device") { device in
                         Text(device.name)
                             .font(.footnote)
@@ -458,14 +459,13 @@ struct UpdatesView: View {
                     }
                     .width(min: 100, ideal: 120)
                 }
-                .frame(minHeight: 150)
-
-                if snapshot.errorDevices.count > 50 {
-                    Text("+ \(snapshot.errorDevices.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let device = snapshot.errorDevices.first(where: { $0.id == ids.first }),
+                       !device.serial.isEmpty {
+                        Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(device.serial) }
+                    }
                 }
+                .frame(minHeight: 150)
             }
         }
     }

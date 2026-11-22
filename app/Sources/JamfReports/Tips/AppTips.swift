@@ -24,7 +24,7 @@ enum AppTips {
                 .datastoreLocation(.applicationDefault),
             ])
         } catch {
-            AppLogger.ui.error("TipKit configure failed: \(error.englishDescription, privacy: .public)")
+            AppLogger.ui.error("TipKit configure failed: \(error.englishDescription, privacy: .private)")
         }
     }
 

@@ -22,6 +22,22 @@ writes into a shared workspace.
 
 ### Added
 
+- Report file names can start with your organization's own word instead of `jamf`: set it in Config › Output (`output.file_prefix`, letters, digits and hyphens, up to 24). Workbooks become `acme_report_<profile>_<date>`, the Jamf School workbook `acme_school_report_…` and the inventory CSV `acme_inventory_…`. Reports written under an earlier prefix still show in Reports and still move to the archive. A prefix that cannot start a file name keeps `jamf`, and Config Doctor says why.
+- Toasts now carry a button to the screen they point at: a refresh that finished with warnings opens Run History, and expired credentials open Settings. A toast with a button stays up for ten seconds instead of four.
+- Commands the app asks you to run, starting with the command-line tool install command in Settings, show with a Copy button.
+- Tiles on Computers, Security Posture, Fleet Overview, Offline Outreach and the Overview open what they count. FileVault, SIP, Firewall and Gatekeeper tiles open Computers filtered to the Macs with that control off, with a removable chip; the Overview's metric pages name the filter on their button. A tile that no list can match stays plain.
+- Computers can copy a Mac's name and serial number from the detail panel and the row's right-click menu, and Offline Outreach can copy name, serial number and email. Open in Jamf Pro appears only when the Mac has a Jamf ID and the server address is known, and is off in demo mode. Device Lookup's candidates can copy a serial number, and its stale-data banner has a Collect now button.
+- Offline Outreach's empty state has a Collect now button.
+- Tiles open what they count: the Compliant and Failing tiles on Patch Compliance filter the titles table, the Jailbreak Detected tile on Mobile Devices filters its list, the Latest tile on Backups selects the newest backup, and on Jamf School the Devices, Managed, Supervised and Stale tiles open the matching devices (Supervised is a new filter on the School Devices list).
+- Banners that point somewhere have a button: Backups warnings open Run History, the unreadable mSCP and Jamf Protect banners open Settings or refresh, a failed report generation can be retried, and the stale-data banners on Jamf Protect and Health Audit can collect right there.
+- Empty screens that ask you to collect have a Collect now button (Patch Compliance, Policies and Profiles, Compliance Posture, Mobile Devices, OS Updates, Extension Attributes, Groups, Jamf Protect, Jamf School), and Compliance Benchmarks offers Open Data Sources.
+- Right-click rows to copy or open: mobile devices (serial, name, Open in Jamf Pro), Jamf School devices (serial, name), update error devices and failed plans (serial), policy findings (name, Open in Jamf Pro), profile failures (name) and computer groups (name, Open in Jamf Pro). Open in Jamf Pro is hidden without a server and disabled in demo mode.
+
+- Data Sources has a switch for each source the app collects, so an organization whose server
+  cannot answer a source can stop collecting it without editing config.yaml. A source turned off
+  stops updating: screens keep showing what was last collected, with its date, and the daily
+  summary stops using it. The sources the daily summary is built from stay on. On a shared team folder, a source another Mac turned off or on
+  is collected as before on this Mac until you confirm the change in Config Doctor.
 - A Jamf School workspace's Overview has a Device health card and its workbook a Device Health
   tab: devices waiting in Automated Device Enrollment that are not enrolled, users with no
   device, device groups with no members, and classes with no devices, students or teacher, each
@@ -148,6 +164,46 @@ writes into a shared workspace.
 
 ### Changed
 
+- Workbook charts have larger text, an axis title (Macs or percent of Macs), whole-number or
+  0–100% axes and one label per day. The OS chart is now "macOS Adoption by Major Version": each
+  bar is named from the SOFA feed ("macOS Tahoe 26"), shows its Macs and share, and says how many
+  run the latest release. The compliance donut's title reads "<baseline> — compliance bands, all
+  Macs", and the compliance trend notes how many Macs it leaves out for having no data.
+- The Overview's metric pages and tile trend lines draw every percentage and score on a 0 to 100 axis, so a small move no longer looks drastic. Device counts keep an axis fitted to their data.
+- Every percentage trend on the Trends screen now uses a 0 to 100% axis, so a small change no longer looks like a drop. Device counts keep an axis fitted to their data.
+- Every report the app writes now starts with `jamf_`: workbooks and CSV folders are named `jamf_report_<profile>_<date>` like the HTML and PDF reports, the Jamf School workbook `jamf_school_report_…` and the inventory CSV `jamf_inventory_…`. Reports made under the old names (`report_…`, `school-report_…`, `inventory_…`) still show in Reports with their kind and profile, and older workbooks still move to the archive as new runs replace them. The command-line `html` command and the HTML-only export, which still wrote `report_…html`, now use `jamf_report_…` too. Scripts or flows that watch the reports folder for `report_` names need the new prefix.
+- The workbook, its CSV folder, the inventory CSV and the run manifest are named with this Mac's
+  local time, like the HTML, PDF and chart images of the same run. They used UTC, so one run's
+  files could read hours apart (`report_…_214708.xlsx` beside `jamf_report_…_164709.html`).
+- A Jamf Pro fleet with no iPads or iPhones no longer collects the mobile device reports, and one
+  with no Macs no longer collects the Mac reports, until Jamf Pro counts a device of that kind.
+  Each is still checked once a week, and Data Sources says which sources are left out and why.
+  Jamf School, Jamf Protect and Jamf Security Cloud are not affected.
+- `jamf_cli.collect_skip` now accepts any source except the ones the daily summary is built
+  from, and every collect honours it, Jamf School and Jamf Protect included. On a shared folder
+  each Mac follows the list it confirmed in Config Doctor.
+- The weekly per-device scan of a Jamf Pro fleet (DDM status and MDM command health) now runs in
+  passes. A scheduled or automatic pass takes one site's Macs before the next, those scanned
+  longest ago first, and stops after 30 minutes or when someone waits to refresh in the app; the
+  rest of the fleet follows in one pass a day until every Mac has had its turn, and the next round
+  starts a week later. The DDM screen and the Health Audit keep showing the whole fleet, and say
+  "Scan in progress: N of M Macs scanned this round" while a round is open; the data freshness
+  strip does not call the two sources missing meanwhile. A Mac that did not answer keeps its
+  earlier result for up to 21 days; an older one is dropped rather than shown as current. The
+  more-than-a-quarter-failed rule is judged over the whole round. `jamf_cli.scan_budget_minutes`
+  (5 to 240) changes the limit; Collect now still scans the whole fleet. A fleet that fits in one
+  pass scans as before.
+- The workbook's DDM Device Status and MDM Command Health tabs gain one column at the end,
+  Scanned: when that Mac was last scanned. No other tab, column or row moved.
+- The weekly per-device scan of a Jamf School fleet runs in the same passes: those scanned
+  longest ago first, stopping after `jamf_cli.scan_budget_minutes` or when someone waits to
+  refresh in the app, the rest in one pass a day. The Device health card says "Scan in progress:
+  N of M devices scanned this round" while a round is open. A device that did not answer keeps
+  its earlier result for up to 21 days, and the more-than-a-quarter-failed rule is judged over
+  the round. Running out of time is no longer a failed scan. A School fleet that fits in one pass
+  scans as before.
+- The Jamf School workbook's Device Inventory tab gains one column at the end, Scanned: when that
+  device was last scanned. No other tab, column or row moved.
 - Run History shows a run in progress with a grey RUNNING pill instead of a gold one, which read
   as a warning.
 - Jamf Protect Insights are removed, because Jamf removed the Compliance feature from Jamf
@@ -292,16 +348,96 @@ writes into a shared workspace.
 
 ### Fixed
 
+- Right-click menus use one capitalisation everywhere (Copy Name, Copy Serial Number, Copy User Email, Copy Email); Computers, Offline Outreach and Device Lookup used sentence case.
+- A metric's detail page measures Change against the Previous figure shown beside it, as the Overview tiles do, instead of against the first day in the history.
+- Jamf Protect's Kill-Chain Stage card says it counts all alerts, open and resolved, so it no longer reads as disagreeing with the open-alert card above it.
+- On a selected row in Computers, Mobile Devices, the Overview's recent activity and Backups, grey text turns to the system's secondary colour instead of grey on blue.
+- Short tables, such as a device's configuration profiles on Mobile Devices, are sized for the space macOS keeps above the first row and below the last, so their first row is no longer clipped under the header.
+- Collecting patch release dates stops at the first title Jamf Pro refuses (expired credentials, a missing privilege, throttling or a refused command) instead of asking for every title, and a run where no title answered is recorded as failed, shown as Partial in Run History, and keeps the previous release dates. Before, a rejected token made one call per patch title and then saved an empty set of release dates as a success, so Patch Compliance's Released and Days Behind columns went blank until the next good run.
+- The summary tiles on Backups, Computers and Generated reports line up at the top and share one height. A tile whose value wraps, such as the latest backup's date, no longer sits higher than its neighbours.
+- The "needs attention" banner asking for a Jamf Pro backup choice on a synced folder now goes away as soon as you make the choice on the Backups screen, instead of staying until the next backup or until you dismiss it. Turning on "Back up Jamf Protect in this folder" clears its warning the same way.
+- The workbook's charts (and the PNG copies written beside reports) no longer put the legend on
+  top of the title, show 0.8 or 3.2 Macs on a count axis, repeat a date, or stop a percentage axis
+  at 90%. A compliance trend with one day of history was drawn as empty axes; it now shows that
+  day with a note. The OS chart's unlabelled bar was Macs with no reported version, and is named.
+- PNG exports of the patch titles table list the first 12 titles and say how many are left, the mobile OS bars show 8 versions, a long mSCP baseline name no longer wraps over the export title (titles shrink to fit one line), the donut export buttons are disabled when there is nothing to draw, and an Extension Attribute value chart with every count at zero draws instead of failing.
+- A link or button that pointed at a screen the sidebar does not show (hidden in Settings, or not offered for a Jamf School workspace) no longer opens that screen. The app says why instead, with a button to Settings when you hid it yourself.
+- The HTML and PDF report charts read cleanly: the history chart's legend no longer overlaps the dates, its first and last dates are always shown, repeated axis values and same-day duplicate points are gone, and the Mac count history chart is named for what it shows. Long bar labels are shortened with an ellipsis instead of pushing the bar off the page.
+- Patch Compliance lists every patch title. It stopped at 50 with no way to see the rest. The
+  Total Titles tile now reads "Patch titles tracked" instead of "Patch policies tracked". The
+  EA definitions table (it stopped at 100) and the OS Updates failed-plans and error-devices
+  tables (50 each) also show every row.
 - Report workbooks are now compressed. They were written uncompressed, so a workbook for a
   fleet of 6,000 Macs with many extension attributes was 89 MB.
 - The background item no longer retries, the same day, a data source that timed out twice in a
   row. Each try can run for an hour, so on a large fleet the retries kept a scheduled run going
   most of the day and every manual refresh was turned away with "A scheduled run is in
   progress". The next day's run and Collect now still try the source.
+- The app's own background refresh, which runs when the app opens or comes to the front with
+  data more than a day old, now leaves alone a data source that keeps timing out, as scheduled
+  runs do, and skips sources collected recently. Before, it tried the stalled source each time
+  and waited its full time. Collect now still collects everything.
 - A data source that Jamf Pro never answers (jamf-cli reports "the server did not answer in
   time") is tried once per run instead of twice, and after two such runs in a row it is left to
   the next day like any other timeout. On one large server this source alone held each run for
   24 minutes, several times a day.
+- Run History no longer tells you to "pass a smaller --page-size or narrow it with --section or
+  --filter" when Jamf Pro does not answer in time. That advice is jamf-cli's, and the app chooses
+  those flags itself. The line now says what the app does next: Collect now tries again at once,
+  automatic runs wait a day after two timeouts in a row, and the source can be turned off in Data
+  Sources.
+- A data source that timed out two runs in a row is now left to the next day's run (20 hours)
+  by every automatic collect (schedules, self-repair and catch-up), not only by the retries.
+  Before, a source that had never landed counted as due in every collect, so each one waited on
+  it again. The run log names it under "timed out repeatedly, left to the next day's run", and
+  Collect now still tries it.
+- Refresh and Collect now no longer get "A scheduled run is in progress" or "A refresh is
+  already running" while an automatic collect is going (a scheduled run, or the app's own
+  background refresh). The app asks it to stop after the source it is on, waits for it (the
+  status bar says so), then refreshes. The stopped run logs why and collects what is left on its
+  next run. Generate with "Collect fresh data" still waits its turn.
+- An automatic collect gives the lock back after 45 minutes per workspace and leaves the rest for
+  its next run (a scheduled run comes back an hour later) instead of holding it until every
+  source is done. `jamf_cli.run_budget_minutes` (10 to 240) changes the limit for a slower server.
+- Jamf Protect and Jamf Security Cloud are no longer collected again by every automatic collect
+  in a day: after the day's first run they wait 12 hours, and a source that timed out two runs in
+  a row waits like any other.
+- The day's summary is written before a run's slow sources and the per-device scan, so the
+  Overview and Trends have today's figures in the first minutes of a run; the end of the run
+  updates it with what landed later.
+- Config Doctor suggests turning on retention when saved snapshots use more than 20 GB.
+- A data source that took more than two minutes on its last run now runs after the others,
+  shortest first, so one slow source no longer holds up the rest of the day's data. The run log
+  names them in a "running last" line. Jamf School sources are ordered the same way.
+- A snapshot too large for the app to read (over 256 MB) is now named, with its size, wherever
+  a report leaves its data out: in the run log, on the skipped tab's line, in the HTML report's
+  "Not included" list and as a Needs attention item. Before, the report said no snapshot had
+  been found and lost the tab without saying why. The per-device scan snapshots now share the
+  256 MB limit instead of 64 MB.
+- **Patch data on a server that cannot answer the patch report.** When Jamf Pro never answers
+  the patch report, the app now collects the patch titles one at a time instead, through two
+  smaller requests that return the same figures. For the next week it goes straight to that
+  path, then gives the report one more try. On a test server 65 titles took 18 seconds and
+  matched the report row for row. The patch failures scan has no such path and is left out
+  while this is in effect. It reads the same patch titles the report reads; if a login can run
+  the report but not this path, the run log says which request was refused.
+- When the patch report and the patch title list both time out in one run, the patch sources
+  are held straight away instead of after a second run like it. A source that has timed out four
+  times in a row is then tried once a week rather than once a day.
+- A daily summary holding a negative device count is now refused as damaged, like any other
+  out-of-range summary, instead of being read.
+- A compliance tab left out because the extension attribute results hold no values for the
+  configured baselines now says so. It said no snapshot had been found, which sent people to
+  collect again.
+- The patch title report and the patch failures scan now share one timeout count, because both
+  start with the same request to Jamf Pro. On one large server each of them waited 12 minutes
+  on it, twice, before being left alone; now two timeouts between them hold both.
+  `collect_skip: [patch-status]` skips the failures scan as well.
+- Patch release dates are no longer reported as "not collected yet" while the patch title report
+  itself has never landed; that kept an hourly background refresh running.
+- `jamf_cli.collect_skip` accepts `patch-status`, for a Jamf Pro server that cannot list its
+  patch titles in time; the patch release dates that depend on it are skipped with it. Patch
+  screens and the patch score factor then have no data.
 - An Overview score card no longer shows an older day's figure as today's when the newest daily
   summary has none (FileVault read 0.0% from days earlier); it shows a dash and "Not reported by
   this profile", and the card's detail screen says "No data yet".
@@ -539,6 +675,22 @@ writes into a shared workspace.
 
 ### Security
 
+- A workspace merge now re-checks its journal folder before every journal write and removal, and
+  refuses a source workspace that has become a link. Snapshots, backup manifests, the device
+  cache and config.yaml backups are installed without following a link at their name, and
+  `jamf-reports scaffold --out` no longer removes other tools' leftover temp files from the
+  folder you chose.
+- Config Doctor and the Add sheet no longer ask jamf-cli for a Jamf Pro address as a login another Mac named in `profiles.jamf_pro`, and saving the webhook, report folders or logo now confirms exactly what this Mac wrote, so a peer's copy that lands just after is still flagged for confirmation.
+- Shared logs and diagnostic bundles no longer carry your report file prefix, other workspaces' names past the first 200 folders, or the Extension Attribute names in a `_csv` report folder's listing. Copying a schedule's live output is now redacted like Run History's, and an error logged by the tips setup stays private.
+- A planted file in a shared workspace can no longer crash every collect with an absurd device count
+  (overview, inventory summary, patch summary, security report, policy status or update status),
+  and mobile snapshots a peer Mac on an older build writes with lost-mode text are cleaned on later
+  collects too. Config Doctor no longer names this Mac's other workspaces for a login a peer wrote
+  into a shared config.yaml and this Mac has not confirmed.
+- A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
+  source's last run or timeout dated in the future, a device-scan progress file with impossible
+  counts, or a future-dated empty device list now reads as no record, so the source is collected
+  as usual instead of held, skipped or crashing the scan.
 - Run History and the schedule list now take a run's Partial status from the run's own log
   only, so a file another Mac drops into a shared workspace can no longer make a partial run
   read as clean. (#305)

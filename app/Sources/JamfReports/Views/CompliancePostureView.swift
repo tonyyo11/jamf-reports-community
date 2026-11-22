@@ -53,7 +53,17 @@ struct CompliancePostureView: View {
         }
 
         if mscpUnreadable {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn,
+                action: InlineBannerAction(
+                    label: L("Open Settings"), icon: "gearshape",
+                    help: L("Settings › Logging names the file.")
+                ) {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab, object: nil,
+                        userInfo: ["tab": Tab.settings.rawValue])
+                }
+            ) {
                 Text("The newest ea-results file could not be read, so the mSCP baselines are not shown; the control-gap proxy below stands in. The file is named in Settings › Logging.")
             }
         }
@@ -172,7 +182,8 @@ struct CompliancePostureView: View {
                 title: L("No compliance snapshot yet"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["security"])]
+                    profile: workspace.profile, kinds: ["security"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }
@@ -189,6 +200,7 @@ struct CompliancePostureView: View {
                         size: .sm,
                         action: exportBandsDonut
                     )
+                    .disabled(snapshot.bands.allSatisfy { $0.count == 0 })
                     .accessibilityLabel("Export compliance bands donut as PNG")
                     .help("Save the fleet-wide compliance bands donut as a PNG image")
                 }
@@ -235,6 +247,7 @@ struct CompliancePostureView: View {
                             size: .sm,
                             action: { exportMSCPDonut(result: result) }
                         )
+                        .disabled(result.totalDevices == 0)
                         .accessibilityLabel("Export \(result.name) compliance donut as PNG")
                         .help("Save the \(result.name) compliance donut as a PNG image")
                     }

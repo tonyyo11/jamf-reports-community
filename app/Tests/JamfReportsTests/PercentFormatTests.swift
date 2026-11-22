@@ -192,6 +192,9 @@ final class PercentFormatTests: XCTestCase {
             "Views/FleetOverviewView.swift": 1,
             // The workbook's `0.0%` number format code.
             "Engine/OOXMLWriter.swift": 1,
+            // jamf-cli's own `compliance_pct` text ("67%"), rebuilt for the patch-status row the
+            // report would have printed; `parseCompliancePct` reads it back, no screen shows it.
+            "Engine/ReportEngine+PatchByTitle.swift": 1,
         ]
         let walker = try XCTUnwrap(FileManager.default.enumerator(atPath: sources.path))
         var counts: [String: Int] = [:]

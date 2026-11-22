@@ -12,6 +12,7 @@ struct OutreachView: View {
     @State private var hasLoaded = false
     @State private var selectedTier: StaleDeviceService.Tier = .offline
     @State private var copyConfirmation: String?
+    @State private var isCollecting = false
 
     var body: some View {
         PageScaffold {
@@ -103,7 +104,11 @@ struct OutreachView: View {
             EmptyStateView(
                 systemImage: "envelope",
                 title: L("No computer inventory yet"),
-                message: L("Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate.")
+                message: L("Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate."),
+                primaryAction: workspace.demoMode ? nil : EmptyStateAction(
+                    label: isCollecting ? L("Collecting…") : L("Collect now"),
+                    icon: "arrow.down.circle"
+                ) { collectInventory() }
             )
         }
     }
@@ -115,7 +120,11 @@ struct OutreachView: View {
                 StatTile(
                     label: tier.label,
                     value: "\(snapshot.tierCounts[tier] ?? 0)",
-                    sub: tierSubtitle(for: tier)
+                    sub: tierSubtitle(for: tier),
+                    // The table lists the Offline, Inactive and Dormant tiers; Recent is not
+                    // stale and has no list here.
+                    action: tier == .recent ? nil : { selectedTier = tier },
+                    actionHint: L("Shows the \(tier.label) computers in the table below")
                 )
                 .overlay(
                     // Color accent on left edge for each tier
@@ -264,6 +273,17 @@ struct OutreachView: View {
                         .width(min: 100, ideal: 120)
                     }
                     .pageTableHeight(rows: devices.count)
+                    .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { ids in
+                        if let id = ids.first, let device = devices.first(where: { $0.id == id }) {
+                            Button(L("Copy Name")) { copy(text: device.displayName, then: L("Copied name")) }
+                            Button(L("Copy Serial Number")) {
+                                copy(text: device.serial, then: L("Copied serial number"))
+                            }
+                            if !device.email.isEmpty {
+                                Button(L("Copy Email")) { copy(text: device.email, then: L("Copied email")) }
+                            }
+                        }
+                    }
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)
@@ -275,6 +295,17 @@ struct OutreachView: View {
     }
 
     // MARK: - Actions
+
+    /// The empty state's Collect now: the inventory tier, as the banner above runs it.
+    private func collectInventory() {
+        guard !isCollecting else { return }
+        isCollecting = true
+        Task {
+            await workspace.runTierRefresh([.inventory])
+            isCollecting = false
+            reload()
+        }
+    }
 
     private func copyEmailList() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }

@@ -117,7 +117,12 @@ enum ConfigDoctorService {
                     } ?? false
                 })
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
-            if includeProbes { rows += accuracyRows(config: config, profile: profile) }
+            if includeProbes {
+                rows += accuracyRows(config: config, profile: profile)
+                rows += dataFolderSizeRows(
+                    dataDir: try? WorkspacePaths.dataDir(for: profile),
+                    retentionEnabled: config.retention?.enabled ?? false)
+            }
             rows += securityPolicyRows(profile: profile, config: config)
         }
         rows += organizationLevelRows(profile: profile)
@@ -144,6 +149,42 @@ enum ConfigDoctorService {
             id: "workspace.csv_inbox", severity: .suggest, title: "csv-inbox",
             detail: L("csv-inbox is no longer read since 2.11; you can delete it."),
             hint: L("Move any export you still need elsewhere, then delete the folder."))]
+    }
+
+    /// Above this many bytes of saved snapshots, with retention off, the Doctor suggests it.
+    static let dataFolderSuggestionBytes: Int64 = 20 * 1_073_741_824
+
+    /// Snapshots are kept for ever by default, which on a large fleet is hundreds of MB a day.
+    /// A suggestion only. The walk stops at `maxEntries`, so a huge folder costs a bounded read
+    /// and can only under-count.
+    static func dataFolderSizeRows(
+        dataDir: URL?, retentionEnabled: Bool, limit: Int64 = dataFolderSuggestionBytes,
+        maxEntries: Int = 200_000
+    ) -> [DoctorRow] {
+        guard !retentionEnabled, let dataDir,
+              let walker = FileManager.default.enumerator(
+                at: dataDir, includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
+                options: [.skipsHiddenFiles]) else { return [] }
+        var bytes: Int64 = 0
+        var seen = 0
+        for case let url as URL in walker {
+            seen += 1
+            if seen > maxEntries { break }
+            bytes += Int64(
+                (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?
+                    .totalFileAllocatedSize ?? 0)
+            if bytes > limit { break }
+        }
+        guard bytes > limit else { return [] }
+        let gigabytes = Int(limit / 1_073_741_824)
+        return [DoctorRow(
+            id: "retention.data_folder_size", severity: .suggest,
+            title: L("Saved snapshots"),
+            detail: L("Saved snapshots use more than \(gigabytes) GB and retention is off."),
+            hint: L("""
+                Turn on retention in config.yaml (retention.enabled) to archive or remove old \
+                snapshots.
+                """))]
     }
 
     // MARK: - Pure evaluator (test seam)

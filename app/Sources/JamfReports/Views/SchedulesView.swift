@@ -399,8 +399,13 @@ struct SchedulesView: View {
                 }
                 Button {
                     let joined = runLogLines.map(\.text).joined(separator: "\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(joined, forType: .string)
+                    let profile = workspace.demoMode ? nil : workspace.profile
+                    Task {
+                        let redacted = await Task.detached(priority: .userInitiated) {
+                            LogRedactor.redactedForSharing(joined, profile: profile)
+                        }.value
+                        SystemActions.copyToClipboard(redacted)
+                    }
                 } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.fgMuted)

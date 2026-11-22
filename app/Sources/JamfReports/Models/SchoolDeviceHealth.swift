@@ -72,6 +72,8 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         var failedAt: Date?
         /// Fleet devices with a scan row, of the fleet devices.
         var scanned: Figure?
+        /// While a scan round is open: fleet devices a pass of it attempted, of the fleet.
+        var roundProgress: Figure?
         var enrollment = Values()
         var enrollmentReporting = 0
         var storage = Values()
@@ -159,6 +161,15 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         _ snapshot: SchoolFleetService.Snapshot, scanTurnedOff: Bool
     ) {
         detail.failedAt = snapshot.deviceDetailFailedAt
+        if let attempted = snapshot.deviceScanRoundAttempted {
+            // The scan's own targets: one per UDID it could use.
+            let udids = Set(snapshot.devices.map { $0.udid.lowercased() }
+                .filter(CLIBridge.isSafeDeviceIdentifier))
+            if !udids.isEmpty {
+                detail.roundProgress = Figure(
+                    count: udids.intersection(attempted).count, of: udids.count)
+            }
+        }
         if snapshot.unreadable.contains(SchoolFleetService.deviceDetailKind) {
             detail.state = .unreadable
             return
@@ -222,7 +233,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
         switch detail.state {
         case .notCollected: lines.append(L("Per-device details not collected yet"))
         case .turnedOff:
-            lines.append(L("Per-device details are turned off (jamf_cli.collect_skip)"))
+            lines.append(L("Per-device details are turned off in Data Sources"))
         case .unreadable: lines.append(L("Per-device details could not be read"))
         case .scanned:
             if let at = detail.scannedAt, let scanned = detail.scanned {
@@ -243,6 +254,10 @@ struct SchoolDeviceHealth: Sendable, Equatable {
             if let zero = detail.batteryZero {
                 lines.append(L("Battery reported as 0: \(zero.count) of \(zero.of) devices"))
             }
+        }
+        if let round = detail.roundProgress {
+            let (n, of) = (round.count, round.of)
+            lines.append(L("Scan in progress: \(n) of \(of) devices scanned this round"))
         }
         if let failed = detail.failedAt { lines.append(L("Last attempt failed \(day(failed))")) }
         return lines

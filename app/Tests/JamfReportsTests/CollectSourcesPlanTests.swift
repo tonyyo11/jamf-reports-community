@@ -16,7 +16,7 @@ final class CollectSourcesPlanTests: XCTestCase {
         Plan.build(.init(
             product: product, profile: "prod", protectProfile: protect,
             installedVersion: "1.33.0", skipExpensive: skipExpensive, authMethod: auth,
-            tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkip: skip))
+            tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkipList: skip.sorted()))
     }
 
     /// The other sources are SOFA, which a School collect fetches for OS currency, and the

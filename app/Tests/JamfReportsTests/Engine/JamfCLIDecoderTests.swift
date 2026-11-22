@@ -468,6 +468,40 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].count, 42)
     }
 
+    // MARK: - Planted counts
+
+    func testPlantedSecuritySummaryCountReadsAsUnreported() throws {
+        let json = """
+        [{"section":"summary","data":{"total_devices":10,
+        "filevault_encrypted":-9223372036854775808,"sip_enabled":9}}]
+        """
+        let items = try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8))
+        guard case .summary(let s) = items[0] else { return XCTFail("Expected .summary") }
+        XCTAssertNil(s.data.fileVaultEncrypted)
+        XCTAssertEqual(s.data.sipEnabled, 9)
+        let fleet = SecurityFleetCounts.build(
+            totalDevices: 10, onCounts: SecurityFleetCounts.onCounts(s.data), devices: [],
+            hardware: [:], policy: .default)
+        XCTAssertNil(fleet.controls[.fileVault])
+    }
+
+    func testPlantedOSVersionCountsAreRefused() {
+        let json = """
+        [{"section":"os_version","os_version":"26.1","count":9223372036854775807,"pct":"1%"},
+         {"section":"os_version","os_version":"26.1.0","count":9223372036854775807,"pct":"1%"}]
+        """
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8)))
+    }
+
+    func testPlantedUpdateStatusCountIsRefused() {
+        let json = """
+        [{"total":5,"status_summary":[{"status":"PENDING","count":-1}]}]
+        """
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8)))
+    }
+
     // MARK: - DeviceComplianceRow
 
     func testDeviceComplianceRowDecoding() throws {
@@ -936,6 +970,15 @@ final class JamfCLIDecoderTests: XCTestCase {
             }
             XCTAssertEqual(key.stringValue, "status_summary",
                            "The missing key must be reported under its JSON name")
+        }
+    }
+
+    func testInventorySummaryCountOutsideTheBoundIsRefused() throws {
+        let ok = Data(#"[{"os_version":"15.1","count":3}]"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode([InventorySummaryRow].self, from: ok).first?.count, 3)
+        for bad in ["9223372036854775807", "-1"] {
+            let data = Data(#"[{"os_version":"15.1","count":\#(bad)}]"#.utf8)
+            XCTAssertThrowsError(try JSONDecoder().decode([InventorySummaryRow].self, from: data))
         }
     }
 }

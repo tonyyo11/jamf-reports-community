@@ -25,6 +25,9 @@ struct ReportEngine: Sendable {
     /// included; nothing in config.yaml names it, since a peer on a shared workspace can edit
     /// that file. An engine with none (tests, library use) resolves no workspace folder.
     var workspace: WorkspaceID? = nil
+    /// The sources turned off for this run (`SharedConfigPin.collectSkip`); nil reads them for
+    /// `workspace`. The daily summary treats them as absent, never as current.
+    var turnedOffKinds: Set<String>? = nil
 
     /// The trend-chart tab, the one tab no sheet plan writes.
     static let chartsSheetName = "Charts"
@@ -105,6 +108,7 @@ struct ReportEngine: Sendable {
         // Build the sheet registry from the dashboard's plan, then dispatch in
         // template order rather than plan order. Unknown SheetID values are skipped
         // with a warning — they are engine-team follow-ups, not fatal errors.
+        BoundedFile.resetSizeRefusals()
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
                                  provenance: prov, aiNarrative: aiNarrative, onLine: onLine)
         let registry = SheetRegistry(plan: core.sheetPlan)
@@ -134,6 +138,7 @@ struct ReportEngine: Sendable {
         }
 
         let eaWritten = eaSheets?.writeAll(sheets: sheets) ?? []
+        Self.reportSizeRefusals(artifact: "tabs", onLine: onLine)
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         // Standalone PNGs land next to the xlsx via ExportNaming conventions.
@@ -294,9 +299,13 @@ struct ReportEngine: Sendable {
             options: [.skipsHiddenFiles]
         ) else { return }
 
-        let candidates = files.filter {
-            $0.pathExtension == "xlsx"
-                && Self.isRun(named: $0.deletingPathExtension().lastPathComponent, of: stem)
+        // Runs written under another `output.file_prefix`, or before 2.12 with none, count
+        // toward `keep` too, or they would never leave.
+        let target = ExportNaming.reportNameParts(stem)?.key ?? stem
+        let candidates = files.filter { file in
+            let name = file.deletingPathExtension().lastPathComponent
+            return file.pathExtension == "xlsx"
+                && Self.isRun(named: ExportNaming.reportNameParts(name)?.key ?? name, of: target)
         }
 
         let sorted = candidates.sorted {
@@ -755,7 +764,18 @@ struct ReportEngine: Sendable {
         // ABSENT (skipped + warned, named by kind/age/key) so the daily digest
         // and the freshness signal it feeds never silently absorb ancient cache.
         let maxCacheAgeHours = config.jamfCli?.resolvedMaxCacheAgeHours ?? 168
+        // A source turned off stops updating: its last snapshot must not feed today's figures.
+        // A skipped fleet side's old snapshots are absent too (`FleetState`).
+        let fleetSides = FleetState.load(dataDir: dataDir)
+        let turnedOff = (turnedOffKinds ?? workspace.map {
+            SharedConfigPin.collectSkip(
+                configured: config.jamfCli?.collectSkip, profile: $0.name, fleet: fleetSides)
+        } ?? []).union(Self.kinds(of: fleetSides.skipped))
         func cachedData(kind: String) -> Data? {
+            if turnedOff.contains(kind) {
+                recordSource(kind: kind, present: false)
+                return nil
+            }
             if let hit = snapshotCache[kind] { return hit }
             do {
                 let d = try Self.loadLatestSnapshotData(
@@ -852,9 +872,10 @@ struct ReportEngine: Sendable {
         if let mobileData = cachedData(kind: "mobile-devices-list") {
             mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
             // Read past `cachedData` so the scan does not join the digest's sources.
-            let scan = try? Self.loadLatestSnapshotData(
-                kind: "update-device-failures", dataDir: dataDir,
-                maxCacheAgeHours: maxCacheAgeHours)
+            let scan = turnedOff.contains("update-device-failures") ? nil
+                : try? Self.loadLatestSnapshotData(
+                    kind: "update-device-failures", dataDir: dataDir,
+                    maxCacheAgeHours: maxCacheAgeHours)
             mobile = mobileFigures(mobileData, updateFailures: scan)
         }
 
@@ -909,7 +930,8 @@ struct ReportEngine: Sendable {
            let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
            totalDevices > 0 {
             let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
-            let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            let sofaSnapshot = turnedOff.contains(Self.sofaKind)
+                ? SOFAFeedService.Snapshot.empty : SOFAFeedService.load(dataDir: dataDir)
             recordSource(kind: "sofa", present: !sofaSnapshot.rows.isEmpty)
             let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
             osCurrentPct = Self.osCurrentPercent(
@@ -1025,10 +1047,11 @@ struct ReportEngine: Sendable {
         // and the workbook use, so a fleet has one score everywhere. A factor without data
         // drops out of the denominator.
         let scoreFactors = config.resolvedScoreFactors
-        let scoreSources = Self.scoreSources(
+        var scoreSources = Self.scoreSources(
             dataDir: dataDir, computers: cachedData(kind: "computers"),
             patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows,
             computerDates: computerDates)
+        if turnedOff.contains(Self.sofaKind) { scoreSources.sofa = nil }
         let score = SecurityScoreCalculator.score(
             factors: scoreFactors,
             measures: SecurityScoreInputs.measures(
@@ -1366,7 +1389,8 @@ struct ReportEngine: Sendable {
                 let series = ChartSeries(
                     label: "Total Computers",
                     color: ChartPalette.cgColor(forMetric: .managedDevices), points: fleetPoints)
-                if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
+                if let png = ChartRenderer.lineChart(series: [series], yAxis: .count,
+                                                     title: "Fleet Size Trend", yLabel: "Macs") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
                     writePNG(png, kind: "fleet-trend", profile: profile, to: pngOutputDir)
@@ -1389,16 +1413,14 @@ struct ReportEngine: Sendable {
                     color: ChartPalette.cgColor(forMetric: .fileVault), points: fvPoints))
             }
             if !patchPoints.isEmpty {
-                // The line-chart legend keeps only 14 characters of a label
-                // (ChartRenderer.drawLegend): "Patch Compliance %" showed as "Patch Complian".
                 secSeries.append(ChartSeries(
                     label: "Patch %",
                     color: ChartPalette.cgColor(forMetric: .patch), points: patchPoints))
             }
             if !secSeries.isEmpty {
-                if let png = ChartRenderer.lineChart(series: secSeries,
+                if let png = ChartRenderer.lineChart(series: secSeries, yAxis: .percent,
                                                       title: "Security Metric Trends",
-                                                      yLabel: "Percent") {
+                                                      yLabel: "Percent of Macs") {
                     ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
                     embedRow += 20
                     writePNG(png, kind: "security-trend", profile: profile, to: pngOutputDir)
@@ -1414,8 +1436,9 @@ struct ReportEngine: Sendable {
                     let series = ChartSeries(
                         label: "Stale Devices",
                         color: ChartPalette.cgColor(forMetric: .stale), points: stalePoints)
-                    if let png = ChartRenderer.lineChart(series: [series],
-                                                          title: "Stale Device Count Trend") {
+                    if let png = ChartRenderer.lineChart(series: [series], yAxis: .count,
+                                                          title: "Stale Device Count Trend",
+                                                          yLabel: "Macs") {
                         ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
                         embedRow += 20
                         writePNG(png, kind: "stale-trend", profile: profile, to: pngOutputDir)
@@ -1424,39 +1447,14 @@ struct ReportEngine: Sendable {
             }
 
             // --- OS adoption (on unless per_major_charts is false, like the Customize screen) ---
-            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts {
-                var majorData: [String: Double] = [:]
-                if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
-                                                                  dataDir: dataDir),
-                   let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
-                    let total = rows.reduce(0) { $0 + $1.count }
-                    for invRow in rows {
-                        let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
-                        majorData[major, default: 0] += Double(invRow.count)
-                    }
-                    if total > 0 {
-                        majorData = majorData.mapValues { $0 / Double(total) * 100 }
-                    }
-                } else if let pct = summaries.last?.osCurrentPct {
-                    majorData["Current"] = pct
-                    majorData["Other"] = max(0, 100 - pct)
-                }
-                if !majorData.isEmpty {
-                    let sortedMajor = majorData.sorted { $0.key > $1.key }
-                    let barData = BarChartData(
-                        categories: sortedMajor.map(\.key),
-                        values: sortedMajor.map(\.value),
-                        colors: ChartPalette
-                            .hexes(for: .version, keys: sortedMajor.map(\.key), scheme: .light)
-                            .map(ChartPalette.cgColor(hex:))
-                    )
-                    if let png = ChartRenderer.barChart(data: barData,
-                                                         title: "OS Adoption by Major Version") {
-                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
-                        embedRow += 20
-                        writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
-                    }
-                }
+            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts,
+               let os = osAdoptionBarData(summaries: summaries),
+               let png = ChartRenderer.barChart(data: os.data, yAxis: .percent,
+                                                title: "macOS Adoption by Major Version",
+                                                yLabel: "Percent of Macs", footnote: os.footnote) {
+                ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
+                embedRow += 20
+                writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
             }
         }
 
@@ -1468,6 +1466,28 @@ struct ReportEngine: Sendable {
             profile: profile, pngOutputDir: pngOutputDir
         )
         _ = embedRow  // final row count not needed outside this scope
+    }
+
+    /// The OS adoption chart's bars: one per macOS major from the newest `inventory-summary`,
+    /// named and judged against the cached SOFA feed (`OSAdoptionChart`). Without inventory,
+    /// the newest summary's OS-current share as two bars, as before.
+    private func osAdoptionBarData(summaries: [DailySummary]) -> (data: BarChartData, footnote: String?)? {
+        if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary", dataDir: dataDir),
+           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+            let sofaRows = SOFAFeedService.load(dataDir: dataDir).rows
+            let bars = OSAdoptionChart.bars(rows: rows, sofaRows: sofaRows)
+            guard !bars.isEmpty else { return nil }
+            let hasFeed = sofaRows.contains { $0.platform == SOFAFeedService.platformLabels["macos"] }
+            return (OSAdoptionChart.chartData(bars), OSAdoptionChart.footnote(bars, hasFeed: hasFeed))
+        }
+        guard let pct = summaries.last?.osCurrentPct else { return nil }
+        let other = max(0, 100 - pct)
+        let data = BarChartData(
+            categories: ["On the latest release", "Other"], values: [pct, other],
+            colors: ChartPalette.hexes(for: .version, keys: ["Current", "Other"], scheme: .light)
+                .map(ChartPalette.cgColor(hex:)),
+            valueLabels: [PercentFormat.whole.text(pct), PercentFormat.whole.text(other)])
+        return (data, "From the newest daily summary; no inventory summary collected.")
     }
 
     /// Renders mSCP/STIG compliance charts and embeds them in `ws`.
@@ -1501,7 +1521,7 @@ struct ReportEngine: Sendable {
             if let rc = baseline?.ruleCount { footer += " · Baseline: \(rc) auditable rules" }
 
             // Per spec: all six legend rows rendered ("No Data: N (P%)", "Pass (0): N (P%)", …).
-            let donutTitle = "Compliance Donut — \(result.name) All Devices"
+            let donutTitle = "\(result.name) — compliance bands, all Macs"
             if let png = ChartRenderer.donutChart(slices: slices,
                                                    title: donutTitle, footer: footer) {
                 let fname = "mscp-donut-\(idx).png"
@@ -1525,7 +1545,14 @@ struct ReportEngine: Sendable {
 
         let stackSeries = MSCPChartDataBuilder.toStackedSeries(points: points)
         let trendTitle = "mSCP/STIG Compliance Trend — \(primaryBaseline.name)"
-        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle) {
+        // The trend leaves No Data out (no area to stack it in); say how many, so its total
+        // is not read against the donut's.
+        let noData = points.last?.counts.noData ?? 0
+        let note = noData > 0
+            ? "Not shown: \(noData) \(noData == 1 ? "Mac" : "Macs") with no compliance data on the last day."
+            : nil
+        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle,
+                                                    yLabel: "Macs", footnote: note) {
             ws.insertImage(row: embedRow, col: 0, data: png, filename: "mscp-band-trend.png")
             embedRow += 20
             writePNG(png, kind: "mscp-band-trend", profile: profile, to: pngOutputDir)
@@ -2190,6 +2217,16 @@ struct ReportEngine: Sendable {
     /// `collect` routes the Platform kinds from it and not from a second read of config.yaml.
     @TaskLocal static var routedEnvironment: EnvironmentProfiles?
 
+    /// False while `CollectRouter` runs an unforced collect: Jamf Protect and Security Cloud,
+    /// which ride after the MDM collect, then keep the refresh cadence and the timeout hold
+    /// (`planAddOn`). True for a direct caller and a Protect-only environment, which collect
+    /// every source as before.
+    @TaskLocal static var addOnCollectForced = true
+
+    /// Asked before each source of a scheduled run: non-nil stops the run there, leaving what
+    /// is left due for the next one (`RunStop`). nil outside a scheduled run.
+    @TaskLocal static var runStop: (@Sendable () -> RunStop?)?
+
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
         platformRoute(
@@ -2293,6 +2330,8 @@ struct ReportEngine: Sendable {
         deviceLimits: DeviceCallLimits = DeviceCallLimits(),
         patchDefinitionLimits: DeviceCallLimits = DeviceCallLimits(
             timeout: patchDefinitionTimeout),
+        scanBudget: TimeInterval? = nil,
+        scanStop: (@Sendable (Int) -> Bool)? = nil,
         now: Date = Date(),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
@@ -2369,7 +2408,11 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
-        let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
+        // The fleet as the last overview counted it: a side with no devices is not collected.
+        let fleet = FleetState.load(dataDir: dataDir, now: collectStart)
+        let collectSkip = SharedConfigPin.collectSkip(
+            configured: loadedConfig?.jamfCli?.collectSkip, profile: workspace.name,
+            fleet: fleet)
 
         // Every skip decision is made here, once, before the first command: the `[plan]`
         // lines and the loop below both read this list.
@@ -2379,18 +2422,33 @@ struct ReportEngine: Sendable {
             collectSkip: collectSkip, dashboardSupported: dashboardSupported,
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
-        let plan = Self.planCollect(
-            commands: commands, inputs: planInputs,
-            lastRun: { stateStore?.lastRun(report: $0) }
-        )
+        planInputs.skippedSides = fleet.skipped
+        let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
+        let plan = Self.slowLast(
+            Self.planCollect(
+                commands: commands, inputs: planInputs,
+                timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: collectStart) },
+                lastRun: { stateStore?.lastRun(report: $0) }
+            ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
-            tiers: tiers, skipExpensive: skipExpensive, force: force,
-            stateStore: stateStore, now: collectStart)
-        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
+            tiers: tiers, skipExpensive: skipExpensive, force: force, collectSkip: collectSkip,
+            skippedSides: fleet.skipped, stateStore: stateStore, now: collectStart)
+        let afterMatrix = Self.sourcesAfterMatrix(
+            tiers: tiers, collectSkip: collectSkip, skippedSides: fleet.skipped)
+        // The scan kinds turned off here get the same plan and skip lines as the after-matrix ones.
+        let scanKindsOff = [.tierNotSelected, .turnedOff, .noComputers].contains(scanPlan)
+            ? [] : Self.scanKindsTurnedOff(collectSkip)
         Self.logCollectPlan(
             profile: profile, plan: plan, afterMatrix: afterMatrix,
-            afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
+            afterMatrixSkipped: Self.skippedAfterMatrix(
+                tiers: tiers, collectSkip: collectSkip, skippedSides: fleet.skipped)
+                + scanKindsOff,
+            afterMatrixFleetSkipped: Self.fleetSkippedAfterMatrix(
+                tiers: tiers, skippedSides: fleet.skipped),
             deviceScan: scanPlan, onLine: onLine)
+        if let line = Self.slowLastLine(plan, lastDuration: lastDuration) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
         if platformProfile != profile, platformUnavailable == nil,
            plan.contains(where: { $0.skip == nil && Self.platformOnlyKinds.contains($0.kind) }) {
             onLine(.init(timestamp: Date(), level: .info,
@@ -2408,8 +2466,28 @@ struct ReportEngine: Sendable {
         // fresh-cache kinds and failed only the chronic residue is not an outage.
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
-        for planned in plan {
+        var stoppedEarly = false
+        // Written once, before the first slow source or the device scan, so Trends advance in
+        // the run's first minutes; the end of the run rebuilds it with what landed later.
+        var wroteEarlySummary = false
+        func writeEarlySummary() async {
+            guard !wroteEarlySummary, let config = loadedConfig else { return }
+            wroteEarlySummary = true
+            await Self.writeEarlySummary(
+                config: config, workspace: workspace, bin: bin, dataDir: dataDir,
+                outcomes: outcomes, savedKinds: savedKinds, workspacePaths: workspacePaths,
+                day: collectDay, onLine: onLine)
+        }
+        for (index, planned) in plan.enumerated() {
             let (args, kind) = (planned.args, planned.kind)
+            if planned.skip == nil, (lastDuration(kind) ?? 0) > Self.slowSourceThreshold {
+                await writeEarlySummary()
+            }
+            if planned.skip == nil, Self.stopsRun(
+                left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine) {
+                stoppedEarly = true
+                break
+            }
             // A skipped kind is recorded nowhere: a kind this profile's API cannot serve, the
             // operator turned off or is not due is not a failure, so it must not advance a
             // failure counter, reach `degradedKinds`, or count toward the outage guard.
@@ -2423,7 +2501,7 @@ struct ReportEngine: Sendable {
 
             // Every kind that got this far produces an outcome, launch failures
             // included — see `launchFailureExitCode` for why that matters.
-            let result: KindCollectResult
+            var result: KindCollectResult
             if Self.benchmarkReportKinds.contains(kind) {
                 result = try await Self.collectBenchmarkReport(
                     kind: kind, profile: platformProfile, arguments: args,
@@ -2437,7 +2515,7 @@ struct ReportEngine: Sendable {
             } else if kind == Self.dashboardKind {
                 let dashboardProtect = await Self.dashboardProtect(
                     Self.dashboardProtectProfile(config: loadedConfig, workspace: workspace),
-                    bin: bin, onLine: onLine)
+                    bin: bin, collectSkip: collectSkip, onLine: onLine)
                 result = try await Self.collectDashboard(
                     profile: profile,
                     arguments: Self.dashboardArguments(
@@ -2447,6 +2525,22 @@ struct ReportEngine: Sendable {
                     useCachedData: useCachedData, stateStore: stateStore,
                     collectStart: collectStart, onLine: onLine
                 )
+            } else if kind == "patch-status",
+                      let until = stateStore?.patchByTitleUntil(), collectStart < until {
+                // The patch report timed out on this server recently: go straight to titles.
+                onLine(.init(timestamp: Date(), level: .info, text:
+                    "[info] patch-status: the patch report timed out on this server; "
+                        + "collecting title by title until \(collectLogDateLabel(until))"))
+                guard let walked = try await Self.collectPatchStatusByTitle(
+                    profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
+                    recordManifest: recordManifest, stateStore: stateStore,
+                    collectStart: collectStart, limits: patchDefinitionLimits,
+                    afterReportTimeout: false, onLine: onLine) else {
+                    stoppedEarly = Self.stopsRun(
+                        left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine)
+                    break
+                }
+                result = walked
             } else {
                 // The log names the profile the command ran as (its argv carries it).
                 result = try await Self.collectOneKind(
@@ -2459,6 +2553,29 @@ struct ReportEngine: Sendable {
                     useCachedData: useCachedData, stateStore: stateStore,
                     collectStart: collectStart, kindTimeout: kindTimeout, onLine: onLine
                 )
+                if kind == "patch-status" {
+                    if result.saved {
+                        stateStore?.clearPatchByTitle()
+                    } else if result.outcome.exitCode == CLIBridge.exitCodeTimedOut
+                                || stateStore?.cause(for: kind)?.isTimeout == true {
+                        // The one request behind the report never answered. The title list and
+                        // the per-title summaries are separate, small requests.
+                        if let walked = try await Self.collectPatchStatusByTitle(
+                            profile: profile, bin: bin, bridge: bridge, dataDir: dataDir,
+                            recordManifest: recordManifest, stateStore: stateStore,
+                            collectStart: collectStart, limits: patchDefinitionLimits,
+                            afterReportTimeout: true, onLine: onLine) {
+                            // A walk that failed too leaves the report's own outcome.
+                            if walked.saved { result = walked }
+                        } else {
+                            outcomes.append(result.outcome)
+                            stoppedEarly = Self.stopsRun(
+                                left: plan[index...].filter { $0.skip == nil }.map(\.kind),
+                                onLine: onLine)
+                            break
+                        }
+                    }
+                }
             }
             outcomes.append(result.outcome)
             if result.saved { savedKinds.insert(kind) }
@@ -2493,11 +2610,21 @@ struct ReportEngine: Sendable {
         // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
+        if scanPlan == .due, deadAfterScan == nil { await writeEarlySummary() }
+        // A stopped run starts nothing else: the scan and the release-date walk stay due.
+        if !stoppedEarly, scanPlan == .due || !afterMatrix.isEmpty {
+            stoppedEarly = Self.stopsRun(
+                left: (scanPlan == .due ? ["device scan"] : []) + afterMatrix, onLine: onLine)
+        }
         let scanSaved = await Self.runDeviceScanPhase(
-            profile: profile, bin: bin, dataDir: dataDir, plan: scanPlan,
-            recordManifest: recordManifest,
+            profile: profile, bin: bin, dataDir: dataDir,
+            plan: stoppedEarly && scanPlan == .due ? .notDue(lastAttempt: nil) : scanPlan,
+            recordManifest: recordManifest, collectSkip: collectSkip,
             stateStore: stateStore, collectStart: collectStart,
-            authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, onLine: onLine
+            authConfirmationProbe: authConfirmationProbe, limits: deviceLimits, force: force,
+            scanBudget: scanBudget ?? TimeInterval(60 * (loadedConfig?.jamfCli?
+                .resolvedScanBudgetMinutes ?? JamfCLIConfig.defaultScanBudgetMinutes)),
+            scanStop: scanStop, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
         // P9-R1: Platform-only kinds count under `platform` for a separate profiles.platform, or
@@ -2514,7 +2641,8 @@ struct ReportEngine: Sendable {
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
-            workspace: workspace, profile: profile, afterMatrix: afterMatrix, bin: bin,
+            workspace: workspace, profile: profile, stoppedEarly: stoppedEarly,
+            afterMatrix: stoppedEarly ? [] : afterMatrix, bin: bin,
             dataDir: dataDir, savedKinds: savedKinds, nothingLandedReason: nothingLandedReason,
             loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore,
@@ -2655,6 +2783,28 @@ struct ReportEngine: Sendable {
         return error
     }
 
+    /// One `[warn]` and a Needs attention item per snapshot this report could not read for its
+    /// size; clears the item when there is none. `artifact` is what the data was left out of.
+    static func reportSizeRefusals(
+        artifact: String, clearsWhenNone: Bool = true,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
+        let refusals = BoundedFile.allSizeRefusals
+        guard !refusals.isEmpty else {
+            if clearsWhenNone { AttentionLog.clear(.snapshotTooLarge) }
+            return
+        }
+        for refusal in refusals {
+            let text = "[warn] \(refusal.sentence): the \(artifact) that use it are left out"
+            AppLogger.report.warning("\(text, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: text))
+        }
+        let kinds = refusals.map(\.kind).joined(separator: ", ")
+        AttentionLog.raise(
+            .snapshotTooLarge,
+            "Too large to read, so left out of reports: \(kinds). See the run log for sizes.")
+    }
+
     /// Fetches the SOFA feeds when the plan lists `sofa`, records the outcome in the state
     /// store and logs it. A failed fetch is a `[warn]`, never `[partial]`: the cached feed
     /// stays in use. Shared by the Jamf Pro and Jamf School collects.
@@ -2678,12 +2828,42 @@ struct ReportEngine: Sendable {
         return succeeded
     }
 
+    /// Today's summary from the sources that have landed so far, before the run's slow part.
+    /// Only when every source attempted so far landed: a run with a failure waits for the
+    /// verdicts at the end, so a dead run can never date cached figures today. Silent unless it
+    /// wrote; the end of the run reports a summary that could not be written.
+    private static func writeEarlySummary(
+        config: ReportConfig, workspace: WorkspaceID, bin: URL, dataDir: URL,
+        outcomes: [CollectOutcome], savedKinds: Set<String>,
+        workspacePaths: WorkspacePaths.Type, day: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        guard !outcomes.isEmpty, outcomes.allSatisfy({ savedKinds.contains($0.kind) }),
+              let summariesDir = try? workspacePaths.summariesDir(for: workspace.name)
+        else { return }
+        let provenance = await Provenance.current(
+            profile: workspace.name, jamfCLIURL: bin, dataDir: dataDir)
+        var early = ReportEngine(config: config, dataDir: dataDir)
+        early.turnedOffKinds = SharedConfigPin.collectSkip(
+            configured: config.jamfCli?.collectSkip, profile: workspace.name,
+            fleet: FleetState.load(dataDir: dataDir))
+        let outcome = early.emitSummaryJSON(
+            summariesDir: summariesDir, provenance: provenance,
+            liveKinds: buildLiveKinds(savedKinds: savedKinds, sofaRefreshed: false),
+            day: day, onLine: { _ in })
+        if outcome == .wrote {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] summary written before the slow sources"))
+        }
+    }
+
     /// The post-collect work that turns saved snapshots into something the
     /// dashboards read: the SOFA feeds, the merged patch release dates, and
     /// the day's summary. Reached only once the verdicts above have passed.
     private static func finalizeCollect(
         workspace: WorkspaceID,
         profile: String,
+        stoppedEarly: Bool = false,
         afterMatrix: [String],
         bin: URL,
         dataDir: URL,
@@ -2726,6 +2906,8 @@ struct ReportEngine: Sendable {
                 case .failed(let exitCode):
                     stateStore?.record(
                         .failed(exitCode: exitCode), report: "patch-release-dates", at: Date())
+                    onLine(.init(timestamp: Date(), level: .warn, text: Self.unlandedSourcesLine(
+                        [Self.patchReleaseDatesKind], attempted: 1)))
                 }
             }
         }
@@ -2747,7 +2929,10 @@ struct ReportEngine: Sendable {
                 jamfCLIURL: bin,
                 dataDir: dataDir
             )
-            let engine = ReportEngine(config: config, dataDir: dataDir)
+            var engine = ReportEngine(config: config, dataDir: dataDir)
+            engine.turnedOffKinds = SharedConfigPin.collectSkip(
+                configured: config.jamfCli?.collectSkip, profile: workspace.name,
+                fleet: FleetState.load(dataDir: dataDir))
             // R4: kinds where saveSnapshot succeeded this run → "live" in summary.
             let liveKinds = Self.buildLiveKinds(savedKinds: savedKinds,
                                                 sofaRefreshed: sofaRefreshSucceeded)
@@ -2768,7 +2953,13 @@ struct ReportEngine: Sendable {
         // "Trends updated". The marker belongs here rather than inside
         // `emitSummaryJSON` because `generate` calls that after any workbook,
         // where having no jamf-cli snapshots is the normal, correct state.
-        if let unwritten {
+        if let unwritten, stoppedEarly {
+            // The run was stopped, not failed: its retry collects the rest and writes the
+            // summary, so this is not Partial.
+            onLine(.init(timestamp: Date(), level: .info, text:
+                "[info] summary not written yet: \(unwritten) — the run stopped before its "
+                    + "sources were done"))
+        } else if let unwritten {
             let msg = "\(Self.summaryNotWrittenMarker) \(unwritten) — Trends did not advance"
             AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
@@ -3012,6 +3203,7 @@ struct ReportEngine: Sendable {
 
         let seconds = Int(Date().timeIntervalSince(attemptStart).rounded())
         onLine(.init(timestamp: Date(), level: .info, text: "[info] \(kind) took \(seconds)s"))
+        stateStore?.recordDuration(report: kind, seconds: seconds)
 
         guard let (exitCode, data) = captureResult else {
             // Both launches failed. The failure counter carries the fact into
@@ -3460,9 +3652,10 @@ struct ReportEngine: Sendable {
     }
 
     /// `pro patch-software-title-configurations definitions <id>` for each title.
-    /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
-    /// Non-fatal: warn and skip titles that fail rather than aborting the run. Calls that time
-    /// out `limits.stopAfterTimeouts` times in a row end the loop, as in the device scan.
+    /// A title that fails is warned and skipped. Calls that time out `limits.stopAfterTimeouts`
+    /// times in a row, or an exit every later title would repeat (`repeatingTitleExits`), end
+    /// the walk as failed, as in the patch summaries; a walk where no title answered is failed,
+    /// never an empty snapshot.
     private static func collectPatchReleaseDates(
         profile: String,
         bin: URL,
@@ -3488,6 +3681,9 @@ struct ReportEngine: Sendable {
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
         let ts = formatter.string(from: Date())
         var timeoutStreak = 0
+        var attempted = 0
+        var answered = 0
+        var lastFailure: Int32?
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3499,17 +3695,28 @@ struct ReportEngine: Sendable {
                              text: "[warn] patch-definitions: skipping title with an unsafe id"))
                 continue
             }
+            attempted += 1
             let args = patchDefinitionArguments(profile: profile, titleId: titleId)
             let captureResult = try? await bridge.runAndCapture(
                 executable: bin, arguments: args,
                 environment: CLIBridge.environmentForJamfCLI(),
                 timeout: limits.timeout, onLine: { _ in })
-            let timedOut = captureResult?.0 == CLIBridge.exitCodeTimedOut
-            timeoutStreak = timedOut ? timeoutStreak + 1 : 0
+            let exit = captureResult.map {
+                FailureCause.exitCountingServerTimeout($0.0, stdout: $0.1)
+            }
+            timeoutStreak = exit == CLIBridge.exitCodeTimedOut ? timeoutStreak + 1 : 0
             guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
                 let what = Self.patchDefinitionFailureText(captureResult.map { ($0.0, $0.1) })
                 onLine(.init(timestamp: Date(), level: .warn,
                              text: "[warn] patch-definitions: title \(titleId) \(what) — skipping"))
+                lastFailure = exit ?? launchFailureExitCode
+                if let exit, repeatingTitleExits.contains(exit) {
+                    onLine(.init(
+                        timestamp: Date(), level: .warn,
+                        text: "[warn] stopped \(patchReleaseDatesKind): \(exitText(exit)), which "
+                            + "every later title would repeat"))
+                    return .failed(exitCode: exit)
+                }
                 if timeoutStreak >= limits.stopAfterTimeouts {
                     onLine(.init(
                         timestamp: Date(), level: .warn,
@@ -3520,6 +3727,7 @@ struct ReportEngine: Sendable {
                 continue
             }
 
+            answered += 1
             // Extract latest definition date.
             guard let definitions = try? JSONSerialization.jsonObject(with: data)
                     as? [[String: Any]]
@@ -3535,6 +3743,11 @@ struct ReportEngine: Sendable {
             ])
         }
 
+        if attempted > 0, answered == 0 {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] \(patchReleaseDatesKind): no title answered — not written"))
+            return .failed(exitCode: lastFailure)
+        }
         // Write merged snapshot.
         do {
             try writePatchReleaseDates(merged, stamp: ts, dataDir: dataDir)
@@ -3686,6 +3899,7 @@ struct ReportEngine: Sendable {
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
+        BoundedFile.resetSizeRefusals()
         let report = htmlReport(
             config: config, dataDir: dataDir, workspace: workspace, template: template,
             aiNarrative: aiNarrative, expandAll: false, locateJamfCLI: locateJamfCLI,
@@ -3694,6 +3908,8 @@ struct ReportEngine: Sendable {
         let digest = try await report.generate(
             outputURL: outputURL, profileName: configProfile, sections: template.htmlSections
         )
+        // Never clears: the workbook of the same run may have raised it for another source.
+        reportSizeRefusals(artifact: "sections", clearsWhenNone: false, onLine: onLine)
         // Write SHA-256 manifest alongside the HTML artifact.
         writeManifestStatic(for: outputURL, profile: configProfile, template: template.identifier)
         // T-13 integrity envelope: surface the embedded fingerprint via the log
@@ -3878,15 +4094,17 @@ struct ReportEngine: Sendable {
         if resolved == nil, ProfileAuthMethod.isAbsent(profile: profile, binary: bin) {
             throw Self.reportDeadCollect(.profileNotFound(profile), onLine: onLine)
         }
-        let collectSkip = Self.collectSkipKinds(schoolCollectSkip(profile: workspace.name))
+        let collectSkip = schoolCollectSkip(profile: workspace.name)
         let scanPlan = landedSources?.schoolScanPlan ?? planSchoolDeviceScan(
             tiers: tiers, collectSkip: collectSkip, stateStore: stateStore, now: now)
-        let plan = planSchoolCollect(
-            profile: profile, tiers: tiers, force: force,
+        let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
+        let plan = slowLast(planSchoolCollect(
+            profile: profile, tiers: tiers, force: force, collectSkip: collectSkip,
             platformFieldsMissing: resolved.map { !$0.hasTenantID } ?? false,
-            scanDue: scanPlan == .due) {
+            scanDue: scanPlan == .due,
+            timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: now) }) {
             stateStore?.lastRun(report: $0)
-        }
+        }, lastDuration: lastDuration)
         let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
             .filter { $0 == sofaKind }
         let afterMatrixSkipped = Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip)
@@ -3897,7 +4115,10 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .info, text: line))
         }
         onLine(.init(timestamp: Date(), level: .info, text: "[plan] \(scanPlan.planText)"))
-        for kind in afterMatrixSkipped {
+        if let line = slowLastLine(plan, lastDuration: lastDuration) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
+        for kind in plan.filter({ $0.skip == .collectSkip }).map(\.kind) + afterMatrixSkipped {
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
@@ -3915,11 +4136,18 @@ struct ReportEngine: Sendable {
         var schoolOutcomes: [CollectOutcome] = []
         var schoolSaved: Set<String> = []
         var unlanded: [String] = []
-        for (args, kind) in commands {
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: commands[index...].map(\.kind), onLine: onLine) { break }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let schoolResult: (Int32, Data)?
             let stderrWatcher = StderrSignalWatcher()
+            let attemptStart = Date()
+            // Recorded, not logged: `slowLast` orders the next run by it.
+            defer {
+                stateStore?.recordDuration(
+                    report: kind, seconds: Int(Date().timeIntervalSince(attemptStart).rounded()))
+            }
             do {
                 schoolResult = try await bridge.runAndCapture(
                     executable: bin, arguments: args,
@@ -4004,17 +4232,18 @@ struct ReportEngine: Sendable {
         reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
     }
 
-    /// `jamf_cli.collect_skip` as typed; empty when config.yaml is absent or will not load
-    /// (`schoolStaleDays` already warns about the latter).
     /// `jamf_cli.collect_skip` lists the School device scan.
     static func schoolScanTurnedOff(profile: String) -> Bool {
-        collectSkipKinds(schoolCollectSkip(profile: profile)).contains(schoolDeviceDetailKind)
+        schoolCollectSkip(profile: profile).contains(schoolDeviceDetailKind)
     }
 
-    private static func schoolCollectSkip(profile: String) -> [String] {
-        ProfileService.workspaceURL(for: profile)
+    /// The kinds this Mac turns off for `profile` (`SharedConfigPin.collectSkip`); config.yaml
+    /// absent or unreadable lists none (`schoolStaleDays` already warns about the latter).
+    private static func schoolCollectSkip(profile: String) -> Set<String> {
+        let typed = ProfileService.workspaceURL(for: profile)
             .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?
-            .jamfCli?.collectSkip ?? []
+            .jamfCli?.collectSkip
+        return SharedConfigPin.collectSkip(configured: typed, profile: profile)
     }
 
     /// `thresholds.stale_device_days` for a School summary; 30 when config.yaml will not load,
@@ -4090,6 +4319,7 @@ struct ReportEngine: Sendable {
     static func protectCollect(
         profile: String,
         dataDir: URL,
+        collectSkip: Set<String> = [],
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String] {
@@ -4100,20 +4330,25 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.invalidProfile(profile)
         }
 
-        let commands = protectCommandMatrix(profile: profile)
-
-        for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
-            onLine(.init(timestamp: Date(), level: .info, text: line))
-        }
-
-        let bridge = CLIBridge()
         // The state folder sits under the data folder, which is all this call is given.
         let stateStore = WorkspacePaths
             .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
+        let commands = announcing(
+            planAddOn(
+                commands: protectCommandMatrix(profile: profile), collectSkip: collectSkip,
+                stateStore: stateStore, now: collectStart),
+            profile: profile, onLine: onLine)
+
+        let bridge = CLIBridge()
         var unlanded: [String] = []
-        for (args, kind) in commands {
+        var stoppedAt: Int?
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: commands[index...].map(\.kind), onLine: onLine) {
+                stoppedAt = index
+                break
+            }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let protectResult: (Int32, Data)?
@@ -4166,8 +4401,9 @@ struct ReportEngine: Sendable {
                     .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
             }
         }
-        reportUnlanded(unlanded, attempted: commands.count, onLine: onLine)
-        return commands.map(\.kind).filter { !unlanded.contains($0) }
+        let attempted = commands.prefix(stoppedAt ?? commands.count).map(\.kind)
+        reportUnlanded(unlanded, attempted: attempted.count, onLine: onLine)
+        return attempted.filter { !unlanded.contains($0) }
     }
 
     // MARK: - Public API: schoolGenerate
@@ -4217,7 +4453,10 @@ struct ReportEngine: Sendable {
             .map(SummaryJSONParser.parseDirectory) ?? []
         let core = SchoolDashboard(
             config: config, dataDir: dataDir, workbook: workbook, summaries: summaries,
-            now: now)
+            now: now, collectSkip: workspace.map {
+                SharedConfigPin.collectSkip(
+                    configured: config.jamfCli?.collectSkip, profile: $0.name)
+            } ?? [])
         let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
         let (_, schoolFailures) = core.writeAll(sheets: sheets, onLine: onLine)
 
@@ -4267,14 +4506,12 @@ struct ReportEngine: Sendable {
         }
     }
 
-    /// The stamp a workbook's file name ends in: `yyyy-MM-dd_HHmmss`. It is UTC, the
-    /// ISO 8601 formatter's default zone, which is why a workbook's name can read hours
-    /// ahead of the Generated column beside it. The Config screen's example comes from here.
+    /// The stamp a workbook's file name ends in: `ExportNaming.timestamp`, `yyyy-MM-dd_HHmmss`
+    /// in this Mac's zone, so the workbook, its CSV folder, the inventory CSV and the run
+    /// manifest carry the same time as the HTML, PDF and PNGs beside them, and the time
+    /// `dateFromFilename` reads back. The Config screen's example comes from here.
     static func workbookTimestamp(_ date: Date = Date()) -> String {
-        // The internet date-time form less its trailing "Z".
-        return String(ISO8601Time.string(date).dropLast())
-            .replacingOccurrences(of: ":", with: "")
-            .replacingOccurrences(of: "T", with: "_")
+        ExportNaming.timestamp(date)
     }
 
     /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.
@@ -4827,17 +5064,7 @@ struct ReportEngine: Sendable {
         // CLIBridge.saveJSONSnapshot's S-01 discipline. The 0600 setAttributes
         // below still runs on the final path regardless, so this does not
         // change the permission it ends up with.
-        try data.write(to: file, options: .atomic)
-        do {
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: file.path
-            )
-        } catch {
-            AppLogger.collect.warning(
-                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
-            )
-        }
+        try AtomicInstall.write(data, to: file, mode: 0o600)
         // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
         // verification (SnapshotManifest.verify) becomes reachable for
         // app-collected snapshots. Gated on jamf_cli.require_manifest by the

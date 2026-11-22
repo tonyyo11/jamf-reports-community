@@ -41,10 +41,22 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         let (e, _) = try env("profiles:\n  jamf_pro: ws\n  protect: shared-P\n")
         let (o, _) = try env("profiles:\n  jamf_pro: other\n  protect: shared-P\n", ws: "other")
         XCTAssertEqual(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: [("other", o)]).map(\.id),
+            profile: "ws", environment: e, others: [("other", o)],
+            confirmed: { _, _, _ in true }).map(\.id),
             ["environment.profile_shared"])
         XCTAssertTrue(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: []).isEmpty)
+            profile: "ws", environment: e, others: [],
+            confirmed: { _, _, _ in true }).isEmpty)
+    }
+
+    func testAnUnconfirmedSlotNamesNoOtherWorkspace() throws {
+        let (e, _) = try env("profiles:\n  jamf_pro: ws\n  protect: shared-P\n")
+        let (o, _) = try env("profiles:\n  jamf_pro: other\n  protect: shared-P\n", ws: "other")
+        for unconfirmed in ["ws", "other"] {
+            XCTAssertTrue(ConfigDoctorService.profileSharedRows(
+                profile: "ws", environment: e, others: [("other", o)],
+                confirmed: { workspace, _, _ in workspace != unconfirmed }).isEmpty)
+        }
     }
 
     func testAPlatformSlotOnAnotherJamfProNamesBothHosts() throws {
@@ -73,8 +85,17 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         let (e, _) = try env("profiles:\n  jamf_pro: ws\n  security_cloud: sc\n")
         let (o, _) = try env("profiles:\n  jamf_pro: other\n  security_cloud: sc\n", ws: "other")
         XCTAssertEqual(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: [("other", o)]).map(\.id),
+            profile: "ws", environment: e, others: [("other", o)],
+            confirmed: { _, _, _ in true }).map(\.id),
             ["environment.profile_shared"])
+    }
+
+    func testAJamfProSlotNamingAnotherLoginIsNeverProbed() throws {
+        let (own, _) = try env("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(ConfigDoctorService.platformProbeTarget(profile: "ws", environment: own),
+                       "ws-API")
+        let (peer, _) = try env("profiles:\n  jamf_pro: other\n  platform: ws-API\n")
+        XCTAssertNil(ConfigDoctorService.platformProbeTarget(profile: "ws", environment: peer))
     }
 
     func testPlatformEqualToJamfProGivesNoHostRow() throws {
@@ -133,6 +154,39 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         let forms = LogRedactor.localWorkspaceNameForms()
         XCTAssertTrue(forms.contains("Fabrikam"))
         XCTAssertFalse(forms.contains("datafolder"))
+    }
+
+    func testTheScanCapsAfterFilteringToWorkspaces() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-cap-\(UUID().uuidString)")
+        for index in 0..<3000 {
+            try fm.createDirectory(
+                at: root.appendingPathComponent("data\(index)"), withIntermediateDirectories: true)
+        }
+        try fm.createDirectory(
+            at: root.appendingPathComponent("zzzcorp"), withIntermediateDirectories: true)
+        fm.createFile(
+            atPath: root.appendingPathComponent("zzzcorp/config.yaml").path, contents: Data())
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        XCTAssertTrue(LogRedactor.localWorkspaceNameForms().contains("zzzcorp"))
+    }
+
+    func testTheFilePrefixIsSeededAndTheDefaultIsNot() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-prefix-\(UUID().uuidString)")
+        try fm.createDirectory(
+            at: root.appendingPathComponent("Fabrikam"), withIntermediateDirectories: true)
+        try "output:\n  file_prefix: acmecorp\n".write(
+            to: root.appendingPathComponent("Fabrikam/config.yaml"), atomically: true, encoding: .utf8)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        let shared = LogRedactor.redactedForSharing(
+            "wrote acmecorp_report_Fabrikam_2026.xlsx", profile: "Fabrikam",
+            scopeIDs: { _ in [] }, serverHosts: { _ in [] }, localWorkspaces: { [] })
+        XCTAssertFalse(shared.contains("acmecorp"), shared)
+        XCTAssertFalse(LogRedactor.profileNameForms(
+            of: "Other", environment: EnvironmentProfiles()).contains("jamf"))
     }
 
     func testNoProfileSeedsNoLocalWorkspaces() {

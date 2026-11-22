@@ -270,7 +270,8 @@ struct MobileFleetView: View {
                 title: L("No mobile device data detected"),
                 message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["mobile-devices-list", "classic-ios-profiles"])]
+                    profile: workspace.profile, kinds: ["mobile-devices-list", "classic-ios-profiles"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
             )
         }
     }
@@ -363,7 +364,9 @@ struct MobileFleetView: View {
                 label: L("Jailbreak Detected"),
                 value: "\(detected)",
                 sub: L("Devices requiring attention"),
-                fillsHeight: true
+                fillsHeight: true,
+                action: { setFindingFilter(.jailbreak) },
+                actionHint: L("Filters the devices table to jailbreak detected")
             )
         }
         return StatTile(label: L("Jailbreak Status"), value: L("Clean"), sub: L("No compromised devices"),
@@ -380,7 +383,8 @@ struct MobileFleetView: View {
                         systemImage: "questionmark.circle",
                         title: L("Collect inventory for KPIs"),
                         message: L("Supervision and ownership signals come from the full mobile device inventory."),
-                        commands: [collectInventoryCommand]
+                        commands: [collectInventoryCommand],
+                        primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
                     )
                 } else {
                     HStack(alignment: .top, spacing: 28) {
@@ -589,7 +593,8 @@ struct MobileFleetView: View {
                         systemImage: "questionmark.circle",
                         title: L("Collect inventory for KPIs"),
                         message: L("Enrollment method comes from the full mobile device inventory."),
-                        commands: [collectInventoryCommand]
+                        commands: [collectInventoryCommand],
+                        primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
                     )
                 } else if snapshot.enrollmentMethodDistribution.isEmpty {
                     Text("No enrollment method values reported by Jamf Pro for this fleet.")
@@ -778,21 +783,21 @@ struct MobileFleetView: View {
                     TableColumn("Serial") { device in
                         Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 120, ideal: 140)
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 100, ideal: 130)
 
                     TableColumn("OS") { device in
                         Text(getOSVersion(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 80, ideal: 100)
 
@@ -803,15 +808,42 @@ struct MobileFleetView: View {
                     TableColumn("Last Inventory") { device in
                         Text(getLastInventoryRelative(device))
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
                     .width(min: 100, ideal: 120)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    deviceMenu(ids, rows: rows, listRowsByID: listRowsByID)
                 }
                 .font(.callout)
                 // Every matching row, so an Audit count above a screenful can all be seen: the
                 // table takes its rows' height up to the page's and scrolls inside after that.
                 .pageTableHeight(rows: rows.count, rowHeight: Self.deviceRowHeight)
             }
+        }
+    }
+
+    /// Copy and open items for the selected row. The Jamf ID is the inventory row's
+    /// `mobileDeviceId` (the list row's `id`), so the link exists for both row kinds.
+    @ViewBuilder
+    private func deviceMenu(
+        _ ids: Set<String>,
+        rows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>],
+        listRowsByID: [String: MobileDeviceListRow]
+    ) -> some View {
+        if let id = ids.first, let device = rows.first(where: { $0.id == id }) {
+            if let serial = getSerial(device, listRowsByID: listRowsByID), !serial.isEmpty {
+                Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(serial) }
+            }
+            Button(L("Copy Name")) { SystemActions.copyToClipboard(deviceDisplayName(device)) }
+            OpenInJamfProItem(url: jamfID(device).flatMap { workspace.consoleURL(forMobileDeviceID: $0) })
+        }
+    }
+
+    private func jamfID(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String? {
+        switch device {
+        case .left(let light): light.id
+        case .right(let rich): rich.mobileDeviceId
         }
     }
 
@@ -978,9 +1010,6 @@ struct MobileFleetView: View {
 
     // MARK: - Helpers
 
-    /// Header, its separator and the inset above the first row, measured from
-    /// a screenshot at the default text size.
-    private nonisolated static let tableChromeHeight: CGFloat = 33
     /// The devices table's rows hold a Type pill, which makes them 26 pt.
     nonisolated static let deviceRowHeight: CGFloat = 26
     /// Text-only rows; 24 pt is the table's own row height.
@@ -991,7 +1020,7 @@ struct MobileFleetView: View {
     /// at the rows it has; an empty list keeps one row's height under its
     /// header. Larger text makes rows taller than this, and they scroll.
     nonisolated static func tableHeight(rows: Int, rowHeight: CGFloat, cap: CGFloat) -> CGFloat {
-        min(cap, tableChromeHeight + CGFloat(max(rows, 1)) * rowHeight)
+        min(cap, PageTableMetrics.contentHeight(rows: rows, rowHeight: rowHeight))
     }
 
     /// The rows the devices table can list before its 50-row cap: inventory rows
@@ -1161,7 +1190,7 @@ private struct MobileFleetOSDistributionExport: View {
     let rows: [(osVersion: String, count: Int)]
     let totalDevices: Int
 
-    static let displayCap = 12
+    static let displayCap = 8
 
     private var displayRows: [(osVersion: String, count: Int)] {
         Array(rows.prefix(Self.displayCap))
