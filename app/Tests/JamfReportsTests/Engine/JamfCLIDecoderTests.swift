@@ -938,4 +938,13 @@ final class JamfCLIDecoderTests: XCTestCase {
                            "The missing key must be reported under its JSON name")
         }
     }
+
+    func testInventorySummaryCountOutsideTheBoundIsRefused() throws {
+        let ok = Data(#"[{"os_version":"15.1","count":3}]"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode([InventorySummaryRow].self, from: ok).first?.count, 3)
+        for bad in ["9223372036854775807", "-1"] {
+            let data = Data(#"[{"os_version":"15.1","count":\#(bad)}]"#.utf8)
+            XCTAssertThrowsError(try JSONDecoder().decode([InventorySummaryRow].self, from: data))
+        }
+    }
 }

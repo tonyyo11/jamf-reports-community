@@ -662,6 +662,10 @@ versions in this repository map to git tags.
 
 ### Security
 
+- A planted file in a shared workspace can no longer crash every collect with an absurd device count
+  (overview, inventory summary or patch summary), and mobile snapshots a peer Mac on an older build
+  writes with lost-mode text are cleaned on later collects too.
+
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected

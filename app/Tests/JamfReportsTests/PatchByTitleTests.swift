@@ -281,4 +281,11 @@ final class PatchByTitleTests: XCTestCase {
             ["3", "5"], "an id that could be read as a flag is left out")
         XCTAssertNil(ReportEngine.patchTitleIDs(from: Data("{}".utf8)))
     }
+
+    func testPatchSummaryWithHugeCountsGivesNoRow() {
+        XCTAssertNil(ReportEngine.patchStatusRow(
+            id: "9", summary: ["upToDate": Int.max, "outOfDate": 1]))
+        XCTAssertNil(ReportEngine.patchStatusRow(
+            id: "9", summary: ["upToDate": 1, "outOfDate": Int.max]))
+    }
 }

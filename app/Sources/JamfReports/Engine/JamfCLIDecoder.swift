@@ -371,6 +371,23 @@ struct InventorySummaryRow: Decodable, Sendable {
         case osVersion = "os_version"
         case count
     }
+
+    /// A count outside 0...`maxSummaryNumber` (a planted snapshot) refuses the whole list, so
+    /// callers read no inventory summary instead of summing toward overflow.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        osVersion = try c.decode(String.self, forKey: .osVersion)
+        count = try c.decode(Int.self, forKey: .count)
+        guard (0...SummaryJSONParser.maxSummaryNumber).contains(count) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .count, in: c, debugDescription: "count is outside the allowed range")
+        }
+    }
+
+    init(osVersion: String, count: Int) {
+        self.osVersion = osVersion
+        self.count = count
+    }
 }
 
 // MARK: - Device compliance

@@ -67,9 +67,10 @@ extension ReportEngine {
                 + "\(why); old mobile snapshots there may still hold lost-mode text"))
     }
 
-    /// Snapshots written before 2.11 still hold the lost-mode text `saveCollectedPayload` now
+    /// Snapshots written before 2.11, or by a peer Mac on an older build, still hold the lost-mode text `saveCollectedPayload` now
     /// drops, and the folder can sit in a shared workspace. Rewrites each such snapshot in place,
-    /// once per workspace, with the reducer collect uses. Not a source: it records no failure and
+    /// with the reducer collect uses: every file until the marker is written, then only files
+    /// whose filename stamp is on or after the marker's day. Not a source: it records no failure and
     /// logs no `[partial]`. The marker is written only when no file was unreadable or failed to
     /// write and no folder was refused or unlistable; those retry on the next collect. A file
     /// that cannot be used (not JSON, over the size limit, not a regular file, or a link) is
@@ -87,13 +88,18 @@ extension ReportEngine {
         guard let stateDir = WorkspacePaths.confinedFolderOrWarn(
             ["state"], under: dataDir, onLine: onLine) else { return }
         let marker = stateDir.appendingPathComponent(lostModeRewriteMarker)
-        guard BoundedFile.stateText(marker) == nil else { return }
+        // After the marker, only files stamped on or after its day are checked: an older build
+        // on a peer Mac keeps writing the text. A future or unreadable marker skips nothing.
+        let cutoff = BoundedFile.stateText(marker).flatMap {
+            SummaryJSONParser.dateFormatter.date(
+                from: $0.trimmingCharacters(in: .whitespacesAndNewlines))
+        }.map { min($0, now) }
 
         var tally = LostModeTally()
         for kind in lostModeKinds {
             if let dir = WorkspacePaths.confinedFolderOrWarn(
                 [kind], under: dataDir, onLine: onLine) {
-                rewriteLostModeFolder(dir, label: kind, limit: limit, tally: &tally)
+                rewriteLostModeFolder(dir, label: kind, limit: limit, since: cutoff, tally: &tally)
             } else {
                 tally.folderFailed = true
             }
@@ -101,7 +107,8 @@ extension ReportEngine {
             do {
                 let dir = try WorkspacePaths.confinedFolder(
                     ["jamf-cli-data", kind], under: archiveRoot)
-                rewriteLostModeFolder(dir, label: "archive/\(kind)", limit: limit, tally: &tally)
+                rewriteLostModeFolder(
+                    dir, label: "archive/\(kind)", limit: limit, since: cutoff, tally: &tally)
             } catch {
                 tally.folderFailed = true
                 onLine(.init(timestamp: Date(), level: .warn,
@@ -110,7 +117,7 @@ extension ReportEngine {
             }
         }
         report(tally, onLine)
-        guard tally.isComplete else { return }
+        guard tally.isComplete, cutoff == nil else { return }
         do {
             try FileManager.default.createDirectory(
                 at: stateDir, withIntermediateDirectories: true,
@@ -162,7 +169,7 @@ extension ReportEngine {
     private static let lostModeTextKeyBytes = lostModeTextKeys.map { Data("\"\($0)\"".utf8) }
 
     private static func rewriteLostModeFolder(
-        _ dir: URL, label: String, limit: Int, tally: inout LostModeTally
+        _ dir: URL, label: String, limit: Int, since: Date?, tally: inout LostModeTally
     ) {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDirectory) else {
@@ -181,6 +188,11 @@ extension ReportEngine {
                 && $0.lastPathComponent != SnapshotManifest.fileName
         }
         for file in files {
+            if let since {
+                guard let stamp = CloudStorage.snapshotTimestamp(of: file), stamp >= since else {
+                    continue
+                }
+            }
             let name = "\(label)/\(file.lastPathComponent)"
             let data: Data
             do {
