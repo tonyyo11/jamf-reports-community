@@ -41,10 +41,22 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         let (e, _) = try env("profiles:\n  jamf_pro: ws\n  protect: shared-P\n")
         let (o, _) = try env("profiles:\n  jamf_pro: other\n  protect: shared-P\n", ws: "other")
         XCTAssertEqual(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: [("other", o)]).map(\.id),
+            profile: "ws", environment: e, others: [("other", o)],
+            confirmed: { _, _, _ in true }).map(\.id),
             ["environment.profile_shared"])
         XCTAssertTrue(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: []).isEmpty)
+            profile: "ws", environment: e, others: [],
+            confirmed: { _, _, _ in true }).isEmpty)
+    }
+
+    func testAnUnconfirmedSlotNamesNoOtherWorkspace() throws {
+        let (e, _) = try env("profiles:\n  jamf_pro: ws\n  protect: shared-P\n")
+        let (o, _) = try env("profiles:\n  jamf_pro: other\n  protect: shared-P\n", ws: "other")
+        for unconfirmed in ["ws", "other"] {
+            XCTAssertTrue(ConfigDoctorService.profileSharedRows(
+                profile: "ws", environment: e, others: [("other", o)],
+                confirmed: { workspace, _, _ in workspace != unconfirmed }).isEmpty)
+        }
     }
 
     func testAPlatformSlotOnAnotherJamfProNamesBothHosts() throws {
@@ -73,7 +85,8 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         let (e, _) = try env("profiles:\n  jamf_pro: ws\n  security_cloud: sc\n")
         let (o, _) = try env("profiles:\n  jamf_pro: other\n  security_cloud: sc\n", ws: "other")
         XCTAssertEqual(ConfigDoctorService.profileSharedRows(
-            profile: "ws", environment: e, others: [("other", o)]).map(\.id),
+            profile: "ws", environment: e, others: [("other", o)],
+            confirmed: { _, _, _ in true }).map(\.id),
             ["environment.profile_shared"])
     }
 
