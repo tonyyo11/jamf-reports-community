@@ -1544,7 +1544,7 @@ struct OverviewView: View {
 
     private var recentCountLabel: String {
         let fleet = workspace.demoMode ? DemoData.totalDevices : overviewFleetCount
-        return fleet > 0 ? L("\(recentRows.count) of \(fleet)") : L("\(recentRows.count) Macs")
+        return fleet > 0 ? L("\(recentRows.count) of \(fleet)") : (recentRows.count == 1 ? L("\(recentRows.count) Mac") : L("\(recentRows.count) Macs"))
     }
 
     /// Shared by the card and its drill-down.
@@ -1780,7 +1780,7 @@ struct OverviewView: View {
                             label: rule.ruleID,
                             value: Double(rule.fails),
                             maxValue: Double(failingRules.map(\.fails).max() ?? 1),
-                            trailing: L("\(rule.fails) devices"),
+                            trailing: rule.fails == 1 ? L("\(rule.fails) device") : L("\(rule.fails) devices"),
                             color: Theme.Colors.gold
                         )
                     }
@@ -2283,7 +2283,9 @@ struct AgentCardView: View {
 /// unknown" (e.g. live mode before any trend snapshot lands) — render the
 /// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return L("\(installed) Macs") }
+    guard fleetCount > 0 else {
+        return installed == 1 ? L("\(installed) Mac") : L("\(installed) Macs")
+    }
     return L("\(installed) of \(fleetCount) Macs")
 }
 

@@ -945,7 +945,7 @@ struct AuditView: View {
                         HStack {
                             SectionHeader(title: L("Unused Computer Groups"))
                             Spacer()
-                            Pill(text: L("\(unusedGroups.count) groups"), tone: .warn)
+                            Pill(text: unusedGroups.count == 1 ? L("\(unusedGroups.count) group") : L("\(unusedGroups.count) groups"), tone: .warn)
                         }
                         .padding(16)
 
