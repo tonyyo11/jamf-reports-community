@@ -7,6 +7,22 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- The inventory CSV fills every column again. Computer fields are written as `section.key`
+  columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
+  ID and UDID blank, and extension attribute values are matched to Macs by name.
+- In the PDF report, a group heading is no longer left alone at the foot of a page with its
+  chart on the next, and the closing integrity note no longer prints by itself on a last page.
+- An app or configuration profile that jamf-cli could not name (shown as its own negative ID)
+  now reads "Unknown app (ID -5)" in the workbook, the HTML report and the Policies screen. It
+  is still counted, since its install errors are real.
+- The Missing Secure Token tab and other Boolean EA tabs show a percentage on the "Other" row as
+  well as on the pass row. The Compliance Posture tab no longer writes an empty "Framework:"
+  line when no framework is set.
+- The HTML report's Mobile devices group no longer repeats the device count as a tile, and
+  counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
+
 ## [2.12.0] - 2026-11-13
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the

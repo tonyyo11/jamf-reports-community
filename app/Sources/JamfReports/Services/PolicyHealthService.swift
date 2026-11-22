@@ -211,7 +211,8 @@ struct PolicyHealthService: Sendable {
             guard row.name != nil || rawId != nil else { return nil }
             return ProfileFailure(
                 id: "\(index)-\(rawId ?? row.name ?? "")",
-                name: row.name ?? L("Profile \(rawId ?? "?")"),
+                // jamf-cli repeats the id as the name for a profile it could not resolve.
+                name: (row.name == rawId ? nil : row.name) ?? L("Profile \(rawId ?? "?")"),
                 deviceType: row.deviceType ?? "—",
                 errors: row.errors?.intValue ?? 0,
                 devices: row.devices?.intValue ?? 0,
