@@ -200,6 +200,7 @@ struct EnvironmentCard: View {
     }
 
     private func startMerge(resumes: Bool) {
+        guard !demo else { return }
         let store = workspace
         let deps = WorkspaceMergeModel.Dependencies.live { from, to, keepTarget in
             await MainActor.run {
@@ -256,7 +257,7 @@ struct EnvironmentCard: View {
     }
 
     private func check(_ row: EnvironmentCardState.Row) {
-        guard let profile = row.profile else { return }
+        guard !demo, let profile = row.profile else { return }
         actionError = nil
         checking.insert(profile)
         let started = state.workspace
@@ -277,6 +278,7 @@ struct EnvironmentCard: View {
     }
 
     private func remove(_ row: EnvironmentCardState.Row) {
+        guard !demo else { return }
         let started = state.workspace
         actionError = nil
         backupNote = nil

@@ -668,6 +668,7 @@ versions in this repository map to git tags.
   `jamf-reports scaffold --out` no longer removes other tools' leftover temp files from the
   folder you chose.
 - Config Doctor and the Add sheet no longer ask jamf-cli for a Jamf Pro address as a login another Mac named in `profiles.jamf_pro`, and saving the webhook, report folders or logo now confirms exactly what this Mac wrote, so a peer's copy that lands just after is still flagged for confirmation.
+- Shared logs and diagnostic bundles no longer carry your report file prefix, other workspaces' names past the first 200 folders, or the Extension Attribute names in a `_csv` report folder's listing. Copying a schedule's live output is now redacted like Run History's, and an error logged by the tips setup stays private.
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected
