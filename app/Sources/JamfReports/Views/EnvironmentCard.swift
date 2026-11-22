@@ -261,6 +261,15 @@ struct EnvironmentCard: View {
         actionError = nil
         checking.insert(profile)
         let started = state.workspace
+        if row.slot == .securityCloud {
+            Task {
+                let line = await SecurityCloudCheck.run(profile: profile)
+                checking.remove(profile)
+                guard started == state.workspace else { return }
+                checks[profile] = line ?? L("jamf-cli is not installed.")
+            }
+            return
+        }
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: CLIBridge()))
         Task {
             let outcome = await service.run(profile: profile)
