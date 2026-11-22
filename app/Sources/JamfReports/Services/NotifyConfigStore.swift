@@ -88,13 +88,13 @@ enum NotifyConfigWriter {
             previousURL: previous.resolvedURL, newURL: url,
             previousDetail: previous.detail, newDetail: detail,
             previousHeartbeat: previous.sendsHeartbeat, newHeartbeat: heartbeat)
-        do {
-            if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
-        } catch {
-            let reason = error.englishDescription
-            AppLogger.webhook.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
+        var written: [SharedConfigPin.Key: String] = [:]
+        if changed.contains(.notifyURL) { written[.notifyURL] = url }
+        if changed.contains(.notifyDetail) { written[.notifyDetail] = detail }
+        if changed.contains(.notifyHeartbeat), let heartbeat {
+            written[.notifyHeartbeat] = String(heartbeat)
         }
+        SharedConfigPin.confirmWritten(written, profile: profile)
         return saved
     }
 

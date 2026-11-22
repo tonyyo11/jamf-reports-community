@@ -561,10 +561,10 @@ enum ConfigService {
                 stamp.addTimeInterval(1)
                 backup = directory.appendingPathComponent(prefix + formatter.string(from: stamp))
             }
-            try text.write(to: backup, options: .atomic)
-            if let mode = try manager.attributesOfItem(atPath: url.path)[.posixPermissions] {
-                try manager.setAttributes([.posixPermissions: mode], ofItemAtPath: backup.path)
-            }
+            // nil mode would keep the (absent) copy's; the backup takes config.yaml's own bits.
+            let mode = (try manager.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)
+                .map { mode_t($0.uint16Value) }
+            try AtomicInstall.write(text, to: backup, mode: mode, exclusive: true)
         }
         // Names carry local time, so the copy just made can sort before older ones.
         for old in copies.filter({ $0 != backup.lastPathComponent }).sorted().dropLast(4) {

@@ -825,7 +825,7 @@ func runSchedule(
     let profiles = ProfileService.runnableWorkspaces(discovered, excluding: excluded)
     for p in discovered where p.status == .error && !excluded.contains(p.name) {
         let reason = p.unusableReason ?? "not usable"
-        fputs("[info] skipping \(p.name): \(reason)\n", stderr)
+        fputs("[info] skipping \(ConfigSchema.displayText(p.name)): \(reason)\n", stderr)
         // The background item's stderr goes nowhere; the log keeps the reason.
         AppLogger.schedule.notice(
             "skipping \(p.name, privacy: .private): \(reason, privacy: .private)"
@@ -834,7 +834,7 @@ func runSchedule(
     let runnable = Set(profiles.map(\.name))
     for p in discovered where p.status != .error && !ProfileService.neverAWorkspace(p)
         && !excluded.contains(p.name) && !runnable.contains(p.name) {
-        fputs("[info] skipping \(p.name): no workspace (add it from Data Sources)\n", stderr)
+        fputs("[info] skipping \(ConfigSchema.displayText(p.name)): no workspace (add it from Data Sources)\n", stderr)
         AppLogger.schedule.notice("skipping \(p.name, privacy: .private): no workspace")
     }
     guard !profiles.isEmpty else {
@@ -842,7 +842,7 @@ func runSchedule(
         return ScheduleRunOutcome(exitCode: 1, incomplete: false, considered: [])
     }
     if !excluded.isEmpty {
-        fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
+        fputs("[info] excluding: \(excluded.sorted().map(ConfigSchema.displayText).joined(separator: ", "))\n", stderr)
     }
     let result = await TickScheduler.runProfiles(
         names: profiles.map(\.name), skipping: skipping

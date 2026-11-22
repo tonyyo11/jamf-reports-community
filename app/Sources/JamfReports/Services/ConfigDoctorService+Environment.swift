@@ -67,17 +67,23 @@ extension ConfigDoctorService {
 
     /// `.fail` when another workspace on this Mac names the same profile in an add-on slot.
     /// Doctor only: collect does not refuse (spec 3.1), but every rollup counts that tenant twice.
+    /// A `.fail` row reaches the run log in a shared folder, so only a slot value this Mac has
+    /// confirmed (`confirmed(workspace, slot key, name)`) counts; a peer's unconfirmed guess is
+    /// the shared-config drift row's to report, and must not name this Mac's other workspaces.
     static func profileSharedRows(
         profile: String, environment: EnvironmentProfiles,
-        others: [(workspace: String, environment: EnvironmentProfiles)]
+        others: [(workspace: String, environment: EnvironmentProfiles)],
+        confirmed: (_ workspace: String, _ key: String, _ name: String) -> Bool
     ) -> [DoctorRow] {
-        func slots(_ e: EnvironmentProfiles) -> [(key: String, name: String)] {
+        func slots(_ e: EnvironmentProfiles, in workspace: String) -> [(key: String, name: String)] {
             [("platform", e.platform), ("protect", e.protect), ("security_cloud", e.securityCloud)]
                 .compactMap { pair in pair.1.map { (pair.0, $0) } }
+                .filter { confirmed(workspace, $0.0, $0.1) }
         }
-        for mine in slots(environment) {
+        for mine in slots(environment, in: profile) {
             for other in others where other.workspace != profile
-                && slots(other.environment).contains(where: { $0.name == mine.name }) {
+                && slots(other.environment, in: other.workspace)
+                    .contains(where: { $0.name == mine.name }) {
                 let name = ConfigSchema.displayText(mine.name)
                 let otherName = ConfigSchema.displayText(other.workspace)
                 return [DoctorRow(
@@ -193,7 +199,15 @@ extension ConfigDoctorService {
         let others = folders.prefix(200).compactMap {
             otherEnvironment(at: $0, mine: mine, myKey: key)
         }
-        return profileSharedRows(profile: profile, environment: environment, others: others)
+        return profileSharedRows(
+            profile: profile, environment: environment, others: others,
+            confirmed: { workspace, key, name in
+                switch key {
+                case "platform": SharedConfigPin.platformAllowed(profile: workspace, name: name)
+                case "protect": SharedConfigPin.protectAllowed(profile: workspace, name: name)
+                default: SharedConfigPin.securityCloudAllowed(profile: workspace, name: name)
+                }
+            })
     }
 
     /// Another workspace's environment, or nil for a folder that is this one (a link or a case
@@ -212,17 +226,24 @@ extension ConfigDoctorService {
         return (name, EnvironmentProfiles.resolve(config: other, workspace: name))
     }
 
+    /// The Platform login worth probing, or nil. The Jamf Pro side is the workspace itself, so a
+    /// `profiles.jamf_pro` a peer pointed at another login (`refusal`) is never asked for a URL.
+    static func platformProbeTarget(profile: String, environment: EnvironmentProfiles) -> String? {
+        guard environment.jamfPro != nil, environment.refusal(workspace: profile) == nil,
+              let platform = environment.platform, platform != profile else { return nil }
+        return platform
+    }
+
     static func platformHostRows(
         profile: String, config: ReportConfig, includeProbes: Bool = true
     ) -> [DoctorRow] {
         guard includeProbes, let environment = blockEnvironment(profile, config),
-              let platform = environment.platform, let jamfPro = environment.jamfPro,
-              platform != profile,
+              let platform = platformProbeTarget(profile: profile, environment: environment),
               // The probe sends a request as `platform`: never for a name this Mac has not confirmed.
               SharedConfigPin.platformAllowed(profile: profile, name: platform),
               let bin = ExecutableLocator.locate("jamf-cli") else { return [] }
         return platformHostRows(
             profile: profile, environment: environment,
-            hosts: PlatformHostCheck.live(jamfPro, platform, bin))
+            hosts: PlatformHostCheck.live(profile, platform, bin))
     }
 }

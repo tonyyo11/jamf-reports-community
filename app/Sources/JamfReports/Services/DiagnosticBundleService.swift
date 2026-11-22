@@ -1261,7 +1261,7 @@ enum DiagnosticBundleService {
     /// Build a depth-capped indented tree. Line 1 is the workspace basename
     /// only — never an absolute path. Files are sorted; dirs sorted for
     /// determinism. Mirrors the Python `_bundle_collect_workspace_tree` shape.
-    private static func buildWorkspaceTree(root: URL, name: String, maxDepth: Int) -> String {
+    static func buildWorkspaceTree(root: URL, name: String, maxDepth: Int) -> String {
         var lines = ["\(name)/"]
         walkTree(root, depth: 0, maxDepth: maxDepth, lines: &lines)
         return lines.joined(separator: "\n")
@@ -1288,6 +1288,12 @@ enum DiagnosticBundleService {
             let childDepth = depth + 1
             if childDepth > maxDepth { continue }
             lines.append(String(repeating: "  ", count: childDepth) + child.lastPathComponent + "/")
+            // A CSV folder's file names are EA names, which the config reduction removes.
+            if ReportLibrary.isCSVFolder(child) {
+                let count = (try? FileManager.default.contentsOfDirectory(atPath: child.path).count) ?? 0
+                lines.append(String(repeating: "  ", count: childDepth + 1) + "\(count) files")
+                continue
+            }
             walkTree(child, depth: childDepth, maxDepth: maxDepth, lines: &lines)
         }
     }

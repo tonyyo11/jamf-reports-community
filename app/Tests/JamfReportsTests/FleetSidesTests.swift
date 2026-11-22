@@ -250,4 +250,15 @@ final class FleetSidesTests: XCTestCase {
         XCTAssertEqual(summary.totalDevices, 0)
         XCTAssertEqual(summary.mobileDeviceCount, 3)
     }
+
+    func testHugeOverviewValueReadsTheSideAsUnknownWithoutTrapping() {
+        let state = FleetState.presence(overview: [
+            fleetRow("Managed Computers", "9223372036854775807"),
+            fleetRow("Unmanaged Computers", 1),
+            fleetRow("Managed Devices", NSNumber(value: Int.max)),
+            fleetRow("Unmanaged Devices", NSNumber(value: Int.max)),
+        ])
+        XCTAssertNil(state.computers)
+        XCTAssertNil(state.mobileDevices)
+    }
 }

@@ -5064,17 +5064,7 @@ struct ReportEngine: Sendable {
         // CLIBridge.saveJSONSnapshot's S-01 discipline. The 0600 setAttributes
         // below still runs on the final path regardless, so this does not
         // change the permission it ends up with.
-        try data.write(to: file, options: .atomic)
-        do {
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: file.path
-            )
-        } catch {
-            AppLogger.collect.warning(
-                "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
-            )
-        }
+        try AtomicInstall.write(data, to: file, mode: 0o600)
         // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
         // verification (SnapshotManifest.verify) becomes reachable for
         // app-collected snapshots. Gated on jamf_cli.require_manifest by the

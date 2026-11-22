@@ -1205,4 +1205,17 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertFalse(out.contains("Zm9vYmFyU0lH"))
         XCTAssertTrue(out.contains("sig=REDACTED_SIG&x=1"))
     }
+
+    func testWorkspaceTreeListsACSVFolderAsACountOnly() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("jrc-tree-\(UUID().uuidString)")
+        let csv = dir.appendingPathComponent("Generated Reports/x_csv")
+        try fm.createDirectory(at: csv, withIntermediateDirectories: true)
+        fm.createFile(atPath: csv.appendingPathComponent("Secret EA.csv").path, contents: Data())
+        defer { try? fm.removeItem(at: dir) }
+        let tree = DiagnosticBundleService.buildWorkspaceTree(root: dir, name: "ws", maxDepth: 3)
+        XCTAssertTrue(tree.contains("x_csv/"), tree)
+        XCTAssertTrue(tree.contains("1 files"), tree)
+        XCTAssertFalse(tree.contains("Secret EA"), tree)
+    }
 }

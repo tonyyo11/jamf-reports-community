@@ -874,16 +874,21 @@ final class WorkspaceStore {
             after: (configState.outputDir, configState.archiveDir))
         let changedBranding = SharedConfigPin.changedBrandingKeys(
             before: _savedState?.logoPath, after: configState.logoPath)
+        let writtenState = configState
         let saved = try ConfigService.save(
             profile: profile,
-            state: configState,
+            state: writtenState,
             existingDocument: _loadedDoc,
             ifUnchangedSince: _loadedStamp
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
         // A folder this save changed was typed on this Mac; one it left alone is not confirmed.
-        confirmSharedConfig(changedFolders.union(changedBranding))
+        confirmSharedConfig(
+            changedFolders.union(changedBranding), written: [
+                .outputDir: writtenState.outputDir, .archiveDir: writtenState.archiveDir,
+                .brandingLogoPath: writtenState.logoPath,
+            ])
         // A block left as typed was not written: the screen goes back to what the file holds
         // for it, rather than calling its own entries saved.
         if saved.report.keptBlocks.contains("custom_eas") {
@@ -900,16 +905,12 @@ final class WorkspaceStore {
         return saved.report
     }
 
-    /// A save on this Mac confirms the shared-config keys it wrote, and only those.
-    private func confirmSharedConfig(_ keys: Set<SharedConfigPin.Key>) {
-        guard !keys.isEmpty else { return }
-        do {
-            try SharedConfigPin.confirm(profile: profile, keys: keys)
-        } catch {
-            let reason = error.englishDescription
-            AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .private)")
-        }
+    /// A save on this Mac confirms the shared-config keys it wrote, and only those, each to the
+    /// value it wrote.
+    private func confirmSharedConfig(
+        _ keys: Set<SharedConfigPin.Key>, written: [SharedConfigPin.Key: String]
+    ) {
+        SharedConfigPin.confirmWritten(written.filter { keys.contains($0.key) }, profile: profile)
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's

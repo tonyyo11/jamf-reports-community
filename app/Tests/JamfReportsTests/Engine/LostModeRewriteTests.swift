@@ -318,4 +318,46 @@ final class LostModeRewriteTests: XCTestCase {
         XCTAssertEqual(inside?.lastPathComponent, "_archive")
         XCTAssertEqual(lines.all, [])
     }
+
+    func testSnapshotNewerThanTheMarkerIsStillRewritten() throws {
+        _ = rewrite()
+        XCTAssertTrue(markerExists)
+        let older = try write(Self.old, "\(kind)_20200101T000000.json")
+        let newer = try write(Self.old, "\(kind)_29990101T000000.json")
+        _ = rewrite()
+        XCTAssertEqual(try Data(contentsOf: newer), Self.stripped)
+        XCTAssertEqual(try Data(contentsOf: older), Data(Self.old.utf8))
+    }
+
+    func testFutureMarkerDoesNotSkipNewFiles() throws {
+        try FileManager.default.createDirectory(
+            at: markerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("2999-01-01".utf8).write(to: markerURL)
+        let file = try write(Self.old, "\(kind)_20271101T000000.json")
+        _ = rewrite()
+        XCTAssertEqual(try Data(contentsOf: file), Self.stripped)
+    }
+
+    func testCompletePassMovesTheMarkerToTodayAndLaterPassesSkipOlderFiles() throws {
+        try FileManager.default.createDirectory(
+            at: markerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("2020-01-01".utf8).write(to: markerURL)
+        _ = rewrite()
+        let today = SummaryJSONParser.dateFormatter.string(from: fixedNow)
+        XCTAssertEqual(try String(contentsOf: markerURL, encoding: .utf8), today)
+        let between = try write(Self.old, "\(kind)_20200601T000000.json")
+        _ = rewrite()
+        XCTAssertEqual(try Data(contentsOf: between), Data(Self.old.utf8))
+    }
+
+    func testIncompletePassDoesNotAdvanceTheMarker() throws {
+        try FileManager.default.createDirectory(
+            at: markerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("2020-01-01".utf8).write(to: markerURL)
+        let file = try write(Self.old, "\(kind)_29990101T000000.json")
+        chmod(file.path, 0o000)
+        defer { chmod(file.path, 0o600) }
+        _ = rewrite()
+        XCTAssertEqual(try String(contentsOf: markerURL, encoding: .utf8), "2020-01-01")
+    }
 }

@@ -51,6 +51,17 @@ struct SecuritySummaryData: Decodable, Sendable {
         case sipEnabled = "sip_enabled"
         case firewallEnabled = "firewall_enabled"
     }
+
+    /// An out-of-range count reads as unreported (nil); see `boundedCountIfPresent`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalDevices = try c.boundedCountIfPresent(forKey: .totalDevices)
+        fileVaultEncrypted = try c.boundedCountIfPresent(forKey: .fileVaultEncrypted)
+        fileVaultEncryptedPct = try c.decodeIfPresent(String.self, forKey: .fileVaultEncryptedPct)
+        gatekeeperEnabled = try c.boundedCountIfPresent(forKey: .gatekeeperEnabled)
+        sipEnabled = try c.boundedCountIfPresent(forKey: .sipEnabled)
+        firewallEnabled = try c.boundedCountIfPresent(forKey: .firewallEnabled)
+    }
 }
 
 /// `section == "os_version"` row from the security report.
@@ -64,6 +75,14 @@ struct SecurityOSVersion: Decodable, Sendable {
         case section
         case osVersion = "os_version"
         case count, pct
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        section = try c.decode(String.self, forKey: .section)
+        osVersion = try c.decode(String.self, forKey: .osVersion)
+        count = try c.boundedCount(forKey: .count)
+        pct = try c.decode(String.self, forKey: .pct)
     }
 }
 
@@ -117,6 +136,20 @@ struct PolicyStatusSummary: Decodable, Sendable {
         case enabled, disabled
         case configFindings = "config_findings"
         case warnings, info
+    }
+}
+
+extension PolicyStatusSummary {
+    /// Counts outside the allowed range refuse the document (`boundedCount`); an extension keeps
+    /// the memberwise initialiser the demo data uses.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalPolicies = try c.boundedCount(forKey: .totalPolicies)
+        enabled = try c.boundedCount(forKey: .enabled)
+        disabled = try c.boundedCount(forKey: .disabled)
+        configFindings = try c.boundedCount(forKey: .configFindings)
+        warnings = try c.boundedCount(forKey: .warnings)
+        info = try c.boundedCount(forKey: .info)
     }
 }
 
@@ -246,16 +279,40 @@ struct UpdateStatusReport: Decodable, Sendable {
         case planTotal = "plan_total"
         case planStateSummary = "plan_state_summary"
     }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        total = try c.boundedCount(forKey: .total)
+        statusSummary = try c.decode([UpdateStatusCount].self, forKey: .statusSummary)
+        planTotal = try c.boundedCountIfPresent(forKey: .planTotal)
+        planStateSummary = try c.decodeIfPresent([UpdateStateCount].self, forKey: .planStateSummary)
+    }
 }
 
 struct UpdateStatusCount: Decodable, Sendable {
     let status: String
     let count: Int
+
+    private enum CodingKeys: String, CodingKey { case status, count }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(String.self, forKey: .status)
+        count = try c.boundedCount(forKey: .count)
+    }
 }
 
 struct UpdateStateCount: Decodable, Sendable {
     let state: String
     let count: Int
+
+    private enum CodingKeys: String, CodingKey { case state, count }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.decode(String.self, forKey: .state)
+        count = try c.boundedCount(forKey: .count)
+    }
 }
 
 // MARK: - Update failures
@@ -290,12 +347,12 @@ struct UpdateFailuresReport: Decodable, Sendable {
                 CodingKeys.failedPlans,
                 .init(codingPath: c.codingPath, debugDescription: "not a --scan-failures document"))
         }
-        total = try c.decode(Int.self, forKey: .total)
+        total = try c.boundedCount(forKey: .total)
         statusSummary = try c.decodeIfPresent(
             [UpdateStatusCount].self, forKey: .statusSummary) ?? []
         errorDevices = try c.decodeIfPresent(
             [UpdateErrorDevice].self, forKey: .errorDevices) ?? []
-        planTotal = try c.decodeIfPresent(Int.self, forKey: .planTotal)
+        planTotal = try c.boundedCountIfPresent(forKey: .planTotal)
         planStateSummary = try c.decodeIfPresent(
             [UpdateStateCount].self, forKey: .planStateSummary)
         failedPlans = try c.decodeIfPresent(
@@ -370,6 +427,19 @@ struct InventorySummaryRow: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case osVersion = "os_version"
         case count
+    }
+
+    /// A count outside 0...`maxSummaryNumber` (a planted snapshot) refuses the whole list, so
+    /// callers read no inventory summary instead of summing toward overflow.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        osVersion = try c.decode(String.self, forKey: .osVersion)
+        count = try c.boundedCount(forKey: .count)
+    }
+
+    init(osVersion: String, count: Int) {
+        self.osVersion = osVersion
+        self.count = count
     }
 }
 
@@ -772,6 +842,17 @@ struct ProfileFailureSummary: Decodable, Sendable, Equatable {
         case uniqueProfiles = "unique_profiles"
         case uniqueDevices = "unique_devices"
         case days
+    }
+}
+
+extension ProfileFailureSummary {
+    /// Out-of-range counts read as nil (unreported); an extension keeps the memberwise init.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalErrors = try c.boundedCountIfPresent(forKey: .totalErrors)
+        uniqueProfiles = try c.boundedCountIfPresent(forKey: .uniqueProfiles)
+        uniqueDevices = try c.boundedCountIfPresent(forKey: .uniqueDevices)
+        days = try c.boundedCountIfPresent(forKey: .days)
     }
 }
 
@@ -1331,6 +1412,26 @@ extension KeyedDecodingContainer {
             return nil
         }
         guard let count = value.intValue, (0...Int(Int32.max)).contains(count) else { return nil }
+        return count
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// A count a snapshot carries: 0...`SummaryJSONParser.maxSummaryNumber`, else a
+    /// `DecodingError`, so a planted value refuses the document instead of reaching a sum.
+    func boundedCount(forKey key: Key) throws -> Int {
+        let count = try decode(Int.self, forKey: key)
+        guard (0...SummaryJSONParser.maxSummaryNumber).contains(count) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key, in: self, debugDescription: "count is outside the allowed range")
+        }
+        return count
+    }
+
+    /// The optional twin: absent, null or out of range reads as nil (unreported, never 0).
+    func boundedCountIfPresent(forKey key: Key) throws -> Int? {
+        guard let count = try decodeIfPresent(Int.self, forKey: key),
+              (0...SummaryJSONParser.maxSummaryNumber).contains(count) else { return nil }
         return count
     }
 }
