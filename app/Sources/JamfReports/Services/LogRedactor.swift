@@ -247,9 +247,10 @@ enum LogRedactor {
         // use themselves (`test`, `partial`, `warn`, ...), so such a workspace name does not mask
         // that word or a `[partial]` marker in every shared log; the run's own name keeps the
         // bundle's two-character rule. The scan is capped like the other folder listings.
-        return folders.prefix(200)
+        return folders
             .filter { FileManager.default.fileExists(
                 atPath: $0.appendingPathComponent("config.yaml").path) }
+            .prefix(200)
             .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
             .filter { $0.count >= 4 && !commonLogWords.contains($0.lowercased()) }
             .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
@@ -268,10 +269,14 @@ enum LogRedactor {
         let logins = environment.connectedProfiles.filter {
             $0.count >= 4 && !commonLogWords.contains($0.lowercased()) && ProfileService.isValid($0)
         }
+        // `output.file_prefix` is usually the organisation's name and starts every report name.
+        let prefix = ExportNaming.filePrefix(profile: profile)
+        let prefixSeed = prefix.count >= 4 && !commonLogWords.contains(prefix.lowercased())
+            && prefix != ExportNaming.defaultFilePrefix ? [prefix] : []
         return ([profile] + logins)
             .flatMap { name in
                 [name, ProfileName.pathComponent(name), ProfileName.labelComponent(name)]
-            }
+            } + prefixSeed
     }
 
     /// Apply all credential patterns to a single line of text. Returns the

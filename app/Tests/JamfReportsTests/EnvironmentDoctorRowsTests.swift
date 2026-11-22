@@ -135,6 +135,39 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
         XCTAssertFalse(forms.contains("datafolder"))
     }
 
+    func testTheScanCapsAfterFilteringToWorkspaces() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-cap-\(UUID().uuidString)")
+        for index in 0..<210 {
+            try fm.createDirectory(
+                at: root.appendingPathComponent("data\(index)"), withIntermediateDirectories: true)
+        }
+        try fm.createDirectory(
+            at: root.appendingPathComponent("Zebracorp"), withIntermediateDirectories: true)
+        fm.createFile(
+            atPath: root.appendingPathComponent("Zebracorp/config.yaml").path, contents: Data())
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        XCTAssertTrue(LogRedactor.localWorkspaceNameForms().contains("Zebracorp"))
+    }
+
+    func testTheFilePrefixIsSeededAndTheDefaultIsNot() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("jrc-prefix-\(UUID().uuidString)")
+        try fm.createDirectory(
+            at: root.appendingPathComponent("Fabrikam"), withIntermediateDirectories: true)
+        try "output:\n  file_prefix: acmecorp\n".write(
+            to: root.appendingPathComponent("Fabrikam/config.yaml"), atomically: true, encoding: .utf8)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT"); try? fm.removeItem(at: root) }
+        let shared = LogRedactor.redactedForSharing(
+            "wrote acmecorp_report_Fabrikam_2026.xlsx", profile: "Fabrikam",
+            scopeIDs: { _ in [] }, serverHosts: { _ in [] }, localWorkspaces: { [] })
+        XCTAssertFalse(shared.contains("acmecorp"), shared)
+        XCTAssertFalse(LogRedactor.profileNameForms(
+            of: "Other", environment: EnvironmentProfiles()).contains("jamf"))
+    }
+
     func testNoProfileSeedsNoLocalWorkspaces() {
         let out = LogRedactor.redactedForSharing(
             "Fabrikam", profiles: [], scopeIDs: { _ in [] }, serverHosts: { _ in [] },

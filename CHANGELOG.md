@@ -662,6 +662,7 @@ versions in this repository map to git tags.
 
 ### Security
 
+- Shared logs and diagnostic bundles no longer carry your report file prefix, other workspaces' names past the first 200 folders, or the Extension Attribute names in a `_csv` report folder's listing. Copying a schedule's live output is now redacted like Run History's, and an error logged by the tips setup stays private.
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected
