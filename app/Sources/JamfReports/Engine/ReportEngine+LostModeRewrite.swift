@@ -70,7 +70,7 @@ extension ReportEngine {
     /// Snapshots written before 2.11, or by a peer Mac on an older build, still hold the lost-mode text `saveCollectedPayload` now
     /// drops, and the folder can sit in a shared workspace. Rewrites each such snapshot in place,
     /// with the reducer collect uses: every file until the marker is written, then only files
-    /// whose filename stamp is on or after the marker's day. Not a source: it records no failure and
+    /// whose filename stamp is on or after the marker's day, which each complete pass moves to today. Not a source: it records no failure and
     /// logs no `[partial]`. The marker is written only when no file was unreadable or failed to
     /// write and no folder was refused or unlistable; those retry on the next collect. A file
     /// that cannot be used (not JSON, over the size limit, not a regular file, or a link) is
@@ -89,11 +89,11 @@ extension ReportEngine {
             ["state"], under: dataDir, onLine: onLine) else { return }
         let marker = stateDir.appendingPathComponent(lostModeRewriteMarker)
         // After the marker, only files stamped on or after its day are checked: an older build
-        // on a peer Mac keeps writing the text. A future or unreadable marker skips nothing.
+        // on a peer Mac keeps writing the text. A future marker counts as today and an unreadable one skips nothing.
         let cutoff = BoundedFile.stateText(marker).flatMap {
             SummaryJSONParser.dateFormatter.date(
                 from: $0.trimmingCharacters(in: .whitespacesAndNewlines))
-        }.map { min($0, now) }
+        }.map { min($0, Calendar.current.startOfDay(for: now)) }
 
         var tally = LostModeTally()
         for kind in lostModeKinds {
@@ -117,7 +117,8 @@ extension ReportEngine {
             }
         }
         report(tally, onLine)
-        guard tally.isComplete, cutoff == nil else { return }
+        // Rewritten after every complete pass, so the next one reads only files stamped since today.
+        guard tally.isComplete else { return }
         do {
             try FileManager.default.createDirectory(
                 at: stateDir, withIntermediateDirectories: true,
