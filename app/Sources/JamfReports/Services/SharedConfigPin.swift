@@ -641,8 +641,41 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         invalidateOverrides(for: workspace)
     }
 
-    /// Re-pins `keys` to what config.yaml holds now, for a save on this Mac that changed them.
-    /// Other keys stay as they are, drifted or not, and a pin that cannot be read stays so.
+    /// Re-pins each key in `written` to the text a save on this Mac just wrote for it (`typed`,
+    /// as typed on the screen), only while config.yaml still holds that value: a peer's copy
+    /// landing between the write and this call stays drifted. Best effort; a failure is logged.
+    static func confirmWritten(
+        _ written: [Key: String], profile: String, appSupport: URL = AppSupport.directory()
+    ) {
+        let drifts = written.map { key, typed in
+            Drift(key: key, pinned: "", current: "", currentToken: writtenToken(key, typed))
+        }
+        guard !drifts.isEmpty else { return }
+        do {
+            try confirm(profile: profile, drifts: drifts, appSupport: appSupport)
+        } catch {
+            let reason = error.englishDescription
+            AppLogger.collect.warning(
+                "SharedConfigPin: did not confirm the saved values: \(reason, privacy: .private)")
+        }
+    }
+
+    /// `Key.token(of:)` for a value typed as `typed`, read as `current(fromYAML:)` reads it.
+    static func writtenToken(_ key: Key, _ typed: String) -> String {
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch key {
+        case .notifyURL:
+            return "\(webhookHost(trimmed)) \(trimmed.isEmpty ? "" : sha256Hex(trimmed))"
+        case .notifyDetail:
+            return trimmed.isEmpty ? "full" : trimmed.lowercased()
+        case .notifyHeartbeat: return trimmed
+        default: return WorkspacePaths.expandTilde(trimmed)
+        }
+    }
+
+    #if DEBUG
+    /// Re-pins `keys` to what config.yaml holds now. Tests only: a product caller would confirm
+    /// a peer's copy that landed after its write, so saves use `confirmWritten`.
     static func confirm(
         profile: String, keys: Set<Key>, appSupport: URL = AppSupport.directory()
     ) throws {
@@ -665,6 +698,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         try save(pin, profile: profile, appSupport: appSupport)
         invalidateOverrides(for: workspace)
     }
+    #endif
 
     // MARK: - Which saves confirm
 

@@ -77,6 +77,14 @@ final class EnvironmentDoctorRowsTests: XCTestCase {
             ["environment.profile_shared"])
     }
 
+    func testAJamfProSlotNamingAnotherLoginIsNeverProbed() throws {
+        let (own, _) = try env("profiles:\n  jamf_pro: ws\n  platform: ws-API\n")
+        XCTAssertEqual(ConfigDoctorService.platformProbeTarget(profile: "ws", environment: own),
+                       "ws-API")
+        let (peer, _) = try env("profiles:\n  jamf_pro: other\n  platform: ws-API\n")
+        XCTAssertNil(ConfigDoctorService.platformProbeTarget(profile: "ws", environment: peer))
+    }
+
     func testPlatformEqualToJamfProGivesNoHostRow() throws {
         let (e, _) = try env("profiles:\n  jamf_pro: ws\n  platform: ws\n")
         XCTAssertTrue(ConfigDoctorService.platformHostRows(

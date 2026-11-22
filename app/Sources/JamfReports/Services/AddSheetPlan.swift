@@ -373,11 +373,12 @@ enum AddSheetPlan {
     /// The host check on jamf-cli; blocks, so callers run it off the main actor. With no
     /// jamf-cli the answer is unknown.
     static func liveHostVerdict(workspace: String, platform: String) -> PlatformHostCheck.Verdict {
-        guard let jamfPro = EnvironmentProfiles.read(workspace: workspace).jamfPro else {
-            return .unknown
-        }
-        guard let binary = ExecutableLocator.locate("jamf-cli") else { return .unknown }
-        let urls = PlatformHostCheck.live(jamfPro, platform, binary)
+        // The workspace is the Jamf Pro side: a peer-edited `profiles.jamf_pro` naming another
+        // login is refused, never probed.
+        let environment = EnvironmentProfiles.read(workspace: workspace)
+        guard environment.jamfPro != nil, environment.refusal(workspace: workspace) == nil,
+              let binary = ExecutableLocator.locate("jamf-cli") else { return .unknown }
+        let urls = PlatformHostCheck.live(workspace, platform, binary)
         return PlatformHostCheck.verdict(
             jamfProURL: urls.jamfPro, platformJamfProURL: urls.platform)
     }

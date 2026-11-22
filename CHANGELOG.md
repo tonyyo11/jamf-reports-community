@@ -667,6 +667,7 @@ versions in this repository map to git tags.
   cache and config.yaml backups are installed without following a link at their name, and
   `jamf-reports scaffold --out` no longer removes other tools' leftover temp files from the
   folder you chose.
+- Config Doctor and the Add sheet no longer ask jamf-cli for a Jamf Pro address as a login another Mac named in `profiles.jamf_pro`, and saving the webhook, report folders or logo now confirms exactly what this Mac wrote, so a peer's copy that lands just after is still flagged for confirmation.
 - A file another Mac writes into a shared workspace can no longer stop this Mac collecting: a
   source's last run or timeout dated in the future, a device-scan progress file with impossible
   counts, or a future-dated empty device list now reads as no record, so the source is collected
