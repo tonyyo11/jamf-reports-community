@@ -425,41 +425,25 @@ struct BackupsView: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(backup.accessibilityLabel)
                     }
-                    .width(min: 130, ideal: 200)
+                    .width(min: 100, ideal: 160)
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)
                     }
-                    .width(min: 92, ideal: 104, max: 130)
+                    .width(min: 112, ideal: 120, max: 150)
                     TableColumn("Files") { backup in
                         Mono(text: "\(backup.fileCount)")
                     }
-                    .width(min: 40, ideal: 52, max: 70)
+                    .width(min: 36, ideal: 44, max: 70)
                     TableColumn("Size") { backup in
                         Mono(text: backup.sizeLabel)
                     }
-                    .width(min: 60, ideal: 70, max: 90)
-                    // Reveal, Diff Latest and Delete at their natural widths, so none is cut off.
+                    .width(min: 56, ideal: 64, max: 90)
+                    // Full buttons while the column has room, icons alone below that, so no
+                    // action is cut off at a narrow window.
                     TableColumn("") { backup in
-                        HStack(spacing: 6) {
-                            PNPButton(title: L("Reveal"), icon: "folder", size: .sm) {
-                                reveal(backup)
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(workspace.demoMode ? Self.demoRevealHelp : "")
-                            PNPButton(title: L("Diff Latest"), icon: "arrow.left.arrow.right", size: .sm) {
-                                diff(backup, against: diffTarget)
-                            }
-                            .disabled(
-                                workspace.demoMode || isRunningDiff
-                                    || !BackupRecord.canDiff(backup, against: diffTarget))
-                            .help(diffLatestHelp(for: backup))
-                            PNPButton(title: L("Delete"), icon: "trash", style: .danger, size: .sm) {
-                                pendingDelete = backup
-                                showDeleteConfirm = true
-                            }
-                            .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Delete this backup"))
-                            .accessibilityHint("Shows a confirmation dialog to delete this backup")
+                        ViewThatFits(in: .horizontal) {
+                            backupActions(backup, iconOnly: false)
+                            backupActions(backup, iconOnly: true)
                         }
                         .contextMenu {
                             Button("Reveal in Finder") { reveal(backup) }
@@ -474,11 +458,40 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode || isRunningBackup)
                         }
                     }
-                    .width(min: 284, ideal: 290, max: 320)
+                    .width(min: 112, ideal: 120, max: 320)
                 }
                 .frame(minHeight: 390)
                 .scrollContentBackground(.hidden)
             }
+        }
+    }
+
+    private func backupActions(_ backup: BackupRecord, iconOnly: Bool) -> some View {
+        HStack(spacing: 6) {
+            PNPButton(title: L("Reveal"), icon: "folder", size: .sm, iconOnly: iconOnly) {
+                reveal(backup)
+            }
+            .disabled(workspace.demoMode)
+            .help(workspace.demoMode ? Self.demoRevealHelp : (iconOnly ? L("Reveal") : ""))
+            PNPButton(
+                title: L("Diff Latest"), icon: "arrow.left.arrow.right", size: .sm,
+                iconOnly: iconOnly
+            ) {
+                diff(backup, against: diffTarget)
+            }
+            .disabled(
+                workspace.demoMode || isRunningDiff
+                    || !BackupRecord.canDiff(backup, against: diffTarget))
+            .help(diffLatestHelp(for: backup))
+            PNPButton(
+                title: L("Delete"), icon: "trash", style: .danger, size: .sm, iconOnly: iconOnly
+            ) {
+                pendingDelete = backup
+                showDeleteConfirm = true
+            }
+            .disabled(workspace.demoMode || isRunningBackup)
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Delete this backup"))
+            .accessibilityHint("Shows a confirmation dialog to delete this backup")
         }
     }
 
