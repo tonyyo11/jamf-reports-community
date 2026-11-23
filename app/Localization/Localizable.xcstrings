@@ -40899,6 +40899,46 @@
         }
       }
     },
+    "Compliance Benchmark baseline" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compliance-Benchmark-Baseline"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Línea base de Benchmark de cumplimiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Référentiel de contrôle de conformité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baseline Benchmark di conformità"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンプライアンスベンチマークのベースライン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linha de base do Benchmark de conformidade"
+          }
+        }
+      }
+    },
     "Compliance Benchmarks" : {
       "localizations" : {
         "de" : {

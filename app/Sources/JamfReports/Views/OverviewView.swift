@@ -545,7 +545,10 @@ struct OverviewView: View {
     }
 
     private var headerSubtitle: String {
-        let baseline = L("\(workspace.complianceBenchmarkLabel ?? L("Compliance Benchmark")) baseline")
+        // The default is a whole string: French starts both "Compliance Benchmark" and
+        // "%@ baseline" with "Référentiel", so nesting them repeated the word.
+        let baseline = workspace.complianceBenchmarkLabel.map { L("\($0) baseline") }
+            ?? L("Compliance Benchmark baseline")
         if workspace.demoMode {
             return L("\(DemoData.totalDevices) Macs across \(Self.demoDepartmentCount) departments · \(baseline)")
         }
