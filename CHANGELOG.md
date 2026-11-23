@@ -34,6 +34,17 @@ versions in this repository map to git tags.
 - Backups: Reveal, Diff Latest and Delete stay reachable at narrow widths (icons alone when the row is tight), and the Created column no longer truncates.
 - Health Audit: the Finding and Recommendation columns use the available width.
 - Data Sources: the Snapshot Archive Families table fits its card and shows every row.
+- Recent Activity, Reports, Computers, Mobile Devices, School Devices, Patch, Policies and
+  Profiles, OS Updates, Groups & Searches and Offline Outreach size their tables from the
+  narrowest column widths and share out the width that is left, so they scroll sideways only when
+  the window is narrower than those columns (before, they scrolled at a 960-point window).
+- Health Audit: the Recommendation column gets the width the fixed columns leave, and its full
+  text shows on hover.
+- Tile rows are filled evenly: four tiles where three fit sit two and two (the Jamf School
+  Overview's Stale tile no longer sits alone on its row).
+- The Jamf School Overview's device health card names the enrollment type ("Automated Device
+  Enrollment", "Manual") instead of School's raw `dep` and `manual`. The workbook keeps School's
+  value.
 
 ## [2.12.0] - 2026-11-13
 

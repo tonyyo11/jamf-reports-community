@@ -771,35 +771,35 @@ struct MobileFleetView: View {
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
-                    .width(min: 140, ideal: 180)
+                    .width(min: 140, ideal: 140)
 
                     TableColumn("Type") { device in
                         let deviceType = getDeviceType(device, listRowsByID: listRowsByID)
                         Pill(text: deviceType, tone: pillTone(for: deviceType))
                             .accessibilityLabel("\(deviceType) device type")
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Serial") { device in
                         Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
                             .font(.caption)
                             .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 100, ideal: 130)
+                    .width(min: 100, ideal: 100)
 
                     TableColumn("OS") { device in
                         Text(getOSVersion(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     // Always include the Last Inventory column to avoid the
                     // conditional-TableColumn conformance (requires macOS
@@ -810,7 +810,7 @@ struct MobileFleetView: View {
                             .font(.caption)
                             .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 100, ideal: 120)
+                    .width(min: 100, ideal: 100)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     deviceMenu(ids, rows: rows, listRowsByID: listRowsByID)

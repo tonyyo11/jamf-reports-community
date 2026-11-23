@@ -239,7 +239,7 @@ struct SchoolDeviceHealth: Sendable, Equatable {
             if let at = detail.scannedAt, let scanned = detail.scanned {
                 lines.append(L("Last scanned \(day(at)) · \(scanned.count) of \(scanned.of) devices"))
             }
-            if let text = Self.line(detail.enrollment) {
+            if let text = Self.line(detail.enrollment, shown: Self.enrollmentName) {
                 let n = detail.enrollmentReporting
                 lines.append(L("Enrollment type: \(text) (of \(n) devices reporting)"))
             }
@@ -264,9 +264,18 @@ struct SchoolDeviceHealth: Sendable, Equatable {
     }
 
     /// "ASSIGNED 3 · PUSHED 1", with "5 of 12 values" when more exist than are shown.
-    static func line(_ values: Values) -> String? {
+    /// School's `deviceEnrollType` in words; a value it adds later shows as given.
+    static func enrollmentName(_ value: String) -> String {
+        switch value.lowercased() {
+        case "dep": L("Automated Device Enrollment")
+        case "manual": L("Manual")
+        default: value
+        }
+    }
+
+    static func line(_ values: Values, shown: (String) -> String = { $0 }) -> String? {
         guard values.distinct > 0 else { return nil }
-        let text = values.shown.map { "\($0.value) \($0.count)" }.joined(separator: " · ")
+        let text = values.shown.map { "\(shown($0.value)) \($0.count)" }.joined(separator: " · ")
         return values.distinct > values.shown.count
             ? text + " · " + L("\(values.shown.count) of \(values.distinct) values") : text
     }

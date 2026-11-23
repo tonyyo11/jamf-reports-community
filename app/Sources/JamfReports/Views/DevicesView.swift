@@ -628,16 +628,16 @@ struct DevicesView: View {
                             }
                         }
                     }
-                    .width(min: 140, ideal: 200)
+                    .width(min: 140, ideal: 140)
                     TableColumn("Serial", value: \.device.serial) { row in
                         Mono(text: row.device.displaySerial)
                             .textSelection(.enabled)
                     }
-                    .width(min: 100, ideal: 112, max: 140)
+                    .width(min: 100, ideal: 100, max: 140)
                     TableColumn("macOS", value: \.device.osVersion) { row in
                         Mono(text: row.device.osVersion.isEmpty ? L("Unknown") : row.device.osVersion)
                     }
-                    .width(min: 64, ideal: 72, max: 96)
+                    .width(min: 64, ideal: 64, max: 96)
                     // Empty when compact, so it keeps a sliver rather than a share of the row.
                     TableColumn(isCompact ? "" : "User", value: \.device.user) { row in
                         if !isCompact {
@@ -663,18 +663,18 @@ struct DevicesView: View {
                                  color: isStale(device) ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                         }
                     }
-                    .width(min: 90, ideal: 110, max: 160)
+                    .width(min: 90, ideal: 90, max: 160)
                     TableColumn("Patch", value: \.patchFailures) { row in patchPill(row.device) }
-                        .width(min: 60, ideal: 66, max: 90)
+                        .width(min: 60, ideal: 60, max: 90)
                     TableColumn("Security", value: \.securityGaps) { row in
                         securityIndicators(for: row.device)
                     }
-                        .width(min: 70, ideal: 78, max: 90)
+                        .width(min: 70, ideal: 70, max: 90)
                     // Wide enough for the longest band, Critical.
                     TableColumn("Risk", value: \.riskScore) { row in
                         riskPill(priorityRisk(for: row.device).level)
                     }
-                    .width(min: 84, ideal: 92, max: 110)
+                    .width(min: 84, ideal: 84, max: 110)
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)

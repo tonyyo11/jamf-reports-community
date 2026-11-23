@@ -125,19 +125,19 @@ struct ReportsView: View {
                             }
                             .accessibilityLabel(r.accessibilityLabel)
                         }
-                        .width(min: 220, ideal: 360)
+                        .width(min: 220, ideal: 220)
                         TableColumn("Type") { r in
                             Text(r.source).font(.footnote).lineLimit(1).help(r.source)
                         }
-                        .width(min: 110, ideal: 170)
+                        .width(min: 110, ideal: 110)
                         TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
-                            .width(min: 44, ideal: 56, max: 72)
+                            .width(min: 44, ideal: 44, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
-                            .width(min: 52, ideal: 64, max: 84)
+                            .width(min: 52, ideal: 52, max: 84)
                         TableColumn("Size") { r in Mono(text: r.size) }
-                            .width(min: 56, ideal: 68, max: 90)
+                            .width(min: 56, ideal: 56, max: 90)
                         TableColumn("Generated") { r in Mono(text: r.date) }
-                            .width(min: 96, ideal: 112, max: 140)
+                            .width(min: 96, ideal: 96, max: 140)
                     }
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)

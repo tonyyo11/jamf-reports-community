@@ -206,7 +206,7 @@ struct GroupsView: View {
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
-                    .width(min: 160, ideal: 200)
+                    .width(min: 160, ideal: 160)
 
                     TableColumn("Criteria") { wrapper in
                         let text = wrapper.search.criteriaSummary
@@ -217,7 +217,7 @@ struct GroupsView: View {
                             .truncationMode(.tail)
                             .help(text)
                     }
-                    .width(min: 260, ideal: 420)
+                    .width(min: 260, ideal: 260)
 
                     TableColumn("Display Fields") { wrapper in
                         let count = wrapper.search.displayFields?.count ?? 0
@@ -225,14 +225,14 @@ struct GroupsView: View {
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Site") { wrapper in
                         Text(siteLabel(wrapper.search.siteId))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 60, ideal: 80)
+                    .width(min: 60, ideal: 60)
                 }
                 .pageTableHeight(rows: snapshot.advancedSearchCount)
                 .font(.callout)
@@ -285,7 +285,7 @@ private struct GroupTableCard: View {
                     .font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
             }
-            .width(min: 160, ideal: 240)
+            .width(min: 160, ideal: 160)
 
             TableColumn("Type") { wrapper in
                 Pill(
@@ -294,7 +294,7 @@ private struct GroupTableCard: View {
                 )
                 .accessibilityLabel("\(wrapper.group.isSmart ? L("Smart") : L("Static")) group")
             }
-            .width(min: 70, ideal: 90)
+            .width(min: 70, ideal: 70)
 
             TableColumn("Status") { wrapper in
                 HStack(spacing: 4) {
@@ -302,7 +302,7 @@ private struct GroupTableCard: View {
                     if wrapper.detail.unused == true { Pill(text: L("Unused"), tone: .gold) }
                 }
             }
-            .width(min: 90, ideal: 130)
+            .width(min: 90, ideal: 90)
 
             TableColumn("Members") { wrapper in
                 Text(wrapper.detail.memberCount.map(String.init) ?? "—")
@@ -310,7 +310,7 @@ private struct GroupTableCard: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.Text.secondary)
             }
-            .width(min: 60, ideal: 70)
+            .width(min: 60, ideal: 60)
 
             TableColumn("Description") { wrapper in
                 let text = wrapper.detail.description ?? ""
@@ -321,14 +321,14 @@ private struct GroupTableCard: View {
                     .truncationMode(.tail)
                     .help(text)
             }
-            .width(min: 120, ideal: 240)
+            .width(min: 120, ideal: 120)
 
             TableColumn("ID") { wrapper in
                 Text(wrapper.group.id.map(String.init) ?? "—")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
-            .width(min: 50, ideal: 60)
+            .width(min: 50, ideal: 50)
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let wrapper = visible.first(where: { $0.id == ids.first }) {
