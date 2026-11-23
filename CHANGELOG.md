@@ -7,7 +7,7 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
-## [2.12.0] - 2026-11-24
+## [2.12.0] - 2026-11-23
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the
 Platform API, Jamf Protect and Jamf Security Cloud logins that belong to it, named in a new
