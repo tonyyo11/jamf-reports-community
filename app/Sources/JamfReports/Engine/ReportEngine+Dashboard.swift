@@ -14,30 +14,49 @@ extension ReportEngine {
     /// Snapshot kind and directory name. The only kind saved as `.html`.
     static let dashboardKind = "dashboard"
 
-    /// The matrix row's argv plus the Protect profile, when Protect is on and has
-    /// a profile of its own. jamf-cli refuses two profiles of one product (a Pro and
+    /// The matrix row's argv plus the Protect profile (`EnvironmentProfiles.protect`), when it
+    /// is not the main profile. jamf-cli refuses two profiles of one product (a Pro and
     /// a Platform profile count as one), so Protect is the only one ever added.
     /// Passed as `--include-profile=<name>`, so any name jamf-cli accepts, a leading `-`
     /// included, is the flag's value. A name the app can't use (`ProfileService.isValid`)
     /// is left out.
     static func dashboardArguments(
-        base: [String], profile: String, protect: ProtectConfig?
+        base: [String], profile: String, protect: String?
     ) -> [String] {
-        guard let protect, protect.isEnabled else { return base }
-        let other = protect.resolvedProfile
-        guard ProfileService.isValid(other), other != profile else { return base }
+        guard let other = protect, ProfileService.isValid(other), other != profile else {
+            return base
+        }
         return base + ["--include-profile=\(other)"]
+    }
+
+    /// The Protect login the dashboard may include: the environment's (`EnvironmentProfiles`),
+    /// unless the shared-config pin holds it back.
+    static func dashboardProtectProfile(config: ReportConfig?, workspace: WorkspaceID) -> String? {
+        // The router's environment when routed, so the page's Protect is the one the run judged.
+        let protect = (routedEnvironment
+            ?? EnvironmentProfiles.resolve(config: config, workspace: workspace.name)).protect
+        guard let protect,
+              SharedConfigPin.protectAllowed(profile: workspace.name, name: protect) else {
+            return nil
+        }
+        return protect
     }
 
     /// `protect` unless its profile is known to be another product's login, which jamf-cli
     /// would take for a clash or fail on; then one `[warn]` line and the page has no Protect card.
     static func dashboardProtect(
-        _ protect: ProtectConfig?, bin: URL,
+        _ protect: String?, bin: URL, collectSkip: Set<String> = [],
         onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) async -> ProtectConfig? {
-        guard let protect, protect.isEnabled, !protect.resolvedProfile.isEmpty else { return protect }
+    ) async -> String? {
+        guard let protect else { return nil }
+        // Every Protect source turned off here: the page must not collect Protect behind it.
+        if Set(DataFreshnessHealth.protectKinds).isSubset(of: collectSkip) {
+            onLine(.init(timestamp: Date(), level: .warn, text: "[warn] dashboard: Protect left "
+                + "out: every Jamf Protect source is turned off in this workspace"))
+            return nil
+        }
         let refusal = await ProfileAuthMethod.protectRefusal(
-            profile: protect.resolvedProfile,
+            profile: protect,
             resolved: { ProfileAuthMethod.resolve(profile: $0, binary: bin) })
         guard let refusal else { return protect }
         onLine(.init(timestamp: Date(), level: .warn,
@@ -70,6 +89,7 @@ extension ReportEngine {
         let capture: (exitCode: Int32, stdout: Data)?
         let page: Data
         let sawForbidden: Bool
+        var sawKeychainLocked = false
 
         /// jamf-cli stopped before collecting anything: an unknown profile, missing
         /// credentials or a product clash exits 1 or 2 and leaves the page empty.
@@ -134,6 +154,7 @@ extension ReportEngine {
             return try Self.recordUnlandedAttempt(
                 kind: kind, exitCode: exitCode, data: stdout,
                 sawForbidden: attempt.sawForbidden,
+                sawKeychainLocked: attempt.sawKeychainLocked,
                 useCachedData: useCachedData, dataDir: dataDir,
                 stateStore: stateStore, collectStart: collectStart, onLine: onLine
             )
@@ -147,7 +168,7 @@ extension ReportEngine {
             stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[fail] \(kind): snapshot could not be written — "
-                            + error.localizedDescription))
+                            + error.englishDescription))
             throw error
         }
         stateStore?.record(.landed, report: kind, at: collectStart)
@@ -189,7 +210,8 @@ extension ReportEngine {
         return DashboardAttempt(
             capture: capture.map { (exitCode: $0.0, stdout: $0.1) },
             page: (try? Data(contentsOf: staging)) ?? Data(),
-            sawForbidden: stderrWatcher.sawForbidden
+            sawForbidden: stderrWatcher.sawForbidden,
+            sawKeychainLocked: stderrWatcher.sawKeychainLocked
         )
     }
 }

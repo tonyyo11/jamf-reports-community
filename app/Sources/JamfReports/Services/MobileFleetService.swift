@@ -184,8 +184,10 @@ struct MobileFleetService: Sendable {
         firstNonBlank(device.hardware?.model, listRow?.hardware?.model, listRow?.model)
     }
 
+    /// No passcode set is not compliant, whatever Jamf's own flag says. Nil stays nil.
     static func passcodeCompliant(of device: MobileDeviceInventoryItem) -> Bool? {
-        device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
+        if device.security?.passcodePresent == false { return false }
+        return device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
     }
 
     static func activationLockEnabled(of device: MobileDeviceInventoryItem) -> Bool? {
@@ -218,10 +220,10 @@ struct MobileFleetService: Sendable {
         switch formFactor {
         case .iPad: return "iPad"
         case .iPhone: return "iPhone"
-        case .appleTV: return "Apple TV"
+        case .appleTV: return L("Apple TV")
         case .other:
             let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return type.isEmpty ? "Unknown" : type
+            return type.isEmpty ? L("Unknown") : type
         }
     }
 
@@ -251,6 +253,14 @@ struct MobileFleetService: Sendable {
         var sourceDates: [String: Date] = [:]
         /// A device snapshot was collected and read, whether or not it holds any device.
         var inventoryCollected = false
+        /// The cached iOS / iPadOS feed's newest release per major, for the OS-behind finding.
+        var iOSLatestByMajor: [Int: String] = [:]
+        /// The devices the update scan lists with errors (`MobileFinding`); nil when no scan
+        /// has run.
+        var updateErrors: MobileFinding.UpdateErrors?
+        /// The kind folder the device rows came from (`deviceKind` or `legacyInventoryKind`);
+        /// nil when none was read.
+        var inventoryKind: String?
 
         // MARK: - Computed properties
 
@@ -323,7 +333,7 @@ struct MobileFleetService: Sendable {
         }
 
         var unmanagedCount: Int {
-            richDevices.filter { $0.general?.managed == false }.count
+            richDevices.filter { MobileSummary.device($0).isUnmanaged }.count
         }
 
         var supervisedCount: Int {
@@ -395,12 +405,12 @@ struct MobileFleetService: Sendable {
         /// through unchanged for forward compatibility.
         static func enrollmentMethodLabel(for raw: String) -> String {
             switch raw {
-            case "Institutional": return "ADE / Institutional"
-            case "UserEnrollment": return "User Enrollment"
-            case "AccountDrivenUserEnrollment": return "Account-Driven User Enrollment"
-            case "AccountDrivenDeviceEnrollment": return "Account-Driven Device Enrollment"
-            case "Personal": return "Personal / BYOD"
-            case "PersonalDeviceProfile": return "Personal Device Profile (legacy)"
+            case "Institutional": return L("ADE / Institutional")
+            case "UserEnrollment": return L("User Enrollment")
+            case "AccountDrivenUserEnrollment": return L("Account-Driven User Enrollment")
+            case "AccountDrivenDeviceEnrollment": return L("Account-Driven Device Enrollment")
+            case "Personal": return L("Personal / BYOD")
+            case "PersonalDeviceProfile": return L("Personal Device Profile (legacy)")
             default: return raw
             }
         }
@@ -430,20 +440,21 @@ struct MobileFleetService: Sendable {
         /// Devices whose jailbreak status is anything but "none", or nil when no
         /// device reports a status. A blank status is not a report.
         var jailbreakDetectedCount: Int? {
-            let reported = richDevices.compactMap(MobileFleetService.jailbreakStatus(of:))
+            let reported = richDevices.compactMap { MobileSummary.device($0).jailbroken }
             guard !reported.isEmpty else { return nil }
-            return reported.filter { !$0.localizedCaseInsensitiveContains("none") }.count
+            return reported.filter { $0 }.count
         }
 
+        /// Every measured version, most devices first; a screen that caps it says "N of M".
         var osDistribution: [(osVersion: String, count: Int)] {
             let osVersions: [String] = richDevices.compactMap { device in
-                device.general?.osVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
-            }.filter { !$0.isEmpty }
+                device.general?.osVersion
+            }.filter(OSVersionName.isMeasured).map(OSVersionName.normalized)
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
                 .sorted { MobileFleetService.osDistributionOrder($0, $1) }
-            return Array(sorted.prefix(10))
+            return sorted
         }
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
@@ -470,7 +481,9 @@ struct MobileFleetService: Sendable {
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
             lhs.sourceDates == rhs.sourceDates &&
-            lhs.inventoryCollected == rhs.inventoryCollected
+            lhs.inventoryCollected == rhs.inventoryCollected &&
+            lhs.iOSLatestByMajor == rhs.iOSLatestByMajor &&
+            lhs.updateErrors == rhs.updateErrors
         }
     }
 
@@ -494,17 +507,25 @@ struct MobileFleetService: Sendable {
         }
         let listURL = newest(deviceKind)
         let candidates = [listURL, newest(legacyInventoryKind)].compactMap { $0 }
-        let source = inventorySource(among: candidates)
-        return assemble(
+        let source = inventorySource(among: candidates, inside: dir)
+        var snapshot = assemble(
             listURL: listURL, inventoryURL: source?.url, inventoryRows: source?.devices,
             profilesURL: newest("classic-ios-profiles"))
+        snapshot.inventoryKind = source?.url.deletingLastPathComponent().lastPathComponent
+        guard snapshot.isDetected else { return snapshot }
+        snapshot.iOSLatestByMajor = SOFAFeedService.iOSLatestByMajor(
+            SOFAFeedService.load(dataDir: dir).rows)
+        snapshot.updateErrors = newest("update-device-failures")
+            .flatMap { BoundedFile.readLogged($0, inside: dir) }
+            .flatMap(MobileFinding.updateErrors(in:))
+        return snapshot
     }
 
     /// Test seam: load directly from arbitrary file URLs.
     static func load(listURL: URL?, inventoryURL: URL?, profilesURL: URL?) -> Snapshot {
         assemble(
             listURL: listURL, inventoryURL: inventoryURL,
-            inventoryRows: inventoryURL.flatMap(inventoryRows(at:)), profilesURL: profilesURL)
+            inventoryRows: inventoryURL.flatMap { inventoryRows(at: $0) }, profilesURL: profilesURL)
     }
 
     /// Whether a decoded row has any inventory section. The flat list older jamf-cli
@@ -518,23 +539,26 @@ struct MobileFleetService: Sendable {
     }
 
     /// The inventory rows in `url`, or nil when the file cannot be read or decoded.
-    static func inventoryRows(at url: URL) -> [MobileDeviceInventoryItem]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read \(url.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+    static func inventoryRows(
+        at url: URL, inside root: URL? = nil
+    ) -> [MobileDeviceInventoryItem]? {
+        inventoryRead(at: url, inside: root)?.rows
+    }
+
+    /// The rows and the bytes they came from, so a caller that verifies the file does not read
+    /// it twice.
+    private static func inventoryRead(
+        at url: URL, inside root: URL?
+    ) -> (rows: [MobileDeviceInventoryItem], data: Data)? {
+        guard let data = BoundedFile.readLogged(url, inside: root) else { return nil }
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
         else {
             AppLogger.collect.info(
-                "MobileFleetService: failed to decode \(url.lastPathComponent, privacy: .public)"
+                "MobileFleetService: failed to decode \(url.lastPathComponent, privacy: .private)"
             )
             return nil
         }
-        return devices.filter(carriesInventory)
+        return (devices.filter(carriesInventory), data)
     }
 
     /// The newest of `candidates` that holds inventory rows, by filename stamp. A newer
@@ -542,17 +566,17 @@ struct MobileFleetService: Sendable {
     /// candidate has rows, the newest readable one is returned empty, so an empty
     /// snapshot still counts as detected.
     static func inventorySource(
-        among candidates: [URL]
-    ) -> (url: URL, devices: [MobileDeviceInventoryItem])? {
+        among candidates: [URL], inside root: URL? = nil
+    ) -> (url: URL, devices: [MobileDeviceInventoryItem], data: Data)? {
         let newestFirst = candidates.filter(FileManager.isSelectableSnapshot)
             .sorted { FileManager.isOlderSnapshot($1, than: $0) }
-        var readableButEmpty: URL?
+        var readableButEmpty: (url: URL, data: Data)?
         for url in newestFirst {
-            guard let rows = inventoryRows(at: url) else { continue }
-            if !rows.isEmpty { return (url, rows) }
-            readableButEmpty = readableButEmpty ?? url
+            guard let read = inventoryRead(at: url, inside: root) else { continue }
+            if !read.rows.isEmpty { return (url, read.rows, read.data) }
+            readableButEmpty = readableButEmpty ?? (url, read.data)
         }
-        return readableButEmpty.map { (url: $0, devices: []) }
+        return readableButEmpty.map { (url: $0.url, devices: [], data: $0.data) }
     }
 
     private static func assemble(
@@ -644,17 +668,10 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceListRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read mobile-devices-list file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.collect.info(
-                "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
+                "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .private)"
             )
             return []
         }
@@ -666,20 +683,13 @@ struct MobileFleetService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [MobileConfigProfileRow] {
         guard let url else { return [] }
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .collect
-        ) else {
-            AppLogger.collect.info(
-                "MobileFleetService: could not read classic-ios-profiles file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
             success = true
             return profiles
         }
         AppLogger.collect.info(
-            "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .public)"
+            "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }

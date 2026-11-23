@@ -12,6 +12,23 @@ struct AuditFinding: Identifiable, Codable {
     /// The Macs behind the finding, for a finding the app computes from the inventory
     /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
     var devices: [String] = []
+    /// Devices behind the finding that `devices` leaves out (a capped list).
+    var moreDevices = 0
+    /// What `devices` lists, for the popover's heading.
+    var deviceNoun = L("Macs")
+    /// The `MobileFinding` raw value that opens the Mobile Devices list behind the finding.
+    var mobileFilter: String?
+    /// How the count moved since the previous daily summary ("3 fewer than on 2026-10-18").
+    var change: String?
+
+    /// The name to show. `pro audit` names a count of commands across every device type
+    /// "Failed MDM commands", which reads as Macs; the raw name still keys matching and drift.
+    var label: String { Self.label(forAuditName: name) }
+
+    static func label(forAuditName name: String) -> String {
+        name.trimmingCharacters(in: .whitespaces).lowercased() == "failed mdm commands"
+            ? L("Failed MDM commands (commands, all device types)") : name
+    }
 
     var driftKey: String {
         [
@@ -46,7 +63,7 @@ struct AuditFinding: Identifiable, Codable {
     static func csv(_ findings: [AuditFinding]) -> String {
         let header = "Severity,Name,Category,Affected,Recommendation\n"
         let body = findings.map { f in
-            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
+            [f.severity, f.label, f.category, f.affectedDisplay, f.recommendation]
                 .map(StaleDeviceService.csvField)
                 .joined(separator: ",")
         }.joined(separator: "\n")
@@ -63,7 +80,7 @@ struct UnusedGroup: Identifiable, Codable {
 
     var reasonLabel: String {
         let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "Not referenced by any policy or profile." : trimmed
+        return trimmed.isEmpty ? L("Not referenced by any policy or profile.") : trimmed
     }
 
     /// jamf-cli's `pro group-tools analyze --unused` always returns
@@ -104,8 +121,12 @@ struct AuditView: View {
     @State private var unusedGroups: [UnusedGroup] = []
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
+    /// The open scan round's progress, for the in-progress line; nil when no round is open.
+    @State private var scanProgress: DeviceScanPasses.RoundProgress?
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
+    @State private var managementCard: ManagementCard?
+    @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -134,7 +155,7 @@ struct AuditView: View {
 
     private var filteredFindings: [AuditFinding] {
         findings.filter { finding in
-            query.isEmpty || finding.name.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
+            query.isEmpty || finding.label.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
         }.sorted(using: sortOrderAudit)
     }
 
@@ -161,14 +182,43 @@ struct AuditView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            page
+                // The Overview's Needs attention tile asks for the Mobile Devices card, which
+                // loads after the screen opens; scroll once it has findings to show.
+                .onChange(of: workspace.pendingAuditSection, initial: true) {
+                    scrollToPendingSection(proxy)
+                }
+                .onChange(of: mobileFindingList.count) { scrollToPendingSection(proxy) }
+                .onDisappear { workspace.pendingAuditSection = nil }
+        }
+    }
+
+    private func scrollToPendingSection(_ proxy: ScrollViewProxy) {
+        guard workspace.pendingAuditSection == MobileDevicesSection.anchorID,
+              !mobileFindingList.isEmpty else { return }
+        workspace.pendingAuditSection = nil
+        selectedTab = 0
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation { proxy.scrollTo(MobileDevicesSection.anchorID, anchor: .top) }
+        }
+    }
+
+    private var page: some View {
         PageScaffold {
             header
 
             if !workspace.demoMode && selectedTab != 2 {
                 let auditCacheSource = CacheSource.from(snapshotDate: lastAuditDate, withinHours: 36)
                 let hygieneCacheSource = CacheSource.from(snapshotDate: lastHygieneDate, withinHours: 36)
-                let activeSource = selectedTab == 0 ? auditCacheSource : hygieneCacheSource
-                StaleDataBanner(source: activeSource)
+                // The audit snapshot comes from the refresh tier; group hygiene is only written by
+                // its own Analyze Groups run, which a collect does not repeat.
+                if selectedTab == 0 {
+                    CollectNowBanner(source: auditCacheSource, tiers: [.refresh])
+                } else {
+                    StaleDataBanner(source: hygieneCacheSource)
+                }
             }
 
             HStack(spacing: 16) {
@@ -178,9 +228,9 @@ struct AuditView: View {
                         set: { selectedTab = auditTabIndex($0) }
                     ),
                     options: [
-                        ("Audit", "Health Audit", "shield.checkered"),
-                        ("Hygiene", "Group Hygiene", "wand.and.stars"),
-                        ("Config", "Config Doctor", "stethoscope")
+                        ("Audit", L("Health Audit"), "shield.checkered"),
+                        ("Hygiene", L("Group Hygiene"), "wand.and.stars"),
+                        ("Config", L("Config Doctor"), "stethoscope")
                     ]
                 )
 
@@ -213,7 +263,7 @@ struct AuditView: View {
             default: configSection
             }
         }
-        .task(id: workspace.profile) {
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             await loadCached()
         }
         .task(id: doctorTaskKey) {
@@ -238,76 +288,75 @@ struct AuditView: View {
         .alert("Export Failed", isPresented: $showExportError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(exportError ?? "Unknown error")
+            Text(exportError ?? L("Unknown error"))
         }
     }
 
     private var header: some View {
         PageHeader(
-            kicker: "Health & Hygiene",
-            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
+            kicker: L("Health & Hygiene"),
+            breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
             title: auditTabTitle(selectedTab),
             subtitle: auditTabSubtitle(selectedTab),
             // The demo's run dates are fixed; an age measured from today would grow
             // for as long as the demo stays open. "Last run" below still shows them.
-            lastModified: workspace.demoMode ? nil : auditTabLastModified(selectedTab)
+            lastModified: workspace.demoMode ? nil : auditTabLastModified(selectedTab),
+            wrapsTrailing: true
         ) {
-            AnyView(
-                VStack(alignment: .trailing, spacing: 6) {
-                    if selectedTab != 2 {
-                        Mono(
-                            text: selectedTab == 0
-                                ? lastRunLabel(lastAuditDate, empty: "Last audit: Never")
-                                : lastRunLabel(lastHygieneDate, empty: "Last analysis: Never"),
-                            size: 10.5
-                        )
-                    }
-                    HStack(spacing: 8) {
-                        if selectedTab == 0 {
-                            PNPButton(
-                                title: isRunningAudit ? "Audit running…" : "Run Audit",
-                                icon: isRunningAudit ? "hourglass" : "play.fill",
-                                style: .gold
-                            ) {
-                                runAudit()
-                            }
-                            .disabled(isRunningAudit || workspace.demoMode)
-                            .help("Run a fresh audit against this workspace.")
-                            PNPButton(title: "Export Findings", icon: "square.and.arrow.up", style: .neutral) {
-                                Task { await exportFindings() }
-                            }
-                            .disabled(findings.isEmpty || workspace.demoMode)
-                            .help("Export all audit findings to a CSV file")
-                        } else if selectedTab == 1 {
-                            PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
-                                copyGroupIDs()
-                            }
-                            .disabled(unusedGroups.isEmpty)
-                            .help("Copy the comma-separated list of unused group IDs to the clipboard.")
-                            PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
-                                copyAllGroups()
-                            }
-                            .disabled(sortedHygiene.isEmpty)
-                            .help("Copy all unused group IDs and names as tab-separated values")
-                            PNPButton(
-                                title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
-                                icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
-                                style: .gold
-                            ) {
-                                runHygiene()
-                            }
-                            .disabled(isRunningHygiene || workspace.demoMode)
-                            .help("Find computer groups not referenced by any policy or profile.")
-                        } else {
-                            PNPButton(title: "Re-check", icon: "arrow.clockwise", style: .gold) {
-                                loadDoctorReport()
-                            }
-                            .disabled(workspace.demoMode)
-                            .help("Re-validate config.yaml against the newest CSV and cached EA results.")
+            VStack(alignment: .trailing, spacing: 6) {
+                if selectedTab != 2 {
+                    Mono(
+                        text: selectedTab == 0
+                            ? lastRunLabel(lastAuditDate, empty: L("Last audit: Never"))
+                            : lastRunLabel(lastHygieneDate, empty: L("Last analysis: Never")),
+                        size: 10.5
+                    )
+                }
+                HStack(spacing: 8) {
+                    if selectedTab == 0 {
+                        PNPButton(
+                            title: isRunningAudit ? L("Audit running…") : L("Run Audit"),
+                            icon: isRunningAudit ? "hourglass" : "play.fill",
+                            style: .gold
+                        ) {
+                            runAudit()
                         }
+                        .disabled(isRunningAudit || workspace.demoMode)
+                        .help("Run a fresh audit against this workspace.")
+                        PNPButton(title: L("Export Findings"), icon: "square.and.arrow.up", style: .neutral) {
+                            Task { await exportFindings() }
+                        }
+                        .disabled(findings.isEmpty || workspace.demoMode)
+                        .help("Export all audit findings to a CSV file")
+                    } else if selectedTab == 1 {
+                        PNPButton(title: L("Copy IDs"), icon: "doc.on.doc", style: .neutral) {
+                            copyGroupIDs()
+                        }
+                        .disabled(unusedGroups.isEmpty)
+                        .help("Copy the comma-separated list of unused group IDs to the clipboard.")
+                        PNPButton(title: L("Copy All"), icon: "doc.on.clipboard", style: .neutral) {
+                            copyAllGroups()
+                        }
+                        .disabled(sortedHygiene.isEmpty)
+                        .help("Copy all unused group IDs and names as tab-separated values")
+                        PNPButton(
+                            title: isRunningHygiene ? L("Analyzing…") : L("Analyze Groups"),
+                            icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
+                            style: .gold
+                        ) {
+                            runHygiene()
+                        }
+                        .disabled(isRunningHygiene || workspace.demoMode)
+                        .help("Find computer groups not referenced by any policy or profile.")
+                    } else {
+                        PNPButton(title: L("Re-check"), icon: "arrow.clockwise", style: .gold) {
+                            loadDoctorReport()
+                        }
+                        .disabled(workspace.demoMode)
+                        .help("Re-validate config.yaml against the newest CSV and cached EA results.")
                     }
                 }
-            )
+            }
         }
     }
 
@@ -323,17 +372,17 @@ struct AuditView: View {
 
     private func auditTabTitle(_ index: Int) -> String {
         switch index {
-        case 0: "Instance Health Audit"
-        case 1: "Computer Group Hygiene"
-        default: "Config Doctor"
+        case 0: L("Instance Health Audit")
+        case 1: L("Computer Group Hygiene")
+        default: L("Config Doctor")
         }
     }
 
     private func auditTabSubtitle(_ index: Int) -> String {
         switch index {
-        case 0: "Automated checks for security, compliance, and hygiene"
-        case 1: "Identifying unused or redundant configuration objects"
-        default: "Validating config.yaml against your CSV export and cached EA results"
+        case 0: L("Automated checks for security, compliance, and hygiene")
+        case 1: L("Identifying unused or redundant configuration objects")
+        default: L("Validating config.yaml against the collected jamf-cli snapshots")
         }
     }
 
@@ -369,14 +418,14 @@ struct AuditView: View {
                         try SharedConfigPin.confirm(profile: profile, drifts: drifts)
                     }.value
                     workspace.toast = Toast(
-                        message: "Shared config confirmed on this Mac", style: .success)
+                        message: L("Shared config confirmed on this Mac"), style: .success)
                 } catch SharedConfigPin.ConfirmError.changedSinceShown {
                     workspace.toast = Toast(
-                        message: "Not confirmed: the value changed since this row was shown",
+                        message: L("Not confirmed: the value changed since this row was shown"),
                         style: .warning)
                 } catch {
                     workspace.toast = Toast(
-                        message: "Could not confirm · \(error.localizedDescription)",
+                        message: L("Could not confirm · \(error.localizedDescription)"),
                         style: .danger)
                 }
                 loadDoctorReport()
@@ -391,8 +440,8 @@ struct AuditView: View {
             Card(padding: 24) {
                 EmptyStateView(
                     systemImage: "stethoscope",
-                    title: "Config Doctor",
-                    message: "Switch to a real workspace to validate its config.yaml."
+                    title: L("Config Doctor"),
+                    message: L("Switch to a real workspace to validate its config.yaml.")
                 )
             }
         } else if let report = doctorReport {
@@ -402,8 +451,8 @@ struct AuditView: View {
                     Card(padding: 24) {
                         EmptyStateView(
                             systemImage: "checkmark.seal.fill",
-                            title: "Configuration looks healthy",
-                            message: "No errors or warnings. Passing checks are listed below."
+                            title: L("Configuration looks healthy"),
+                            message: L("No errors or warnings. Passing checks are listed below.")
                         )
                     }
                 }
@@ -413,8 +462,8 @@ struct AuditView: View {
             Card(padding: 24) {
                 EmptyStateView(
                     systemImage: "stethoscope",
-                    title: "Checking configuration…",
-                    message: "Reading config.yaml, the newest CSV export, and cached EA results."
+                    title: L("Checking configuration…"),
+                    message: L("Reading config.yaml, the newest CSV export, and cached EA results.")
                 )
             }
         }
@@ -422,10 +471,10 @@ struct AuditView: View {
 
     private func doctorSummaryStrip(_ report: DoctorReport) -> some View {
         HStack(spacing: 10) {
-            CompactMetricTile(label: "Passing", value: "\(report.passCount)", tone: .teal)
-            CompactMetricTile(label: "Suggestions", value: "\(report.suggestCount)", tone: .gold)
-            CompactMetricTile(label: "Warnings", value: "\(report.warnCount)", tone: .warn)
-            CompactMetricTile(label: "Errors", value: "\(report.failCount)", tone: .danger)
+            CompactMetricTile(label: L("Passing"), value: "\(report.passCount)", tone: .teal)
+            CompactMetricTile(label: L("Suggestions"), value: "\(report.suggestCount)", tone: .gold)
+            CompactMetricTile(label: L("Warnings"), value: "\(report.warnCount)", tone: .warn)
+            CompactMetricTile(label: L("Errors"), value: "\(report.failCount)", tone: .danger)
         }
     }
 
@@ -433,9 +482,9 @@ struct AuditView: View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    SectionHeader(title: "Checks")
+                    SectionHeader(title: L("Checks"))
                     Spacer()
-                    Pill(text: "\(report.rows.count) total", tone: .muted)
+                    Pill(text: L("\(report.rows.count) total"), tone: .muted)
                 }
                 .padding(16)
                 Divider().background(Theme.Colors.hairline)
@@ -465,8 +514,8 @@ struct AuditView: View {
             if findings.isEmpty {
                 EmptyStateView(
                     systemImage: "shield.checkered",
-                    title: "No audit findings yet",
-                    message: "Run an audit from this screen to scan your Jamf instance configuration."
+                    title: L("No audit findings yet"),
+                    message: L("Run an audit from this screen to scan your Jamf instance configuration.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 300)
                 .padding(20)
@@ -484,21 +533,26 @@ struct AuditView: View {
                                     .frame(width: 3)
                                     .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
-                                Text(f.name).font(.callout.weight(.semibold))
+                                Text(f.label).font(.callout.weight(.semibold))
                                 if newFindingKeys.contains(f.driftKey) {
-                                    Pill(text: "New", tone: .gold, icon: "sparkle")
+                                    Pill(text: L("New"), tone: .gold, icon: "sparkle")
                                         .transition(.scale.combined(with: .opacity))
                                 }
                             }
-                            .animation(.spring(response: 0.35, dampingFraction: 0.7),
+                            .motionSafeAnimation(.spring(response: 0.35, dampingFraction: 0.7),
                                        value: newFindingKeys.contains(f.driftKey))
                         }
+                        // The table shares spare width out evenly, so the three middle columns
+                        // are capped and the two text columns take what is left.
+                        .width(min: 130, ideal: 150, max: 260)
                         TableColumn("Severity", value: \.severity) { f in
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
+                        .width(min: 70, ideal: 78, max: 90)
                         TableColumn("Category", value: \.category) { f in
-                            Text(f.category.capitalized).font(.footnote)
+                            Text(LShown(f.category).capitalized).font(.footnote)
                         }
+                        .width(min: 64, ideal: 68, max: 100)
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(
                                 value: f.affected,
@@ -507,18 +561,21 @@ struct AuditView: View {
                                 displayText: f.affectedDisplay
                             )
                         }
+                        .width(min: 80, ideal: 90, max: 120)
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
                                     .font(.footnote)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(1)
+                                    .help(f.recommendation)
                                 Spacer(minLength: 0)
-                                PNPButton(title: "Details", icon: "info.circle", size: .sm) {
+                                PNPButton(title: L("Details"), icon: "info.circle", size: .sm) {
                                     selectedFinding = f
                                 }
                             }
                         }
+                        .width(min: 180, ideal: 180)
                     }
                     .pageTableHeight(
                         rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)
@@ -531,6 +588,9 @@ struct AuditView: View {
             duplicateSerialsSection
             commandHealthSection
             ContactGapSection(findings: contactGapList)
+            ManagementHealthSection(card: managementCard)
+            MobileDevicesSection(findings: mobileFindingList)
+                .id(MobileDevicesSection.anchorID)
         }
     }
 
@@ -541,14 +601,14 @@ struct AuditView: View {
     private var aiInsightCard: some View {
         if AIInsightCard.isOffered(demoMode: workspace.demoMode) {
             AIInsightCard(
-                title: "AI Audit Insight",
-                idleText: "Suggest which audit findings to work first and what changed since "
-                    + "the previous audit, using on-device intelligence.",
-                provenanceText: "AI-generated from the audit findings on this screen — verify "
-                    + "against the table below.",
-                input: FleetInsightInput.audit(
+                title: L("AI Audit Insight"),
+                idleText: L("Suggest which audit findings to work first and what changed since the previous audit, using on-device intelligence."),
+                provenanceText: L("AI-generated from the audit findings on this screen — verify against the table below."),
+                input: Localization.english { FleetInsightInput.audit(
                     findings: findings,
-                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil)
+                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil,
+                    mobile: FleetInsightInput.mobileAuditCounts(
+                        mobileFindingList, staleDays: workspace.configState.staleRule.days)) }
             )
         }
     }
@@ -565,13 +625,11 @@ struct AuditView: View {
     @ViewBuilder
     private var duplicateSerialsSection: some View {
         if duplicateSerials.readFailed {
-            Text("A duplicate-serials snapshot exists but couldn't be read — " +
-                 "see Settings → Logging for the collect warning.")
+            Text("A duplicate-serials snapshot exists but couldn't be read — see Settings → Logging for the collect warning.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
         } else if !duplicateSerials.isDetected {
-            Text("Duplicate-serial detection needs jamf-cli 1.23.0 or later and a " +
-                 "collect run — not yet available for this workspace.")
+            Text("Duplicate-serial detection needs jamf-cli 1.23.0 or later and a collect run — not yet available for this workspace.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
         } else if duplicateSerials.groups.isEmpty {
@@ -590,10 +648,10 @@ struct AuditView: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        SectionHeader(title: "Duplicate Serials")
+                        SectionHeader(title: L("Duplicate Serials"))
                         Spacer()
                         Pill(
-                            text: "\(duplicateSerials.affectedRecordCount) records affected",
+                            text: L("\(duplicateSerials.affectedRecordCount) records affected"),
                             tone: .warn
                         )
                     }
@@ -641,27 +699,30 @@ struct AuditView: View {
     @ViewBuilder
     private var commandHealthSection: some View {
         if commandHealth.readFailed {
-            Text("An mdm-command-health snapshot exists but couldn't be read — " +
-                 "see Settings → Logging.")
+            Text("An mdm-command-health snapshot exists but couldn't be read — see Settings → Logging.")
                 .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
         } else if commandHealth.isDetected {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        SectionHeader(title: "Command health")
+                        SectionHeader(title: L("Command health"))
                         Spacer()
                         if let d = commandHealth.snapshotDate {
                             let stamp = d.formatted(date: .abbreviated, time: .shortened)
-                            Mono(text: "snapshot " + stamp, size: 10.5)
+                            Mono(text: L("snapshot \(stamp)"), size: 10.5)
                         }
                     }
                     .padding(16)
+                    if let line = DeviceScanCoverage.line(scanProgress?.macs) {
+                        Text(line).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+                            .padding(.horizontal, 16).padding(.bottom, 12)
+                    }
                     Divider().background(Theme.Colors.hairline)
                     ForEach(commandFindings) { finding in
                         HStack(spacing: 10) {
                             Pill(text: finding.severity, tone: pillTone(finding.severity))
                                 .frame(width: 86, alignment: .leading)
-                            Text(finding.name)
+                            Text(finding.label)
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Spacer()
@@ -688,7 +749,7 @@ struct AuditView: View {
                         // Wraps rather than squeezing the label: the pills do not shrink, so the
                         // label lost its width and broke one letter to a line.
                         WrappingRow(spacing: 6, lineSpacing: 6) {
-                            Kicker(text: "Most failed")
+                            Kicker(text: L("Most failed"))
                             ForEach(commandHealth.topFailedCommands.prefix(3), id: \.name) { c in
                                 Pill(text: "\(c.name) ×\(c.count)", tone: .warn)
                             }
@@ -707,7 +768,7 @@ struct AuditView: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        Kicker(text: "Resolved · \(resolvedFindings.count)", tone: .teal)
+                        Kicker(text: L("Resolved · \(resolvedFindings.count)"), tone: .teal)
                         Spacer()
                     }
                     .padding(16)
@@ -722,7 +783,7 @@ struct AuditView: View {
                                     .font(.callout.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.ok)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(finding.name)
+                                    Text(finding.label)
                                         .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
@@ -733,7 +794,7 @@ struct AuditView: View {
                                 }
                                 Spacer()
                                 Pill(text: finding.category, tone: .muted)
-                                Mono(text: "\(finding.affectedDisplay) affected")
+                                Mono(text: L("\(finding.affectedDisplay) affected"))
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
@@ -745,16 +806,17 @@ struct AuditView: View {
                     }
                 }
             }
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
+            .motionSafeAnimation(
+                .spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
         }
     }
 
     private var auditSummaryStrip: some View {
         HStack(spacing: 10) {
-            CompactMetricTile(label: "Critical", value: "\(criticalCount)", tone: .danger)
-            CompactMetricTile(label: "Warnings", value: "\(warningCount)", tone: .warn)
-            CompactMetricTile(label: "Findings", value: "\(openFindingCount)", tone: .gold)
-            CompactMetricTile(label: "Categories", value: "\(categoryCount)", tone: .teal)
+            CompactMetricTile(label: L("Critical"), value: "\(criticalCount)", tone: .danger)
+            CompactMetricTile(label: L("Warnings"), value: "\(warningCount)", tone: .warn)
+            CompactMetricTile(label: L("Findings"), value: "\(openFindingCount)", tone: .gold)
+            CompactMetricTile(label: L("Categories"), value: "\(categoryCount)", tone: .teal)
         }
     }
 
@@ -801,11 +863,7 @@ struct AuditView: View {
                 // found, which is the DEFAULT state, not an unreleased feature —
                 // the old copy said "a future release" and talked operators out
                 // of a setting they already have.
-                Text("No snapshot integrity manifests found. Set " +
-                     "`jamf_cli.require_manifest: true` in config.yaml to stamp a " +
-                     "checksum beside each snapshot as it is collected; report " +
-                     "generation then refuses to run on a snapshot that fails " +
-                     "verification.")
+                Text("No snapshot integrity manifests found. Set `jamf_cli.require_manifest: true` in config.yaml to stamp a checksum beside each snapshot as it is collected; report generation then refuses to run on a snapshot that fails verification.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -844,24 +902,21 @@ struct AuditView: View {
         _ summary: SnapshotManifest.WorkspaceVerificationSummary
     ) -> String {
         hasSecuritySensitiveFailure(summary)
-            ? "Snapshot integrity violation"
-            : "Snapshots from before SHA-256 manifests"
+            ? L("Snapshot integrity violation")
+            : L("Snapshots from before SHA-256 manifests")
     }
 
     private func integrityDetail(
         _ summary: SnapshotManifest.WorkspaceVerificationSummary
     ) -> String {
         var parts: [String] = []
-        if summary.absent > 0 { parts.append("\(summary.absent) missing manifest") }
-        if summary.corrupt > 0 { parts.append("\(summary.corrupt) corrupt manifest") }
-        if summary.omitted > 0 { parts.append("\(summary.omitted) partial collect") }
-        if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }
+        if summary.absent > 0 { parts.append(L("\(summary.absent) missing manifest")) }
+        if summary.corrupt > 0 { parts.append(L("\(summary.corrupt) corrupt manifest")) }
+        if summary.omitted > 0 { parts.append(L("\(summary.omitted) partial collect")) }
+        if summary.mismatch > 0 { parts.append(L("\(summary.mismatch) hash mismatch")) }
         let breakdown = parts.joined(separator: " · ")
         if hasSecuritySensitiveFailure(summary) {
-            return "\(breakdown). Possible tampering or bit-rot — investigate before " +
-                "trusting this data. Enable jamf_cli.require_manifest " +
-                "(Configuration → jamf-cli Cache → \"Require snapshot manifest\") " +
-                "to abort future generate runs when this occurs."
+            return L("\(breakdown). Possible tampering or bit-rot — investigate before trusting this data. Enable jamf_cli.require_manifest (Configuration → jamf-cli Cache → \"Require snapshot manifest\") to abort future generate runs when this occurs.")
         }
         // Only-`.absent`/`.omitted` case. When strict mode is OFF this is
         // almost always pre-PR-7 legacy snapshots (re-run Collect fixes it).
@@ -869,22 +924,17 @@ struct AuditView: View {
         // attack signal (attacker deleted manifest.json after tampering) so
         // we can't claim it's "not a security concern." (security-reviewer S-01)
         if workspace.configState.jamfCLIRequireManifest {
-            return "\(breakdown). May indicate pre-PR-7 snapshots or " +
-                "manifest deletion — re-run Collect to confirm. If the " +
-                "warning persists after a fresh Collect, investigate as " +
-                "possible tampering."
+            return L("\(breakdown). May indicate pre-PR-7 snapshots or manifest deletion — re-run Collect to confirm. If the warning persists after a fresh Collect, investigate as possible tampering.")
         }
-        return "\(breakdown). Pre-PR-7 snapshots without manifests. Re-run " +
-            "Collect to attach SHA-256 manifests; not a security concern " +
-            "while jamf_cli.require_manifest is disabled."
+        return L("\(breakdown). Pre-PR-7 snapshots without manifests. Re-run Collect to attach SHA-256 manifests; not a security concern while jamf_cli.require_manifest is disabled.")
     }
 
     private func integrityHint(
         _ summary: SnapshotManifest.WorkspaceVerificationSummary
     ) -> String {
         hasSecuritySensitiveFailure(summary)
-            ? "Investigate before trusting this data."
-            : "Re-run Collect to attach manifests."
+            ? L("Investigate before trusting this data.")
+            : L("Re-run Collect to attach manifests.")
     }
 
     private var hygieneSection: some View {
@@ -892,8 +942,8 @@ struct AuditView: View {
             if unusedGroups.isEmpty {
                 EmptyStateView(
                     systemImage: "wand.and.stars",
-                    title: "No unused groups identified",
-                    message: "Run analysis to scan for redundant or empty computer groups."
+                    title: L("No unused groups identified"),
+                    message: L("Run analysis to scan for redundant or empty computer groups.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 300)
                 .padding(20)
@@ -901,9 +951,9 @@ struct AuditView: View {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack {
-                            SectionHeader(title: "Unused Computer Groups")
+                            SectionHeader(title: L("Unused Computer Groups"))
                             Spacer()
-                            Pill(text: "\(unusedGroups.count) groups", tone: .warn)
+                            Pill(text: unusedGroups.count == 1 ? L("\(unusedGroups.count) group") : L("\(unusedGroups.count) groups"), tone: .warn)
                         }
                         .padding(16)
 
@@ -930,13 +980,13 @@ struct AuditView: View {
                             }
                             TableColumn("Actions") { g in
                                 // The demo profile's console URL is fictional.
-                                PNPButton(title: "View", size: .sm) {
+                                PNPButton(title: L("View"), size: .sm) {
                                     openInJamfPro(g)
                                 }
                                 .disabled(workspace.demoMode)
                                 .help(workspace.demoMode
-                                      ? "Opening a group in Jamf Pro needs a live profile."
-                                      : "Open this group in the Jamf Pro console.")
+                                      ? L("Opening a group in Jamf Pro needs a live profile.")
+                                      : L("Open this group in the Jamf Pro console."))
                             }
                         }
                         .frame(height: tableHeight(rowCount: sortedHygiene.count, maxHeight: 430))
@@ -950,7 +1000,7 @@ struct AuditView: View {
         guard !workspace.demoMode else { return }
         guard let groupID = Int(group.id) else {
             workspace.toast = Toast(
-                message: "Group `\(group.name)` has a non-numeric id (\(group.id)) — cannot build console URL.",
+                message: L("Group `\(group.name)` has a non-numeric id (\(group.id)) — cannot build console URL."),
                 style: .danger
             )
             return
@@ -958,7 +1008,7 @@ struct AuditView: View {
         let isStatic = group.type.lowercased() == "static"
         guard let url = workspace.consoleURL(forComputerGroupID: groupID, isStatic: isStatic) else {
             workspace.toast = Toast(
-                message: "Active profile has no Jamf Pro URL configured. Set one in Settings to enable console links.",
+                message: L("Active profile has no Jamf Pro URL configured. Set one in Settings to enable console links."),
                 style: .danger
             )
             return
@@ -971,13 +1021,13 @@ struct AuditView: View {
         let (symbolName, color, label) = {
             switch s {
             case "CRITICAL":
-                return ("octagon.fill", Theme.Colors.danger, "Critical severity")
+                return ("octagon.fill", Theme.Colors.danger, L("Critical severity"))
             case "WARNING":
-                return ("exclamationmark.triangle.fill", Theme.Colors.warn, "Warning severity")
+                return ("exclamationmark.triangle.fill", Theme.Colors.warn, L("Warning severity"))
             case "INFO":
-                return ("info.circle.fill", Theme.Colors.info, "Info severity")
+                return ("info.circle.fill", Theme.Colors.info, L("Info severity"))
             default:
-                return ("questionmark.circle.fill", Theme.Colors.fgMuted, "Unknown severity")
+                return ("questionmark.circle.fill", Theme.Colors.fgMuted, L("Unknown severity"))
             }
         }()
         return Image(systemName: symbolName)
@@ -995,8 +1045,8 @@ struct AuditView: View {
 
     private func groupTypePill(_ type: String) -> Pill {
         type.lowercased() == "static"
-            ? Pill(text: "Static", tone: .gold)
-            : Pill(text: "Smart", tone: .teal)
+            ? Pill(text: L("Static"), tone: .gold)
+            : Pill(text: L("Smart"), tone: .teal)
     }
 
     private func groupMemberPill(_ count: Int) -> Pill {
@@ -1011,7 +1061,7 @@ struct AuditView: View {
 
     private func lastRunLabel(_ date: Date?, empty: String) -> String {
         guard let date else { return empty }
-        return "Last run: \(FileDisplay.date(date))"
+        return L("Last run: \(FileDisplay.date(date))")
     }
 
     private func copyGroupIDs() {
@@ -1041,7 +1091,7 @@ struct AuditView: View {
         do {
             try AuditFinding.csv(findings).write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
+            exportError = L("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
             showExportError = true
         }
     }
@@ -1059,8 +1109,11 @@ struct AuditView: View {
             integritySummary = nil
             duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
+            scanProgress = nil
             commandFindings = []
             contactGapList = []
+            managementCard = DemoData.managementCard
+            mobileFindingList = DemoData.mobileAuditFindings
             return
         }
 
@@ -1070,13 +1123,33 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        duplicateSerials = .empty
+        commandHealth = .empty
+        scanProgress = nil
+        contactGapList = []
+        managementCard = nil
+        mobileFindingList = []
         hasPreviousAudit = false
+        let loadProfile = workspace.profile
+        // A switch cancels this task but not its awaits: drop what arrives for the old profile.
+        func superseded() -> Bool {
+            Task.isCancelled || loadProfile != workspace.profile || workspace.demoMode
+        }
         await loadIntegritySummary()
-        duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
-        commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
+        guard !superseded() else { return }
+        guard let integrity = await ScreenLoad.paint(
+            stillCurrent: { loadProfile == workspace.profile && !workspace.demoMode },
+            read: { (DuplicateSerialService.load(profile: loadProfile),
+                     MDMCommandHealthService.load(profile: loadProfile),
+                     DeviceScanPasses.roundProgress(profile: loadProfile)) }
+        ) else { return }
+        duplicateSerials = integrity.0
+        commandHealth = integrity.1
+        scanProgress = integrity.2
 
         let decoder = JSONDecoder()
-        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
+        let auditSnapshots = await bridge.cachedJSONSnapshots(profile: loadProfile, type: "audit", limit: 2)
+        guard !superseded() else { return }
         let scanned = commandHealth.isDetected
         var failedCommandTotal: Int?
         if let current = auditSnapshots.first,
@@ -1110,24 +1183,39 @@ struct AuditView: View {
 
         commandFindings = commandHealthFindings(
             commandHealth, failedCommandTotal: failedCommandTotal)
-        let profile = workspace.profile
+        let profile = loadProfile
         let inventory = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.load(profile: profile, demoMode: false)
         }.value
+        guard !superseded() else { return }
         contactGapList = contactGapFindings(inventory)
+        let warningDays = max(Int(workspace.configState.certWarningDays)
+                              ?? ManagementHealth.defaultWarningDays, 1)
+        let card = await Task.detached(priority: .userInitiated) {
+            ManagementCard.load(profile: profile, inventory: inventory, warningDays: warningDays)
+        }.value
+        guard !superseded() else { return }
+        managementCard = card
+        let staleDays = workspace.configState.staleRule.days
+        if let mobile = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { mobileDevicesFindings(profile: profile, staleDays: staleDays, now: Date()) }
+        ) { mobileFindingList = mobile }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
-            profile: workspace.profile,
+            profile: loadProfile,
             type: "group-tools-analyze",
             limit: 1
         )
+        guard !superseded() else { return }
         if let latestHygiene = hygieneSnapshots.first,
            let decoded = try? decoder.decode([UnusedGroup].self, from: latestHygiene.data) {
             let groupsSnapshots = await bridge.cachedJSONSnapshots(
-                profile: workspace.profile,
+                profile: loadProfile,
                 type: "groups",
                 limit: 1
             )
+            guard !superseded() else { return }
             unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
@@ -1165,6 +1253,7 @@ struct AuditView: View {
         }.value
         // Profile may have switched while the detached scan ran — gate.
         guard workspace.profile == profile else { return }
+        guard profile == workspace.profile, !Task.isCancelled else { return }
         integritySummary = summary
     }
 
@@ -1191,17 +1280,17 @@ struct AuditView: View {
             } catch {
                 isRunningAudit = false
                 workspace.globalStatus = nil
-                workspace.toast = Toast(message: "Audit failed · \(error.localizedDescription)", style: .danger)
+                workspace.toast = Toast(message: L("Audit failed · \(error.localizedDescription)"), style: .danger)
                 return
             }
             isRunningAudit = false
             workspace.globalStatus = nil
             if code == 0 {
-                workspace.toast = Toast(message: "Instance Health Audit completed", style: .success)
+                workspace.toast = Toast(message: L("Instance Health Audit completed"), style: .success)
                 await loadCached()
             } else {
                 workspace.toast = Toast(
-                    message: CLIBridge.explainExit(code, operation: "Instance Health Audit"),
+                    message: CLIBridge.explainExit(code, operation: L("Instance Health Audit")),
                     style: .danger)
             }
         }
@@ -1224,17 +1313,17 @@ struct AuditView: View {
             } catch {
                 isRunningHygiene = false
                 workspace.globalStatus = nil
-                workspace.toast = Toast(message: "Analysis failed · \(error.localizedDescription)", style: .danger)
+                workspace.toast = Toast(message: L("Analysis failed · \(error.localizedDescription)"), style: .danger)
                 return
             }
             isRunningHygiene = false
             workspace.globalStatus = nil
             if code == 0 {
-                workspace.toast = Toast(message: "Group Hygiene analysis completed", style: .success)
+                workspace.toast = Toast(message: L("Group Hygiene analysis completed"), style: .success)
                 await loadCached()
             } else {
                 workspace.toast = Toast(
-                    message: CLIBridge.explainExit(code, operation: "Group hygiene analysis"),
+                    message: CLIBridge.explainExit(code, operation: L("Group hygiene analysis")),
                     style: .danger)
             }
         }
@@ -1323,13 +1412,13 @@ struct FindingDetailPopover: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(finding.name)
+                    Text(finding.label)
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
                         Pill(text: finding.severity, tone: tone)
                         Pill(text: finding.category, tone: .muted)
-                        Mono(text: "\(finding.affectedDisplay) affected")
+                        Mono(text: L("\(finding.affectedDisplay) affected"))
                     }
                 }
                 Spacer()
@@ -1338,7 +1427,7 @@ struct FindingDetailPopover: View {
             Divider().background(Theme.Colors.hairline)
 
             VStack(alignment: .leading, spacing: 6) {
-                Kicker(text: "Recommendation")
+                Kicker(text: L("Recommendation"))
                 Text(finding.recommendation)
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
@@ -1351,7 +1440,7 @@ struct FindingDetailPopover: View {
             // `pro audit` returns counts, not device lists — "take action"
             // means routing to the screen that holds the underlying records.
             VStack(alignment: .leading, spacing: 6) {
-                Kicker(text: "Take action")
+                Kicker(text: L("Take action"))
                 HStack(spacing: 8) {
                     if let destination = auditActionDestination(for: finding) {
                         PNPButton(title: destination.label, icon: "arrow.right", size: .sm) {
@@ -1360,11 +1449,14 @@ struct FindingDetailPopover: View {
                                 name: .navigateToTab,
                                 object: nil,
                                 userInfo: ["tab": destination.tab.rawValue]
+                                    .merging(finding.mobileFilter.map {
+                                        [MobileFinding.userInfoKey: $0]
+                                    } ?? [:]) { $1 }
                             )
                         }
                         .help("Open the screen with the records behind this finding.")
                     }
-                    PNPButton(title: "Generated reports", icon: "doc.text", size: .sm) {
+                    PNPButton(title: L("Generated reports"), icon: "doc.text", size: .sm) {
                         dismiss()
                         NotificationCenter.default.post(
                             name: .navigateToTab,
@@ -1378,8 +1470,8 @@ struct FindingDetailPopover: View {
 
             HStack {
                 Spacer()
-                PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
-                    let text = "[\(finding.severity)] \(finding.name)\n\(finding.category)\n\(finding.recommendation)"
+                PNPButton(title: L("Copy"), icon: "doc.on.doc", size: .sm) {
+                    let text = "[\(finding.severity)] \(finding.label)\n\(finding.category)\n\(finding.recommendation)"
                     SystemActions.copyToClipboard(text)
                 }
             }
@@ -1393,11 +1485,17 @@ struct FindingDetailPopover: View {
     /// not stretch the popover.
     private var deviceList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Kicker(text: "Macs (\(finding.devices.count))")
+            Kicker(text: "\(finding.deviceNoun) (\(finding.devices.count + finding.moreDevices))")
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(finding.devices, id: \.self) { device in
+                    // Offsets, not names: two unnamed devices with no serial read the same.
+                    ForEach(Array(finding.devices.enumerated()), id: \.offset) { _, device in
                         Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    if finding.moreDevices > 0 {
+                        Text(L("and \(finding.moreDevices) more, in Mobile Devices"))
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
@@ -1446,26 +1544,21 @@ func commandHealthFindings(
     let stale = snapshot.devicesWithStalePending.count
     let staleDays = DeviceScanBuilders.pendingAgeThresholdDays
     let commandNote = failedCommandTotal.map {
-        "Jamf Pro holds \($0) failed command\($0 == 1 ? "" : "s") in total, across these "
-            + "devices and any no longer enrolled. "
+        ($0 == 1 ? L("Jamf Pro holds \($0) failed command in total, across these devices and any no longer enrolled. ") : L("Jamf Pro holds \($0) failed commands in total, across these devices and any no longer enrolled. "))
     } ?? ""
     let failedRecommendation = commandNote
-        + "Open the device's Jamf Pro record → Management → "
-        + "Management Commands, read the failure text, then clear the failed "
-        + "command there. The app never flushes commands."
-    let staleRecommendation = "A command pending this long usually means the Mac "
-        + "is offline or its APNs channel is broken. Check last contact, then "
-        + "Management → Management Commands."
+        + L("Open the device's Jamf Pro record → Management → Management Commands, read the failure text, then clear the failed command there. The app never flushes commands.")
+    let staleRecommendation = L("A command pending this long usually means the Mac is offline or its APNs channel is broken. Check last contact, then Management → Management Commands.")
     return [
         AuditFinding(
-            name: "Devices with failed MDM commands",
+            name: L("Devices with failed MDM commands"),
             affected: failed,
             category: "Command health",
             recommendation: failedRecommendation,
             severity: failed > 0 ? "WARNING" : "OK"
         ),
         AuditFinding(
-            name: "MDM commands pending more than \(staleDays) days",
+            name: L("MDM commands pending more than \(staleDays) days"),
             affected: stale,
             category: "Command health",
             recommendation: staleRecommendation,
@@ -1484,40 +1577,59 @@ extension FleetInsightInput {
     /// `resource` text beside it, can name policies, computers or users and stays behind.
     /// Resolved findings are counted, not named: next to the open ones the on-device model
     /// read a named one as still open. Nil when there are no findings.
+    ///
+    /// `mobile` is the Audit's Mobile Devices card (mobile spec 5): each finding by name with
+    /// its device count; a finding no device shows is left out.
     static func audit(
         findings: [AuditFinding],
-        drift: (newKeys: Set<String>, resolved: [AuditFinding])?
+        drift: (newKeys: Set<String>, resolved: [AuditFinding])?,
+        mobile: [(name: String, devices: Int)]
     ) -> FleetInsightInput? {
-        guard !findings.isEmpty else { return nil }
+        let mobileFacts = mobile.filter { $0.devices > 0 }.map {
+            Fact(label: L("\($0.name) (mobile devices)"), value: .count($0.devices), prior: nil,
+                 polarity: .lowerIsBetter)
+        }
+        guard !findings.isEmpty || !mobileFacts.isEmpty else { return nil }
         let open = findings.filter { AuditSeverity($0.severity) != .passing }
         let isNew = { (finding: AuditFinding) in drift?.newKeys.contains(finding.driftKey) == true }
         var facts = auditSeverityFacts(findings)
         // A passing check that appears or goes missing is no change in risk, so neither counts.
         let resolved = (drift?.resolved ?? []).filter { AuditSeverity($0.severity) != .passing }
         if drift != nil {
-            facts.append(Fact(label: "Findings new since the previous audit",
+            facts.append(Fact(label: L("Findings new since the previous audit"),
                               value: .count(open.filter(isNew).count), prior: nil,
                               polarity: .lowerIsBetter))
-            facts.append(Fact(label: "Findings resolved since the previous audit",
+            facts.append(Fact(label: L("Findings resolved since the previous audit"),
                               value: .count(resolved.count), prior: nil,
                               polarity: .higherIsBetter))
         }
         if let categories = auditCategoryFact(open) { facts.append(categories) }
         let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
         facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
-        var notes = ["A finding's count is the objects it affects, as its check name says "
-            + "(devices, policies, ...). Counts of different checks do not add up."]
+        facts += mobileFacts
+        var notes = [L("A finding's count is the objects it affects, as its check name says (devices, policies, ...). Counts of different checks do not add up.")]
         if open.count > listed.count {
-            notes.append("\(open.count - listed.count) lower-priority findings are not listed.")
+            notes.append(L("\(open.count - listed.count) lower-priority findings are not listed."))
         }
         if drift == nil {
-            notes.append("No previous audit was available, so what changed is unknown.")
+            notes.append(L("No previous audit was available, so what changed is unknown."))
             notes.append(noEarlierDataNote)
         }
         return FleetInsightInput(
-            title: "Audit insight",
-            focus: "which categories to work first, and what changed since the previous audit.",
+            title: L("Audit insight"),
+            focus: L("which categories to work first, and what changed since the previous audit."),
             facts: facts, notes: notes)
+    }
+
+    /// The Mobile Devices card's findings by name, re-read from `MobileFinding` so the name is
+    /// in the language of the caller (the insight's English scope), never the screen's.
+    static func mobileAuditCounts(
+        _ findings: [AuditFinding], staleDays: Int
+    ) -> [(name: String, devices: Int)] {
+        findings.compactMap { finding in
+            finding.mobileFilter.flatMap(MobileFinding.init(rawValue:))
+                .map { ($0.name(staleDays: staleDays), finding.affected) }
+        }
     }
 
     private static let maxListedAuditFindings = 10
@@ -1526,16 +1638,16 @@ extension FleetInsightInput {
     private static func auditSeverityFacts(_ findings: [AuditFinding]) -> [Fact] {
         let counts = Dictionary(grouping: findings) { AuditSeverity($0.severity) }
             .mapValues(\.count)
-        var facts = [Fact(label: "Critical findings", value: .count(counts[.critical] ?? 0),
+        var facts = [Fact(label: L("Critical findings"), value: .count(counts[.critical] ?? 0),
                           prior: nil, polarity: .lowerIsBetter),
-                     Fact(label: "Warning findings", value: .count(counts[.warning] ?? 0),
+                     Fact(label: L("Warning findings"), value: .count(counts[.warning] ?? 0),
                           prior: nil, polarity: .lowerIsBetter)]
         if let informational = counts[.informational] {
-            facts.append(Fact(label: "Informational findings", value: .count(informational),
+            facts.append(Fact(label: L("Informational findings"), value: .count(informational),
                               prior: nil, polarity: .lowerIsBetter))
         }
         if let passing = counts[.passing] {
-            facts.append(Fact(label: "Checks passing", value: .count(passing), prior: nil,
+            facts.append(Fact(label: L("Checks passing"), value: .count(passing), prior: nil,
                               polarity: .higherIsBetter))
         }
         return facts
@@ -1571,19 +1683,19 @@ extension FleetInsightInput {
             guard text.count + 2 + entry.count <= FleetInsightInput.fieldLimit else { break }
             text += "; " + entry
         }
-        return Fact(label: "Categories to work first, in order", value: .text(text),
+        return Fact(label: L("Categories to work first, in order"), value: .text(text),
                     prior: nil, polarity: .neutral)
     }
 
     /// `pro audit` reports 0 affected when it has no per-device breakdown, so for a finding
     /// that is not passing a 0 is "not reported", never "nothing affected".
     private static func auditFindingFact(_ finding: AuditFinding, isNew: Bool) -> Fact {
-        let marker = isNew ? ", this finding is new since the previous audit" : ""
-        let label = "\(finding.name) (\(finding.insightCategory), "
+        let marker = isNew ? L(", this finding is new since the previous audit") : ""
+        let label = "\(finding.label) (\(finding.insightCategory), "
             + "\(AuditSeverity(finding.severity).word)\(marker))"
         return Fact(label: label,
                     value: finding.affected > 0 ? .count(finding.affected)
-                        : .text("count not reported"),
+                        : .text(L("count not reported")),
                     prior: nil, polarity: .lowerIsBetter)
     }
 
@@ -1628,31 +1740,37 @@ private extension AuditFinding {
     }
 }
 
-/// Maps a finding to the screen that can show its underlying records — by
-/// finding name first, category as fallback. Internal (not private) for tests.
+/// Maps a finding to the screen that can show its underlying records. The app's own findings
+/// go by their English category, since their names are translated; jamf-cli's go by name
+/// first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
+    switch finding.category {
+    case MobileFinding.category: return (L("Mobile Devices"), .mobileFleet)
+    case "Command health", "Contact gap": return (L("Computers"), .devices)
+    default: break
+    }
     let name = finding.name.lowercased()
     if name.contains("unencrypted") || name.contains("filevault")
         || name.contains("gatekeeper") || name.contains("sip")
         || name.contains("firewall") {
-        return ("Security Posture", .securityPosture)
+        return (L("Security Posture"), .securityPosture)
     }
     if name.contains("stale") || name.contains("check-in") {
-        return ("Offline Outreach", .outreach)
+        return (L("Offline Outreach"), .outreach)
     }
-    if name.contains("patch") { return ("Patch Compliance", .patch) }
-    if name.contains("update") { return ("OS Updates", .updates) }
+    if name.contains("patch") { return (L("Patch Compliance"), .patch) }
+    if name.contains("update") { return (L("OS Updates"), .updates) }
     if name.contains("polic") || name.contains("scope") || name.contains("profile") {
-        return ("Policies & Profiles", .policyProfile)
+        return (L("Policies & Profiles"), .policyProfile)
     }
-    if name.contains("extension attribute") { return ("Extension Attributes", .extensionAttributes) }
-    if name.contains("group") { return ("Groups & Searches", .groupInventory) }
-    if name.contains("mdm command") { return ("Computers", .devices) }
+    if name.contains("extension attribute") { return (L("Extension Attributes"), .extensionAttributes) }
+    if name.contains("group") { return (L("Groups & Searches"), .groupInventory) }
+    if name.contains("mdm command") { return (L("Computers"), .devices) }
     switch finding.category.lowercased() {
-    case "security": return ("Security Posture", .securityPosture)
-    case "contact gap": return ("Computers", .devices)
-    case "compliance": return ("Compliance Posture", .compliancePosture)
-    case "hygiene": return ("Policies & Profiles", .policyProfile)
+    case "security": return (L("Security Posture"), .securityPosture)
+    case "contact gap": return (L("Computers"), .devices)
+    case "compliance": return (L("Compliance Posture"), .compliancePosture)
+    case "hygiene": return (L("Policies & Profiles"), .policyProfile)
     default: return nil
     }
 }
@@ -1741,9 +1859,9 @@ private struct DoctorRowView: View {
     private var severityLabel: String {
         switch row.severity {
         case .pass: "OK"
-        case .suggest: "Suggest"
-        case .warn: "Warning"
-        case .fail: "Error"
+        case .suggest: L("Suggest")
+        case .warn: L("Warning")
+        case .fail: L("Error")
         }
     }
 

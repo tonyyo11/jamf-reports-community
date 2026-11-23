@@ -41,7 +41,7 @@ final class DeviceScanCollectTests: XCTestCase {
     /// Writes `answers/<name>` files and a stub that maps argv to them:
     ///   classic-computer-history get <id>   → answers/hist-<id>
     ///     (exit = first line of answers/hist-<id>.exit if present; an answers/<name>.sleep file
-    ///      makes any call sleep until it is stopped)
+    ///      makes any call sleep until it is stopped, and <name>.stop creates answers/stop)
     ///   … status-items <mgmt>               → answers/ddm-<mgmt>  (same exit rule; either
     ///                                          resource spelling — see statusItemsArguments)
     ///   … --scan-failures (both matrix kinds) → answers/matrix, only when it or
@@ -55,7 +55,8 @@ final class DeviceScanCollectTests: XCTestCase {
         [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
         A="\(answers.path)"
         printf '%s\\n' "$*" >> "$A/calls.log"
-        emit() { f="$A/$1"; [ -f "$f.sleep" ] && exec sleep 30; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
+        emit() { f="$A/$1"; [ -f "$f.sleep" ] && exec sleep 30; [ -f "$f.stop" ] && : > "$A/stop"; \\
+                 if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
                  [ -f "$f.err" ] && cat "$f.err" >&2; [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
           *" classic-computer-history get "*) id=$(echo "$*" | sed -E 's/.*classic-computer-history get ([^ ]+).*/\\1/'); emit "hist-$id" ;;
@@ -135,15 +136,18 @@ final class DeviceScanCollectTests: XCTestCase {
         force: Bool = true, skipExpensive: Bool = false,
         probe: @escaping ReportEngine.AuthConfirmationProbe =
             ReportEngine.defaultAuthConfirmationProbe,
-        deviceLimits: ReportEngine.DeviceCallLimits = ReportEngine.DeviceCallLimits()
+        deviceLimits: ReportEngine.DeviceCallLimits = ReportEngine.DeviceCallLimits(),
+        scanStop: (@Sendable (Int) -> Bool)? = nil
     ) async throws -> [String] {
         let stub = try makeStub()
         let collector = LogTextCollector()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.scan], skipExpensive: skipExpensive, force: force,
             authConfirmationProbe: probe, locateJamfCLI: { stub },
-            deviceLimits: deviceLimits, onLine: collector.append)
+            deviceLimits: deviceLimits, scanStop: scanStop, now: .testNoon,
+            onLine: collector.append)
         return collector.texts
     }
 
@@ -381,6 +385,25 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertFalse(warn.contains("Read Computers"), warn)
     }
 
+    /// Fixture is UNCAPTURED (go-keyring's error shape, on stderr only): a locked keychain
+    /// fails every device with exit 1, so the scan stops both call types after the first.
+    func testLockedKeychainOnStderrStopsTheScanAndRecordsTheCause() async throws {
+        try writeComputers([("1", "A", "m1", true), ("2", "B", "m2", true)])
+        for id in ["1", "2"] {
+            try answer("hist-\(id)", "", exit: 1)
+            try "Error: reading keychain item jamf-cli/p/client-secret: exit status 36\n".write(
+                to: answers.appendingPathComponent("hist-\(id).err"), atomically: true,
+                encoding: .utf8)
+        }
+        let lines = try await runScan()
+        XCTAssertTrue(lines.contains { $0.contains("login keychain is locked") }, "\(lines)")
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: "mdm-command-health")?.kind, .keychainLocked)
+        XCTAssertEqual(store.cause(for: "ddm-device-status")?.kind, .keychainLocked)
+    }
+
     func testExit8SkipsHistoryForTheRun() async throws {
         try writeComputers([("1", "A", "m1", true)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
@@ -409,7 +432,7 @@ final class DeviceScanCollectTests: XCTestCase {
         try writeComputers([("1", "A", "m1", false)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
         let watcher = try await scanWithTodaysSummaryWritten()
-        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile, now: .testNoon))
     }
 
     /// A scan stopped by rejected credentials is retried: its cadence floor leaves exit 3
@@ -418,7 +441,7 @@ final class DeviceScanCollectTests: XCTestCase {
         try writeComputers([("1", "A", "m1", false)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
         let watcher = try await scanWithTodaysSummaryWritten(probe: { _, _ in false })
-        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile, now: .testNoon))
     }
 
     /// Runs the scan after today's summary is on disk, as the day's freshness run leaves it
@@ -429,7 +452,7 @@ final class DeviceScanCollectTests: XCTestCase {
     ) async throws -> CollectHonestyWatcher {
         let summaries = try WorkspacePaths.summariesDir(for: profile)
         try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         try #"{"date":"\#(today)","totalDevices":1,"source":"jamf-cli"}"#.write(
             to: summaries.appendingPathComponent("summary_\(today).json"),
             atomically: true, encoding: .utf8)
@@ -670,6 +693,108 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNil(store.failures(report: "patch-device-failures"))
     }
 
+    /// A scan call type turned off makes no call and records nothing; the other still lands.
+    func testCollectSkipTurnsOffOneScanCallType() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [mdm_command_health]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] mdm-command-health: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+        XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+    }
+
+    func testCollectSkipTurnsOffTheDDMCallType() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [ddm-device-status]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertFalse(callsLog().contains("status-items"), callsLog())
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "ddm-device-status"))
+    }
+
+    /// A shared workspace scans by the list this Mac confirmed, not the one a peer wrote.
+    func testAPinnedWorkspaceScansByThePinnedList() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let config = ws.appendingPathComponent("config.yaml")
+        let text = { (list: String) in
+            "shared_workspace:\n  enabled: true\njamf_cli:\n  profile: \"\(self.profile)\"\n"
+                + "  collect_skip: \(list)\n"
+        }
+        try text("[mdm-command-health]").write(to: config, atomically: true, encoding: .utf8)
+        _ = SharedConfigPin.check(profile: profile)
+        try text("[]").write(to: config, atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory); try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] mdm-command-health: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+    }
+
+    /// An unreadable snapshot of a kind that is off cannot hold up the kind that is on.
+    func testAnUnreadableSnapshotOfAnOffKindDoesNotBlockThePass() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [mdm-command-health]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let dir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("mdm-command-health", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "not json".write(
+            to: dir.appendingPathComponent("mdm-command-health_20260903T120000.json"),
+            atomically: true, encoding: .utf8)
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan(force: false)
+
+        XCTAssertFalse(lines.contains { $0.contains("could not be read") }, "\(lines)")
+        XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+    }
+
+    /// A fleet with no computers: the scan is skipped, nothing recorded, the run not Partial.
+    func testAFleetWithNoComputersSkipsTheScanAndRecordsNothing() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "overview", dataDir: data, at: Date().addingTimeInterval(-60), rows: [
+                ["section": "Fleet", "resource": "Managed Computers", "value": 0],
+                ["section": "Fleet", "resource": "Unmanaged Computers", "value": 0],
+                ["section": "Fleet", "resource": "Managed Devices", "value": 4],
+                ["section": "Fleet", "resource": "Unmanaged Devices", "value": 0],
+            ])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: data, at: Date().addingTimeInterval(-60), rows: [])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "mobile-devices-list", dataDir: data, at: Date().addingTimeInterval(-60),
+            rows: (0..<4).map { ["id": "\($0)", "name": "iPad \($0)", "deviceType": "iOS"] })
+        let lines = try await runScan()
+
+        XCTAssertTrue(lines.contains("[plan] device scan: skipped (no computers in Jamf Pro)"),
+                      "\(lines)")
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[partial]") }, "\(lines)")
+        XCTAssertFalse(callsLog().contains("classic-computer-history"), callsLog())
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+    }
+
     // MARK: - A dead matrix verdict and the scan (#207 G17)
 
     /// Runs a scan-tier collect that must fail on its reports; returns the history calls made.
@@ -779,4 +904,289 @@ private final class LogTextCollector: @unchecked Sendable {
 private actor ProbeCounter {
     private(set) var calls = 0
     func record() { calls += 1 }
+}
+
+extension DeviceScanCollectTests {
+    // MARK: - Passes (large-fleet L3)
+
+    private func store() throws -> StateFileStore {
+        StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+    }
+
+    /// An earlier `mdm-command-health` snapshot: Mac `i` scanned `days[i]` days ago.
+    @discardableResult
+    private func writeEarlierHealth(_ days: [String: Double]) throws -> [String: String] {
+        let dir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("mdm-command-health", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var stamps: [String: String] = [:]
+        let rows = days.keys.sorted().map { id -> MDMCommandHealthRecord in
+            let at = ISO8601Time.string(Date().addingTimeInterval(-days[id]! * 86_400))
+            stamps[id] = at
+            return MDMCommandHealthRecord(deviceId: id, name: "M\(id)", failedCount: 0,
+                                          pendingCount: 0, failedCommands: [],
+                                          oldestPendingDays: nil, scannedAt: at)
+        }
+        try JSONEncoder().encode(rows)
+            .write(to: dir.appendingPathComponent("mdm-command-health_20260901T120000.json"))
+        return stamps
+    }
+
+    private func scannedIDs() -> [String] {
+        callsLog().split(separator: "\n").compactMap { line in
+            guard let range = line.range(of: "classic-computer-history get ") else { return nil }
+            return line[range.upperBound...].split(separator: " ").first.map(String.init)
+        }
+    }
+
+    private func fleet(_ count: Int) throws -> [String] {
+        let ids = (1...count).map(String.init)
+        try writeComputers(ids.map { ($0, "M\($0)", "m\($0)", false) })
+        for id in ids { try answer("hist-\(id)", cleanHistory) }
+        return ids
+    }
+
+    /// Moves the open round's last pass back, as if the next pass ran the next day. 36 hours
+    /// is always an earlier local day.
+    private func nextDay() throws {
+        let state = try store()
+        var round = try XCTUnwrap(state.deviceScanRound())
+        round.lastPass = round.lastPass.addingTimeInterval(-36 * 3_600)
+        try state.recordDeviceScanRound(round)
+    }
+
+    private func stopAfter(_ n: Int) -> @Sendable (Int) -> Bool { { $0 >= n } }
+
+    private func scanPartials(_ lines: [String]) -> [String] {
+        lines.filter {
+            $0.hasPrefix("[partial] mdm-command-health") || $0.hasPrefix("[partial] ddm-device")
+        }
+    }
+
+    /// A stopped pass takes the oldest Macs, writes one snapshot holding every Mac, records
+    /// nothing, and the round finishes on a later day's pass.
+    func testAStoppedPassLeavesTheRestForTheNextDay() async throws {
+        let ids = try fleet(8)
+        // Oldest first: 8 (20 days), 7, 6 … 1 (13 days).
+        let earlier = try writeEarlierHealth(
+            Dictionary(uniqueKeysWithValues: ids.map { ($0, 12 + Double($0)!) }))
+        let lines = try await runScan(force: false, scanStop: stopAfter(4))
+
+        XCTAssertEqual(Set(scannedIDs()), ["8", "7", "6", "5"], "oldest first")
+        XCTAssertTrue(lines.contains(
+            "[info] device scan: scanned 4 of 8 Macs this pass; 4 left for the next pass"),
+            "\(lines)")
+        XCTAssertEqual(scanPartials(lines), [])
+        let health = try XCTUnwrap(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertEqual(health.map(\.deviceId), ids, "every Mac is in the one snapshot")
+        for row in health where !scannedIDs().contains(row.deviceId) {
+            XCTAssertEqual(row.scannedAt, earlier[row.deviceId], "carried with its own date")
+        }
+        let state = try store()
+        for kind in ["mdm-command-health", "ddm-device-status"] {
+            XCTAssertNil(state.lastRun(report: kind), "an unfinished pass does not land \(kind)")
+            XCTAssertNil(state.failures(report: kind), "nor records a failure")
+        }
+        XCTAssertEqual(state.deviceScanRound()?.remaining, 4)
+
+        try nextDay()
+        let finish = try await runScan(force: false)
+        XCTAssertEqual(Set(scannedIDs().dropFirst(4)), ["1", "2", "3", "4"], "\(finish)")
+        XCTAssertTrue(finish.contains { $0.hasPrefix("[ok] mdm-command-health: 8 device(s)") })
+        XCTAssertNotNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertNotNil(state.lastRun(report: "ddm-device-status"))
+        XCTAssertNil(state.deviceScanRound())
+    }
+
+    /// A round file whose attempts cover every current target has nothing left: a new round
+    /// starts and scans the Macs; nothing lands without an attempt.
+    func testARoundThatCoversEveryTargetStartsAfresh() async throws {
+        let ids = try fleet(3)
+        let state = try store()
+        try state.recordDeviceScanRound(DeviceScanRound(
+            started: Date().addingTimeInterval(-2 * 86_400),
+            lastPass: Date().addingTimeInterval(-36 * 3_600), attempted: ids, remaining: 2))
+        let lines = try await runScan(force: false, scanStop: stopAfter(2))
+        XCTAssertEqual(scannedIDs().count, 2, "\(lines)")
+        XCTAssertNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertEqual(state.deviceScanRound()?.attempted.count, 2, "a new round's attempts")
+    }
+
+    func testAPassThatAttemptsNothingLandsNothing() async throws {
+        _ = try fleet(3)
+        let lines = try await runScan(force: false, scanStop: { _ in true })
+        XCTAssertTrue(scannedIDs().isEmpty)
+        XCTAssertTrue(lines.contains(
+            "[info] device scan: scanned 0 of 3 Macs this pass; 3 left for the next pass"))
+        let state = try store()
+        XCTAssertNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertNil(state.lastRun(report: "ddm-device-status"))
+        XCTAssertNil(state.deviceScanRound())
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+    }
+
+    func testAnUnreadableEarlierSnapshotIsNotOverwritten() async throws {
+        _ = try fleet(3)
+        let dir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("mdm-command-health", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("mdm-command-health_20260901T120000.json")
+        try "{not json".write(to: file, atomically: true, encoding: .utf8)
+        let lines = try await runScan(force: false)
+        XCTAssertTrue(lines.contains(
+            "[warn] device scan: mdm-command-health snapshot could not be read; pass skipped"))
+        XCTAssertTrue(scannedIDs().isEmpty)
+        XCTAssertEqual(FileManager.newestJSONFile(in: dir), file)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "{not json")
+        let state = try store()
+        XCTAssertNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertNil(state.failures(report: "mdm-command-health"))
+        XCTAssertNil(state.deviceScanRound())
+
+        // A forced scan takes the whole fleet, so its snapshot is whole and replaces the bad
+        // file; otherwise one corrupt file would block the scan until someone removed it.
+        let forced = try await runScan(force: true)
+        XCTAssertTrue(forced.contains(
+            "[warn] device scan: mdm-command-health snapshot could not be read; "
+                + "this full scan replaces it"))
+        XCTAssertEqual(scannedIDs().count, 3)
+        XCTAssertEqual(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)?.count, 3)
+    }
+
+    /// A pass with failures carries on: the 25% rule is judged over the round.
+    func testAPassWithFailuresDoesNotEndTheRound() async throws {
+        let ids = try fleet(8)
+        for id in ["1", "2", "3"] { try answer("hist-\(id)", "", exit: 1) }
+        let lines = try await runScan(force: false, scanStop: stopAfter(4))
+        XCTAssertEqual(scanPartials(lines), [], "\(lines)")
+        let state = try store()
+        XCTAssertNil(state.failures(report: "mdm-command-health"))
+        let round = try XCTUnwrap(state.deviceScanRound())
+        XCTAssertEqual(round.history, DeviceScanTally(attempted: 4, failed: 3))
+        XCTAssertEqual(round.remaining, ids.count - 4)
+    }
+
+    func testTheRoundTotalUnderAQuarterLandsAfterASmallFailingPass() async throws {
+        _ = try fleet(8)
+        _ = try await runScan(force: false, scanStop: stopAfter(6))
+        try nextDay()
+        // The final pass takes 7 and 8; one fails: half of the pass, 1 of 8 for the round.
+        try answer("hist-8", "", exit: 1)
+        let lines = try await runScan(force: false)
+        let state = try store()
+        XCTAssertNotNil(state.lastRun(report: "mdm-command-health"), "\(lines)")
+        XCTAssertNil(state.failures(report: "mdm-command-health"))
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[partial] mdm-command-health: 1 of 8 ") })
+    }
+
+    func testTheRoundTotalOverAQuarterFailsTheKindAtTheRoundEnd() async throws {
+        _ = try fleet(8)
+        for id in ["1", "2"] { try answer("hist-\(id)", "", exit: 1) }
+        _ = try await runScan(force: false, scanStop: stopAfter(6))
+        let state = try store()
+        XCTAssertNil(state.failures(report: "mdm-command-health"), "2 of 6 mid-round")
+        try nextDay()
+        try answer("hist-8", "", exit: 1)
+        let lines = try await runScan(force: false)
+        XCTAssertEqual(state.failures(report: "mdm-command-health")?.count, 1, "\(lines)")
+        XCTAssertNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertTrue(lines.contains {
+            $0.hasPrefix("[partial] mdm-command-health: 3 of 8 devices failed")
+        }, "\(lines)")
+        XCTAssertNotNil(state.lastRun(report: "ddm-device-status"), "the other kind lands")
+        XCTAssertNil(state.deviceScanRound())
+    }
+
+    func testAMacWhoseCallFailedKeepsItsEarlierRow() async throws {
+        _ = try fleet(4)
+        let earlier = try writeEarlierHealth(["1": 3, "2": 3, "3": 3, "4": 3])
+        try answer("hist-2", "", exit: 1)
+        _ = try await runScan()
+        let health = try XCTUnwrap(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertEqual(health.map(\.deviceId), ["1", "2", "3", "4"])
+        XCTAssertEqual(health.first { $0.deviceId == "2" }?.scannedAt, earlier["2"])
+        XCTAssertNotEqual(health.first { $0.deviceId == "1" }?.scannedAt, earlier["1"])
+    }
+
+    /// A Mac attempted in an earlier pass of the round is done for it, answered or not.
+    func testAMacThatFailedIsNotRetriedInTheSameRound() async throws {
+        _ = try fleet(8)
+        try answer("hist-1", "", exit: 1)
+        _ = try await runScan(force: false, scanStop: stopAfter(4))
+        let state = try store()
+        XCTAssertTrue(try XCTUnwrap(state.deviceScanRound()).attempted.contains("1"))
+        try nextDay()
+        _ = try await runScan(force: false)
+        XCTAssertEqual(historyCalls(for: "1"), 1)
+        XCTAssertNil(state.deviceScanRound())
+        XCTAssertNotNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertNotNil(state.lastRun(report: "ddm-device-status"))
+    }
+
+    /// A pass that reaches no DDM Mac keeps the fleet's DDM rows: only Macs still DDM-enabled
+    /// and in `computers` are carried.
+    func testAPassThatReachesNoDDMMacKeepsTheirRows() async throws {
+        try writeComputers([("1", "M1", "m1", true), ("2", "M2", "m2", false),
+                            ("3", "M3", "m3", false), ("4", "M4", "m4", false),
+                            ("5", "M5", "m5", false), ("6", "M6", "m6", false)])
+        // 3–6 were never scanned, so the pass takes them first.
+        try writeEarlierHealth(["1": 1, "2": 2])
+        let old = ISO8601Time.string(Date().addingTimeInterval(-3 * 86_400))
+        let ddmDir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("ddm-device-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: ddmDir, withIntermediateDirectories: true)
+        let rows = ["1", "2", "9"].map {
+            DDMDeviceStatusRecord(deviceId: $0, name: "M\($0)", managementId: "m\($0)",
+                                  osVersion: nil, reportDate: nil, ddmReported: true,
+                                  declarations: [], softwareUpdate: .empty, scannedAt: old)
+        }
+        try JSONEncoder().encode(rows)
+            .write(to: ddmDir.appendingPathComponent("ddm-device-status_20260901T120000.json"))
+        for id in (1...6).map(String.init) { try answer("hist-\(id)", cleanHistory) }
+        try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan(force: false, scanStop: stopAfter(4))
+        XCTAssertEqual(Set(scannedIDs()), ["3", "4", "5", "6"], "\(lines)")
+        let ddm = try XCTUnwrap(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertEqual(ddm.map(\.deviceId), ["1"])
+        XCTAssertEqual(ddm.first?.scannedAt, old)
+    }
+
+    func testAManualRefreshWaitingStopsAPass() async throws {
+        let ids = try fleet(8)
+        for id in ids { try answer("hist-\(id).sleep", "") }
+        try FileManager.default.removeItem(at: answers.appendingPathComponent("hist-1.sleep"))
+        try answer("hist-1.stop", "")
+        let stopFile = answers.appendingPathComponent("stop")
+        // The first call answers at once and raises the stop; the others hang until their
+        // short timeout, so the fifth Mac's slot opens only after the stop is up.
+        let lines = try await ReportEngine.$runStop.withValue({
+            FileManager.default.fileExists(atPath: stopFile.path) ? .manualRefresh : nil
+        }) {
+            try await runScan(
+                force: false,
+                deviceLimits: ReportEngine.DeviceCallLimits(timeout: 0.5, stopAfterTimeouts: 99))
+        }
+        XCTAssertEqual(Set(scannedIDs()), ["1", "2", "3", "4"], "\(lines)")
+        XCTAssertTrue(lines.contains { $0.hasSuffix("4 left for the next pass") }, "\(lines)")
+        XCTAssertEqual(scanPartials(lines), [])
+        XCTAssertFalse(lines.contains { $0.hasPrefix(ReportEngine.stoppedEarlyMarker) })
+        XCTAssertNil(try store().lastRun(report: "mdm-command-health"))
+    }
+
+    func testAFleetThatFitsInOnePassLandsAsBefore() async throws {
+        try writeComputers([("1", "A", "m1", true), ("2", "B", "m2", false)])
+        try answer("hist-1", cleanHistory); try answer("hist-2", cleanHistory)
+        try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan(force: false)
+        XCTAssertFalse(lines.contains { $0.contains("left for the next pass") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[ok] mdm-command-health: 2 device(s)") })
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[ok] ddm-device-status: 1 device(s)") })
+        let state = try store()
+        XCTAssertNotNil(state.lastRun(report: "mdm-command-health"))
+        XCTAssertNotNil(state.lastRun(report: "ddm-device-status"))
+        XCTAssertNil(state.deviceScanRound())
+        let health = try XCTUnwrap(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertTrue(health.allSatisfy { $0.scannedAt != nil })
+    }
 }

@@ -11,6 +11,10 @@ enum SchoolFleetService {
     static let devicesKind = "school-devices"
     static let depDevicesKind = "school-dep-devices"
     static let overviewKind = "school-overview"
+    static let usersKind = "school-users"
+    static let groupsKind = "school-device-groups"
+    static let classesKind = "school-classes"
+    static let deviceDetailKind = ReportEngine.schoolDeviceDetailKind
 
     struct Device: Identifiable, Sendable, Equatable {
         let id: String
@@ -29,7 +33,7 @@ enum SchoolFleetService {
         /// The platform word in `os` ("iOS", "iPadOS", "macOS", "tvOS"), or "Unknown".
         var platform: String {
             let word = os.prefix { !$0.isNumber && $0 != " " }
-            return word.isEmpty ? "Unknown" : String(word)
+            return word.isEmpty ? L("Unknown") : String(word)
         }
 
         /// Whole days since the last check-in, or nil when it is unknown.
@@ -54,6 +58,15 @@ enum SchoolFleetService {
         let profile: String
     }
 
+    /// The count fields `SchoolDeviceHealth` reads; nil when a row has none of the right type.
+    struct UserRow: Sendable, Equatable { let deviceCount: Int? }
+    struct GroupRow: Sendable, Equatable { let members: Int?; let isSmart: Bool? }
+    struct ClassRow: Sendable, Equatable {
+        let devices: Int?
+        let students: Int?
+        let teachers: Int?
+    }
+
     /// One `school overview` line: a School resource and its count, as jamf-cli prints it.
     struct OverviewRow: Sendable, Equatable, Identifiable {
         let section: String
@@ -68,6 +81,19 @@ enum SchoolFleetService {
         var trashedCount = 0
         var depDevices: [DEPDevice] = []
         var overview: [OverviewRow] = []
+        /// Users not in trash, device groups and classes; nil when no snapshot was read.
+        var users: [UserRow]?
+        var deviceGroups: [GroupRow]?
+        var classes: [ClassRow]?
+        /// Kinds whose newest snapshot exists but could not be read: unreadable, not empty.
+        var unreadable: Set<String> = []
+        /// The newest per-device scan; nil when none was read (see `unreadable` for one that
+        /// could not be).
+        var deviceDetail: SchoolDeviceDetail?
+        /// When the last scan attempt failed, if its newest result is a failure.
+        var deviceDetailFailedAt: Date?
+        /// Lowercased UDIDs a pass of the open scan round attempted; nil with no round open.
+        var deviceScanRoundAttempted: Set<String>?
         var devicesDate: Date?
         var depDate: Date?
         var overviewDate: Date?
@@ -79,9 +105,18 @@ enum SchoolFleetService {
         /// The newest snapshot's date: when School data was last collected.
         var collectedAt: Date? { [devicesDate, depDate, overviewDate].compactMap { $0 }.max() }
 
-        var managedCount: Int { devices.filter { $0.isManaged == true }.count }
+        /// Managed over the devices that report the flag; nil when none does, never 0.
+        var managed: MobileSummary.Share? { Self.share(devices.map(\.isManaged)) }
         var unmanagedCount: Int { devices.filter { $0.isManaged == false }.count }
-        var supervisedCount: Int { devices.filter { $0.isSupervised == true }.count }
+        /// Supervised over the managed devices that report it, the daily summary's rule.
+        var supervised: MobileSummary.Share? {
+            Self.share(devices.filter { $0.isManaged == true }.map(\.isSupervised))
+        }
+
+        private static func share(_ values: [Bool?]) -> MobileSummary.Share? {
+            let reported = values.compactMap { $0 }
+            return reported.isEmpty ? nil : .init(met: reported.filter { $0 }.count, of: reported.count)
+        }
 
         func staleCount(atDays days: Int, now: Date = Date()) -> Int {
             devices.filter { $0.isStale(atDays: days, now: now) }.count
@@ -100,33 +135,75 @@ enum SchoolFleetService {
         return load(dataDir: dataDir)
     }
 
-    static func load(dataDir: URL) -> Snapshot {
+    static func load(dataDir: URL, now: Date = Date()) -> Snapshot {
         var snapshot = Snapshot()
-        if let (rows, date) = newestRows(kind: devicesKind, in: dataDir) {
-            snapshot = devicesSnapshot(rows: rows, date: date)
+        func read(_ kind: String, _ apply: (inout Snapshot, [[String: Any]], Date) -> Void) {
+            switch readRows(kind: kind, in: dataDir) {
+            case .missing: break
+            case .unreadable: snapshot.unreadable.insert(kind)
+            case .rows(let rows, let date): apply(&snapshot, rows, date)
+            }
         }
-        if let (rows, date) = newestRows(kind: depDevicesKind, in: dataDir) {
-            snapshot.depDevices = rows.enumerated().map { depDevice(from: $1, index: $0) }
-            snapshot.depDate = date
+        read(devicesKind) { snap, rows, date in
+            let devices = devicesSnapshot(rows: rows, date: date)
+            snap.devices = devices.devices
+            snap.trashedCount = devices.trashedCount
+            snap.devicesDate = date
         }
-        if let (rows, date) = newestRows(kind: overviewKind, in: dataDir) {
-            snapshot.overview = rows.compactMap(overviewRow)
-            snapshot.overviewDate = date
+        read(depDevicesKind) { snap, rows, date in
+            snap.depDevices = rows.enumerated().map { depDevice(from: $1, index: $0) }
+            snap.depDate = date
         }
+        read(overviewKind) { snap, rows, date in
+            snap.overview = rows.compactMap(overviewRow)
+            snap.overviewDate = date
+        }
+        read(usersKind) { snap, rows, _ in
+            snap.users = partitionFleet(rows).members.map {
+                UserRow(deviceCount: count($0, "deviceCount"))
+            }
+        }
+        read(groupsKind) { snap, rows, _ in
+            snap.deviceGroups = rows.map {
+                GroupRow(members: count($0, "members"), isSmart: flag($0, "isSmartGroup"))
+            }
+        }
+        read(classesKind) { snap, rows, _ in
+            snap.classes = rows.map {
+                ClassRow(devices: count($0, "deviceCount"), students: count($0, "studentCount"),
+                         teachers: count($0, "teacherCount"))
+            }
+        }
+        read(deviceDetailKind) { snap, rows, date in
+            snap.deviceDetail = SchoolDeviceDetail(snapshotRows: rows, date: date)
+        }
+        let state = StateFileStore(
+            directory: dataDir.appendingPathComponent("state", isDirectory: true))
+        snapshot.deviceDetailFailedAt = state.failures(report: deviceDetailKind)?.last
+        snapshot.deviceScanRoundAttempted = DeviceScanPasses.round(in: state, now: now)
+            .map { Set($0.attempted) }
         return snapshot
     }
 
+    /// Only the scan's rows, for the workbook's Device Inventory columns; nil when missing or
+    /// unreadable.
+    static func loadDeviceDetail(dataDir: URL) -> SchoolDeviceDetail? {
+        guard case .rows(let rows, let date) = readRows(kind: deviceDetailKind, in: dataDir)
+        else { return nil }
+        return SchoolDeviceDetail(snapshotRows: rows, date: date)
+    }
+
     /// The devices of one `school-devices` file, or nil when it does not decode as a row list.
-    static func devicesSnapshot(at file: URL) -> Snapshot? {
-        guard let rows = decodedRows(at: file) else { return nil }
+    static func devicesSnapshot(at file: URL, inside root: URL? = nil) -> Snapshot? {
+        guard let rows = decodedRows(at: file, inside: root) else { return nil }
         return devicesSnapshot(rows: rows, date: snapshotDate(of: file))
     }
 
     private static func devicesSnapshot(rows: [[String: Any]], date: Date) -> Snapshot {
         var snapshot = Snapshot()
-        let all = rows.enumerated().map { device(from: $1, index: $0) }
-        snapshot.devices = all.filter { !$0.inTrash }
-        snapshot.trashedCount = all.count - snapshot.devices.count
+        let (members, trashed) = partitionFleet(rows)
+        snapshot.devices = members.enumerated().map { device(from: $1, index: $0) }
+        snapshot.trashedCount = trashed
         snapshot.devicesDate = date
         return snapshot
     }
@@ -144,9 +221,22 @@ enum SchoolFleetService {
             isManaged: row["isManaged"] as? Bool,
             isSupervised: row["isSupervised"] as? Bool,
             lastCheckin: DateParser().parse(text(row, "lastCheckin")),
-            inTrash: row["inTrash"] as? Bool ?? false,
+            inTrash: isTrashed(row),
             udid: text(row, "udid")
         )
+    }
+
+    /// A row in School's trash. Absent or not a boolean reads as not trashed.
+    static func isTrashed(_ row: [String: Any]) -> Bool { row["inTrash"] as? Bool ?? false }
+
+    /// The one fleet rule for a device or user list: trashed rows (`isTrashed`, which also
+    /// decides `Device.inTrash`) are counted apart and never in a fleet figure. The workbook's
+    /// device and user tabs read through it.
+    static func partitionFleet(
+        _ rows: [[String: Any]]
+    ) -> (members: [[String: Any]], trashed: Int) {
+        let members = rows.filter { !isTrashed($0) }
+        return (members, rows.count - members.count)
     }
 
     static func depDevice(from row: [String: Any], index: Int) -> DEPDevice {
@@ -170,16 +260,34 @@ enum SchoolFleetService {
 
     // MARK: - Helpers
 
-    private static func newestRows(kind: String, in dataDir: URL) -> ([[String: Any]], Date)? {
-        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        guard let file = FileManager.newestSnapshotFile(in: dir),
-              let rows = decodedRows(at: file) else { return nil }
-        return (rows, snapshotDate(of: file))
+    private enum RowsRead {
+        case missing, unreadable
+        case rows([[String: Any]], Date)
     }
 
-    private static func decodedRows(at file: URL) -> [[String: Any]]? {
-        guard let data = try? BoundedFile.read(file, limit: BoundedFile.snapshotLimit)
-        else { return nil }
+    private static func readRows(kind: String, in dataDir: URL) -> RowsRead {
+        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        guard let file = FileManager.newestSnapshotFile(in: dir) else { return .missing }
+        guard let rows = decodedRows(at: file) else { return .unreadable }
+        return .rows(rows, snapshotDate(of: file))
+    }
+
+    /// A whole count of the right type; a boolean, string or fraction is not one.
+    private static func count(_ row: [String: Any], _ key: String) -> Int? {
+        guard let n = row[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+              let value = Int(exactly: n.doubleValue), value >= 0 else { return nil }
+        return value
+    }
+
+    private static func flag(_ row: [String: Any], _ key: String) -> Bool? {
+        guard let n = row[key] as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else {
+            return nil
+        }
+        return n.boolValue
+    }
+
+    private static func decodedRows(at file: URL, inside root: URL? = nil) -> [[String: Any]]? {
+        guard let data = BoundedFile.readLogged(file, inside: root) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
     }
 

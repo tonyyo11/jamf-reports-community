@@ -192,7 +192,7 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 1, 1, 1, 1, 1])
     }
 
-    func testOSDistributionSortedAndLimited() throws {
+    func testOSDistributionSortedAndComplete() throws {
         let inventoryJSON = """
         [
             {"mobileDeviceId": "1", "deviceType": "iPad", "general": {"osVersion": "18.2.1"}},
@@ -222,9 +222,9 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.isDetected)
         XCTAssertEqual(snapshot.totalDevices, 15)
 
-        // Check OS distribution is sorted by count (descending) and limited to 10
+        // Sorted by count (descending) with every version: the screen caps it and says "N of M"
         let osDistribution = snapshot.osDistribution
-        XCTAssertLessThanOrEqual(osDistribution.count, 10)
+        XCTAssertEqual(osDistribution.count, 12)
 
         // First should be most common (18.2.1 with 3 devices)
         XCTAssertEqual(osDistribution.first?.osVersion, "18.2.1")
@@ -1016,6 +1016,22 @@ final class MobileFleetServiceTests: XCTestCase {
         try JSONDecoder().decode(MobileDeviceInventoryItem.self, from: Data(json.utf8))
     }
 
+    /// Jamf calls a device compliant when no profile requires a passcode; none is set.
+    func testNoPasscodeSetIsNotCompliantWhateverJamfSays() throws {
+        let none = try decodeDevice(
+            #"{"mobileDeviceId": "1", "security": "#
+            + #"{"passcodeCompliant": true, "passcodePresent": false}}"#)
+        let set = try decodeDevice(
+            #"{"mobileDeviceId": "2", "security": "#
+            + #"{"passcodeCompliant": true, "passcodePresent": true}}"#)
+        let unknown = try decodeDevice(
+            #"{"mobileDeviceId": "3", "security": {"passcodePresent": true}}"#)
+        XCTAssertEqual(MobileFleetService.passcodeCompliant(of: none), false)
+        XCTAssertEqual(MobileFleetService.passcodeCompliant(of: set), true)
+        XCTAssertNil(MobileFleetService.passcodeCompliant(of: unknown))
+        XCTAssertEqual(MobileSummary.device(none).passcodeCompliant, false)
+    }
+
     /// The flags are under `security`; earlier decoders read `general`, kept as a fallback.
     /// A device reporting neither is unknown and counts toward nothing.
     func testPostureCountsReadSecurityThenGeneral() throws {
@@ -1061,7 +1077,8 @@ final class MobileFleetServiceTests: XCTestCase {
     func testTableHeightFitsItsRowsUpToTheCap() {
         let row = MobileFleetView.deviceRowHeight
         let three = MobileFleetView.tableHeight(rows: 3, rowHeight: row, cap: 430)
-        XCTAssertEqual(three, 33 + 3 * row)
+        let chrome = PageTableMetrics.headerHeight + PageTableMetrics.rowInsets
+        XCTAssertEqual(three, chrome + 3 * row)
         XCTAssertLessThan(three, 430)
         XCTAssertEqual(
             MobileFleetView.tableHeight(rows: 4, rowHeight: row, cap: 430) - three, row
@@ -1070,7 +1087,7 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(
             MobileFleetView.tableHeight(rows: 8, rowHeight: MobileFleetView.profileRowHeight,
                                         cap: 280),
-            33 + 8 * 24
+            chrome + 8 * 24
         )
     }
 

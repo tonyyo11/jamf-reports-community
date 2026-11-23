@@ -36,11 +36,11 @@ final class ManagedAutomationTests: XCTestCase {
             JamfCLIProfile(name: $0, url: "(local workspace)", schedules: 0, status: .idle)
         }
         var policy = AutomationPolicy()
-        policy.excludedProfiles = ["dummy"]
+        policy.excludedWorkspaces = ["dummy"]
         XCTAssertEqual(
             ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy), "prod")
 
-        policy.excludedProfiles = ["dummy", "prod", "sandbox"]
+        policy.excludedWorkspaces = ["dummy", "prod", "sandbox"]
         XCTAssertNil(ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy))
         XCTAssertNil(ManagedAutomation.managedBaseProfile(
             names: profiles.map(\.name), policy: policy))
@@ -130,7 +130,7 @@ final class ManagedAutomationTests: XCTestCase {
     func testExclusionsFlowIntoDesiredSchedules() {
         var p = AutomationPolicy()
         p.isManaged = true
-        p.excludedProfiles = ["dummy"]
+        p.excludedWorkspaces = ["dummy"]
         let desired = ManagedAutomation.desiredSchedules(for: p, baseProfile: "alpha")
         XCTAssertTrue(desired.allSatisfy { $0.excludedProfiles == ["dummy"] })
     }

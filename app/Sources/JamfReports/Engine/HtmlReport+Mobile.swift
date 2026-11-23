@@ -26,7 +26,7 @@ extension HtmlReport {
             return .omitted(mobileAbsenceReason(mobile))
         }
         let total = mobile.totalDevices
-        var cards = [f.SectionCard(name: "Mobile devices", value: "\(total)")]
+        var cards: [HtmlSectionFormatters.SectionCard] = []
         for (name, count) in [("iPad", mobile.iPadCount), ("iPhone", mobile.iPhoneCount),
                               ("Apple TV", mobile.appleTVCount)] where count > 0 {
             cards.append(.init(name: name, value: "\(count)"))
@@ -53,7 +53,7 @@ extension HtmlReport {
         let versions = mobile.osDistribution.map { (label: $0.osVersion, count: $0.count) }
         if !versions.isEmpty {
             body += "\n<p class=\"block-note\">OS versions, iOS and iPadOS together.</p>\n"
-                + f.renderBars(versions, expanded: expandAll)
+                + f.renderBars(versions, expanded: expandAll, colored: .version)
         }
         if !detailed {
             body += "\n<p class=\"block-note\">" + f.escapeHTML(

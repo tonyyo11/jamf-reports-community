@@ -216,8 +216,23 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(stale, "Stale Macs,8,12,-4")
     }
 
+    /// A metric label is text, so the CSV guards it like every other CSV writer does.
+    func testCSVGuardsAndQuotesAMetricLabel() {
+        for hostile in ["=cmd", "+1", "-1+1", "@SUM(A1)"] {
+            let rollup = FleetRollup(
+                groupName: "Fleet", profileCount: 1, totalDevices: 1,
+                metrics: [.init(key: "k", label: hostile, unit: .count, value: 3, previous: 2)])
+            XCTAssertEqual(FleetReportEmitter.csv(for: rollup).split(separator: "\n").last,
+                           "\t\(hostile),3,2,+1", hostile)
+        }
+        let comma = FleetRollup(
+            groupName: "Fleet", profileCount: 1, totalDevices: 1,
+            metrics: [.init(key: "k", label: "a,b", unit: .count, value: 3, previous: 2)])
+        XCTAssertTrue(FleetReportEmitter.csv(for: comma).contains("\"a,b\",3,2,+1"))
+    }
+
     func testRollupNilWhenNoProfileHasSummaries() {
-        let group = ReportGroup(name: "Empty", profiles: ["a", "b"])
+        let group = ReportGroup(name: "Empty", workspaces: ["a", "b"])
         XCTAssertNil(
             FleetReportEmitter.rollup(for: group, summariesByProfile: [[], []], lookbackDays: 7)
         )
@@ -228,7 +243,7 @@ final class FleetRollupTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
 
-        let group = ReportGroup(name: "Production Fleet", profiles: ["prod", "dev"])
+        let group = ReportGroup(name: "Production Fleet", workspaces: ["prod", "dev"])
         let byProfile: [String: [DailySummary]] = [
             "prod": [
                 summary(date: "2026-05-30", devices: 100, compliance: 88),
@@ -248,11 +263,21 @@ final class FleetRollupTests: XCTestCase {
     }
 
     func testEmitReturnsNilWhenGroupHasNoData() throws {
-        let group = ReportGroup(name: "Empty", profiles: ["x"])
+        let group = ReportGroup(name: "Empty", workspaces: ["x"])
         let url = try FleetReportEmitter.emit(
             group: group, lookbackDays: 7, timestamp: "2026-06-06_120000",
             outputDir: FileManager.default.temporaryDirectory, summariesFor: { _ in [] }
         )
         XCTAssertNil(url)
+    }
+
+    /// A count that is not a whole number in range reads as a dash, never traps.
+    func testCountFormattingNeverTrapsOnANonFiniteOrHugeValue() {
+        for value in [Double.infinity, .nan, 1e30] {
+            XCTAssertEqual(FleetReportEmitter.format(value, unit: .count), "—")
+            XCTAssertEqual(FleetReportEmitter.formatDelta(value, unit: .count), "—")
+        }
+        XCTAssertEqual(FleetReportEmitter.format(12.4, unit: .count), "12")
+        XCTAssertEqual(FleetReportEmitter.formatDelta(3.0, unit: .count), "+3")
     }
 }

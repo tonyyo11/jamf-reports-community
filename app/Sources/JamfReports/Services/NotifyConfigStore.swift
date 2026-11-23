@@ -44,7 +44,7 @@ enum NotifyConfigWriter {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
             }
         }
     }
@@ -88,13 +88,13 @@ enum NotifyConfigWriter {
             previousURL: previous.resolvedURL, newURL: url,
             previousDetail: previous.detail, newDetail: detail,
             previousHeartbeat: previous.sendsHeartbeat, newHeartbeat: heartbeat)
-        do {
-            if !changed.isEmpty { try SharedConfigPin.confirm(profile: profile, keys: changed) }
-        } catch {
-            let reason = error.localizedDescription
-            AppLogger.webhook.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
+        var written: [SharedConfigPin.Key: String] = [:]
+        if changed.contains(.notifyURL) { written[.notifyURL] = url }
+        if changed.contains(.notifyDetail) { written[.notifyDetail] = detail }
+        if changed.contains(.notifyHeartbeat), let heartbeat {
+            written[.notifyHeartbeat] = String(heartbeat)
         }
+        SharedConfigPin.confirmWritten(written, profile: profile)
         return saved
     }
 

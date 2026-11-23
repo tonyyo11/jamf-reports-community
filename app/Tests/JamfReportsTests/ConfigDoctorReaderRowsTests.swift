@@ -50,6 +50,40 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
             try ConfigLoader.rawMapping(fromYAML: "notify:\n  heartbeat: true\n")), [])
     }
 
+    func testNonBooleanKeepAccountNamesIsStated() throws {
+        for typed in ["yes", "1", "sometimes"] {
+            let root = try ConfigLoader.rawMapping(
+                fromYAML: "jamf_cli:\n  keep_account_names: \(typed)\n")
+            XCTAssertEqual(ConfigDoctorService.fileReadBooleanRows(root).map(\.id),
+                           ["config.value.jamf_cli.keep_account_names"], typed)
+        }
+    }
+
+    func testAccountNameRowsSayWhichAppliesAndWarnOnSharedStorage() {
+        let removed = ConfigDoctorService.accountNameRows(
+            configured: false, effective: false, onSharedStorage: { true })
+        XCTAssertEqual(removed.map(\.id), ["snapshots.account_names"])
+        XCTAssertEqual(removed.first?.severity, .suggest)
+        XCTAssertTrue(removed.first?.title.contains("removed") ?? false)
+        XCTAssertTrue(removed.first?.detail.contains("before this build") ?? false)
+
+        let waiting = ConfigDoctorService.accountNameRows(
+            configured: true, effective: false, onSharedStorage: { true })
+        XCTAssertEqual(waiting.map(\.id), ["snapshots.account_names"])
+        XCTAssertTrue(waiting.first?.detail.contains("not confirmed") ?? false)
+
+        let kept = ConfigDoctorService.accountNameRows(
+            configured: true, effective: true, onSharedStorage: { false })
+        XCTAssertEqual(kept.map(\.id), ["snapshots.account_names"])
+        XCTAssertTrue(kept.first?.title.contains("kept") ?? false)
+
+        let keptShared = ConfigDoctorService.accountNameRows(
+            configured: true, effective: true, onSharedStorage: { true })
+        XCTAssertEqual(keptShared.map(\.id),
+                       ["snapshots.account_names", "snapshots.account_names_shared"])
+        XCTAssertEqual(keptShared.last?.severity, .warn)
+    }
+
     /// yes, on and 1 opt in to absolute paths, as they always have; the row suggests true.
     func testAnOptInSpelledOtherThanTrueIsASuggestion() throws {
         for value in ["yes", "ON", "1"] {

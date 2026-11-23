@@ -159,6 +159,93 @@ final class HeadlessRunTickLockTests: XCTestCase {
         XCTAssertEqual(fresh, true)
     }
 
+    /// Past the limit the lock is given up and the give-up runs, as for the tick, so a stalled
+    /// call cannot run beside the next wake's.
+    func testARunPastTheLimitGivesTheLockUpAndRunsTheGiveUp() async throws {
+        let lock = temporaryLock()
+        let gaveUp = Flag()
+        let releasedAtGiveUp = Flag()
+        _ = try await lock.holdingForRun(
+            beatEvery: .milliseconds(10), limit: .milliseconds(40),
+            onGiveUp: { gaveUp.set(); if lock.namesNoHolder { releasedAtGiveUp.set() } }
+        ) { () -> Int in
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while !gaveUp.isSet, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            return 1
+        }
+        XCTAssertTrue(gaveUp.isSet)
+        XCTAssertTrue(releasedAtGiveUp.isSet, "the lock was still held when the give-up ran")
+    }
+
+    /// Runs the real give-up, so the workspaces root is a temporary one and the latch it sets on
+    /// new launches is cleared after.
+    func testTheGiveUpOfAHeadlessRunExitsOne() throws {
+        _ = try makeWorkspace()
+        addTeardownBlock { TimedProcessBox.reopen() }
+        let code = LockedCode()
+        lockGiveUp(.scheduledRun, workspaces: { [] }, exit: { code.set($0) })()
+        XCTAssertEqual(code.value, 1)
+    }
+
+    /// The give-up names its caller and records only in the workspaces that run was for.
+    private func giveUpRecords(
+        _ caller: LockHolder, for names: [String], others: [String]
+    ) throws -> (recorded: [String: [String]], code: Int32?) {
+        let workspace = try makeWorkspace()
+        for name in others {
+            try FileManager.default.createDirectory(
+                at: workspace.root.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        addTeardownBlock { TimedProcessBox.reopen() }
+        let code = LockedCode()
+        lockGiveUp(caller, workspaces: { names }, exit: { code.set($0) })()
+        var recorded: [String: [String]] = [:]
+        for name in [profile] + others {
+            recorded[name] = RunHistoryService.list(profile: name)
+                .flatMap { RunHistoryService.loadLog($0.logURL).map(\.text) }
+        }
+        return (recorded, code.value)
+    }
+
+    func testAScheduledRunGiveUpRecordsOnlyInItsOwnWorkspace() throws {
+        let result = try giveUpRecords(.scheduledRun, for: [profile], others: ["other"])
+
+        XCTAssertEqual(result.code, 1)
+        XCTAssertTrue(result.recorded[profile]?.contains {
+            $0.contains("[error] scheduled run: a run passed the tick lock's")
+        } == true, "\(result.recorded)")
+        XCTAssertEqual(result.recorded["other"], [], "another workspace's history is untouched")
+    }
+
+    func testACommandGiveUpNamesTheCommandAndItsProfile() throws {
+        let result = try giveUpRecords(.command, for: [profile], others: ["other"])
+
+        XCTAssertTrue(
+            result.recorded[profile]?.contains { $0.contains("[error] command: ") } == true,
+            "\(result.recorded)")
+        XCTAssertEqual(result.recorded["other"], [])
+    }
+
+    /// A fleet-wide schedule's give-up reaches the runnable profiles it fans out over, minus its
+    /// exclusions, from the profiles it is given (the tick's, already discovered).
+    func testAMultiScheduleNamesTheProfilesItFansOutOver() throws {
+        _ = try makeWorkspace()
+        var fleet = schedule()
+        fleet.multiTarget = MultiTarget(scope: .all, sequential: true)
+        fleet.excludedProfiles = ["skipped"]
+        let among = ["headless", "skipped"].map {
+            JamfCLIProfile(name: $0, url: "", schedules: 0, status: .ok)
+        }
+
+        XCTAssertEqual(workspaces(of: fleet, among: { among }), ["headless"])
+    }
+
+    func testAScheduleNamesItsOwnWorkspace() {
+        XCTAssertEqual(workspaces(of: schedule()), [profile])
+    }
+
     func testAHeldLockRunsNothingAndIsLeftAlone() async throws {
         let lock = temporaryLock()
         try await whileAnotherProcessHolds(lock) {
@@ -200,4 +287,11 @@ private final class Flag: @unchecked Sendable {
     private var raised = false
     var isSet: Bool { lock.withLock { raised } }
     func set() { lock.withLock { raised = true } }
+}
+
+private final class LockedCode: @unchecked Sendable {
+    private let lock = NSLock()
+    private var code: Int32?
+    var value: Int32? { lock.withLock { code } }
+    func set(_ new: Int32) { lock.withLock { code = new } }
 }

@@ -18,7 +18,7 @@ used a per-title average; where the daily patch snapshots exist the app works th
 out again, so the line does not step at the upgrade.
 
 The trend range defaults to four weeks and is configurable in **Settings → Data &
-Charts** (up to roughly a year of history).
+Charts** (up to roughly a year of history, or **All**).
 
 Title-level patch adoption speed (days to 50%/90% adoption after a release) is a
 separate view on the Patch screen, not a Trends metric; see
@@ -27,7 +27,7 @@ separate view on the Patch screen, not a Trends metric; see
 Trends is for looking. When you need the same history as *figures to quote* — a start, an
 end, and the change over a quarter or any other window — generate a
 [period report](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports)
-from the Generated screen instead. It reads the same `summary.json` snapshots described
+from the Generated screen instead. It reads the same daily summary files described
 below, plus your collected extension attributes.
 
 ## Mobile devices
@@ -44,6 +44,12 @@ charts scale to the data, so a small fleet no longer sits flat at the bottom of 
 axis. Alert rules can watch the mobile figures too; the metric names are in
 `config.example.yaml` under `alerts`.
 
+## Jamf Protect and Security Cloud
+
+Where the environment has them, Trends also offers Jamf Protect series (computers, the share
+matched to inventory, open alerts) and Jamf Security Cloud series (devices, matched share,
+high-risk devices). A Protect-only workspace keeps the Trends tab with the Protect figures only.
+
 ## Compliance band history
 
 When `compliance.baselines` (see [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates))
@@ -58,13 +64,15 @@ real change in fleet compliance. Salvaged days are also excluded from the Extens
 Attributes screen's coverage-drift comparison for the same reason — a truncated
 snapshot would otherwise look like a genuine coverage drop.
 
-## summary.json snapshots
+## Daily summary files
 
-Every collect or generate run writes one `summary.json` file to:
+Every collect or generate run writes one `summary_<date>.json` file to:
 
 ```
-~/Jamf-Reports/<profile>/snapshots/computers/summaries/
+~/Jamf-Reports/<profile>/snapshots/summaries/
 ```
+
+(The `snapshots` part follows `charts.historical_csv_dir`.)
 
 Each file is a per-day aggregate — date, total devices, compliance percentage, FileVault
 percentage, patch percentage, and related metrics. The Trends screen reads this directory;
@@ -80,14 +88,14 @@ weekly trend points; irregular collection produces irregular timelines.
 
 Trend data uses two on-disk stores, kept separate on purpose:
 
-- **CSV snapshot history** (`snapshots/`) — dated Jamf Pro CSV exports you place there.
-  Since 2.11 the app no longer copies a CSV into this folder itself (`archive_current_csv`
-  is retired); the Trends screen is built from the daily summaries.
+- **Daily summaries** (`snapshots/summaries/`) — one `summary_<date>.json` per day. The
+  Trends screen is built from these. Since 2.11 nothing reads or writes dated CSV exports
+  here (`archive_current_csv` is retired).
 - **jamf-cli JSON history** (`jamf-cli-data/`) — cached API responses. The trend source
   for API-native summaries: OS adoption from `inventory-summary`, device-state trend from
   `device-compliance`, security posture from `security`.
 
-The app's Trends screen reads these `summary.json` snapshots. Treat `snapshots/`
+The app's Trends screen reads these daily summary files. Treat `snapshots/`
 and `jamf-cli-data/` as append-only — generated workbooks and PNGs are disposable output,
 not the historical record.
 

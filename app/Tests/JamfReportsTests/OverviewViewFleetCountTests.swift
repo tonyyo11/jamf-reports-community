@@ -53,7 +53,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
             column: "Test - Status",
             trend: .flat
         )
-        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100)
+        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100, format: .standard)
         XCTAssertTrue(label.contains("47 of 100 installed"),
                       "Accessibility label must announce coverage against the provided fleetCount: '\(label)'")
         XCTAssertFalse(label.contains("502"),
@@ -69,7 +69,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
             column: "Test - Status",
             trend: .flat
         )
-        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100)
+        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100, format: .standard)
         XCTAssertTrue(label.contains("53 not installed"),
                       "Gap text must be (fleetCount - installed), not (502 - installed): '\(label)'")
     }
@@ -84,7 +84,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
             column: "Test - Status",
             trend: .flat
         )
-        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100)
+        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 100, format: .standard)
         XCTAssertFalse(label.contains("not installed"),
                        "When installed >= fleetCount, gap clauses must be omitted: '\(label)'")
     }
@@ -122,7 +122,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
             column: "Test - Status",
             trend: .flat
         )
-        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 0)
+        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 0, format: .standard)
         XCTAssertTrue(label.contains("47 installed"),
                       "Accessibility label must announce installed count alone when fleet is unknown: '\(label)'")
         XCTAssertFalse(label.contains("of 0"),

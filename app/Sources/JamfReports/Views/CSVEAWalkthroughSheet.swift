@@ -72,6 +72,9 @@ struct CSVEAWalkthroughSheet: View {
         .frame(minWidth: 460, idealWidth: 540, minHeight: 420, idealHeight: 600)
         .background(Theme.Colors.winBG)
         .task { await load() }
+        // A banner appears mid-screen with no focus change, so VoiceOver would not say it.
+        .onChange(of: adoptError) { _, text in announce(text) }
+        .onChange(of: confirmation) { _, text in announce(text) }
         // Esc dismisses. Hidden zero-size button with .cancelAction is the
         // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
         .background {
@@ -89,11 +92,12 @@ struct CSVEAWalkthroughSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Kicker(
                 text: importedCSVName == nil
-                    ? "Collected data · Extension Attributes" : "CSV import · Extension Attributes",
+                    ? L("Collected data · Extension Attributes") : L("CSV import · Extension Attributes"),
                 tone: .teal)
-            Text(importedCSVName == nil ? "Adopt EAs" : "Set up EA tracking")
+            Text(importedCSVName == nil ? L("Adopt EAs") : L("Set up EA tracking"))
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Text.primary)
+                .accessibilityAddTraits(.isHeader)
             if let importedCSVName {
                 Mono(text: importedCSVName)
             }
@@ -104,21 +108,16 @@ struct CSVEAWalkthroughSheet: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(
-                    title: importedCSVName == nil ? "From Collected Data" : "Before You Export")
+                    title: importedCSVName == nil ? L("From Collected Data") : L("Before You Export"))
                 Text(importedCSVName == nil
-                    ? "These are the Extension Attributes jamf-cli collected on its last "
-                        + "refresh. Select the ones to track and adopt them into config.yaml "
-                        + "— your existing settings are preserved."
-                    : "The candidates below were detected in the CSV you picked. Add your "
-                        + "Extension Attribute columns to the Jamf Pro export under "
-                        + "\"Export-only fields\", then select the ones to track. The file "
-                        + "is read once; config.yaml is all that is kept.")
+                    ? "These are the Extension Attributes jamf-cli collected on its last refresh. Select the ones to track and adopt them into config.yaml — your existing settings are preserved."
+                    : "The candidates below were detected in the CSV you picked. Add your Extension Attribute columns to the Jamf Pro export under \"Export-only fields\", then select the ones to track. The file is read once; config.yaml is all that is kept.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
                 if importedCSVName == nil {
                     PNPButton(
-                        title: "Import from a CSV export (one time)",
+                        title: L("Import from a CSV export (one time)"),
                         icon: "tablecells.badge.ellipsis", style: .ghost, size: .sm
                     ) { pickCSV() }
                 }
@@ -130,9 +129,9 @@ struct CSVEAWalkthroughSheet: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "Proposed Extension Attributes")
+                    SectionHeader(title: L("Proposed Extension Attributes"))
                     Spacer()
-                    Pill(text: "\(selected.count)/\(proposals.count) selected", tone: .teal)
+                    Pill(text: L("\(selected.count)/\(proposals.count) selected"), tone: .teal)
                 }
                 VStack(spacing: 0) {
                     ForEach(Array(proposals.enumerated()), id: \.element.id) { idx, ea in
@@ -181,7 +180,7 @@ struct CSVEAWalkthroughSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(ea.name), \(ea.type)")
-            .accessibilityValue(selected.contains(ea.id) ? "Selected" : "Not selected")
+            .accessibilityValue(selected.contains(ea.id) ? L("Selected") : L("Not selected"))
             .accessibilityAddTraits(.isButton)
 
             if selected.contains(ea.id) {
@@ -225,7 +224,7 @@ struct CSVEAWalkthroughSheet: View {
                                     .font(.caption2)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                                 PNPTextField(
-                                    value: connectedBinding(ea), placeholder: "e.g. Installed",
+                                    value: connectedBinding(ea), placeholder: L("e.g. Installed"),
                                     mono: true)
                                     .accessibilityLabel("Connected value")
                                     .frame(maxWidth: 220)
@@ -233,11 +232,7 @@ struct CSVEAWalkthroughSheet: View {
                             }
                             TipView(WalkthroughTips.connectedValue)
                                 .frame(maxWidth: 360, alignment: .leading)
-                            Text("Pre-filled from a sample value. Set it to what this column "
-                                + "shows when the agent is installed/connected — matched as a "
-                                + "case-insensitive substring (e.g. Installed, Running, or a "
-                                + "version). A device counts as connected when its value contains "
-                                + "this text.")
+                            Text("Pre-filled from a sample value. Set it to what this column shows when the agent is installed/connected — matched as a case-insensitive substring (e.g. Installed, Running, or a version). A device counts as connected when its value contains this text.")
                                 .font(.caption2)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -305,8 +300,7 @@ struct CSVEAWalkthroughSheet: View {
                     Image(systemName: verdictIcon(rate))
                         .foregroundStyle(verdictColor(rate))
                         .font(.caption2)
-                    Text("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) "
-                        + "non-empty row\(health.nonEmpty == 1 ? "" : "s")")
+                    Text(health.nonEmpty == 1 ? L("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty row") : L("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) non-empty rows"))
                         .font(.caption2)
                         .foregroundStyle(verdictColor(rate))
                 }
@@ -332,6 +326,7 @@ struct CSVEAWalkthroughSheet: View {
     private var loadingState: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
+                .accessibilityLabel("Reading the collected Extension Attributes")
             Text("Reading the collected Extension Attributes…")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -344,21 +339,18 @@ struct CSVEAWalkthroughSheet: View {
             if importedCSVName != nil {
                 EmptyStateView(
                     systemImage: "tablecells.badge.ellipsis",
-                    title: "No EA-like columns detected.",
-                    message: "This export looks like built-in inventory fields only. Re-export "
-                        + "with your Extension Attribute columns added under "
-                        + "\"Export-only fields\"."
+                    title: L("No EA-like columns detected."),
+                    message: L("This export looks like built-in inventory fields only. Re-export with your Extension Attribute columns added under \"Export-only fields\".")
                 )
             } else {
                 EmptyStateView(
                     systemImage: "tablecells.badge.ellipsis",
                     title: alreadyTrackedCount > 0
-                        ? "Every collected EA is already tracked."
-                        : "No Extension Attributes collected yet.",
+                        ? L("Every collected EA is already tracked.")
+                        : L("No Extension Attributes collected yet."),
                     message: alreadyTrackedCount > 0
-                        ? "All \(alreadyTrackedCount) are in config.yaml."
-                        : "Refresh from the Overview to collect them, or import a CSV "
-                            + "export once."
+                        ? L("All \(alreadyTrackedCount) are in config.yaml.")
+                        : L("Refresh from the Overview to collect them, or import a CSV export once.")
                 )
             }
         }
@@ -395,10 +387,10 @@ struct CSVEAWalkthroughSheet: View {
 
     private var footerButtons: some View {
         HStack {
-            PNPButton(title: "Close", style: .ghost) { dismiss() }
+            PNPButton(title: L("Close"), style: .ghost) { dismiss() }
             Spacer()
             PNPButton(
-                title: "Add \(selected.count) to config",
+                title: L("Add \(selected.count) to config"),
                 icon: "plus.circle",
                 style: .gold
             ) {
@@ -432,7 +424,7 @@ struct CSVEAWalkthroughSheet: View {
         proposals = open.map(\.proposal)
         valueSamples = Dictionary(uniqueKeysWithValues: open.map { ($0.id, $0.sampleValues) })
         rowNotes = Dictionary(uniqueKeysWithValues: open.filter(\.hasNoValues).map {
-            ($0.id, "Defined in Jamf Pro; no values collected yet")
+            ($0.id, L("Defined in Jamf Pro; no values collected yet"))
         })
         selected = Set(open.filter { !$0.hasNoValues && $0.type != "text" }.map(\.id))
     }
@@ -444,7 +436,7 @@ struct CSVEAWalkthroughSheet: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.commaSeparatedText]
-        panel.prompt = "Import"
+        panel.prompt = L("Import")
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in importCSV(url) }
@@ -472,7 +464,7 @@ struct CSVEAWalkthroughSheet: View {
 
     /// Why a CSV could not be read, in words for the banner.
     static func importFailureText(_ error: Error, fileName: String) -> String {
-        "Couldn't read \(fileName) as a CSV export: \(error.localizedDescription)"
+        L("Couldn't read \(fileName) as a CSV export: \(error.localizedDescription)")
     }
 
     private func finishImport(
@@ -521,17 +513,19 @@ struct CSVEAWalkthroughSheet: View {
     /// What an adoption wrote, then the notes its save left (a block left as typed, a copy).
     static func adoptionMessage(eas: Int, agents: Int, notes: [String], profile: String) -> String {
         var parts: [String] = []
-        if eas > 0 { parts.append("\(eas) Extension Attribute\(eas == 1 ? "" : "s")") }
-        if agents > 0 { parts.append("\(agents) Security Agent\(agents == 1 ? "" : "s")") }
+        if eas > 0 { parts.append((eas == 1 ? L("\(eas) Extension Attribute") : L("\(eas) Extension Attributes"))) }
+        if agents > 0 { parts.append((agents == 1 ? L("\(agents) Security Agent") : L("\(agents) Security Agents"))) }
         let head: String?
         if !parts.isEmpty {
-            head = "Added \(parts.joined(separator: " and ")) to config.yaml for profile "
-                + "\(profile). They appear in the Config tab now and in reports after the next "
-                + "generate."
+            head = L("Added \(parts.joined(separator: " and ")) to config.yaml for profile \(profile). They appear in the Config tab now and in reports after the next generate.")
         } else {
-            head = notes.isEmpty ? "Those columns are already in config.yaml." : nil
+            head = notes.isEmpty ? L("Those columns are already in config.yaml.") : nil
         }
         return ([head].compactMap { $0 } + notes).joined(separator: " ")
+    }
+
+    private func announce(_ text: String?) {
+        if let text { AccessibilityNotification.Announcement(text).post() }
     }
 
     private func adopt() {
@@ -547,16 +541,8 @@ struct CSVEAWalkthroughSheet: View {
             confirmationHasNotes = !notes.isEmpty
             confirmation = Self.adoptionMessage(
                 eas: result.eas, agents: result.agents, notes: notes, profile: profile)
-            // Brief confirmation, then dismiss; a save note stays until Close.
-            guard notes.isEmpty else { return }
-            Task {
-                try? await Task.sleep(for: .milliseconds(900))
-                dismiss()
-            }
         } catch {
-            adoptError = "Couldn't write the selections to config.yaml: "
-                + "\(error.localizedDescription). Verify the workspace config isn't open "
-                + "elsewhere and is writable, then try again."
+            adoptError = L("Couldn't write the selections to config.yaml: \(error.localizedDescription). Verify the workspace config isn't open elsewhere and is writable, then try again.")
         }
     }
 

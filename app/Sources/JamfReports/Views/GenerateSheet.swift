@@ -29,6 +29,10 @@ final class GenerateSheetState {
     var configuredOutputDir: URL? = nil
     /// `html.with_workbook` as config.yaml holds it. False until the sheet has read it.
     var htmlWithWorkbook: Bool = false
+    /// `output.csv_folder` as config.yaml holds it. False until the sheet has read it.
+    var csvFolderConfigured: Bool = false
+    /// `output.file_prefix`, read with the other output options, for "What will be written".
+    var filePrefix: String = ExportNaming.defaultFilePrefix
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -47,7 +51,8 @@ final class GenerateSheetState {
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// A Jamf School workspace (2.10): the School template is the only one with data there,
-    /// and it writes a workbook only (there is no School HTML, PDF or CSV report).
+    /// and it writes a workbook (and its CSV folder) only: there is no School HTML, PDF or
+    /// inventory CSV report.
     var schoolWorkspace = false {
         didSet {
             guard schoolWorkspace else { return }
@@ -56,12 +61,24 @@ final class GenerateSheetState {
         }
     }
 
+    /// A Protect-only environment (no Jamf Pro): the Jamf Pro templates and `pro audit` have no
+    /// data there, so only the Custom template (which can pick the Protect sheets) is offered.
+    nonisolated static let customTemplateID = "custom"
+    /// A Jamf School workspace has no Jamf Pro either, but keeps its School template.
+    var noJamfPro = false {
+        didSet {
+            guard noJamfPro, !schoolWorkspace else { return }
+            selectedTemplateID = Self.customTemplateID
+        }
+    }
+
     var offeredTypes: [GenerateOutputType] {
-        schoolWorkspace ? [.xlsx] : Array(GenerateOutputType.allCases)
+        schoolWorkspace ? [.xlsx, .csvFolder] : Array(GenerateOutputType.allCases)
     }
 
     var offeredTemplates: [any ReportTemplate] {
-        schoolWorkspace ? [SchoolTemplate()] : TemplateResolver.allTemplates
+        schoolWorkspace ? [SchoolTemplate()]
+            : noJamfPro ? TemplateResolver.allTemplates.filter { $0.identifier == Self.customTemplateID } : TemplateResolver.allTemplates
     }
 
     /// Custom sheet selection for the "custom" template, persisted across app launches
@@ -140,7 +157,7 @@ final class GenerateSheetState {
         return Request(
             types: selectedTypes, template: resolvedTemplate, collectFirst: collectFresh,
             // `pro audit` is a Jamf Pro command; the School workbook reads no audit.
-            runsAudit: includeAudit && !school, outputDir: customOutputDir,
+            runsAudit: includeAudit && !school && !noJamfPro, outputDir: customOutputDir,
             schoolMode: school, asksForNarrative: !school)
     }
 
@@ -148,29 +165,41 @@ final class GenerateSheetState {
     var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
 
     /// True when this run writes the HTML report because `html.with_workbook` is on: a Jamf Pro
-    /// workbook is asked for and HTML is not, since a chosen HTML format is the one HTML report.
+    /// workbook is written (asked for, or the one the CSV folder comes from) and HTML is not
+    /// asked for, since a chosen HTML format is the one HTML report.
     var writesHTMLWithWorkbook: Bool {
-        htmlWithWorkbook && selectedTypes.contains(.xlsx) && !selectedTypes.contains(.html)
-            && !schoolMode
+        htmlWithWorkbook && !selectedTypes.isDisjoint(with: [.xlsx, .csvFolder])
+            && !selectedTypes.contains(.html) && !schoolMode
+    }
+
+    /// True when this run writes the CSV folder because `output.csv_folder` is on: a workbook is
+    /// asked for and the format is not ticked (ticked, it has its own line).
+    var writesCSVFolderFromConfig: Bool {
+        csvFolderConfigured && selectedTypes.contains(.xlsx) && !selectedTypes.contains(.csvFolder)
     }
 
     /// The "What will be written" line for the HTML report that goes with the workbook.
-    nonisolated static func htmlWithWorkbookLine(profile: String) -> String {
-        ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false)
-            + "_<date>.html (the HTML report, written with every workbook)"
+    nonisolated static func htmlWithWorkbookLine(
+        profile: String, prefix: String = ExportNaming.defaultFilePrefix
+    ) -> String {
+        let stem = ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false, prefix: prefix)
+        return L("\(stem)_<date>.html (the HTML report, written with every workbook)")
     }
 
     /// What one format writes, as "What will be written" lists it: the stem the generators
     /// write (`ExportNaming.stem`) and what they write beside it.
     nonisolated static func writtenFiles(
-        for type: GenerateOutputType, profile: String, schoolMode: Bool
+        for type: GenerateOutputType, profile: String, schoolMode: Bool,
+        prefix: String = ExportNaming.defaultFilePrefix
     ) -> String {
-        let name = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
-            + "_<date>.\(type.rawValue.lowercased())"
+        let stem = ExportNaming.stem(
+            for: type, profile: profile, schoolMode: schoolMode, prefix: prefix)
+        let name = "\(stem)_<date>.\(type.rawValue.lowercased())"
         switch type {
-        case .xlsx where schoolMode: return name + " + integrity sidecar (.sha256)"
-        case .xlsx: return name + " + integrity sidecar (.sha256, manifest)"
-        case .html, .pdf: return name + " + integrity manifest"
+        case .csvFolder: return L("\(stem)_<date>_csv/ (one .csv per workbook tab, with the workbook)")
+        case .xlsx where schoolMode: return L("\(name) + integrity sidecar (.sha256)")
+        case .xlsx: return L("\(name) + integrity sidecar (.sha256, manifest)")
+        case .html, .pdf: return L("\(name) + integrity manifest")
         case .csv: return name
         }
     }
@@ -210,17 +239,18 @@ final class GenerateSheetState {
                 }
             )
             if let result { return summarize(result) }
-            return (0, CLIBridge.explainExit(exit, operation: "Collect") + Self.cachedSnapshotsHint)
+            return (0, Self.withCachedSnapshotsHint(CLIBridge.explainExit(exit, operation: L("Collect"))))
         } catch {
-            let reason = CLIBridge.explainOperationError(error, operation: "Collect")
+            let reason = CLIBridge.explainOperationError(error, operation: L("Collect"))
             // A refusal never started a collect; the cached-snapshot hint applies to failures.
             guard !CLIBridgeError.isCollectRefusal(error) else { return (0, reason) }
-            return (0, reason + Self.cachedSnapshotsHint)
+            return (0, Self.withCachedSnapshotsHint(reason))
         }
     }
 
-    private static let cachedSnapshotsHint =
-        " Uncheck Collect fresh data first to generate from cached snapshots."
+    private static func withCachedSnapshotsHint(_ text: String) -> String {
+        L("\(text) Uncheck Collect fresh data first to generate from cached snapshots.")
+    }
 
     /// Resolved output directory for display: the chosen folder, else the configured one,
     /// else the profile default.
@@ -260,10 +290,26 @@ final class GenerateSheetState {
         return (hashCandidate, filename)
     }
 
+    /// What the footer says while something else holds Generate back, or nil when nothing does.
+    /// `status` names a collect that set one; otherwise the refusal says what is running.
+    nonisolated static func waitingMessage(
+        isRunning: Bool, refusal: CLIBridgeError?, status: String?
+    ) -> String? {
+        guard !isRunning, let refusal else { return nil }
+        if let status { return L("Waiting for: \(status)") }
+        switch refusal {
+        case .generateInProgress: return L("Waiting for: a report to finish")
+        case .toolUpdateInProgress: return L("Waiting for: the jamf-cli update to finish")
+        case .tickLockHeld: return L("Waiting for: a scheduled run to finish")
+        case .mergeInProgress: return L("Waiting for: a workspace merge to finish")
+        default: return L("Waiting for: a refresh to finish")
+        }
+    }
+
     /// The footer button labels. Done keeps its name while a run goes (the button is disabled
     /// then), so only Generate says Running.
     nonisolated static func footerTitles(isRunning: Bool) -> (dismiss: String, generate: String) {
-        ("Done", isRunning ? "Running\u{2026}" : "Generate")
+        (L("Done"), isRunning ? L("Running\u{2026}") : L("Generate"))
     }
 
     /// The line that closes the health audit run before a generate: `[ok]` after exit 0,
@@ -274,8 +320,8 @@ final class GenerateSheetState {
                          text: "[ok] health audit finished; the report uses its findings")
         }
         let cause = exitCode == CLIBridge.exitCodePartialFailure
-            ? "health audit finished with partial results (exit 7); some findings may be missing"
-            : CLIBridge.explainExit(exitCode, operation: "health audit")
+            ? L("health audit finished with partial results (exit 7); some findings may be missing")
+            : CLIBridge.explainExit(exitCode, operation: L("health audit"))
         return .init(timestamp: Date(), level: .warn,
                      text: "[warn] \(cause) Continuing with the cached audit data.")
     }
@@ -304,12 +350,13 @@ final class GenerateSheetState {
         }
         let causes = codes.map { code in
             let formats = result.failed.filter { $0.exitCode == code }
-                .map(\.type.rawValue).joined(separator: ", ")
-            return CLIBridge.explainExit(code, operation: "\(formats) generation")
+                .map { LShown($0.type.rawValue) }.joined(separator: ", ")
+            return CLIBridge.explainExit(code, operation: L("\(formats) generation"))
         }.joined(separator: " ")
         guard !result.succeeded.isEmpty else { return (0, causes) }
-        let written = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
-        return (result.succeeded.count, "Generated \(written). \(causes)")
+        let written = result.succeeded.map(\.rawValue).sorted().map(LShown)
+            .joined(separator: ", ")
+        return (result.succeeded.count, L("Generated \(written). \(causes)"))
     }
 }
 
@@ -323,18 +370,22 @@ struct GenerateSheet: View {
     let onGenerated: @MainActor () -> Void
 
     @State private var state: GenerateSheetState
+    /// The footer's last read of `generateRefusalOffMain`; Generate re-checks on click.
+    @State private var footerRefusal: CLIBridgeError?
 
     /// `freshness`, read by the presenter before the sheet opens, sets Collect fresh from the
     /// first frame; nil (demo mode) leaves it on.
     init(
         profile: String, bridge: CLIBridge, freshness: SnapshotFreshness.Decision?,
-        schoolWorkspace: Bool = false, onGenerated: @escaping @MainActor () -> Void
+        schoolWorkspace: Bool = false, noJamfPro: Bool = false,
+        onGenerated: @escaping @MainActor () -> Void
     ) {
         self.profile = profile
         self.bridge = bridge
         self.onGenerated = onGenerated
         let state = GenerateSheetState()
         state.schoolWorkspace = schoolWorkspace
+        state.noJamfPro = noJamfPro
         if let freshness { state.applySnapshotFreshness(freshness) }
         _state = State(initialValue: state)
     }
@@ -374,7 +425,7 @@ struct GenerateSheet: View {
             templateSection
             collectToggle
             // `pro audit` has no Jamf School counterpart; `request()` never runs it there.
-            if !state.schoolMode { auditToggle }
+            if !state.schoolMode, !state.noJamfPro { auditToggle }
             outputFolderRow
             profileRow
             if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
@@ -409,7 +460,7 @@ struct GenerateSheet: View {
         Task { @MainActor in
             // The target appears in the same update; scroll once it is laid out.
             await Task.yield()
-            withAnimation(.easeOut(duration: 0.25)) {
+            withMotionSafeAnimation(.easeOut(duration: 0.25)) {
                 proxy.scrollTo(target, anchor: target == .log ? .top : .bottom)
             }
         }
@@ -437,7 +488,7 @@ struct GenerateSheet: View {
 
     private var formatsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FieldLabel(label: "Output formats")
+            FieldLabel(label: L("Output formats"))
             ForEach(state.offeredTypes, id: \.self) { type in
                 formatRow(type)
             }
@@ -457,20 +508,31 @@ struct GenerateSheet: View {
 
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
                 Text("• " + GenerateSheetState.writtenFiles(
-                    for: type, profile: profile, schoolMode: state.schoolMode))
+                    for: type, profile: profile, schoolMode: state.schoolMode,
+                    prefix: state.filePrefix))
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+
+            if state.writesCSVFolderFromConfig {
+                Text("• " + GenerateSheetState.writtenFiles(
+                    for: .csvFolder, profile: profile, schoolMode: state.schoolMode,
+                    prefix: state.filePrefix)
+                    + " (output.csv_folder is on)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             if state.writesHTMLWithWorkbook {
-                Text("• " + GenerateSheetState.htmlWithWorkbookLine(profile: profile))
+                Text("• " + GenerateSheetState.htmlWithWorkbookLine(
+                    profile: profile, prefix: state.filePrefix))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
-            // A Jamf School collect writes no daily summary yet (environment-model spec P8).
-            if state.collectFresh && !state.schoolMode {
-                Text("• summary.json (Trends snapshot)")
+            // Jamf Pro and Jamf School collects both write the day's summary (School since 2.11).
+            if state.collectFresh {
+                Text("• summary_<date>.json (Trends snapshot)")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -480,10 +542,10 @@ struct GenerateSheet: View {
 
     private var templateSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(label: "Template")
+            FieldLabel(label: L("Template"))
             Picker("Template", selection: $state.selectedTemplateID) {
                 ForEach(state.offeredTemplates, id: \.identifier) { template in
-                    Text(template.displayName).tag(template.identifier)
+                    Text(LShown(template.displayName)).tag(template.identifier)
                 }
             }
             .labelsHidden()
@@ -507,12 +569,12 @@ struct GenerateSheet: View {
             ? SchoolDashboard.sheetNames : template.includedSheets.map(\.rawValue)
         let sheetPreview: String = {
             let names = sheets.prefix(3)
-            let suffix = sheets.count > 3 ? " + \(sheets.count - 3) more" : ""
-            return names.joined(separator: ", ") + suffix
+            let listed = names.joined(separator: ", ")
+            return sheets.count > 3 ? L("\(listed) + \(sheets.count - 3) more") : listed
         }()
 
         return VStack(alignment: .leading, spacing: 4) {
-            Text(template.description)
+            Text(LShown(template.description))
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -523,7 +585,7 @@ struct GenerateSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                Text("For: \(template.audience)")
+                Text("For: \(LShown(template.audience))")
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
 
@@ -572,7 +634,7 @@ struct GenerateSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Theme.Colors.ok)
                         .font(Theme.Fonts.caption)
-                    Text("\(state.customSelectedSheets.count) sheet\(state.customSelectedSheets.count == 1 ? "" : "s") selected")
+                    Text(state.customSelectedSheets.count == 1 ? L("\(state.customSelectedSheets.count) sheet selected") : L("\(state.customSelectedSheets.count) sheets selected"))
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Text.secondary)
                 }
@@ -659,7 +721,7 @@ struct GenerateSheet: View {
                     .font(Theme.Fonts.bodyText)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(type.rawValue)
+                    Text(LShown(type.rawValue))
                         .font(Theme.Fonts.bodyText.weight(.medium))
                         .foregroundStyle(Theme.Text.primary)
                     Text(type.description)
@@ -689,7 +751,7 @@ struct GenerateSheet: View {
 
     private var collectToggle: some View {
         VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(label: "Data")
+            FieldLabel(label: L("Data"))
             Button {
                 state.toggleCollectFresh()
             } label: {
@@ -710,7 +772,7 @@ struct GenerateSheet: View {
             }
             .buttonStyle(.plain)
             .disabled(state.isRunning)
-            .accessibilityLabel("Collect fresh data first. \(state.collectFresh ? "Enabled" : "Disabled")")
+            .accessibilityLabel("Collect fresh data first. \(state.collectFresh ? L("Enabled") : L("Disabled"))")
         }
     }
 
@@ -735,12 +797,12 @@ struct GenerateSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(state.isRunning)
-        .accessibilityLabel("Include Health Audit. \(state.includeAudit ? "Enabled" : "Disabled")")
+        .accessibilityLabel("Include Health Audit. \(state.includeAudit ? L("Enabled") : L("Disabled"))")
     }
 
     private var outputFolderRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(label: "Output folder")
+            FieldLabel(label: L("Output folder"))
             HStack(spacing: 8) {
                 Image(systemName: "folder")
                     .foregroundStyle(
@@ -758,7 +820,7 @@ struct GenerateSheet: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
-                PNPButton(title: "Choose\u{2026}", size: .sm) {
+                PNPButton(title: L("Choose\u{2026}"), size: .sm) {
                     chooseOutputFolder()
                 }
                 .disabled(state.isRunning)
@@ -789,7 +851,7 @@ struct GenerateSheet: View {
 
     private var profileRow: some View {
         HStack(spacing: 6) {
-            Kicker(text: "Profile")
+            Kicker(text: L("Profile"))
             Text(profile)
                 .font(Theme.Fonts.mono(12))
                 .foregroundStyle(Theme.Colors.goldBright)
@@ -801,35 +863,52 @@ struct GenerateSheet: View {
 
     private var logPanel: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Kicker(text: "Live log")
+            Kicker(text: L("Live log"))
             RunLogConsoleEmbed(lines: state.logLines, isRunning: state.isRunning)
                 .frame(height: 140)
         }
     }
 
     private var authWarningBanner: some View {
-        InlineBanner(
+        let keychainLocked = workspace.authStatus?.keychainLocked == true
+        return InlineBanner(
             icon: "key.slash",
             tone: .warn,
-            action: InlineBannerAction(label: "Re-check") {
+            action: InlineBannerAction(label: L("Re-check")) {
                 Task { await workspace.refreshAuthStatus() }
             }
         ) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Auth may be expired for profile '\(profile)'")
+                Text(keychainLocked
+                    ? "The login keychain is locked"
+                    : "Auth may be expired for profile '\(profile)'")
                     .font(Theme.Fonts.label.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text("Collecting fresh data will fail. Re-authenticate or disable \u{201C}Collect fresh data\u{201D}.")
+                Text(keychainLocked
+                    ? FailureCause.keychainLockedHint + ", or disable \u{201C}Collect fresh data\u{201D}."
+                    : "Collecting fresh data will fail. Re-authenticate or disable \u{201C}Collect fresh data\u{201D}.")
                     .font(Theme.Fonts.label)
                     .foregroundStyle(Theme.Text.secondary)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data.")
+        .accessibilityLabel(keychainLocked
+            ? L("Warning: the login keychain is locked. Unlock it or disable collect fresh data.")
+            : L("Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data."))
     }
 
     private func errorBanner(_ message: String) -> some View {
-        InlineBanner(icon: "exclamationmark.triangle.fill", tone: .danger) {
+        InlineBanner(
+            icon: "exclamationmark.triangle.fill", tone: .danger,
+            action: InlineBannerAction(
+                label: L("Retry"), icon: "arrow.clockwise",
+                isDisabled: workspace.demoMode || state.isRunning || !state.canGenerate,
+                help: workspace.demoMode ? DemoData.liveOnlyHelp : L("Run the same request again.")
+            ) {
+                guard state.canGenerate else { return }
+                Task { await runGenerate() }
+            }
+        ) {
             Text(message)
                 .font(Theme.Fonts.label)
                 .foregroundStyle(Theme.Colors.danger)
@@ -841,11 +920,11 @@ struct GenerateSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.Colors.ok)
-                Text("Done — \(state.completedCount) file\(state.completedCount == 1 ? "" : "s") generated")
+                Text(state.completedCount == 1 ? L("Done — \(state.completedCount) file generated") : L("Done — \(state.completedCount) files generated"))
                     .font(Theme.Fonts.bodyText.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Spacer()
-                PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm) {
+                PNPButton(title: L("Reveal in Finder"), icon: "folder", size: .sm) {
                     let dir = state.resolvedOutputDir(for: profile)
                     SystemActions.openFolder(dir, profile: profile)
                 }
@@ -899,8 +978,30 @@ struct GenerateSheet: View {
         }
     }
 
+    /// Re-read on a timer, off the main actor: a hold in this process and a scheduled run's lock
+    /// are not observable, so nothing else redraws the footer when they end.
     private var footer: some View {
-        HStack {
+        footerRow.task {
+            while !Task.isCancelled {
+                footerRefusal = await workspace.generateRefusalOffMain()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private var footerRow: some View {
+        let waiting = GenerateSheetState.waitingMessage(
+            isRunning: state.isRunning,
+            refusal: state.isRunning ? nil : footerRefusal,
+            status: workspace.collectStatus)
+        return HStack {
+            if let waiting {
+                ProgressView().controlSize(.small)
+                Text(waiting)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .lineLimit(2)
+            }
             Spacer()
 
             PNPButton(title: GenerateSheetState.footerTitles(isRunning: state.isRunning).dismiss) {
@@ -914,12 +1015,12 @@ struct GenerateSheet: View {
                 icon: state.isRunning ? "hourglass" : "play.fill",
                 style: .gold
             ) {
-                guard state.canGenerate else { return }
+                guard state.canGenerate, waiting == nil else { return }
                 Task { await runGenerate() }
             }
-            .disabled(!state.canGenerate)
+            .disabled(!state.canGenerate || waiting != nil)
             .keyboardShortcut(.defaultAction)
-            .accessibilityLabel(state.isRunning ? "Running" : "Generate selected report formats")
+            .accessibilityLabel(state.isRunning ? L("Running") : L("Generate selected report formats"))
         }
         .padding(14)
     }
@@ -928,7 +1029,7 @@ struct GenerateSheet: View {
 
     private func chooseOutputFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose output folder"
+        panel.title = L("Choose output folder")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -944,13 +1045,12 @@ struct GenerateSheet: View {
             state.customOutputDir = url
             state.folderPickerError = nil
         } catch {
-            state.folderPickerError = "Cannot write to \(url.lastPathComponent): "
-                + error.localizedDescription
+            state.folderPickerError = L("Cannot write to \(url.lastPathComponent): \(error.localizedDescription)")
         }
     }
 
-    /// `output.output_dir` as the generators resolve it and `html.with_workbook`, off the
-    /// main actor: both read config.yaml. Demo mode reads no workspace.
+    /// `output.output_dir` as the generators resolve it, `html.with_workbook` and
+    /// `output.csv_folder`, off the main actor: all read config.yaml. Demo mode reads no workspace.
     private func readConfiguredOptions() async {
         guard !workspace.demoMode else { return }
         let profile = profile
@@ -959,6 +1059,12 @@ struct GenerateSheet: View {
         }.value
         state.htmlWithWorkbook = await Task.detached(priority: .utility) {
             HTMLReportConfigLoader.withWorkbook(profile: profile)
+        }.value
+        state.csvFolderConfigured = await Task.detached(priority: .utility) {
+            CSVFolderConfigLoader.isOn(profile: profile)
+        }.value
+        state.filePrefix = await Task.detached(priority: .utility) {
+            ExportNaming.filePrefix(profile: profile)
         }.value
     }
 
@@ -972,7 +1078,7 @@ struct GenerateSheet: View {
             return
         }
         guard workspace.setRunInProgress(for: profile) else {
-            state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
+            state.errorMessage = L("Another run is already in progress for profile '\(profile)' — skipped")
             return
         }
 
@@ -1002,21 +1108,34 @@ struct GenerateSheet: View {
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] audit failed; continuing with cached audit data: \(error.localizedDescription)"
+                    text: "[warn] audit failed; continuing with cached audit data: \(error.englishDescription)"
                 ))
             }
         }
 
         // The collect is the Overview's (`collectThenGenerate`'s), and the F3 narrative,
         // time-boxed inside makeForGUIGenerate, is asked for after it.
+        // One clock for the run: the collect and the report date the day's summary the same.
+        let runStart = Date()
         let outcome = await GenerateSheetState.perform(
             request,
             profile: profile,
             onLine: onLine,
-            collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
+            collect: {
+                try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { recorded in
+                    try await bridge.collect(
+                        profile: profile, force: true, now: runStart,
+                        onLine: { onLine($0); recorded($0) })
+                }.exit
+            },
             narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
-            generateAll: bridge.generateAll(
-                types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)
+            generateAll: { types, dir, profile, school, template, narrative, onLine in
+                await bridge.generateAll(
+                    types: types, outputDir: dir, profile: profile, schoolMode: school,
+                    template: template, aiNarrative: narrative, now: runStart, onLine: onLine)
+            }
         )
         state.completedCount = outcome.count
         state.errorMessage = outcome.message
@@ -1045,7 +1164,7 @@ private struct RunLogConsoleEmbed: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if lines.isEmpty {
                         HStack(spacing: 0) {
-                            Text(isRunning ? "Starting\u{2026}" : "No output yet")
+                            Text(isRunning ? L("Starting\u{2026}") : L("No output yet"))
                                 .font(Theme.Fonts.mono(11.5))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityAddTraits(.updatesFrequently)
@@ -1075,7 +1194,7 @@ private struct RunLogConsoleEmbed: View {
                     .strokeBorder(Theme.Hairline.strong, lineWidth: 1)
             )
             .onChange(of: lines.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.12)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.12)) {
                     proxy.scrollTo("log-bottom", anchor: .bottom)
                 }
             }

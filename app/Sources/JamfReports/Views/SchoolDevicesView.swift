@@ -9,52 +9,74 @@ struct SchoolDevicesView: View {
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
     @State private var filter: Filter = .all
     @State private var search = ""
-    @State private var reloadToken = 0
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
+    @State private var rowCache = RowCache()
 
     enum Filter: String, CaseIterable, Identifiable {
-        case all = "All", managed = "Managed", unmanaged = "Unmanaged", stale = "Stale"
+        case all = "All", managed = "Managed", supervised = "Supervised", unmanaged = "Unmanaged",
+             stale = "Stale"
         var id: String { rawValue }
     }
 
-    private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
+    private var staleDays: Int { workspace.configState.staleRule.days }
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Jamf School",
-                title: "Devices",
+                kicker: L("Jamf School"),
+                title: L("Devices"),
                 subtitle: subtitle,
-                lastModified: snapshot.collectedAt
+                // The demo dataset is fixed; an age measured from today would keep growing.
+                lastModified: workspace.demoMode ? nil : snapshot.collectedAt
             )
-            if snapshot.devicesDate == nil {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("devices"))
             } else {
-                SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
-                devicesCard
+                if snapshot.devicesDate == nil {
+                    emptyState
+                } else {
+                    SchoolDeviceTiles(
+                        snapshot: snapshot, staleDays: staleDays, now: now,
+                        opens: { filter = $0; search = "" })
+                    devicesCard
+                }
+                if !snapshot.depDevices.isEmpty { depCard }
             }
-            if !snapshot.depDevices.isEmpty { depCard }
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: "\(workspace.profile)#\(reloadToken)") { await reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reloadToken += 1
+            reloads += 1
         }
     }
 
     private var subtitle: String? {
         guard snapshot.devicesDate != nil else { return nil }
         let count = snapshot.devices.count
-        return "\(count) device\(count == 1 ? "" : "s") in Jamf School."
+        return (count == 1 ? L("\(count) device in Jamf School.") : L("\(count) devices in Jamf School."))
     }
 
-    private func reload() async {
-        guard !workspace.demoMode else { snapshot = .empty; return }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
+            snapshot = DemoData.schoolSnapshot
+            loadedSource = source
+            return
+        }
         let profile = workspace.profile
-        let loaded = await Task.detached(priority: .userInitiated) {
-            SchoolFleetService.load(profile: profile)
-        }.value
-        guard profile == workspace.profile else { return }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { SchoolFleetService.load(profile: profile) }
+        ) else { return }
         snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Sections
@@ -63,28 +85,27 @@ struct SchoolDevicesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
-                title: "No devices collected yet",
-                message: "Collect from Jamf School (Data Sources › Collect now) to list its "
-                    + "devices."
+                title: L("No devices collected yet"),
+                message: L("Collect from Jamf School (Data Sources › Collect now) to list its devices."),
+                primaryAction: workspace.firstCollectEmptyAction()
             )
         }
     }
 
+    /// The filtered list, kept in `rowCache`: the name sort reruns only when the data changes and
+    /// the filter only when a filter input does, so a search keystroke does not re-sort the fleet.
+    /// The demo's check-in ages are measured from its reference date, never the clock.
+    private var now: Date { workspace.demoMode ? DemoData.referenceDate : Date() }
+
     private var rows: [SchoolFleetService.Device] {
-        let now = Date()
-        let query = search.trimmingCharacters(in: .whitespaces)
-        return snapshot.devices.filter { device in
-            switch filter {
-            case .all: break
-            case .managed: guard device.isManaged == true else { return false }
-            case .unmanaged: guard device.isManaged == false else { return false }
-            case .stale: guard device.isStale(atDays: staleDays, now: now) else { return false }
-            }
-            guard !query.isEmpty else { return true }
-            return [device.name, device.serial, device.model, device.os]
-                .contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let now = self.now
+        let key = RowCache.Key(
+            data: RowCache.DataKey(
+                source: dataSource, reloads: reloads, collectedAt: snapshot.devicesDate,
+                count: snapshot.devices.count),
+            filter: filter, query: search.trimmingCharacters(in: .whitespaces),
+            staleDays: staleDays, hourBucket: Int(now.timeIntervalSince1970 / 3600))
+        return rowCache.rows(for: key, devices: snapshot.devices, now: now)
     }
 
     private var devicesCard: some View {
@@ -92,12 +113,12 @@ struct SchoolDevicesView: View {
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Devices",
+                    title: L("Devices"),
                     trailing: shown.count == snapshot.devices.count
-                        ? nil : "\(shown.count) of \(snapshot.devices.count) shown")
+                        ? nil : L("\(shown.count) of \(snapshot.devices.count) shown"))
                 HStack(spacing: 12) {
                     Picker("Show", selection: $filter) {
-                        ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(Filter.allCases) { Text(LShown($0.rawValue)).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -105,7 +126,7 @@ struct SchoolDevicesView: View {
                     TextField("Search name, serial, model or OS", text: $search)
                         .textFieldStyle(.roundedBorder)
                 }
-                SchoolDevicesTable(rows: shown, staleDays: staleDays)
+                SchoolDevicesTable(rows: shown, staleDays: staleDays, now: now)
                     .pageTableHeight(rows: shown.count)
             }
         }
@@ -114,19 +135,24 @@ struct SchoolDevicesView: View {
     private var depCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Automated Device Enrollment",
+                SectionHeader(title: L("Automated Device Enrollment"),
                               trailing: "\(snapshot.depDevices.count)")
                 Table(snapshot.depDevices) {
                     TableColumn("Serial") { Text($0.serial).font(Theme.Fonts.mono(11)) }
-                        .width(min: 110, ideal: 140)
+                        .width(min: 110, ideal: 110)
                     TableColumn("Name") { Text($0.name.isEmpty ? "—" : $0.name) }
-                        .width(min: 120, ideal: 180)
+                        .width(min: 120, ideal: 120)
                     TableColumn("Model") { Text($0.model.isEmpty ? "—" : $0.model) }
-                        .width(min: 90, ideal: 140)
+                        .width(min: 90, ideal: 90)
                     TableColumn("Status") { Text($0.status.isEmpty ? "—" : $0.status) }
-                        .width(min: 80, ideal: 110)
+                        .width(min: 80, ideal: 80)
                     TableColumn("Profile") { Text($0.profile.isEmpty ? "—" : $0.profile) }
-                        .width(min: 100, ideal: 160)
+                        .width(min: 100, ideal: 100)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let device = snapshot.depDevices.first(where: { $0.id == ids.first }) {
+                        SchoolCopyItems(serial: device.serial, name: device.name)
+                    }
                 }
                 .font(.callout)
                 .pageTableHeight(rows: snapshot.depDevices.count)
@@ -135,61 +161,159 @@ struct SchoolDevicesView: View {
     }
 }
 
+extension SchoolDevicesView {
+    nonisolated static func sortedByName(
+        _ devices: [SchoolFleetService.Device]
+    ) -> [SchoolFleetService.Device] {
+        devices.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    nonisolated static func filtered(
+        _ devices: [SchoolFleetService.Device], filter: Filter, query: String, staleDays: Int,
+        now: Date
+    ) -> [SchoolFleetService.Device] {
+        devices.filter { device in
+            switch filter {
+            case .all: break
+            case .managed: guard device.isManaged == true else { return false }
+            // The Supervised tile's rule: supervised over managed devices.
+            case .supervised:
+                guard device.isManaged == true, device.isSupervised == true else { return false }
+            case .unmanaged: guard device.isManaged == false else { return false }
+            case .stale: guard device.isStale(atDays: staleDays, now: now) else { return false }
+            }
+            guard !query.isEmpty else { return true }
+            return [device.name, device.serial, device.model, device.os]
+                .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    /// Holds the name-sorted fleet and the last filtered list, each rebuilt only when its key
+    /// changes. `sortBuilds` and `filterBuilds` are the seam tests count through.
+    @MainActor
+    final class RowCache {
+        struct DataKey: Equatable {
+            let source: String
+            let reloads: Int
+            let collectedAt: Date?
+            let count: Int
+        }
+
+        struct Key: Equatable {
+            let data: DataKey
+            let filter: Filter
+            let query: String
+            let staleDays: Int
+            /// Staleness moves with the clock; an hour is coarse enough for day counts.
+            let hourBucket: Int
+        }
+
+        private(set) var sortBuilds = 0
+        private(set) var filterBuilds = 0
+        private var dataKey: DataKey?
+        private var sorted: [SchoolFleetService.Device] = []
+        private var listKey: Key?
+        private var list: [SchoolFleetService.Device] = []
+
+        func rows(
+            for key: Key, devices: [SchoolFleetService.Device], now: Date
+        ) -> [SchoolFleetService.Device] {
+            if dataKey != key.data {
+                dataKey = key.data
+                sorted = SchoolDevicesView.sortedByName(devices)
+                sortBuilds += 1
+                listKey = nil
+            }
+            if listKey == key { return list }
+            list = SchoolDevicesView.filtered(
+                sorted, filter: key.filter, query: key.query, staleDays: key.staleDays, now: now)
+            filterBuilds += 1
+            listKey = key
+            return list
+        }
+    }
+}
+
 /// The School device counts, shared by the Devices screen and the School Overview.
 struct SchoolDeviceTiles: View {
     let snapshot: SchoolFleetService.Snapshot
     let staleDays: Int
+    var now = Date()
+    /// The filters a tile may open; a screen that cannot apply one leaves its tile inert.
+    var filters: Set<SchoolDevicesView.Filter> = Set(SchoolDevicesView.Filter.allCases)
+    var opens: ((SchoolDevicesView.Filter) -> Void)? = nil
 
     var body: some View {
         let total = snapshot.devices.count
         EqualHeightTileGrid(minTileWidth: 200) {
-            StatTile(label: "Devices", value: "\(total)", sub: platformLine, fillsHeight: true)
-            StatTile(label: "Managed", value: "\(snapshot.managedCount)",
-                     sub: share(snapshot.managedCount, of: total), fillsHeight: true)
-            StatTile(label: "Supervised", value: "\(snapshot.supervisedCount)",
-                     sub: share(snapshot.supervisedCount, of: total), fillsHeight: true)
-            StatTile(label: "Stale", value: "\(snapshot.staleCount(atDays: staleDays))",
-                     sub: "No check-in for more than \(staleDays) days", fillsHeight: true)
+            StatTile(label: L("Devices"), value: "\(total)", sub: platformLine, fillsHeight: true,
+                     action: action(.all, available: true),
+                     actionHint: hint(.all, L("all devices")))
+            StatTile(label: L("Managed"), value: snapshot.managed.map { "\($0.met)" } ?? "—",
+                     sub: snapshot.managed.map { L("\(percent($0)) of devices reporting") }
+                         ?? L("Not reported"),
+                     fillsHeight: true,
+                     action: action(.managed, available: snapshot.managed != nil),
+                     actionHint: hint(.managed, L("managed devices")))
+            StatTile(label: L("Supervised"), value: snapshot.supervised.map { "\($0.met)" } ?? "—",
+                     sub: snapshot.supervised.map { L("\(percent($0)) of managed devices reporting") }
+                         ?? L("Not reported"),
+                     fillsHeight: true,
+                     action: action(.supervised, available: snapshot.supervised != nil),
+                     actionHint: hint(.supervised, L("supervised devices")))
+            StatTile(label: L("Stale"),
+                     value: "\(snapshot.staleCount(atDays: staleDays, now: now))",
+                     sub: L("No check-in for more than \(staleDays) days"), fillsHeight: true,
+                     action: action(.stale, available: true),
+                     actionHint: hint(.stale, L("stale devices")))
         }
+    }
+
+    private func action(_ filter: SchoolDevicesView.Filter, available: Bool) -> (() -> Void)? {
+        guard available, filters.contains(filter), let opens else { return nil }
+        return { opens(filter) }
+    }
+
+    private func hint(_ filter: SchoolDevicesView.Filter, _ what: String) -> String? {
+        opens != nil && filters.contains(filter) ? L("Opens Devices, showing \(what)") : nil
     }
 
     private var platformLine: String {
         let parts = snapshot.platformCounts.map { "\($0.count) \($0.platform)" }
-        return parts.isEmpty ? "None collected" : parts.joined(separator: " · ")
+        return parts.isEmpty ? L("None collected") : parts.joined(separator: " · ")
     }
 
-    private func share(_ count: Int, of total: Int) -> String {
-        guard total > 0 else { return "—" }
-        return String(format: "%.0f%% of devices", Double(count) / Double(total) * 100)
+    private func percent(_ share: MobileSummary.Share) -> String {
+        PercentFormat.whole.text(share.met, of: share.of)
     }
 }
 
 struct SchoolDevicesTable: View {
     let rows: [SchoolFleetService.Device]
     let staleDays: Int
+    var now = Date()
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        let now = Date()
         Table(rows) {
             TableColumn("Name") {
                 Text($0.name.isEmpty ? "—" : $0.name).font(.callout.weight(.medium))
             }
-                .width(min: 140, ideal: 200)
+                .width(min: 140, ideal: 140)
             TableColumn("Serial") {
                 Text($0.serial.isEmpty ? "—" : $0.serial)
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
-            .width(min: 110, ideal: 140)
+            .width(min: 110, ideal: 110)
             TableColumn("Model") { Text($0.model.isEmpty ? "—" : $0.model) }
-                .width(min: 90, ideal: 150)
+                .width(min: 90, ideal: 90)
             TableColumn("OS") { Text($0.os.isEmpty ? "—" : $0.os).font(Theme.Fonts.mono(11)) }
-                .width(min: 90, ideal: 120)
+                .width(min: 90, ideal: 90)
             TableColumn("Managed") { Text(Self.yesNo($0.isManaged)) }
-                .width(min: 60, ideal: 80)
+                .width(min: 60, ideal: 60)
             TableColumn("Supervised") { Text(Self.yesNo($0.isSupervised)) }
-                .width(min: 70, ideal: 90)
+                .width(min: 70, ideal: 70)
             TableColumn("Last Check-in") { device in
                 let stale = device.isStale(atDays: staleDays, now: now)
                 // Same icon as the Computers table's stale state.
@@ -207,13 +331,18 @@ struct SchoolDevicesTable: View {
                 .accessibilityLabel("Last Check-in")
                 .accessibilityValue(Self.checkinAccessibilityValue(device, stale: stale, now: now))
             }
-            .width(min: 100, ideal: 130)
+            .width(min: 100, ideal: 100)
+        }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let device = rows.first(where: { $0.id == ids.first }) {
+                SchoolCopyItems(serial: device.serial, name: device.name)
+            }
         }
         .font(.callout)
     }
 
     static func yesNo(_ value: Bool?) -> String {
-        value.map { $0 ? "Yes" : "No" } ?? "—"
+        value.map { $0 ? L("Yes") : L("No") } ?? "—"
     }
 
     /// The check-in text, led by "Stale" so the state is not carried by color alone.
@@ -221,11 +350,26 @@ struct SchoolDevicesTable: View {
         _ device: SchoolFleetService.Device, stale: Bool, now: Date
     ) -> String {
         let text = checkinText(device, now: now)
-        return stale ? "Stale, \(text)" : text
+        return stale ? L("Stale, \(text)") : text
     }
 
     static func checkinText(_ device: SchoolFleetService.Device, now: Date) -> String {
-        guard let days = device.daysSinceCheckin(now: now) else { return "Unknown" }
-        return days == 0 ? "Today" : "\(days) day\(days == 1 ? "" : "s") ago"
+        guard let days = device.daysSinceCheckin(now: now) else { return L("Unknown") }
+        return days == 0 ? L("Today") : (days == 1 ? L("\(days) day ago") : L("\(days) days ago"))
+    }
+}
+
+/// Copy serial and name for a School device row; an empty value has no item.
+private struct SchoolCopyItems: View {
+    let serial: String
+    let name: String
+
+    var body: some View {
+        if !serial.isEmpty {
+            Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(serial) }
+        }
+        if !name.isEmpty {
+            Button(L("Copy Name")) { SystemActions.copyToClipboard(name) }
+        }
     }
 }

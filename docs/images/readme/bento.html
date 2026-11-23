@@ -1,0 +1,167 @@
+<!doctype html>
+<!-- Source of bento.png. Render at 1600x900, device scale 2, for example:
+     chrome --headless --hide-scrollbars --window-size=1600,900 --force-device-scale-factor=2 \
+       --screenshot=bento.png bento.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jamf Reports</title>
+<style>
+  :root {
+    --bg: #111113; --tile: #1D1D1F; --tile2: #232326; --line: #2E2E33;
+    --fg: #F2F2F7; --fg2: #C7C7CC; --muted: #8E8E93;
+    --teal: #4FAAAA; --gold: #E8B614; --orange: #E0832A; --red: #E5484D;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 900px; background: var(--bg); overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: var(--fg); padding: 36px;
+  }
+  .grid {
+    width: 100%; height: 100%; display: grid; gap: 16px;
+    grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(4, 1fr);
+    grid-template-areas:
+      "overview overview brand   brand readonly products"
+      "overview overview brand   brand score    score"
+      "trends   trends   reports runs  runs     protect"
+      "trends   trends   langs   runs  runs     protect";
+  }
+  .t {
+    background: var(--tile); border: 1px solid var(--line); border-radius: 22px;
+    padding: 20px 22px; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+  }
+  .h { font-size: 21px; font-weight: 650; letter-spacing: -0.2px; line-height: 1.2; }
+  .cap { font-size: 14px; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+  .big { font-weight: 750; letter-spacing: -1px; line-height: 1.02; }
+  .push { margin-top: auto; }
+
+  /* Screenshot tiles: heading on top, the screen below, cropped from its top-left corner. */
+  .shot .img {
+    margin-top: 14px; flex: 1; min-height: 0; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--line); background: var(--tile2);
+  }
+  .shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; display: block; }
+
+  .brand {
+    grid-area: brand; align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(120% 90% at 50% 0%, #26262A 0%, #1A1A1C 70%);
+  }
+  .brand img { width: 150px; height: 150px; margin-bottom: 20px; }
+  .brand .name { font-size: 52px; font-weight: 750; letter-spacing: -1.5px; }
+  .brand .tag {
+    font-size: 22px; font-weight: 600; margin-top: 10px;
+    background: linear-gradient(90deg, var(--teal), var(--gold) 55%, var(--orange));
+    -webkit-background-clip: text; color: transparent;
+  }
+
+  .overview { grid-area: overview; }
+  .trends   { grid-area: trends; }
+  .runs     { grid-area: runs; }
+  .score    { grid-area: score; flex-direction: row; gap: 18px; }
+  .score .txt { width: 170px; flex: none; display: flex; flex-direction: column; }
+  .score .img { margin-top: 0; }
+
+  .readonly { grid-area: readonly; justify-content: space-between; }
+  .readonly .big { font-size: 34px; color: var(--gold); }
+
+  .products { grid-area: products; justify-content: space-between; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 13px; font-weight: 600; padding: 5px 9px; border-radius: 8px;
+    background: var(--tile2); color: var(--fg2); border: 1px solid var(--line);
+  }
+  .chip.teal { color: var(--teal); }
+
+  .reports { grid-area: reports; justify-content: space-between; }
+  .formats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .formats div {
+    font-size: 15px; font-weight: 700; text-align: center; padding: 7px 0; border-radius: 8px;
+    background: var(--tile2); border: 1px solid var(--line);
+  }
+
+  .langs { grid-area: langs; justify-content: space-between; }
+  .langs .big { font-size: 40px; color: var(--teal); }
+
+  .protect { grid-area: protect; justify-content: space-between; }
+  .sev { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .sev div {
+    display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--fg2);
+    padding: 8px 10px; border-radius: 9px; background: var(--tile2);
+  }
+  .sev span { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+</style>
+</head>
+<body>
+<div class="grid">
+
+  <section class="t shot overview">
+    <div class="h">Your fleet on one screen</div>
+    <div class="cap">Devices, stability, encryption and OS versions at a glance.</div>
+    <div class="img"><img src="overview.png" alt=""></div>
+  </section>
+
+  <section class="t brand">
+    <img src="icon.png" alt="">
+    <div class="name">Jamf Reports</div>
+    <div class="tag">Fleet reports for Jamf, built on your Mac.</div>
+  </section>
+
+  <section class="t readonly">
+    <div class="big">Read-only</div>
+    <div class="cap">Everything goes through Jamf's own jamf-cli.</div>
+  </section>
+
+  <section class="t products">
+    <div class="chips">
+      <span class="chip teal">Jamf Pro</span><span class="chip teal">Jamf School</span>
+      <span class="chip teal">Jamf Protect</span><span class="chip">Platform API</span>
+    </div>
+    <div class="cap">Jamf Cloud or on-premises.</div>
+  </section>
+
+  <section class="t shot score">
+    <div class="txt">
+      <div class="h">A score you define</div>
+      <div class="cap">Pick the controls and agents that count, and how much each weighs.</div>
+    </div>
+    <div class="img"><img src="security-posture.png" alt=""></div>
+  </section>
+
+  <section class="t shot trends">
+    <div class="h">History, not just today</div>
+    <div class="cap">Daily snapshots, trend charts, quarter and month reports.</div>
+    <div class="img"><img src="trends.png" alt=""></div>
+  </section>
+
+  <section class="t reports">
+    <div class="formats"><div>Excel</div><div>HTML</div><div>PDF</div><div>CSV</div></div>
+    <div class="cap">On demand or on a schedule.</div>
+  </section>
+
+  <section class="t shot runs">
+    <div class="h">Scheduled runs</div>
+    <div class="cap">Set your own schedules, or turn on automation and let it keep every workspace current.</div>
+    <div class="img"><img src="scheduled-runs.png" alt=""></div>
+  </section>
+
+  <section class="t langs">
+    <div class="big">7 languages</div>
+    <div class="cap">Reports stay in English.</div>
+  </section>
+
+  <section class="t protect">
+    <div>
+      <div class="h">Jamf Protect</div>
+      <div class="cap">Alerts and computers, matched to your Jamf Pro Macs.</div>
+    </div>
+    <div class="sev push">
+      <div><span style="background: var(--orange)"></span>High</div>
+      <div><span style="background: var(--gold)"></span>Medium</div>
+      <div><span style="background: var(--teal)"></span>Low</div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

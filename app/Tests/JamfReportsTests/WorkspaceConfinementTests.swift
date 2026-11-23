@@ -329,35 +329,50 @@ final class WorkspaceConfinementTests: XCTestCase {
 
 // MARK: - Profile name in config.yaml
 
-final class ProfileMismatchDoctorTests: XCTestCase {
+final class ProfileOwnerDoctorTests: XCTestCase {
 
     private func config(_ profile: String?) throws -> ReportConfig {
         try ConfigLoader.loadFromString(profile.map { "jamf_cli:\n  profile: \($0)\n" } ?? "")
     }
 
-    func testADifferentProfileIsAFailRowNamingBothAndTheFix() throws {
-        let rows = ConfigDoctorService.profileMismatchRows(
+    /// Since 2.12 an old-shape `jamf_cli.profile` naming another profile is ignored (commands
+    /// run as the workspace), so it is a warning that still names both and the fix.
+    func testADifferentOldKeyProfileIsAWarnRowNamingBothAndTheFix() throws {
+        let rows = ConfigDoctorService.profileOwnerRows(
             profile: "newname", config: try config("oldname"))
 
         XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows.first?.severity, .fail)
+        XCTAssertEqual(rows.first?.severity, .warn)
         XCTAssertEqual(rows.first?.id, "config.profile_mismatch")
         let text = (rows.first?.detail ?? "") + (rows.first?.hint ?? "")
         XCTAssertTrue(text.contains("oldname") && text.contains("newname"), text)
-        XCTAssertTrue(rows.first?.hint?.contains("jamf_cli: profile line") == true)
+        XCTAssertTrue(text.contains("ignores the key"), text)
+        XCTAssertTrue(rows.first?.hint?.contains("remove the line") == true)
     }
 
     func testBlankAndEqualProfilesAreFine() throws {
-        XCTAssertEqual(ConfigDoctorService.profileMismatchRows(
+        XCTAssertEqual(ConfigDoctorService.profileOwnerRows(
             profile: "same", config: try config(nil)), [])
-        XCTAssertEqual(ConfigDoctorService.profileMismatchRows(
+        XCTAssertEqual(ConfigDoctorService.profileOwnerRows(
             profile: "same", config: try config("same")), [])
     }
 
-    func testACaseVariantIsSaidToDifferOnlyInCase() throws {
-        let rows = ConfigDoctorService.profileMismatchRows(
+    /// A case variant in the key is ignored too: the folder's own name decides its owner.
+    func testACaseVariantIsAWarnSaidToDifferOnlyInCase() throws {
+        let rows = ConfigDoctorService.profileOwnerRows(
             profile: "prod", config: try config("Prod"))
+        XCTAssertEqual(rows.first?.severity, .warn)
         XCTAssertTrue(rows.first?.detail.contains("differ only in case") == true)
+    }
+
+    /// A `profiles:` block's MDM slot naming another profile stops every run
+    /// (`EnvironmentProfiles.refusal`), so it fails and names the slot.
+    func testABlockMDMSlotNamingAnotherProfileIsAFail() throws {
+        let rows = ConfigDoctorService.profileOwnerRows(
+            profile: "prod",
+            config: try ConfigLoader.loadFromString("profiles:\n  jamf_school: other\n"))
+        XCTAssertEqual(rows.first?.severity, .fail)
+        XCTAssertEqual(rows.first?.title.hasPrefix("profiles.jamf_school"), true)
     }
 
     func testRunIncludesTheRowForAWorkspaceWhoseConfigNamesAnotherProfile() throws {
@@ -373,7 +388,7 @@ final class ProfileMismatchDoctorTests: XCTestCase {
         let report = ConfigDoctorService.run(profile: "copied", workspaceRoot: root)
 
         XCTAssertTrue(report.rows.contains {
-            $0.id == "config.profile_mismatch" && $0.severity == .fail
+            $0.id == "config.profile_mismatch" && $0.severity == .warn
         })
     }
 }

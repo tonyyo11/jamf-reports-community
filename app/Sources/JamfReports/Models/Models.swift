@@ -8,13 +8,16 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
     case html = "HTML"
     case pdf  = "PDF"
     case csv  = "CSV"
+    /// One CSV per workbook tab, beside the workbook; the workbook is written with it.
+    case csvFolder = "CSV folder"
 
     var description: String {
         switch self {
-        case .xlsx: "Full data, all sheets"
-        case .html: "Executive summary, browser"
-        case .pdf:  "Paginated audit artifact"
-        case .csv:  "Wide inventory export"
+        case .xlsx: L("Full data, all sheets")
+        case .html: L("Executive summary, browser")
+        case .pdf:  L("Paginated audit artifact")
+        case .csv:  L("Wide inventory export")
+        case .csvFolder: L("One CSV per tab, with the workbook")
         }
     }
 
@@ -24,6 +27,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .html: "safari"
         case .pdf:  "doc.richtext"
         case .csv:  "doc.plaintext"
+        case .csvFolder: "folder"
         }
     }
 }
@@ -49,8 +53,8 @@ enum APIScope: String, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .fullAdmin: "Full Admin"
-        case .limited:   "Limited"
+        case .fullAdmin: L("Full Admin")
+        case .limited:   L("Limited")
         }
     }
 }
@@ -106,9 +110,9 @@ struct MultiTarget: Sendable, Equatable {
 
     var displayLabel: String {
         switch scope {
-        case .all:           return "All profiles"
+        case .all:           return L("All profiles")
         case .filter(let g): return "~\(g)"
-        case .list(let ps):  return "\(ps.count) profile\(ps.count == 1 ? "" : "s")"
+        case .list(let ps):  return (ps.count == 1 ? L("\(ps.count) profile") : L("\(ps.count) profiles"))
         }
     }
 
@@ -146,23 +150,23 @@ struct Schedule: Identifiable, Sendable {
 
         var displayTitle: String {
             switch self {
-            case .snapshotOnly: "Refresh data only"
-            case .jamfCLIOnly: "Generate from cached data"
-            case .jamfCLIFull: "Refresh + Generate"
-            case .backup: "Configuration Backup"
+            case .snapshotOnly: L("Refresh data only")
+            case .jamfCLIOnly: L("Generate from cached data")
+            case .jamfCLIFull: L("Refresh + Generate")
+            case .backup: L("Configuration Backup")
             }
         }
 
         var displayDescription: String {
             switch self {
             case .snapshotOnly:
-                "Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered."
+                L("Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered.")
             case .jamfCLIOnly:
-                "Generates a workbook from the latest cached jamf-cli data. Does NOT collect fresh data first. Use this for a fast re-render after a recent collect — for example, after editing config.yaml or templates."
+                L("Generates a workbook from the latest cached jamf-cli data. Does NOT collect fresh data first. Use this for a fast re-render after a recent collect — for example, after editing config.yaml or templates.")
             case .jamfCLIFull:
-                "Runs collect to refresh jamf-cli data, then generates a workbook. Use this for a self-contained scheduled run."
+                L("Runs collect to refresh jamf-cli data, then generates a workbook. Use this for a self-contained scheduled run.")
             case .backup:
-                "Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report."
+                L("Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report.")
             }
         }
 
@@ -222,10 +226,10 @@ struct Schedule: Identifiable, Sendable {
         /// VoiceOver label for a status pill describing the last run outcome.
         var accessibilityLabel: String {
             switch self {
-            case .ok:      "Last run status: OK"
-            case .warn:    "Last run status: Warning"
-            case .fail:    "Last run status: Failed"
-            case .partial: "Last run status: Partial"
+            case .ok:      L("Last run status: OK")
+            case .warn:    L("Last run status: Warning")
+            case .fail:    L("Last run status: Failed")
+            case .partial: L("Last run status: Partial")
             }
         }
     }
@@ -248,7 +252,7 @@ struct Schedule: Identifiable, Sendable {
     var multiTarget: MultiTarget? = nil
     /// Which `CollectionTier`s this schedule's collect step fetches (PR-23
     /// T-17). `nil` means "not specified" — legacy plists written before
-    /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
+    /// PR-23 omit the `--tiers` flag, and `HeadlessRun.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
     /// Profiles excluded from a multi-profile (`--all-profiles`) run, so the
@@ -333,7 +337,7 @@ struct Report: Identifiable, Sendable, Equatable {
 
     /// VoiceOver label for a report row.
     var accessibilityLabel: String {
-        let sheetText = hasSheets ? "\(sheets) sheet\(sheets == 1 ? "" : "s"), " : ""
+        let sheetText = hasSheets ? (sheets == 1 ? L("\(sheets) sheet, ") : L("\(sheets) sheets, ")) : ""
         return "\(name), \(sheetText)\(size)"
     }
 }
@@ -350,6 +354,11 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     var protect: BackupProductResult?
     /// The Jamf Pro part failed, so the folder holds only what Jamf Protect exported.
     var proFailed = false
+    /// The Jamf Pro part was skipped: the workspace is on storage other Macs reach and the
+    /// operator has not allowed Jamf Pro backups there.
+    var proSkipped = false
+    /// A Jamf School workspace's backup: Jamf Protect alone, as there is no Jamf Pro part.
+    var noJamfPro = false
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
@@ -357,12 +366,15 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     /// A backup with no files: an interrupted run, or one whose contents were cleared.
     var isEmpty: Bool { fileCount == 0 }
 
+    /// The backup holds no Jamf Pro files, so a diff has nothing to read.
+    var lacksJamfPro: Bool { proFailed || proSkipped }
+
     /// The backup holds Jamf Protect objects, which a diff does not compare.
     var includesProtectFiles: Bool { (protect?.objectTotal ?? 0) > 0 }
 
     /// A diff compares the contents of two backups, so both need files and they must differ.
     static func canDiff(_ backup: BackupRecord, against other: BackupRecord?) -> Bool {
-        guard let other, !backup.proFailed, !other.proFailed else { return false }
+        guard let other, !backup.lacksJamfPro, !other.lacksJamfPro else { return false }
         return backup.id != other.id && !backup.isEmpty && !other.isEmpty
     }
 
@@ -379,24 +391,35 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     static func dateInName(_ name: String) -> Date? {
         guard let match = name.wholeMatch(
             of: #/(backup_)?(\d{8})[T_](\d{6})(?:-\d+)?/#) else { return nil }
+        let formatter = match.output.1 == nil ? utcNameFormatter : localNameFormatter
+        return formatter.date(from: String(match.output.2) + String(match.output.3))
+    }
+
+    private static let utcNameFormatter = nameFormatter(utc: true)
+    /// The older tool wrote its names in local time: the zone is left unset so it follows the
+    /// default zone.
+    private static let localNameFormatter = nameFormatter(utc: false)
+
+    private static func nameFormatter(utc: Bool) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = match.output.1 == nil ? TimeZone(identifier: "UTC") : .current
+        if utc { formatter.timeZone = TimeZone(identifier: "UTC") }
         formatter.dateFormat = "yyyyMMddHHmmss"
-        return formatter.date(from: String(match.output.2) + String(match.output.3))
+        return formatter
     }
 
     /// VoiceOver label for a backup row: display name, file count, size, date.
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
-        let failed = proFailed ? ", Jamf Pro part failed" : ""
-        return "\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)"
+        let failed = proFailed ? L(", Jamf Pro part failed")
+            : proSkipped && !noJamfPro ? L(", Jamf Pro part skipped") : ""
+        return L("\(displayName)\(failed), \(fileCount) files, \(sizeLabel), created \(createdLabel)")
     }
 
     /// VoiceOver summary describing the backup's content and purpose.
     var accessibilitySummary: String {
         let displayName = label.isEmpty ? name : label
-        return "Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)"
+        return L("Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)")
     }
 }
 
@@ -476,6 +499,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var serial: String
     var osVersion: String
     var model: String
+    /// `hardware.model` ("MacBook Air (M2, 2022)"); empty when the source carries none.
+    var marketingModel = ""
     var user: String
     var email: String
     var department: String
@@ -514,9 +539,13 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     /// True when a source that dates every Mac (the `computers` snapshot) described this one,
     /// so a missing check-in or inventory date means it never had one.
     var carriesDates = false
+    /// `NeverInventoried` held for the `computers` item: no inventory date and no OS version.
+    var neverInventoried = false
+    /// The management fields of the `computers` row (`ManagementHealth`); nil from any other source.
+    var management: ManagementFacts? = nil
 
-    var displayName: String { name.isEmpty ? "Unknown device" : name }
-    var displaySerial: String { serial.isEmpty ? "No serial" : serial }
+    var displayName: String { name.isEmpty ? L("Unknown device") : name }
+    var displaySerial: String { serial.isEmpty ? L("No serial") : serial }
     var patchFailureCount: Int { patchFailures.count }
     var numericJamfID: String? {
         guard let trimmed = jamfID?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -558,6 +587,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         inventoryDate = [inventoryDate, other.inventoryDate].compactMap { $0 }.max()
         contactDate = [contactDate, other.contactDate].compactMap { $0 }.max()
         carriesDates = carriesDates || other.carriesDates
+        neverInventoried = neverInventoried || other.neverInventoried
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
@@ -584,6 +614,11 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             hardwareEncrypted = mine == theirs ? mine : nil
         } else {
             hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        }
+        if let mine = management, let theirs = other.management {
+            management = mine == theirs ? mine : nil
+        } else {
+            management = management ?? other.management
         }
         for failure in other.patchFailures where !patchFailures.contains(failure) {
             patchFailures.append(failure)
@@ -734,21 +769,19 @@ struct DeviceInventorySnapshot: Sendable {
         let counts = Dictionary(grouping: devices.filter { !$0.osVersion.isEmpty }, by: \.osVersion)
             .mapValues(\.count)
         let total = max(counts.values.reduce(0, +), 1)
-        let colors: [UInt32] = [0xC9970A, 0x3A8A8A, 0x0A84FF, 0xBF5AF2, 0xFF9F0A, 0x7D8794]
-        return counts
-            .sorted { lhs, rhs in
-                if lhs.value == rhs.value { return lhs.key > rhs.key }
-                return lhs.value > rhs.value
-            }
-            .enumerated()
-            .map { idx, item in
-                DeviceOSSummary(
-                    version: item.key,
-                    count: item.value,
-                    pct: Double(item.value) / Double(total) * 100,
-                    colorHex: colors[idx % colors.count]
-                )
-            }
+        let ranked = counts.sorted { lhs, rhs in
+            if lhs.value == rhs.value { return lhs.key > rhs.key }
+            return lhs.value > rhs.value
+        }
+        let colors = ChartPalette.hexes(for: .version, keys: ranked.map(\.key), scheme: .dark)
+        return zip(ranked, colors).map { item, hex in
+            DeviceOSSummary(
+                version: item.key,
+                count: item.value,
+                pct: Double(item.value) / Double(total) * 100,
+                colorHex: hex
+            )
+        }
     }
 }
 
@@ -764,9 +797,9 @@ struct DeviceDetail: Identifiable, Sendable {
         let sections = buildSections(from: object)
         return DeviceDetail(
             lookupID: lookupID,
-            title: lookupID.isEmpty ? "Device Detail" : lookupID,
+            title: lookupID.isEmpty ? L("Device Detail") : lookupID,
             sections: sections,
-            warnings: sections.isEmpty ? ["jamf-cli returned no displayable detail rows."] : []
+            warnings: sections.isEmpty ? [L("jamf-cli returned no displayable detail rows.")] : []
         )
     }
 }
@@ -797,13 +830,13 @@ private extension DeviceDetail {
         var order: [String] = []
 
         func append(_ section: String, _ item: DeviceDetailItem) {
-            let title = cleaned(section).isEmpty ? "Details" : cleaned(section)
+            let title = cleaned(section).isEmpty ? L("Details") : cleaned(section)
             if grouped[title] == nil { order.append(title) }
             grouped[title, default: []].append(item)
         }
 
         if let rows = object as? [[String: Any]] {
-            appendRows(rows, defaultSection: "Details", append: append)
+            appendRows(rows, defaultSection: L("Details"), append: append)
         } else if let dict = object as? [String: Any] {
             appendDictionary(dict, append: append)
         }
@@ -828,7 +861,7 @@ private extension DeviceDetail {
             } else {
                 let display = displayValue(value)
                 if !display.isEmpty {
-                    append("Details", DeviceDetailItem(label: titleLabel(key), value: display))
+                    append(L("Details"), DeviceDetailItem(label: titleLabel(key), value: display))
                 }
             }
         }
@@ -877,7 +910,7 @@ private extension DeviceDetail {
                 append(
                     section,
                     DeviceDetailItem(
-                        label: labelText.isEmpty ? "Value" : labelText,
+                        label: labelText.isEmpty ? L("Value") : labelText,
                         value: valueText.isEmpty ? "N/A" : valueText,
                         note: note
                     )
@@ -921,9 +954,9 @@ private extension DeviceDetail {
         case let value as NSNumber:
             return value.stringValue
         case let value as [Any]:
-            return value.isEmpty ? "" : "\(value.count) items"
+            return value.isEmpty ? "" : L("\(value.count) items")
         case let value as [String: Any]:
-            return value.isEmpty ? "" : "\(value.count) fields"
+            return value.isEmpty ? "" : L("\(value.count) fields")
         default:
             return ""
         }
@@ -1006,6 +1039,9 @@ struct TokenStatus: Sendable, Codable {
     let expiresAt: Date?
     /// True when jamf-cli returned a token without error (exit 0).
     let isValid: Bool
+    /// True when jamf-cli could not read the profile's credentials because the login keychain
+    /// is locked; `isValid` is false then, but re-authenticating is not the fix.
+    let keychainLocked: Bool
 
     /// True when the token has a known expiry and that expiry is in the past.
     var isExpired: Bool {
@@ -1014,7 +1050,7 @@ struct TokenStatus: Sendable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case profile, expiresAt, isValid
+        case profile, expiresAt, isValid, keychainLocked
     }
 
     init(from decoder: any Decoder) throws {
@@ -1022,12 +1058,19 @@ struct TokenStatus: Sendable, Codable {
         profile = try c.decode(String.self, forKey: .profile)
         expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
         isValid = try c.decode(Bool.self, forKey: .isValid)
+        keychainLocked = try c.decodeIfPresent(Bool.self, forKey: .keychainLocked) ?? false
     }
 
-    private init(profile: String, expiresAt: Date?, isValid: Bool) {
+    private init(profile: String, expiresAt: Date?, isValid: Bool, keychainLocked: Bool = false) {
         self.profile = profile
         self.expiresAt = expiresAt
         self.isValid = isValid
+        self.keychainLocked = keychainLocked
+    }
+
+    /// The probe could not read `profile`'s credentials from a locked login keychain.
+    static func keychainLocked(profile: String) -> TokenStatus {
+        TokenStatus(profile: profile, expiresAt: nil, isValid: false, keychainLocked: true)
     }
 
     /// Factory for constructing a `TokenStatus`. Prefer this over direct memberwise init.
@@ -1074,6 +1117,11 @@ struct TrendSeries: Identifiable, Sendable {
         /// The summary's `mobile` figures (mobile spec 4.1), counted apart from Macs.
         case mobileManaged, mobileOSCurrent, mobilePasscode, mobileSupervised,
              mobileDataProtection, mobileStale, mobileJailbroken
+        /// The summary's Jamf Protect figures (P9), offered only where the environment has Protect.
+        case protectComputers, protectMatched, protectOpenAlerts
+        /// The summary's Jamf Security Cloud figures (P12), offered only where the environment
+        /// has Security Cloud.
+        case securityCloudDevices, securityCloudMatched, securityCloudHighRisk
 
         /// Every metric that does not depend on the workspace, in their original order. The
         /// agent metrics come from `security_agents`, so they are not listed here.
@@ -1098,7 +1146,19 @@ struct TrendSeries: Identifiable, Sendable {
             .mobileManaged, .mobileSupervised, .mobileStale, .mobileOSCurrent,
         ]
 
+        /// The Protect metrics, offered only where a summary carries them and Protect is in the
+        /// environment, so they are not in `allCases`.
+        static let protectMetrics: [Metric] = [
+            .protectComputers, .protectMatched, .protectOpenAlerts,
+        ]
+
+        static let securityCloudMetrics: [Metric] = [
+            .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk,
+        ]
+
         var isMobile: Bool { Self.mobileMetrics.contains(self) }
+        var isProtect: Bool { Self.protectMetrics.contains(self) }
+        var isSecurityCloud: Bool { Self.securityCloudMetrics.contains(self) }
 
         static let agentPrefix = "agent:"
 
@@ -1128,6 +1188,12 @@ struct TrendSeries: Identifiable, Sendable {
             case .mobileDataProtection: return "mobileDataProtection"
             case .mobileStale: return "mobileStale"
             case .mobileJailbroken: return "mobileJailbroken"
+            case .protectComputers: return "protectComputers"
+            case .protectMatched: return "protectMatched"
+            case .protectOpenAlerts: return "protectOpenAlerts"
+            case .securityCloudDevices: return "securityCloudDevices"
+            case .securityCloudMatched: return "securityCloudMatched"
+            case .securityCloudHighRisk: return "securityCloudHighRisk"
             }
         }
 
@@ -1140,7 +1206,8 @@ struct TrendSeries: Identifiable, Sendable {
                 self = .agent(name)
                 return
             }
-            guard let match = (Self.allCases + Self.mobileMetrics)
+            guard let match = (Self.allCases + Self.mobileMetrics + Self.protectMetrics
+                + Self.securityCloudMetrics)
                 .first(where: { $0.rawValue == rawValue }) else {
                 return nil
             }
@@ -1160,36 +1227,48 @@ struct TrendSeries: Identifiable, Sendable {
 
         var displayLabel: String {
             switch self {
-            case .stability:     return "Stability Index"
-            case .activeDevices: return "Active Computers"
-            case .compliance:    return "Compliance Benchmark"
-            case .fileVault:     return "FileVault Encryption"
-            case .osCurrent:     return "On Current macOS"
-            case .edrAgent:      return "EDR agent coverage"
-            case .stale:         return "Stale Computers (>30d)"
-            case .patch:         return "Patch Compliance"
-            case .securityScore: return "Security Score (Weighted)"
-            case .mscpBandTrend: return "mSCP Compliance Bands"
-            case .managedDevices: return "Managed Computers"
-            case .sip:           return "System Integrity Protection"
-            case .firewall:      return "Firewall Enabled"
-            case .gatekeeper:    return "Gatekeeper Enabled"
-            case .agent(let name): return "\(name) coverage"
-            case .mobileManaged: return "Managed mobile devices"
-            case .mobileOSCurrent: return "Mobile devices on current OS"
-            case .mobilePasscode: return "Mobile passcode compliant"
-            case .mobileSupervised: return "Supervised mobile devices"
-            case .mobileDataProtection: return "Mobile data protection"
-            case .mobileStale: return "Stale mobile devices"
-            case .mobileJailbroken: return "Jailbroken mobile devices"
+            case .stability:     return L("Stability Index")
+            case .activeDevices: return L("Active Computers")
+            case .compliance:    return L("Compliance Benchmark")
+            case .fileVault:     return L("FileVault Encryption")
+            case .osCurrent:     return L("On Current macOS")
+            case .edrAgent:      return L("EDR agent coverage")
+            case .stale:         return L("Stale Computers (>30d)")
+            case .patch:         return L("Patch Compliance")
+            case .securityScore: return L("Security Score (Weighted)")
+            case .mscpBandTrend: return L("mSCP Compliance Bands")
+            case .managedDevices: return L("Managed Computers")
+            case .sip:           return L("System Integrity Protection")
+            case .firewall:      return L("Firewall Enabled")
+            case .gatekeeper:    return L("Gatekeeper Enabled")
+            case .agent(let name): return L("\(name) coverage")
+            case .mobileManaged: return L("Managed mobile devices")
+            case .mobileOSCurrent: return L("Mobile devices on current OS")
+            case .mobilePasscode: return L("Mobile passcode compliant")
+            case .mobileSupervised: return L("Supervised mobile devices")
+            case .mobileDataProtection: return L("Mobile data protection")
+            case .mobileStale: return L("Stale mobile devices")
+            case .mobileJailbroken: return L("Jailbroken mobile devices")
+            case .protectComputers: return L("Jamf Protect computers")
+            case .protectMatched: return L("Jamf Protect match with inventory")
+            case .protectOpenAlerts: return L("Jamf Protect open alerts")
+            case .securityCloudDevices: return L("Security Cloud devices")
+            case .securityCloudMatched: return L("Security Cloud match with inventory")
+            case .securityCloudHighRisk: return L("Security Cloud high-risk devices")
             }
         }
 
         /// Returns the tenant-specific label when one is configured; otherwise
         /// the metric's static `displayLabel`. `.compliance` follows
-        /// `compliance.baseline_label`; `.edrAgent` follows the agent the score counts as EDR
-        /// (e.g. "CrowdStrike Falcon coverage").
-        func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
+        /// `compliance.baseline_label`, unless the figure is the four-control proxy
+        /// (`complianceIsProxy`), which is never named after a benchmark; `.edrAgent` follows
+        /// the agent the score counts as EDR (e.g. "CrowdStrike Falcon coverage").
+        func displayLabel(
+            benchmarkLabel: String?, edrAgentName: String? = nil, complianceIsProxy: Bool = false
+        ) -> String {
+            if case .compliance = self, complianceIsProxy {
+                return L("Compliance (4-control proxy)")
+            }
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
             if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) coverage" }
             return displayLabel
@@ -1197,7 +1276,9 @@ struct TrendSeries: Identifiable, Sendable {
         var unit: String {
             switch self {
             case .stale, .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
-                 .mobileStale, .mobileJailbroken: return ""
+                 .mobileStale, .mobileJailbroken, .protectComputers,
+                 .protectOpenAlerts, .securityCloudDevices,
+                 .securityCloudHighRisk: return ""
             default: return "%"
             }
         }
@@ -1207,11 +1288,14 @@ struct TrendSeries: Identifiable, Sendable {
         /// needs a decision here. Read by the Trends colours and the AI trend input alike.
         var polarity: FleetInsightInput.Polarity {
             switch self {
-            case .stale, .mobileStale, .mobileJailbroken: .lowerIsBetter
-            case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged: .neutral
+            case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts,
+                 .securityCloudHighRisk: .lowerIsBetter
+            case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
+                 .protectComputers, .securityCloudDevices: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
                  .securityScore, .sip, .firewall, .gatekeeper, .mobileOSCurrent, .mobilePasscode,
-                 .mobileSupervised, .mobileDataProtection: .higherIsBetter
+                 .mobileSupervised, .mobileDataProtection, .protectMatched,
+                 .securityCloudMatched: .higherIsBetter
             }
         }
         /// A count of devices, not a share or score: the Trends axis fits its top to the data
@@ -1219,14 +1303,17 @@ struct TrendSeries: Identifiable, Sendable {
         var isDeviceCount: Bool {
             switch self {
             case .managedDevices, .activeDevices, .stale, .mobileManaged, .mobileStale,
-                 .mobileJailbroken: true
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts,
+                 .securityCloudDevices, .securityCloudHighRisk: true
             default: false
             }
         }
         var minY: Double {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged, .mobileStale,
-                 .mobileJailbroken: return 0
+                 .mobileJailbroken, .protectComputers, .protectOpenAlerts,
+                 .securityCloudDevices, .securityCloudHighRisk: return 0
+            case .protectMatched, .securityCloudMatched: return 50
             case .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
                  .mobileDataProtection: return 50
             case .stability:     return 40
@@ -1242,47 +1329,16 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var maxY: Double {
             switch self {
-            case .activeDevices, .managedDevices, .mobileManaged: return 1000
-            case .stale, .mobileStale: return 60
+            case .activeDevices, .managedDevices, .mobileManaged, .protectComputers,
+                 .securityCloudDevices: return 1000
+            case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk: return 60
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
             }
         }
-        var colorHex: UInt32 {
-            switch self {
-            case .stability:     return 0xE8B614
-            case .activeDevices: return 0x8E8E93
-            case .compliance:    return 0xC9970A
-            case .fileVault:     return 0x30D158
-            case .osCurrent:     return 0x0A84FF
-            case .edrAgent:      return 0x3A8A8A
-            case .stale:         return 0xFF9F0A
-            case .patch:         return 0xBF5AF2
-            case .securityScore: return 0xFF453A
-            case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
-            case .managedDevices: return 0x4472C4  // Matches the Computers series line
-            case .sip:           return 0x64D2FF
-            case .firewall:      return 0x5E5CE6
-            case .gatekeeper:    return 0xAC8E68
-            case .agent(let name): return Self.agentColor(name)
-            case .mobileManaged: return 0x9B59B6  // Matches the Mobile devices series line
-            case .mobileOSCurrent: return 0x0A84FF
-            case .mobilePasscode: return 0x30D158
-            case .mobileSupervised: return 0x5E5CE6
-            case .mobileDataProtection: return 0x64D2FF
-            case .mobileStale: return 0xFF9F0A
-            case .mobileJailbroken: return 0xFF453A
-            }
-        }
-
-        /// One of a few agent colours, chosen from the name alone so an agent keeps its
-        /// colour on every screen and run.
-        private static func agentColor(_ name: String) -> UInt32 {
-            let palette: [UInt32] = [0x2AA198, 0x6C71C4, 0xCB4B16, 0x859900, 0xD33682, 0x268BD2]
-            let sum = name.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 9973 }
-            return palette[sum % palette.count]
-        }
+        /// The in-app colour; `ChartPalette` holds the metric's colour on every screen and report.
+        var colorHex: UInt32 { ChartPalette.hex(forMetric: self, scheme: .dark) }
     }
 
     /// Composite fleet-stability score: compliance 0.4 + patch 0.4 +
@@ -1329,21 +1385,27 @@ struct TrendSeries: Identifiable, Sendable {
         complianceIsProxy: Bool? = nil,
         staleMeasured: Bool = true
     ) -> String? {
-        let proxyNote: String = compliancePct != nil && complianceIsProxy == true
-            ? " Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data."
-            : ""
-        let staleNote = staleMeasured
-            ? "" : " Stale-device pressure not measured (no device-compliance snapshot)."
+        // Each note is a whole sentence; the sentences are joined, never spliced into one.
+        let proxyNote: [String] = compliancePct != nil && complianceIsProxy == true
+            ? [L("Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data.")]
+            : []
+        let staleNote: [String] = staleMeasured
+            ? [] : [L("Stale-device pressure not measured (no device-compliance snapshot).")]
+        let sentences: [String]
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)"
+            sentences = [L("Composite of compliance, patch posture, and stale-device pressure.")]
+                + proxyNote + staleNote
         case (false, true):
-            return "Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)"
+            sentences = [L("Composite of patch posture and stale-device pressure (compliance not collected).")]
+                + staleNote
         case (true, false):
-            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)"
+            sentences = [L("Composite of compliance and stale-device pressure (patch data not collected).")]
+                + proxyNote + staleNote
         case (false, false):
             return nil
         }
+        return sentences.joined(separator: " ")
     }
 
     var id: String { metric.rawValue }
@@ -1389,66 +1451,68 @@ struct CustomSheetGroup: Sendable {
     /// All sheet groups organized by functional area.
     /// Order matches the sidebar grouping in the main app for consistency. Together they
     /// list every `SheetID` once; a test holds that when a sheet is added.
-    static let allGroups: [CustomSheetGroup] = [
-        CustomSheetGroup(name: "Executive", sheets: [
-            .executiveSummary,
-            .cover,
-            .fleetOverview,
-            .auditSummary,
-        ]),
-        CustomSheetGroup(name: "Posture", sheets: [
-            .securityPosture,
-            .compliancePosture,
-            .deviceCompliance,
-            .mscpCompliance,
-            .complianceTrend,
-        ]),
-        CustomSheetGroup(name: "Operations", sheets: [
-            .patchCompliance,
-            .patchFailures,
-            .patchSummaryDashboard,
-            .patchVelocity,
-            .updateStatus,
-            .updateFailures,
-            .policyHealth,
-            .profileStatus,
-            .mobileConfigProfiles,
-            .eaCoverage,
-            .eaDefinitions,
-            .ddmStatus,
-            .ddmDeviceStatus,
-            .mdmCommandHealth,
-            .blueprintStatus,
-        ]),
-        CustomSheetGroup(name: "Fleet", sheets: [
-            .inventorySummary,
-            .hardwareModels,
-            .mobileFleetSummary,
-            .mobileInventory,
-            .mobileSupervisionStatus,
-            .checkinHealth,
-            .activeDevices,
-            .fleetDrift,
-            .groupHygiene,
-            .smartGroups,
-            .environmentStats,
-        ]),
-        CustomSheetGroup(name: "Security", sheets: [
-            .deviceSecurityState,
-            .protectOverview,
-            .protectAlerts,
-            .protectComputers,
-            .protectInsights,
-            .protectPlans,
-            .protectThreatOverview,
-        ]),
-        CustomSheetGroup(name: "System", sheets: [
-            .osCurrency,
-            .appStatus,
-            .softwareInstalls,
-            .packageLifecycle,
-            .complianceDevices,
-            .complianceRules,
-        ]),
-    ]
+    static var allGroups: [CustomSheetGroup] {
+        [
+            CustomSheetGroup(name: L("Executive"), sheets: [
+                .executiveSummary,
+                .cover,
+                .fleetOverview,
+                .auditSummary,
+            ]),
+            CustomSheetGroup(name: L("Posture"), sheets: [
+                .securityPosture,
+                .compliancePosture,
+                .deviceCompliance,
+                .mscpCompliance,
+                .complianceTrend,
+            ]),
+            CustomSheetGroup(name: L("Operations"), sheets: [
+                .patchCompliance,
+                .patchFailures,
+                .patchSummaryDashboard,
+                .patchVelocity,
+                .updateStatus,
+                .updateFailures,
+                .policyHealth,
+                .profileStatus,
+                .mobileConfigProfiles,
+                .eaCoverage,
+                .eaDefinitions,
+                .ddmStatus,
+                .ddmDeviceStatus,
+                .mdmCommandHealth,
+                .blueprintStatus,
+            ]),
+            CustomSheetGroup(name: L("Fleet"), sheets: [
+                .inventorySummary,
+                .hardwareModels,
+                .mobileFleetSummary,
+                .mobileInventory,
+                .mobileSupervisionStatus,
+                .checkinHealth,
+                .managementHealth,
+                .activeDevices,
+                .fleetDrift,
+                .groupHygiene,
+                .smartGroups,
+                .environmentStats,
+            ]),
+            CustomSheetGroup(name: L("Security"), sheets: [
+                .deviceSecurityState,
+                .protectOverview,
+                .protectAlerts,
+                .protectComputers,
+                .protectPlans,
+                .protectThreatOverview,
+            ]),
+            CustomSheetGroup(name: L("System"), sheets: [
+                .osCurrency,
+                .appStatus,
+                .softwareInstalls,
+                .packageLifecycle,
+                .complianceDevices,
+                .complianceRules,
+            ]),
+        ]
+    }
 }

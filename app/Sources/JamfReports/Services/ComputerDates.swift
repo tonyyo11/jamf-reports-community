@@ -90,7 +90,8 @@ extension BinaryMissing {
     static func isMissing(computer item: [String: Any]) -> Bool {
         isMissing(
             managedState: DeviceInventoryService.managedFlag(ofComputer: item),
-            neverCheckedIn: ComputerDates(item: item).checkIn == nil)
+            neverCheckedIn: ComputerDates(item: item).checkIn == nil,
+            neverInventoried: NeverInventoried.isNeverInventoried(computer: item))
     }
 }
 

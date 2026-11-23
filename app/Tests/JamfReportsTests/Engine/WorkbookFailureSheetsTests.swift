@@ -191,6 +191,22 @@ final class WorkbookFailureSheetsTests: XCTestCase {
         XCTAssertNotNil(all.first { text($0.value) == "Apps with errors" })
     }
 
+    /// jamf-cli repeats the id as the name of an app it could not resolve; the row stays
+    /// (its errors are real and in jamf-cli's own count) and reads as unknown.
+    func testAppStatusNamesAnUnresolvedAppAsUnknown() throws {
+        let rows = envelope([
+            failure("21", "Test App A", errors: 3, devices: 2),
+            failure("-5", "-5", errors: 1, devices: 1),
+        ], unique: "unique_apps")
+        let dash = try dashboard([("app-status", 0, rows)])
+        try dash.writeAppStatus()
+
+        let body = try table(try cells(dash, "App Status"), header: "ID")
+        XCTAssertEqual(body.map { text($0[1]?.value ?? .blank) },
+                       ["Test App A", "Unknown app (ID -5)"])
+        XCTAssertEqual(body.map { text($0[0]?.value ?? .blank) }, ["21", "-5"])
+    }
+
     func testAppStatusWithNoFailuresSaysSo() throws {
         let dash = try dashboard([("app-status", 0, envelope([], unique: "unique_apps"))])
         try dash.writeAppStatus()
@@ -233,7 +249,7 @@ final class WorkbookFailureSheetsTests: XCTestCase {
     }
 
     func testPackageLifecycleKeepsTheColumnsWhenSomePackageCarriesThem() throws {
-        let recent = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-86_400 * 5))
+        let recent = ISO8601DateFormatter().string(from: Date().calendarDays(ago: 5))
         let dash = try dashboard([("packages", 0, [
             package("Test A", size: 2_097_152, uploaded: recent), package("Test B"),
         ])])

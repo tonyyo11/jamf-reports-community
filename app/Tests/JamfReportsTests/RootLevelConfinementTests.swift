@@ -44,7 +44,7 @@ final class RootLevelConfinementTests: XCTestCase {
         try link(workspaces.appendingPathComponent("_fleet-reports"), to: elsewhere)
 
         XCTAssertThrowsError(try FleetReportEmitter.consolidatedDir())
-        let group = ReportGroup(name: "g", profiles: ["a"])
+        let group = ReportGroup(name: "g", workspaces: ["a"])
         let summary = DailySummary(
             date: "2026-10-10", totalDevices: 10, fileVaultPct: 90, compliancePct: 80,
             staleCount: 1, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,

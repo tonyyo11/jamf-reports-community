@@ -3,7 +3,7 @@ import XCTest
 @testable import JamfReports
 
 /// One fleet, every surface, three policies (Task 9 of
-/// docs/superpowers/plans/2026-10-01-security-policy.md). The summary writer, both posture
+/// docs/superpowers/archive/plans/2026-10-01-security-policy.md). The summary writer, both posture
 /// services, the risk scorer, the workbook sheets and the HTML report read the same `security`
 /// and `computers` snapshots, so under one policy they agree with each other and with the
 /// plan's table. Expected values are the table's hand arithmetic, never re-derived.

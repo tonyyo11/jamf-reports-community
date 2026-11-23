@@ -82,6 +82,7 @@ final class MissingJamfCLIProfileTests: XCTestCase {
         let lines = LineSink()
         do {
             _ = try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
                 force: true, authConfirmationProbe: { _, _ in false },
                 locateJamfCLI: { bin }, refreshSOFA: { _ in (.empty, []) },
@@ -96,6 +97,26 @@ final class MissingJamfCLIProfileTests: XCTestCase {
         XCTAssertFalse(errors[0].contains("unreachable"))
         let calls = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
         XCTAssertFalse(calls.contains("pro "), "no Jamf Pro command ran: \(calls)")
+    }
+
+    func testAProtectOnlyRunStopsOnAProtectLoginJamfCLIDoesNotHave() async throws {
+        let workspaces = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspaces.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspaces.path, 1)
+        let bin = try stub(#"{"name":"other","auth-method":"oauth2"}"#, log: root.appendingPathComponent("c.log"))
+        let lines = LineSink()
+        do {
+            try await CollectRouter.run(
+                workspace: WorkspaceID(validating: profile),
+                config: try ConfigLoader.loadFromString("profiles:\n  protect: \(profile)\n"),
+                protectCollect: { _, _, _, _ in XCTFail("must not collect"); return [] },
+                resolved: { _ in nil }, locateJamfCLI: { bin }, onLine: lines.append)
+            XCTFail("a Protect login jamf-cli does not have must not collect")
+        } catch ReportEngineError.profileNotFound(let name) {
+            XCTAssertEqual(name, profile)
+        }
     }
 
     func testTheAttentionItemPointsAtAutomation() {

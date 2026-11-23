@@ -16,6 +16,8 @@ final class WorkspaceStore {
     var schedules: [Schedule]
     var customEAs: [CustomEA]
     var demoMode: Bool
+    /// Sidebar device counts by profile, filled by `refreshDeviceCounts()`.
+    private(set) var deviceCounts: [String: Int] = [:]
 
     /// Shared trend store, owned here so it SURVIVES tab navigation. Overview and
     /// Trends are conditional views (recreated on every tab switch), so a per-view
@@ -81,6 +83,22 @@ final class WorkspaceStore {
     /// held until Devices appears and applies it, since the view does not exist when the
     /// navigation is posted.
     var pendingDevicesFilter: String? = nil
+    /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
+    var pendingMobileFilter: String? = nil
+    /// How long a manual refresh waits for a scheduled run in another process to stop at its
+    /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
+    var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait
+    var manualRefreshPoll: TimeInterval = 2
+    var isWaitingForScheduledRun = false
+    static var defaultManualRefreshWait: TimeInterval {
+        #if DEBUG
+        // A test that holds the lock expects the refusal, not a half-hour wait.
+        if NSClassFromString("XCTestCase") != nil { return 0 }
+        #endif
+        return 1_800
+    }
+    /// An Audit section to scroll to (`MobileDevicesSection.anchorID`), held the same way.
+    var pendingAuditSection: String? = nil
     /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
     /// which any screen sets and clears for its own work, so another screen finishing cannot
     /// wipe the line a collect still owns.
@@ -147,8 +165,10 @@ final class WorkspaceStore {
         .stability, .activeDevices, .fileVault, .compliance,
     ]
 
-    nonisolated static func persistScoreCards(_ metrics: [TrendSeries.Metric]) {
-        UserDefaults.standard.set(
+    nonisolated static func persistScoreCards(
+        _ metrics: [TrendSeries.Metric], defaults: UserDefaults = .standard
+    ) {
+        defaults.set(
             metrics.map(\.rawValue).joined(separator: ","),
             forKey: scoreCardsKey
         )
@@ -156,8 +176,10 @@ final class WorkspaceStore {
 
     /// nil when nothing was persisted yet (first launch) or the stored value
     /// contains no recognizable metrics — callers fall back to the default set.
-    nonisolated static func loadPersistedScoreCards() -> [TrendSeries.Metric]? {
-        guard let raw = UserDefaults.standard.string(forKey: scoreCardsKey), !raw.isEmpty else {
+    nonisolated static func loadPersistedScoreCards(
+        defaults: UserDefaults = .standard
+    ) -> [TrendSeries.Metric]? {
+        guard let raw = defaults.string(forKey: scoreCardsKey), !raw.isEmpty else {
             return nil
         }
         let metrics = raw.split(separator: ",").compactMap {
@@ -185,17 +207,91 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics + agentMetrics
+        (environmentProducts.isProtectOnly ? []
+            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
+            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
+            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
+            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
     }
+
+    /// An environment with Protect; each demo one has a Protect series.
+    var protectMetricsOffered: Bool { environmentProducts.has(.protect) }
+
+    /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones.
+    var scoreCardExtraMetrics: [TrendSeries.Metric] {
+        TrendSeries.Metric.mobileMetrics
+            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
+            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+    }
+
+    /// Likewise for Jamf Security Cloud, which no demo environment has.
+    var securityCloudMetricsOffered: Bool { environmentProducts.has(.securityCloud) }
 
     /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
     /// configured (and not counted as EDR), a control card needs its control counted by the
     /// security policy. A stored selection naming one that is not offered is kept, and shows
     /// again when it is.
     func isOffered(_ metric: TrendSeries.Metric) -> Bool {
+        // A demo workspace offers a mobile or Protect card only where its history has a series.
+        if demoMode, metric.isMobile || metric.isProtect,
+           DemoData.trends(for: profile)[metric] == nil { return false }
+        if metric.isProtect, !protectMetricsOffered { return false }
+        if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
+        guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
+            return false
+        }
         if case .agent = metric { return agentMetrics.contains(metric) }
-        return metric.isOffered(under: securityPolicy)
+        return true
+    }
+
+    /// The device types the active environment holds, from its newest daily summary; the demo
+    /// fleet has both. The Overview's sections and score cards follow it (mobile spec 3.2).
+    var environmentComposition: EnvironmentComposition {
+        guard !demoMode else { return DemoData.composition(for: profile) }
+        let (newest, previous) = trendStore.newestTwoSummaries
+        return EnvironmentComposition(summary: newest, previous: previous)
+    }
+
+    /// False until the trend store has read this profile's summaries, so a screen can tell
+    /// "not loaded yet" from "loaded and empty" before it acts on the composition. It turns
+    /// true when `apply` publishes the summaries, before `backfillHistory` fills older days.
+    var summariesLoaded: Bool { demoMode || trendStore.currentProfile == profile }
+
+    /// The score cards the Overview draws: the saved selection that is offered here, or on a
+    /// mobile-only environment with none of it offered, the mobile defaults.
+    var shownScoreCards: [TrendSeries.Metric] {
+        OverviewScoreCards.shown(
+            selected: selectedScoreCards, composition: environmentComposition,
+            isOffered: isOffered)
+    }
+
+    /// Turns a card on or off in the saved selection. Where the mobile defaults stand in for a
+    /// selection with nothing offered, they become the selection first, so the change edits
+    /// the cards on screen instead of a list that was never shown.
+    func setScoreCard(_ metric: TrendSeries.Metric, shown: Bool) {
+        // Refused before anything is adopted, so a refusal never edits the stored selection.
+        if !shown, OverviewScoreCards.isLastOnMobileOnly(
+            metric, shown: shownScoreCards, composition: environmentComposition) { return }
+        adoptShownScoreCards()
+        if shown {
+            if !selectedScoreCards.contains(metric) { selectedScoreCards.append(metric) }
+        } else {
+            selectedScoreCards.removeAll { $0 == metric }
+        }
+    }
+
+    /// Moves `metric` to where `neighbour` sits among the saved cards.
+    func moveScoreCard(_ metric: TrendSeries.Metric, to neighbour: TrendSeries.Metric) {
+        adoptShownScoreCards()
+        selectedScoreCards = selectedScoreCards.moving(metric, to: neighbour)
+    }
+
+    private func adoptShownScoreCards() {
+        let adopted = OverviewScoreCards.adopting(
+            selected: selectedScoreCards, composition: environmentComposition,
+            isOffered: isOffered)
+        if adopted != selectedScoreCards { selectedScoreCards = adopted }
     }
 
     /// The connections screens group by: the demo's own in demo mode, else this Mac's store.
@@ -206,9 +302,17 @@ final class WorkspaceStore {
         connections = demoMode ? [] : connectionStore.load()
     }
 
-    /// All profiles under their connections, for the sidebar menu.
+    /// Workspaces for the sidebar menu, plus the active profile when it has no folder (right
+    /// after onboarding), so the menu always holds the current entry. `profiles` stays whole.
+    var workspaceMenuProfiles: [JamfCLIProfile] {
+        let workspaces = Set(initializedProfiles.map(\.name))
+        return profiles.filter { workspaces.contains($0.name) || $0.name == profile }
+    }
+
+    /// The workspaces under their connections, for the sidebar menu.
     var connectionGrouping: ConnectionGrouping {
-        ProfileService.connectionGrouping(profiles: profiles, connections: activeConnections)
+        ProfileService.connectionGrouping(
+            profiles: workspaceMenuProfiles, connections: activeConnections)
     }
 
     /// True when the active profile has a `config.yaml` on disk under
@@ -228,11 +332,7 @@ final class WorkspaceStore {
     var initializedProfiles: [JamfCLIProfile] {
         if demoMode { return profiles }
         return profiles.filter { profile in
-            guard profile.status != .error,
-                  let url = ProfileService.workspaceURL(for: profile.name) else { return false }
-            return FileManager.default.fileExists(
-                atPath: url.appendingPathComponent("config.yaml").path
-            )
+            profile.status != .error && ProfileService.hasWorkspace(profile.name)
         }
     }
 
@@ -250,9 +350,13 @@ final class WorkspaceStore {
     /// cards edit them through `saveSecurityLevel` and its siblings.
     var securityPolicy: SecurityControlPolicy = .default
     var securityPolicyIssues: [SecurityPolicyIssue] = []
-    /// The active workspace has Jamf Protect connected; read with the config and when Data
-    /// Sources connects or disconnects it (`refreshProtectConnection`). False in demo mode.
-    var protectConnected = false
+    /// `display.percent_decimals` of the active workspace; one decimal in demo mode.
+    var percentFormat: PercentFormat = .standard
+    /// The products the active workspace's config.yaml names, read with the config and when
+    /// Data Sources connects or disconnects one (`refreshEnvironmentProducts`).
+    private var environmentProfiles = EnvironmentProfiles.none
+    /// config.yaml is missing or does not decode, so `environmentProfiles` is a guess.
+    private var environmentConfigUnreadable = false
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -302,13 +406,6 @@ final class WorkspaceStore {
         self.jamfCLIProfileNames = jamfCLIProfileNames
         self.discoverProfiles = discoverProfiles
         self.jamfCLIInstallation = jamfCLIInstallation
-        // MFS-2: one-shot Spotlight + permissions backfill on existing
-        // workspaces. Gated on a per-version UserDefaults sentinel so the
-        // walk runs at most once per app version. Wave 1 covers the
-        // going-forward path (`OnboardingFlow.createWorkspace`); this
-        // covers the pre-existing-workspace case.
-        WorkspaceMigration.runIfNeeded()
-
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables
@@ -321,7 +418,8 @@ final class WorkspaceStore {
         let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
-        let start = Self.initialProfile(in: realProfiles)
+        let start = Self.initialProfile(
+            in: realProfiles, hasWorkspace: { ProfileService.hasWorkspace($0) })
         self.org = isDemo ? DemoData.org : Self.org(for: start)
         self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
@@ -339,7 +437,7 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        if isDemo { applyDemoConfig() } else { refreshProtectConnection() }
+        if isDemo { applyDemoConfig() } else { refreshEnvironmentProducts() }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.
@@ -362,8 +460,8 @@ final class WorkspaceStore {
         if profiles.first(where: { $0.name == id })?.status == .error {
             let reason = ProfileService.unusableProfiles(in: profiles.map(\.name))[id]
             toast = Toast(
-                message: reason.map { "\(id) can't be used. \($0.explanation)" }
-                    ?? "\(id) can't be used.",
+                message: reason.map { L("\(id) can't be used. \($0.explanation)") }
+                    ?? L("\(id) can't be used."),
                 style: .danger
             )
             return
@@ -421,7 +519,7 @@ final class WorkspaceStore {
                 profile = next
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
-            refreshProtectConnection()
+            refreshEnvironmentProducts()
             Task { await refreshAuthStatus() }
             if wasDemo { restoreLiveStateAfterDemo() }
         }
@@ -484,7 +582,7 @@ final class WorkspaceStore {
         guard !Self.workspaceHoldsCollectedData(profile: demoProfile) else { return nil }
         let store = ScheduleStore()
         let all = store.load()
-        let kept = all.filter { $0.profile != demoProfile }
+        let kept = all.filter { $0.workspace != demoProfile }
         let removedAgents = all.count - kept.count
         if removedAgents > 0 {
             try? store.save(kept)
@@ -494,21 +592,21 @@ final class WorkspaceStore {
             if removedWorkspace || removedAgents > 0 {
                 var parts: [String] = []
                 if removedWorkspace {
-                    parts.append("workspace \(demoProfile)")
+                    parts.append(L("workspace \(demoProfile)"))
                 }
                 if removedAgents > 0 {
-                    let suffix = removedAgents == 1 ? "" : "s"
-                    parts.append("\(removedAgents) demo schedule\(suffix)")
+                    parts.append(removedAgents == 1
+                        ? L("\(removedAgents) demo schedule") : L("\(removedAgents) demo schedules"))
                 }
-                return "Removed demo \(parts.joined(separator: " and "))."
+                return L("Removed demo \(parts.joined(separator: " and ")).")
             }
         } catch {
             if removedAgents > 0 {
-                return "Removed \(removedAgents) demo schedule"
-                    + (removedAgents == 1 ? "" : "s")
-                    + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
+                return removedAgents == 1
+                    ? L("Removed \(removedAgents) demo schedule, but could not remove workspace \(demoProfile): \(error.localizedDescription)")
+                    : L("Removed \(removedAgents) demo schedules, but could not remove workspace \(demoProfile): \(error.localizedDescription)")
             }
-            return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"
+            return L("Could not remove demo workspace \(demoProfile): \(error.localizedDescription)")
         }
         return nil
     }
@@ -561,7 +659,7 @@ final class WorkspaceStore {
     func restoreDefaultConfig() async -> String? {
         guard !demoMode else { return nil }
         guard let workspaceURL = ProfileService.workspaceURL(for: profile) else {
-            return "Invalid profile name."
+            return L("Invalid profile name.")
         }
         let config = workspaceURL.appendingPathComponent("config.yaml")
         let stamp = Self.backupStampFormatter.string(from: Date())
@@ -582,28 +680,22 @@ final class WorkspaceStore {
                 profile: profile, onLine: CLIBridge.noOpOnLine
             )
             guard exit == 0, FileManager.default.fileExists(atPath: config.path) else {
-                return "Could not reseed the default config — your old file is preserved "
-                    + "as \(backupName)."
+                return L("Could not reseed the default config — your old file is preserved as \(backupName).")
             }
         } catch {
             // The rename may have already happened — never let the error hide
             // that the user's config.yaml now lives under the backup name.
             if movedAside {
-                return "\(error.localizedDescription) Your old config.yaml was moved aside "
-                    + "as \(backupName); no replacement was written."
+                return L("\(error.localizedDescription) Your old config.yaml was moved aside as \(backupName); no replacement was written.")
             }
             return error.localizedDescription
         }
         configError = nil
         reloadFromDisk()
-        let rebuildHint = priorSummary.isEmpty
-            ? ""
-            : " Previous config (\(priorSummary)) saved as \(backupName); re-run the "
-                + "CSV → EA guide and Columns scaffold to rebuild from your CSV."
         toast = Toast(
-            message: rebuildHint.isEmpty
-                ? "Default config restored — old file kept as \(backupName)"
-                : "Default config restored." + rebuildHint,
+            message: priorSummary.isEmpty
+                ? L("Default config restored — old file kept as \(backupName)")
+                : L("Default config restored. Previous config (\(priorSummary)) saved as \(backupName); re-run the CSV → EA guide and Columns scaffold to rebuild from your CSV."),
             style: .success
         )
         return nil
@@ -615,16 +707,17 @@ final class WorkspaceStore {
     func clearedConfigSummary() -> String {
         var parts: [String] = []
         let agents = configState.securityAgents.count
-        if agents > 0 { parts.append("\(agents) security agent\(agents == 1 ? "" : "s")") }
+        if agents > 0 { parts.append((agents == 1 ? L("\(agents) security agent") : L("\(agents) security agents"))) }
         let eas = configState.customEAs.count
-        if eas > 0 { parts.append("\(eas) custom EA\(eas == 1 ? "" : "s")") }
+        if eas > 0 { parts.append((eas == 1 ? L("\(eas) custom EA") : L("\(eas) custom EAs"))) }
         let benches = configState.complianceBenchmarks.count
-        if benches > 0 { parts.append("\(benches) benchmark\(benches == 1 ? "" : "s")") }
+        if benches > 0 { parts.append((benches == 1 ? L("\(benches) benchmark") : L("\(benches) benchmarks"))) }
         return parts.joined(separator: ", ")
     }
 
     private static let backupStampFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()
@@ -637,7 +730,7 @@ final class WorkspaceStore {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
         defer { isInitializingWorkspace = false }
-        workspaceInitMessage = "Initializing workspace…"
+        workspaceInitMessage = L("Initializing workspace…")
         globalStatus = "initializing workspace · profile=\(profile)"
         let bridge = CLIBridge()
         do {
@@ -645,17 +738,17 @@ final class WorkspaceStore {
                 profile: profile, onLine: CLIBridge.bufferingOnLine
             )
             guard exit == 0 else {
-                workspaceInitFailed("Workspace init failed · exit \(exit)")
+                workspaceInitFailed(L("Workspace init failed · exit \(exit)"))
                 return
             }
         } catch {
-            workspaceInitFailed("Workspace init failed · \(error.localizedDescription)")
+            workspaceInitFailed(L("Workspace init failed · \(error.localizedDescription)"))
             return
         }
         globalStatus = nil
         reloadFromDisk()
         guard bridge.isJamfCLIAvailable else {
-            toast = Toast(message: "Workspace initialized · jamf-cli not installed", style: .info)
+            toast = Toast(message: L("Workspace initialized · jamf-cli not installed"), style: .info)
             return
         }
         // The banner that carried this method's progress text disappears the
@@ -678,7 +771,7 @@ final class WorkspaceStore {
         do {
             _ = try WorkspaceRootStore.set(url)
         } catch {
-            return "Couldn't use that folder: \(error.localizedDescription)"
+            return L("Couldn't use that folder: \(error.localizedDescription)")
         }
         reloadFromDisk()
         guard !initializedProfiles.isEmpty else {
@@ -704,7 +797,7 @@ final class WorkspaceStore {
     func checkJamfCLIUpdate() async {
         guard !isUpdatingJamfCLI else { return }
         isUpdatingJamfCLI = true
-        jamfCLIUpdateMessage = "Checking jamf-cli updates..."
+        jamfCLIUpdateMessage = L("Checking jamf-cli updates...")
         let result = await JamfCLIInstaller().checkForUpdate()
         jamfCLIUpdateMessage = result.message
         jamfCLIUpdateAvailable = result.updateAvailable
@@ -715,7 +808,7 @@ final class WorkspaceStore {
     func updateJamfCLI() async {
         guard !isUpdatingJamfCLI else { return }
         isUpdatingJamfCLI = true
-        jamfCLIUpdateMessage = "Updating jamf-cli..."
+        jamfCLIUpdateMessage = L("Updating jamf-cli...")
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
         if !result.refused { jamfCLIUpdateAvailable = false }
@@ -737,7 +830,7 @@ final class WorkspaceStore {
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
         configRepairedKeys = []
-        refreshProtectConnection()
+        refreshEnvironmentProducts()
         // A config.yaml under the demo profile's name is not the demo's, and
         // reading it would put real values on demo screens.
         if demoMode {
@@ -748,6 +841,7 @@ final class WorkspaceStore {
         // workspace with no policy (or a profile switch) has to drop the previous one.
         securityPolicy = SecurityPolicyConfigLoader.load(profile: profile)
         securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
+        percentFormat = DisplayConfigLoader.percentFormat(profile: profile)
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -780,16 +874,21 @@ final class WorkspaceStore {
             after: (configState.outputDir, configState.archiveDir))
         let changedBranding = SharedConfigPin.changedBrandingKeys(
             before: _savedState?.logoPath, after: configState.logoPath)
+        let writtenState = configState
         let saved = try ConfigService.save(
             profile: profile,
-            state: configState,
+            state: writtenState,
             existingDocument: _loadedDoc,
             ifUnchangedSince: _loadedStamp
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
         // A folder this save changed was typed on this Mac; one it left alone is not confirmed.
-        confirmSharedConfig(changedFolders.union(changedBranding))
+        confirmSharedConfig(
+            changedFolders.union(changedBranding), written: [
+                .outputDir: writtenState.outputDir, .archiveDir: writtenState.archiveDir,
+                .brandingLogoPath: writtenState.logoPath,
+            ])
         // A block left as typed was not written: the screen goes back to what the file holds
         // for it, rather than calling its own entries saved.
         if saved.report.keptBlocks.contains("custom_eas") {
@@ -806,16 +905,12 @@ final class WorkspaceStore {
         return saved.report
     }
 
-    /// A save on this Mac confirms the shared-config keys it wrote, and only those.
-    private func confirmSharedConfig(_ keys: Set<SharedConfigPin.Key>) {
-        guard !keys.isEmpty else { return }
-        do {
-            try SharedConfigPin.confirm(profile: profile, keys: keys)
-        } catch {
-            let reason = error.localizedDescription
-            AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm after save: \(reason, privacy: .public)")
-        }
+    /// A save on this Mac confirms the shared-config keys it wrote, and only those, each to the
+    /// value it wrote.
+    private func confirmSharedConfig(
+        _ keys: Set<SharedConfigPin.Key>, written: [SharedConfigPin.Key: String]
+    ) {
+        SharedConfigPin.confirmWritten(written.filter { keys.contains($0.key) }, profile: profile)
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
@@ -880,7 +975,13 @@ final class WorkspaceStore {
         configRepairedKeys = []
         securityPolicy = .default
         securityPolicyIssues = []
+        percentFormat = .standard
         rebuildCustomEAs()
+    }
+
+    /// After Customize writes `display:`, without reloading the rest of the config.
+    func reloadPercentFormat() {
+        percentFormat = demoMode ? .standard : DisplayConfigLoader.percentFormat(profile: profile)
     }
 
     // MARK: Mutations
@@ -915,11 +1016,13 @@ final class WorkspaceStore {
     }
 
     func addComplianceBenchmark() {
+        configState.benchmarkRowIDs.append(rowCount: configState.complianceBenchmarks.count)
         configState.complianceBenchmarks.append("New Benchmark")
     }
 
     func removeComplianceBenchmark(at index: Int) {
         guard configState.complianceBenchmarks.indices.contains(index) else { return }
+        configState.benchmarkRowIDs.remove(at: index, rowCount: configState.complianceBenchmarks.count)
         configState.complianceBenchmarks.remove(at: index)
     }
 
@@ -943,30 +1046,29 @@ final class WorkspaceStore {
 
     // MARK: Sidebar badge helpers
 
-    /// Reads the device count from the most recent summary JSON for the given profile.
-    /// Returns 0 if no summary exists or the file cannot be read. Does not trigger a live call.
-    func deviceCount(for profile: String) -> Int {
+    /// Devices in `profile`'s newest daily summary, from the cache `refreshDeviceCounts()` fills;
+    /// nil when there is none. Never touches the disk, so a view body may call it.
+    func deviceCount(for profile: String) -> Int? {
         if demoMode {
             guard let index = DemoData.cliProfiles.firstIndex(where: { $0.name == profile })
-            else { return 0 }
+            else { return nil }
             return DemoData.deviceCount(forProfileAt: index)
         }
-        guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return 0 }
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: []
-        ) else { return 0 }
-        let jsons = files.filter { $0.pathExtension == "json" }
-            .sorted { a, b in
-                let aDate = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                let bDate = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                return aDate > bDate
+        return deviceCounts[profile]
+    }
+
+    /// Re-reads every listed profile's count off the main actor. The sidebar calls it when the
+    /// profile list, the active profile, demo mode or a collect's in-flight state changes.
+    func refreshDeviceCounts() async {
+        guard !demoMode else { return }
+        let names = profiles.map(\.name)
+        let counts = await Task.detached(priority: .utility) {
+            names.reduce(into: [String: Int]()) {
+                $0[$1] = SummaryJSONParser.newestDeviceCount(profile: $1)
             }
-        guard let newest = jsons.first,
-              let data = try? Data(contentsOf: newest),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let count = dict["total_devices"] as? Int else { return 0 }
-        return count
+        }.value
+        guard !demoMode else { return }
+        deviceCounts = counts
     }
 
     /// Returns a human-readable relative "last synced" label derived from the mtime
@@ -974,22 +1076,22 @@ final class WorkspaceStore {
     func lastSyncedRelative(for profile: String) -> String {
         // The demo was last synced by its Daily Snapshot Collection run; reading the
         // disk would say "Never synced" on every demo screen.
-        if demoMode { return "Synced Apr 25, 06:01" }
-        guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return "Never synced" }
+        if demoMode { return L("Synced Apr 25, 06:01") }
+        guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return L("Never synced") }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return "Never synced" }
+        ) else { return L("Never synced") }
         let newest = files.compactMap { url -> Date? in
             (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         }.max()
-        guard let date = newest else { return "Never synced" }
+        guard let date = newest else { return L("Never synced") }
         let components = Calendar.current.dateComponents([.minute, .hour, .day], from: date, to: Date())
-        if let days = components.day, days > 0 { return "Synced \(days)d ago" }
-        if let hours = components.hour, hours > 0 { return "Synced \(hours)h ago" }
-        if let minutes = components.minute, minutes > 0 { return "Synced \(minutes)m ago" }
-        return "Synced just now"
+        if let days = components.day, days > 0 { return L("Synced \(days)d ago") }
+        if let hours = components.hour, hours > 0 { return L("Synced \(hours)h ago") }
+        if let minutes = components.minute, minutes > 0 { return L("Synced \(minutes)m ago") }
+        return L("Synced just now")
     }
 
     // MARK: Console deep-links
@@ -1092,25 +1194,58 @@ final class WorkspaceStore {
     /// The active workspace is a Jamf School one: its profile logs in to Jamf School
     /// (`school setup`, discovered as `JamfCLIProduct.school`), which is also the profile
     /// `ProfileProductType.detect` routes to School collect.
-    var isSchoolWorkspace: Bool { activeCLIProfile?.product == .school }
+    var isSchoolWorkspace: Bool { environmentProducts.isSchool }
 
     /// The sidebar's visibility for the active workspace: the user's hidden tabs, and the tabs
     /// its product cannot fill.
     func tabVisibility(hiddenRaw: String) -> TabVisibility {
-        TabVisibility.parse(hiddenRaw)
-            .limited(toSchool: isSchoolWorkspace, protectConnected: protectConnected)
+        TabVisibility.parse(hiddenRaw).limited(to: environmentProducts)
     }
 
-    /// Re-reads whether the active workspace has Jamf Protect connected (`ConnectedProducts`).
-    func refreshProtectConnection() {
-        protectConnected = !demoMode
-            && ConnectedProducts.read(profile: profile).protectProfile != nil
+    /// The products and device types of the active environment; the demo workspace's own in demo
+    /// mode (`DemoData.environmentProducts(for:)`). A School
+    /// profile whose config.yaml cannot be read is still School, and the Platform API login of a
+    /// workspace without `profiles:` is read live from discovery, which fills `auth` late.
+    var environmentProducts: EnvironmentProducts {
+        if demoMode { return DemoData.environmentProducts(for: profile) }
+        var products = EnvironmentProducts.from(
+            environmentProfiles, composition: environmentComposition,
+            legacyPlatformAuth: activeCLIProfile?.auth?.isPlatform == true)
+        if activeCLIProfile?.product == .school && !products.isSchool {
+            products.products.remove(.jamfPro)
+            products.products.insert(.jamfSchool)
+        }
+        // The Protect-only twin: a Protect login owns this folder, so there is no Jamf Pro.
+        if activeCLIProfile?.product == .protect, environmentConfigUnreadable {
+            products.products = [.protect]
+        }
+        return products
+    }
+
+    /// Re-reads which products the active workspace names (`EnvironmentProfiles`).
+    func refreshEnvironmentProducts() {
+        guard !demoMode else {
+            environmentProfiles = .none
+            environmentConfigUnreadable = false
+            return
+        }
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        var environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        // A peer's Protect-only edit this Mac has not confirmed leaves the workspace as it was.
+        if environment.isProtectOnly, !environment.isConfirmedProtectOnly(workspace: profile) {
+            environment.jamfPro = profile
+        }
+        environmentProfiles = environment
+        environmentConfigUnreadable = config == nil
     }
 
     /// After credentials are saved: a profile's auth method or scope level may have changed, so
     /// the headless cache (`ProfileAuthMethod`) is cleared and the profile list read again.
     func credentialsChanged() {
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
         reloadFromDisk()
     }
 
@@ -1148,24 +1283,33 @@ final class WorkspaceStore {
         return url
     }
 
-    /// The profile a launch or reload opens on: the first one the app can use,
-    /// else the first, so an `.error` profile is active only when nothing else is.
-    nonisolated static func initialProfile(in profiles: [JamfCLIProfile]) -> JamfCLIProfile? {
-        profiles.first { $0.status != .error } ?? profiles.first
+    /// The profile a launch or reload opens on: the first one the app can use that has a
+    /// workspace, else the first usable one, else the first, so an `.error` profile is active
+    /// only when nothing else is.
+    nonisolated static func initialProfile(
+        in profiles: [JamfCLIProfile], hasWorkspace: (String) -> Bool
+    ) -> JamfCLIProfile? {
+        profiles.first { $0.status != .error && hasWorkspace($0.name) }
+            ?? profiles.first { $0.status != .error } ?? profiles.first
     }
 
-    /// The profile a reload keeps active: the current one while it is still
-    /// listed and usable. When it is gone because it is a Protect login (discovery no longer
-    /// lists one), the workspace whose `protect.profile` names it; else `initialProfile(in:)`.
+    /// The profile a reload keeps active: the current one while it is still listed and usable.
+    /// When it is gone because another workspace holds it as a Platform API, Protect or Security
+    /// Cloud login (discovery no longer lists one), that workspace; else `initialProfile`.
     nonisolated static func activeProfile(
         keeping current: String, in profiles: [JamfCLIProfile],
-        protectProfile: (String) -> String? = { ConnectedProducts.read(profile: $0).protectProfile }
+        hasWorkspace: (String) -> Bool = { ProfileService.hasWorkspace($0) },
+        connectedProfiles: (String) -> [String] = {
+            EnvironmentProfiles.read(workspace: $0).connectedProfiles
+        }
     ) -> String? {
         if profiles.contains(where: { $0.name == current && $0.status != .error }) {
             return current
         }
-        let owner = profiles.first { $0.status != .error && protectProfile($0.name) == current }
-        return (owner ?? initialProfile(in: profiles))?.name
+        let owner = profiles.first {
+            $0.status != .error && connectedProfiles($0.name).contains(current)
+        }
+        return (owner ?? initialProfile(in: profiles, hasWorkspace: hasWorkspace))?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {
@@ -1250,34 +1394,34 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .overview:          "Overview"
-        case .fleet:             "Fleet Overview"
-        case .devices:           "Computers"
-        case .deviceLookup:      "Device Lookup"
-        case .trends:            "Trends"
-        case .audit:             "Health Audit"
-        case .reports:           "Generated"
-        case .schedules:         "Automation"
-        case .runs:              "Run History"
-        case .config:            "Config"
-        case .customize:         "Customize"
-        case .sources:           "Data Sources"
-        case .backups:           "Backups"
-        case .settings:          "Settings"
-        case .onboarding:        "Onboarding"
-        case .securityPosture:   "Security Posture"
-        case .compliancePosture: "Compliance Posture"
-        case .complianceBenchmarks: "Compliance Benchmarks"
-        case .patch:             "Patch Compliance"
-        case .updates:           "OS Updates"
-        case .ddmBlueprints:     "DDM Blueprints"
-        case .policyProfile:     "Policies & Profiles"
-        case .extensionAttributes: "Extension Attributes"
-        case .outreach:          "Offline Outreach"
-        case .protectDashboard:  "Jamf Protect"
-        case .mobileFleet:       "Mobile Devices"
-        case .groupInventory:    "Groups & Searches"
-        case .schoolDevices:     "Devices"
+        case .overview:          L("Overview")
+        case .fleet:             L("Fleet Overview")
+        case .devices:           L("Computers")
+        case .deviceLookup:      L("Device Lookup")
+        case .trends:            L("Trends")
+        case .audit:             L("Health Audit")
+        case .reports:           L("Generated")
+        case .schedules:         L("Automation")
+        case .runs:              L("Run History")
+        case .config:            L("Config")
+        case .customize:         L("Customize")
+        case .sources:           L("Data Sources")
+        case .backups:           L("Backups")
+        case .settings:          L("Settings")
+        case .onboarding:        L("Onboarding")
+        case .securityPosture:   L("Security Posture")
+        case .compliancePosture: L("Compliance Posture")
+        case .complianceBenchmarks: L("Compliance Benchmarks")
+        case .patch:             L("Patch Compliance")
+        case .updates:           L("OS Updates")
+        case .ddmBlueprints:     L("DDM Blueprints")
+        case .policyProfile:     L("Policies & Profiles")
+        case .extensionAttributes: L("Extension Attributes")
+        case .outreach:          L("Offline Outreach")
+        case .protectDashboard:  L("Jamf Protect")
+        case .mobileFleet:       L("Mobile Devices")
+        case .groupInventory:    L("Groups & Searches")
+        case .schoolDevices:     L("Devices")
         }
     }
 
@@ -1320,7 +1464,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Jamf Pro screen reads, so it keeps its own Overview and Devices and the screens about the
     /// workspace, its reports and its automation, and Trends, which charts the School daily
     /// summary (`ReportEngine.writeSchoolSummary`). Fleet Overview stays out until its tiles
-    /// read that summary. Applied by `TabVisibility.limited(toSchool:)`, never stored.
+    /// read that summary. Applied by `TabVisibility.limited(to:)`, never stored.
     static let schoolTabs: Set<Tab> = [
         .overview, .schoolDevices, .trends, .reports, .schedules, .runs, .config, .sources,
         .settings, .onboarding,
@@ -1353,23 +1497,25 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     /// Canonical sidebar navigation groups. `Sidebar` renders these directly;
     /// `sidebarOrder` is derived from them so the two cannot diverge.
     /// `.onboarding` is intentionally absent: the sidebar never lists it.
-    static let navGroups: [NavGroup] = [
-        .init(label: "REPORTS",
-              items: [.overview, .fleet, .trends, .audit, .reports]),
-        .init(label: "FLEET",
-              items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
-                      .groupInventory]),
-        .init(label: "POSTURE",
-              items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        .init(label: "OPERATIONS",
-              items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        .init(label: "AUTOMATION",
-              items: [.schedules, .runs]),
-        .init(label: "CONFIGURATION",
-              items: [.config, .customize, .sources, .backups]),
-        .init(label: "SYSTEM",
-              items: [.settings]),
-    ]
+    static var navGroups: [NavGroup] {
+        [
+            .init(label: L("REPORTS"),
+                  items: [.overview, .fleet, .trends, .audit, .reports]),
+            .init(label: L("FLEET"),
+                  items: [.devices, .schoolDevices, .mobileFleet, .deviceLookup, .protectDashboard,
+                          .groupInventory]),
+            .init(label: L("POSTURE"),
+                  items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+            .init(label: L("OPERATIONS"),
+                  items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
+            .init(label: L("AUTOMATION"),
+                  items: [.schedules, .runs]),
+            .init(label: L("CONFIGURATION"),
+                  items: [.config, .customize, .sources, .backups]),
+            .init(label: L("SYSTEM"),
+                  items: [.settings]),
+        ]
+    }
 
     /// Flat ordered list of tabs for Cmd-[ / Cmd-] navigation.
     /// Derived from `navGroups` so sidebar rendering and nav order stay in sync.
@@ -1405,15 +1551,36 @@ struct TabVisibility: Sendable, Equatable {
         !unavailable.contains(tab) && (tab.isCoreTab || !hidden.contains(tab))
     }
 
-    /// This visibility for the active workspace: a Jamf School workspace also leaves out every
-    /// tab outside `Tab.schoolTabs`, except Jamf Protect while Protect is connected (2.11), and
-    /// any other workspace leaves out the School Devices tab.
-    func limited(toSchool isSchool: Bool, protectConnected: Bool = false) -> TabVisibility {
+    /// Why a jump to `tab` cannot land, or nil when it can. A tile, banner or toast that posts
+    /// `.navigateToTab` never moves the window onto a screen the sidebar does not show.
+    func navigationRefusal(to tab: Tab) -> String? {
+        if !isAvailable(tab) { return L("\(tab.label) is not available for this workspace") }
+        if !isVisible(tab) {
+            return L("\(tab.label) is hidden; show it in Settings › Sidebar Visibility")
+        }
+        return nil
+    }
+
+    /// The tabs the environment's products can fill, never stored (R5, R6, R8).
+    func limited(to environment: EnvironmentProducts) -> TabVisibility {
         var copy = self
-        let schoolTabs = protectConnected
-            ? Tab.schoolTabs.union([.protectDashboard]) : Tab.schoolTabs
-        copy.unavailable = isSchool
-            ? Set(Tab.allCases).subtracting(schoolTabs) : [.schoolDevices]
+        let keep: Set<Tab>
+        if environment.isSchool {
+            // With Protect, the Backups screen backs Protect up alone (2.12).
+            keep = environment.has(.protect)
+                ? Tab.schoolTabs.union([.protectDashboard, .backups]) : Tab.schoolTabs
+        } else if environment.isProtectOnly {
+            keep = [.overview, .protectDashboard, .trends, .reports, .schedules, .runs, .config,
+                    .sources, .settings, .onboarding]
+        } else {
+            var out: Set<Tab> = [.schoolDevices]
+            if !environment.has(.platform) { out.insert(.complianceBenchmarks) }
+            if !environment.has(.protect) { out.insert(.protectDashboard) }
+            if environment.composition == .macsOnly { out.insert(.mobileFleet) }
+            copy.unavailable = out
+            return copy
+        }
+        copy.unavailable = Set(Tab.allCases).subtracting(keep)
         return copy
     }
 
@@ -1502,9 +1669,27 @@ struct Toast: Identifiable, Sendable {
     enum Style: Sendable { case info, success, warning, danger }
     /// How long a toast stays up before it clears itself.
     static let displaySeconds: Double = 4
+    /// Long enough to read the message and reach the button.
+    static let actionDisplaySeconds: Double = 10
     let id: UUID = UUID()
     let message: String
     let style: Style
+    var action: ToastAction? = nil
+
+    var displaySeconds: Double { action == nil ? Self.displaySeconds : Self.actionDisplaySeconds }
+}
+
+/// A toast's button: a screen to open, posted through `.navigateToTab` like every other jump.
+struct ToastAction: Sendable, Equatable {
+    let label: String
+    let navigation: [String: String]
+
+    static func open(_ tab: Tab, label: String) -> ToastAction {
+        ToastAction(label: label, navigation: ["tab": tab.rawValue])
+    }
+
+    static var runHistory: ToastAction { .open(.runs, label: L("Open Run History")) }
+    static var settings: ToastAction { .open(.settings, label: L("Open Settings")) }
 }
 
 extension WorkspaceStore {

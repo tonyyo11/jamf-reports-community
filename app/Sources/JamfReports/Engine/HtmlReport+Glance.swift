@@ -37,12 +37,12 @@ extension HtmlReport {
     }
 
     private func figureSpecs(current: DailySummary) -> [FigureSpec] {
-        func percent(_ value: Double) -> String { String(format: "%.1f%%", value) }
+        func percent(_ value: Double) -> String { config.percentFormat.text(value) }
         func always(_: DailySummary, _: DailySummary) -> Bool { true }
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         return [
             FigureSpec(label: "Security score", unit: "%", polarity: .higherIsBetter,
-                       read: { $0.securityScore }, format: { String(format: "%.1f", $0) },
+                       read: { $0.securityScore }, format: { config.percentFormat.numberText($0) },
                        comparable: { $0.securityScoreBasis == $1.securityScoreBasis }),
             FigureSpec(label: "P0 security gaps", unit: "", polarity: .lowerIsBetter,
                        read: { $0.actionItemsP0.map(Double.init) },
@@ -66,9 +66,9 @@ extension HtmlReport {
     /// "Compliance Benchmark"; "Compliance (4-control proxy)" when the summary's figure is the
     /// proxy built from the four security controls, not a benchmark's failure count.
     func complianceLabel(isProxy: Bool?) -> String {
-        if isProxy == true { return "Compliance (4-control proxy)" }
-        let label = config.compliance?.baselineLabel?.trimmingCharacters(in: .whitespaces) ?? ""
-        return label.isEmpty ? TrendSeries.Metric.compliance.displayLabel : label
+        TrendSeries.Metric.compliance.displayLabel(
+            benchmarkLabel: config.compliance?.baselineLabel?.trimmingCharacters(in: .whitespaces),
+            complianceIsProxy: isProxy == true)
     }
 
     /// The six figures from the newest daily summary, each against the summary about seven
@@ -141,7 +141,8 @@ extension HtmlReport {
         if let prior, let before = spec.read(prior) {
             if spec.comparable(current, prior) {
                 let change = TrendChange(
-                    unit: spec.unit, polarity: spec.polarity, first: before, last: value)
+                    unit: spec.unit, polarity: spec.polarity, first: before, last: value,
+                    format: config.percentFormat)
                 was = "was \(spec.format(before))"
                 switch change.verdict {
                 case _ where change.direction == .flat:
@@ -180,7 +181,7 @@ extension HtmlReport {
         .securityTiles: "security-controls", .agentHealth: "agent-health",
         .patchQueue: "patch-queue", .interventionList: "intervention-list",
         .profileTable: "profile-status", .appTable: "app-status",
-        .recentFailures: "recent-failures",
+        .recentFailures: "recent-failures", .mobileFleet: "mobile-fleet",
     ]
 
     /// Where a line about `id` links: its own block when the report has it, else its group
@@ -196,11 +197,17 @@ extension HtmlReport {
     /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
     /// - Macs MDM reaches whose Jamf binary or inventory is more than `contact_gap_days` behind,
     /// - Macs enrolled but never given the Jamf binary (unmanaged, never checked in),
+    /// - Macs whose MDM profile has expired, or expires within `thresholds.cert_warning_days`
+    ///   while they still check in (a stale Mac is on the stale line already),
+    /// - an expired or expiring Automated Device Enrollment token (counts and days only),
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
     /// - devices with failed patch or software update runs,
-    /// - security agents installed on fewer than every Mac.
+    /// - security agents installed on fewer than every Mac,
+    /// - mobile devices a `MobileFinding` rule counts (jailbreak, not managed, passcode, data
+    ///   protection, OS behind, update errors, stale), from the newest summary's `mobile`
+    ///   figures, the counts the Health Audit's Mobile Devices card shows.
     func attentionItems(
         _ inputs: Inputs, shown: Set<SectionID>
     ) -> [(text: String, anchor: String?)] {
@@ -211,6 +218,9 @@ extension HtmlReport {
             items.append((text, attentionAnchor(id, group: group, shown: shown)))
         }
 
+        if let sentence = inputs.siteScope.reportSentence {
+            items.append((sentence, nil))
+        }
         let (stale, missing) = Self.staleFigure(inputs)
         if stale > 0 {
             add(.interventionList, .devices,
@@ -225,6 +235,12 @@ extension HtmlReport {
         if inputs.binaryMissingCount > 0 {
             add(.interventionList, .devices,
                 BinaryMissing.attentionSentence(count: inputs.binaryMissingCount))
+        }
+        for text in Self.managementSentences(inputs.management) {
+            add(.interventionList, .devices, text)
+        }
+        if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
+            items.append((token, nil))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
@@ -258,11 +274,31 @@ extension HtmlReport {
         }
         let partial = agentCoverage(inputs).filter { $0.pct < 100 }
         if !partial.isEmpty {
-            let list = partial.map { "\($0.name) \(String(format: "%.1f%%", $0.pct))" }
+            let list = partial.map { "\($0.name) \(config.percentFormat.text($0.pct))" }
             add(.agentHealth, .security,
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
         }
+        if let mobile = latest?.mobile {
+            for finding in MobileFinding.allCases {
+                guard let count = finding.count(in: mobile), count > 0 else { continue }
+                add(.mobileFleet, .mobile, finding.sentence(count: count, staleDays: rule.days))
+            }
+        }
         return items
+    }
+
+    /// The management lines, each only while its count is above zero.
+    static func managementSentences(_ health: ManagementHealth?) -> [String] {
+        let lines: [(ManagementHealth.Finding, String, String)] = [
+            (.profileExpired, "has an expired MDM profile and is leaving management",
+             "have expired MDM profiles and are leaving management"),
+            (.profileExpiringCheckingIn, "still checks in, but its MDM profile expires soon",
+             "still check in, but their MDM profiles expire soon"),
+        ]
+        return lines.compactMap { finding, one, many in
+            guard let count = health?.figures[finding]?.count, count > 0 else { return nil }
+            return count == 1 ? "1 Mac \(one)." : "\(count) Macs \(many)."
+        }
     }
 
     /// "3 Macs have not checked in for more than 30 days." On the default basis, the check-in

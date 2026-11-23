@@ -16,17 +16,21 @@ struct Generate: AsyncParsableCommand {
         abstract: "Generate an xlsx workbook for a profile.",
         discussion: "With html.with_workbook: true in the profile's config.yaml, the HTML "
             + "report is written beside the workbook, with the same name and a .html extension. "
+            + "--csv-folder (or output.csv_folder: true) also writes one CSV per workbook tab "
+            + "into a folder named like the workbook with _csv added. "
             + "A Jamf School workspace writes the School workbook and ignores --template.")
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Output .xlsx path (default: the workspace's Generated Reports dir).") var output: String?
     @Option(help: "Report template id (default: full-instance).") var template: String?
+    @Flag(help: "Also write one CSV per workbook tab into a folder beside the workbook.")
+    var csvFolder = false
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
-        let sheetFailures = try await CLIRun.exclusively {
+        let sheetFailures = try await CLIRun.exclusively(profile: profile) {
             try await write(config: config, dataDir: dataDir, template: resolved)
         }
         // After the lock is given back: `fail` exits the process.
@@ -36,11 +40,21 @@ struct Generate: AsyncParsableCommand {
         }
     }
 
-    /// Returns how many sheets failed to write.
-    private func write(
+    /// Returns how many sheets failed to write. Internal for tests, which reach it without the
+    /// tick lock.
+    func write(
         config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
     ) async throws -> Int {
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        try await AttentionLog.recording(profile: profile) {
+            try await writeRecording(config: config, dataDir: dataDir, template: resolved)
+        }
+    }
+
+    private func writeRecording(
+        config: ReportConfig, dataDir: URL, template resolved: any ReportTemplate
+    ) async throws -> Int {
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         // A School workspace writes the School workbook whatever the template: the Pro
         // engine would skip every sheet.
         let isSchool = ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
@@ -48,34 +62,43 @@ struct Generate: AsyncParsableCommand {
         // additive, and mode-consistent with a scheduled jamf-cli-only run.
         // generate does not collect, so it never evaluates metric alerts.
         let signals = CLIRunSignals.begin(profile: profile, kind: .generate, config: config)
+        signals.bindAttention()
         let outputURL = try output.map { URL(fileURLWithPath: $0) }
             ?? engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .xlsx, schoolMode: isSchool), profile: profile,
+                stem: ExportNaming.reportKind(
+                    for: .xlsx, schoolMode: isSchool, prefix: config.filePrefix),
                 onLine: signals.teeing(CLIRun.printLogLine))
         do {
             let onLine = signals.teeing(CLIRun.printLogLine)
-            let failures: [SheetFailure]
+            let generated: GeneratedReport
             if isSchool {
-                failures = try await ReportEngine.schoolGenerate(
-                    config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                    onLine: onLine)
+                generated = try await ReportEngine.schoolGenerateReport(
+                    config: config, dataDir: dataDir, outputURL: outputURL,
+                    workspace: try WorkspaceID(validating: profile), csvFolder: csvFolder,
+                    now: signals.startedAt, onLine: onLine)
             } else {
-                failures = try await engine.generate(
-                    outputURL: outputURL, template: resolved, onLine: onLine)
+                generated = try await engine.generateReport(
+                    outputURL: outputURL, template: resolved, csvFolder: csvFolder,
+                    now: signals.startedAt, onLine: onLine)
             }
-            // html.with_workbook. Before the path below, which stays the last line of
-            // stdout for a script that reads it. There is no School HTML report.
+            let failures = generated.failures
+            // html.with_workbook, then the run manifest over everything written. Before the
+            // path below, which stays the last line of stdout for a script that reads it. There
+            // is no School HTML report.
+            var htmlURL: URL?
             if !isSchool {
-                await engine.writeHTMLWithWorkbook(
-                    besideWorkbook: outputURL, template: resolved,
-                    onLine: signals.teeing(CLIRun.printLogLine))
+                htmlURL = await engine.writeHTMLWithWorkbook(
+                    besideWorkbook: outputURL, template: resolved, onLine: onLine)
             }
+            await ReportEngine.sealRun(
+                artifacts: [outputURL, htmlURL, generated.csvFolder].compactMap { $0 },
+                config: config, profile: profile, onLine: onLine)
             // The workbook is written even when some sheets error, so always emit
             // the path (scripts can still find the artifact); exit non-zero to
             // flag partial.
             print(outputURL.path)
             if !failures.isEmpty {
-                // Same marker text the scheduled path records (main.swift), so
+                // Same marker text the scheduled path records (HeadlessRun.swift), so
                 // RunHistoryService.isPartialRun recognizes a partially-failed
                 // CLI generate the same way it does a scheduled one.
                 signals.recorder?.record(partialRunMarker(sheetFailures: failures.count))
@@ -97,35 +120,49 @@ struct Collect: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Comma-separated collection tiers (refresh,inventory,scan). Default: all.") var tiers: String?
     @Flag(help: ArgumentHelp(
-        "Collect even if the profile was collected recently (Jamf Pro: today; Jamf School: "
-            + "within 12 hours).")) var force = false
+        "Collect even if the profile was collected today, and fetch every source whether or "
+            + "not it is due (Jamf Pro and Jamf School alike).")) var force = false
 
     static func refusal(profile: String, config: ReportConfig?) -> String? {
-        CollectRouter.proRunRefusal(profile: profile, operation: "Collect", config: config)
+        CollectRouter.runRefusal(profile: profile, operation: "Collect", config: config)
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         let config = collectRoutingConfig(profile: profile)
         // Before the run record, the signals and the tick lock: nothing is created for a
         // profile that belongs to another product.
         if let refusal = Self.refusal(profile: profile, config: config) { CLIRun.fail(refusal) }
-        try await CLIRun.exclusively {
+        let tiers = CLIRun.parseTiers(tiers)
+        try await CLIRun.exclusively(profile: profile) {
+            try await Self.perform(profile: profile, tiers: tiers, force: force, config: config)
+        }
+    }
+
+    /// The collect itself, in a Needs attention scope of its own. `proCollect` is the test seam.
+    static func perform(
+        profile: String, tiers: Set<CollectionTier>, force: Bool, config: ReportConfig?,
+        proCollect: CollectRouter.ProCollect? = nil
+    ) async throws {
+        try await AttentionLog.recording(profile: profile) {
             // Trust signals — a CLI collect now records to Run History, evaluates
             // metric alerts, and posts the notify digest exactly like a snapshot-only
             // scheduled run. All best-effort; the exit code and stdout are unchanged.
             let signals = CLIRunSignals.begin(profile: profile, kind: .collect, config: config)
+            signals.bindAttention()
             do {
                 // Route through CollectRouter — not ReportEngine.collect directly —
                 // so a Jamf School profile collects via schoolCollect and a
                 // Protect-enabled Pro profile also runs protectCollect, matching
                 // every other production collect entry point.
                 try await CollectRouter.run(
-                    profile: profile,
-                    tiers: CLIRun.parseTiers(tiers),
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: tiers,
                     force: force,
                     config: config,
                     workspacePaths: WorkspacePaths.self,
+                    now: signals.startedAt,
+                    proCollect: proCollect,
                     onLine: signals.teeing(CLIRun.printLogLine)
                 )
                 print("[ok] collect complete for \(profile)")
@@ -154,21 +191,30 @@ struct Html: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let output { CLIRun.requireSafeOutput(output) }
         let (config, dataDir) = try CLIRun.loadProfile(profile)
         if let refusal = Self.refusal(config: config, profile: profile) { CLIRun.fail(refusal) }
         // Reuse the xlsx naming convention (timestamp + profile attribution),
         // swapping the extension — there's no HTML-specific path resolver.
-        let defaultURL = try ReportEngine(config: config, dataDir: dataDir)
-            .resolveOutputURL(stem: "report", profile: profile,
+        let defaultURL = try ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
+            .resolveOutputURL(stem: ExportNaming.reportKind(
+                for: .html, schoolMode: false, prefix: config.filePrefix),
                               onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
-        try await CLIRun.exclusively {
-            _ = try await ReportEngine.generateHTML(
-                config: config, dataDir: dataDir, outputURL: outputURL, profile: profile,
-                onLine: CLIRun.printLogLine)
+        try await CLIRun.exclusively(profile: profile) {
+            // No run record opens here, so its items land in the app record with no run log,
+            // like the GUI's manual collect.
+            try await AttentionLog.recording(profile: profile) {
+                _ = try await ReportEngine.generateHTML(
+                    config: config, dataDir: dataDir, outputURL: outputURL,
+                    workspace: try WorkspaceID(validating: profile), onLine: CLIRun.printLogLine)
+                await ReportEngine.sealRun(
+                    artifacts: [outputURL], config: config, profile: profile,
+                    onLine: CLIRun.printLogLine)
+            }
         }
         print(outputURL.path)
     }

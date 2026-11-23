@@ -10,13 +10,16 @@ cd "$(dirname "$0")"
 # scripts/package-dmg.sh (scripts/test-versioning.zsh covers them in CI).
 # shellcheck source-path=SCRIPTDIR source=scripts/lib/versioning.zsh
 source "${PWD}/scripts/lib/versioning.zsh"
+# The tick agent's SpawnConstraint (scripts/test-spawn-constraint.zsh covers it in CI).
+# shellcheck source-path=SCRIPTDIR source=scripts/lib/spawn-constraint.zsh
+source "${PWD}/scripts/lib/spawn-constraint.zsh"
 
 CONFIG="${1:-release}"
 
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.11.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.12.0}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
@@ -61,7 +64,7 @@ fi
 
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
-  swift build -c release
+  swift build -c release --force-resolved-versions
 else
   swift build
 fi
@@ -91,6 +94,11 @@ mkdir -p "$APP_OUT/Contents/Resources"
 
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
+
+# Translations: Text and String(localized:) look in Bundle.main, which is this .app, although the
+# code lives in the library target. No Bundle.module, which fatalErrors in a signed bundle.
+xcrun xcstringstool compile Localization/Localizable.xcstrings \
+  --output-directory "$APP_OUT/Contents/Resources"
 
 # The one SMAppService agent (2.8.0). Lives outside Sources/ so SwiftPM's
 # .process("Resources") never rewrites it; signed with the bundle below.
@@ -124,16 +132,15 @@ if [[ -d "$BUNDLE" ]]; then
   done
 fi
 
-# Regenerate the AppIcon.icns if missing (first-run convenience).
-if [[ ! -f "Resources/AppIcon.icns" ]]; then
-  echo "→ AppIcon.icns missing — running iconset/build-icon.sh"
+# The icon is compiled from iconset/AppIcon.icon by iconset/build-icon.sh and committed:
+# Assets.car carries the Liquid Glass icon (macOS 26+) and flat images (macOS 15, via
+# CFBundleIconName); AppIcon.icns is the fallback for CFBundleIconFile.
+if [[ ! -f "Resources/Assets.car" || ! -f "Resources/AppIcon.icns" ]]; then
+  echo "→ app icon missing — running iconset/build-icon.sh"
   ./iconset/build-icon.sh
 fi
+cp "Resources/Assets.car" "$APP_OUT/Contents/Resources/Assets.car"
 cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
-
-if [[ -f "../config.example.yaml" ]]; then
-  cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
-fi
 
 cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -142,9 +149,21 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+      <string>en</string>
+      <string>fr</string>
+      <string>es</string>
+      <string>de</string>
+      <string>pt-BR</string>
+      <string>it</string>
+      <string>ja</string>
+    </array>
     <key>CFBundleExecutable</key>
     <string>JamfReports</string>
     <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.tonyyo.jamfreports</string>
@@ -256,6 +275,20 @@ else
 fi
 echo "→ signing identity: ${SIGNING_IDENTITY}"
 
+# Constrain the tick agent to this signature, before the bundle is sealed. Ad-hoc builds get
+# none: they carry no team ID, and a source build must still run its own tick.
+TICK_PLIST="$APP_OUT/Contents/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist"
+if [[ "$SIGNING_IDENTITY" != "-" ]]; then
+  SPAWN_TEAM="$(jr_identity_team_id "$SIGNING_IDENTITY")"
+  SPAWN_TEAM="${SPAWN_TEAM:-${TEAM_ID:-}}"
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_OUT/Contents/Info.plist")"
+  if ! jr_add_spawn_constraint "$TICK_PLIST" "$SPAWN_TEAM" "$BUNDLE_ID"; then
+    echo "✗ could not constrain the tick agent for identity: ${SIGNING_IDENTITY}" >&2
+    exit 1
+  fi
+  echo "→ tick agent constrained to team ${SPAWN_TEAM}, identifier ${BUNDLE_ID}"
+fi
+
 ENTITLEMENTS="JamfReports.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
   echo "→ signing $APP_OUT"
@@ -266,6 +299,11 @@ if [[ -f "$ENTITLEMENTS" ]]; then
     "$APP_OUT" >/dev/null; then
     echo "✗ codesign failed for $APP_OUT" >&2
     exit 1
+  fi
+  if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+    jr_verify_spawn_constraint "$APP_OUT" none || exit 1
+  else
+    jr_verify_spawn_constraint "$APP_OUT" required || exit 1
   fi
 else
   echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2

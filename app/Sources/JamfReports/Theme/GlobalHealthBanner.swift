@@ -41,7 +41,7 @@ struct GlobalHealthBanner: View {
             banner(
                 icon: "arrow.triangle.2.circlepath",
                 tone: .info,
-                text: "Re-collecting stale data…",
+                text: L("Re-collecting stale data…"),
                 detail: nil,
                 action: nil
             )
@@ -76,7 +76,7 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openBackups.label,
                 icon: "externaldrive",
-                help: "Run a backup and see what it kept",
+                help: L("Run a backup and see what it kept"),
                 handler: onOpenBackups ?? onOpenAutomation
             )
         case .openRunHistory:
@@ -84,7 +84,7 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openRunHistory.label,
                 icon: "list.bullet.rectangle",
-                help: "Open the run that logged it",
+                help: L("Open the run that logged it"),
                 handler: {
                     if let onOpenRunHistory { onOpenRunHistory(log) } else { onOpenAutomation() }
                 }
@@ -93,14 +93,14 @@ struct GlobalHealthBanner: View {
             return InlineBannerAction(
                 label: PrimaryAction.openConfigDoctor.label,
                 icon: "stethoscope",
-                help: "Review what Config Doctor reports about this workspace",
+                help: L("Review what Config Doctor reports about this workspace"),
                 handler: onOpenConfigDoctor ?? onOpenAutomation
             )
         case .collectNow:
             return InlineBannerAction(
                 label: PrimaryAction.collectNow.label,
                 icon: "arrow.clockwise",
-                help: "Collect the data sources that are behind",
+                help: L("Collect the data sources that are behind"),
                 handler: onCollectNow ?? onOpenAutomation
             )
         case .openAutomation:
@@ -149,11 +149,11 @@ struct GlobalHealthBanner: View {
 
         var label: String {
             switch self {
-            case .openConfigDoctor: return "Review"
-            case .collectNow: return "Collect now"
-            case .openAutomation: return "Open Automation"
-            case .openBackups: return "Open Backups"
-            case .openRunHistory: return "Open Run History"
+            case .openConfigDoctor: return L("Review")
+            case .collectNow: return L("Collect now")
+            case .openAutomation: return L("Open Automation")
+            case .openBackups: return L("Open Backups")
+            case .openRunHistory: return L("Open Run History")
             }
         }
     }
@@ -232,59 +232,65 @@ struct GlobalHealthBanner: View {
             return Headline(
                 icon: "exclamationmark.triangle.fill",
                 tone: .danger,
-                text: countPhrase(failing.count, "data source") + " failing to collect",
-                detail: kindList(failing) + " — " + failingReason(failing)
+                text: failing.count == 1
+                    ? L("1 data source is failing to collect")
+                    : L("\(failing.count) data sources are failing to collect"),
+                detail: L("\(kindList(failing)) — \(failingReason(failing))")
             )
         }
         // Below failing collects, above everything else: background runs on this Mac are using
         // safe values (a default report folder, no webhook) until it is confirmed.
         if !sharedConfig.isEmpty {
-            let named = sharedConfig.prefix(maxNamedKinds).joined(separator: ", ")
-            let extra = sharedConfig.count - min(sharedConfig.count, maxNamedKinds)
+            let named = withOverflow(
+                sharedConfig.prefix(maxNamedKinds).joined(separator: ", "),
+                extra: sharedConfig.count - min(sharedConfig.count, maxNamedKinds))
             return Headline(
                 icon: "lock.trianglebadge.exclamationmark",
                 tone: .warn,
-                text: "Shared config needs confirming on this Mac",
-                detail: named + (extra > 0 ? " +\(extra) more" : "")
-                    + " — background runs use safe values until you confirm"
+                text: L("Shared config needs confirming on this Mac"),
+                detail: L("\(named) — background runs use safe values until you confirm")
             )
         }
         if automationFolderRefused {
             return Headline(
                 icon: "link",
                 tone: .warn,
-                text: "The automation folder is a link",
-                detail: "Alert records are kept on this Mac; Run History is not written until "
-                    + "the link is removed"
+                text: L("The automation folder is a link"),
+                detail: L("Alert records are kept on this Mac; Run History is not written until the link is removed")
             )
         }
         // A warning a run logged that the admin has to fix: below what stops runs, above
         // stale data.
         if !attention.isEmpty {
-            let named = attention.prefix(maxNamedKinds).map(\.message).joined(separator: "; ")
-            let extra = attention.count - min(attention.count, maxNamedKinds)
+            let named = withOverflow(
+                attention.prefix(maxNamedKinds).map(\.message).joined(separator: "; "),
+                extra: attention.count - min(attention.count, maxNamedKinds))
             return Headline(
                 icon: "exclamationmark.bubble",
                 tone: .warn,
                 text: attention.count == 1
-                    ? "1 thing needs attention" : "\(attention.count) things need attention",
-                detail: named + (extra > 0 ? " +\(extra) more" : "")
+                    ? L("1 thing needs attention") : L("\(attention.count) things need attention"),
+                detail: named
             )
         }
         if !stale.isEmpty {
             return Headline(
                 icon: "clock.badge.exclamationmark",
                 tone: .warn,
-                text: countPhrase(stale.count, "data source") + " far behind schedule",
-                detail: kindList(stale) + " — a re-scan is needed"
+                text: stale.count == 1
+                    ? L("1 data source is far behind schedule")
+                    : L("\(stale.count) data sources are far behind schedule"),
+                detail: L("\(kindList(stale)) — a re-scan is needed")
             )
         }
         if !neverCollected.isEmpty {
             return Headline(
                 icon: "clock",
                 tone: .info,
-                text: countPhrase(neverCollected.count, "data source") + " not collected yet",
-                detail: kindList(neverCollected) + " — not attempted yet on this workspace"
+                text: neverCollected.count == 1
+                    ? L("1 data source is not collected yet")
+                    : L("\(neverCollected.count) data sources are not collected yet"),
+                detail: L("\(kindList(neverCollected)) — not attempted yet on this workspace")
             )
         }
         // A disabled background item is not a run that failed: nothing was allowed to run.
@@ -292,16 +298,21 @@ struct GlobalHealthBanner: View {
             return Headline(
                 icon: "calendar.badge.exclamationmark",
                 tone: .warn,
-                text: "Automation is off",
-                detail: "JamfReports is not allowed to run in the background"
+                text: L("Automation is off"),
+                detail: L("JamfReports is not allowed to run in the background")
             )
         }
         if !automation.isEmpty {
             let overdue = automation.filter { $0.kind == .overdue }.count
             let failed = automation.count - overdue
-            let text = overdue > 0
-                ? countPhrase(overdue, "scheduled run") + " overdue"
-                : countPhrase(failed, "scheduled run") + " failing"
+            let text: String
+            if overdue > 0 {
+                text = overdue == 1
+                    ? L("1 scheduled run is overdue") : L("\(overdue) scheduled runs are overdue")
+            } else {
+                text = failed == 1
+                    ? L("1 scheduled run is failing") : L("\(failed) scheduled runs are failing")
+            }
             return Headline(
                 icon: "calendar.badge.exclamationmark",
                 tone: .warn,
@@ -312,8 +323,8 @@ struct GlobalHealthBanner: View {
         return nil
     }
 
-    nonisolated private static func countPhrase(_ n: Int, _ noun: String) -> String {
-        n == 1 ? "1 \(noun) is" : "\(n) \(noun)s are"
+    nonisolated private static func withOverflow(_ names: String, extra: Int) -> String {
+        extra > 0 ? L("\(names) +\(extra) more") : names
     }
 
     /// The cause when every failing kind recorded the same one (spec §10.1), with the
@@ -322,16 +333,18 @@ struct GlobalHealthBanner: View {
         let causes = failing.compactMap(\.cause)
         guard causes.count == failing.count, let first = causes.first, first.kind != .other,
               causes.allSatisfy({ $0.kind == first.kind }) else {
-            return "data on screens using " + (failing.count == 1 ? "it" : "them")
-                + " is out of date"
+            return failing.count == 1
+                ? L("data on screens using it is out of date")
+                : L("data on screens using them is out of date")
         }
         guard first.kind == .missingPermission else { return first.label }
         var seen: Set<String> = []
         let names = causes.flatMap(\.names).filter { seen.insert($0).inserted }
         guard !names.isEmpty else { return first.label }
-        let extra = names.count - min(names.count, maxNamedKinds)
-        return "missing permission: " + names.prefix(maxNamedKinds).joined(separator: "; ")
-            + (extra > 0 ? " +\(extra) more" : "")
+        let listed = withOverflow(
+            names.prefix(maxNamedKinds).joined(separator: "; "),
+            extra: names.count - min(names.count, maxNamedKinds))
+        return L("missing permission: \(listed)")
     }
 
     /// How many kinds the detail line names before collapsing to "+N more".
@@ -344,8 +357,6 @@ struct GlobalHealthBanner: View {
     /// broken kinds must not push the banner into a wall of text.
     nonisolated private static func kindList(_ issues: [DataFreshnessIssue]) -> String {
         let named = issues.prefix(maxNamedKinds).map(\.snapshotKind)
-        let names = named.joined(separator: ", ")
-        let extra = issues.count - named.count
-        return extra > 0 ? "\(names) +\(extra) more" : names
+        return withOverflow(named.joined(separator: ", "), extra: issues.count - named.count)
     }
 }

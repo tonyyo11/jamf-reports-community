@@ -68,7 +68,7 @@ final class ProtectConnectionTests: XCTestCase {
 
     func testTheDisconnectNoteNamesTheCommandThatRemovesTheProfile() {
         let note = ProtectConnection.disconnectedNote(profile: "my protect", profileMissing: false)
-        XCTAssertTrue(note.contains("jamf-cli config remove-profile 'my protect'"), note)
+        XCTAssertTrue(note.contains("jamf-cli config remove-profile -- 'my protect'"), note)
         let gone = ProtectConnection.disconnectedNote(profile: "x", profileMissing: true)
         XCTAssertFalse(gone.contains("remove-profile"))
     }
@@ -91,7 +91,7 @@ final class ProtectConnectionTests: XCTestCase {
         let config = try ConfigLoader.load(from: configURL)
         XCTAssertEqual(config.protect?.enabled, false)
         XCTAssertNil(config.protect?.profile)
-        XCTAssertEqual(ConnectedProducts.read(configURL: configURL, workspace: profile), .none)
+        XCTAssertNil(EnvironmentProfiles.read(configURL: configURL, workspace: profile).protect)
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("extra: keep-me"))
         XCTAssertTrue(text.contains("stale_device_days: 21"))

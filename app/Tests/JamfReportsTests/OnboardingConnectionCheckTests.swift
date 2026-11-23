@@ -13,6 +13,42 @@ final class OnboardingConnectionCheckTests: XCTestCase {
         XCTAssertTrue(unvalidated.contains("did not validate"))
     }
 
+    /// School has no Validate step: its Connect step is the check, so a connected School
+    /// setup is never told its profile did not validate.
+    func testASchoolSetupCountsItsConnectStepAsTheCheck() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        XCTAssertFalse(flow.connectionConfirmed)
+        flow.schoolConnected = true
+        XCTAssertTrue(flow.connectionConfirmed)
+        flow.productPath = .pro
+        XCTAssertFalse(flow.connectionConfirmed, "Jamf Pro still needs Validate")
+        flow.connectionValidated = true
+        XCTAssertTrue(flow.connectionConfirmed)
+    }
+
+    func testOnlyAFirstReportThatExitedZeroFinishesSetup() {
+        let flow = OnboardingFlow()
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = 1
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = -1
+        XCTAssertFalse(flow.firstReportSucceeded)
+        flow.firstReportExitCode = 0
+        XCTAssertTrue(flow.firstReportSucceeded)
+    }
+
+    /// Going back from the last step can change the profile, so coming forward runs again.
+    func testGoingBackFromTheFirstReportClearsItsResult() {
+        let flow = OnboardingFlow()
+        flow.currentStep = .firstReport
+        flow.firstReportExitCode = 0
+        flow.previousStep()
+        XCTAssertNotEqual(flow.currentStep, .firstReport)
+        XCTAssertNil(flow.firstReportExitCode)
+        XCTAssertFalse(flow.firstReportSucceeded)
+    }
+
 
     private func flowAtValidate(
         _ type: OnboardingFlow.ProConnectionType, exit: Int32

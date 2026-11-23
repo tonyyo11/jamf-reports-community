@@ -17,6 +17,8 @@ protocol ReportNarrativeGenerating: Sendable {
 /// can carry prompt-injection text; the grade is a fixed enum).
 struct ReportNarrativeInput: Sendable {
     let metrics: CoreDashboard.ExecutiveSummaryMetrics
+    /// The workspace's `display.percent_decimals`, so the paragraph quotes the report's figures.
+    var percentFormat: PercentFormat = .standard
 
     /// Same "has anything to say" bar as `writeExecutiveSummary`.
     static func hasAnyData(_ m: CoreDashboard.ExecutiveSummaryMetrics) -> Bool {
@@ -30,7 +32,7 @@ struct ReportNarrativeInput: Sendable {
         appendInt(&lines, "Total devices", metrics.totalDevices)
         appendInt(&lines, "Managed devices", metrics.managedCount)
         if let score = metrics.securityScore {
-            var line = "- Security score: \(String(format: "%.1f", score)) / 100"
+            var line = "- Security score: \(percentFormat.numberText(score)) / 100"
             if let grade = metrics.securityGrade { line += " (grade \(grade.rawValue))" }
             lines.append(line)
         }
@@ -54,7 +56,7 @@ struct ReportNarrativeInput: Sendable {
 
     private func appendPct(_ lines: inout [String], _ label: String, _ value: Double?) {
         guard let value else { return }
-        lines.append("- \(label): \(String(format: "%.1f%%", value))")
+        lines.append("- \(label): \(percentFormat.text(value))")
     }
 }
 
@@ -104,7 +106,7 @@ func makeReportNarrativeGenerator(
 
 /// HARD POLICY (F3): the model is invoked ONLY from GUI-initiated generate
 /// flows (OverviewView.runGenerate, GenerateSheet.runGenerate). Headless paths
-/// — `main.swift --scheduled-run`, the included `jamf-reports` CLI, and the
+/// — `--scheduled-run`, the included `jamf-reports` CLI, and the
 /// Schedules "Run now" dispatcher — never call this; their engine calls leave
 /// `aiNarrative` at its `nil` default and the section is omitted.
 enum ReportNarrative {
@@ -132,7 +134,7 @@ enum ReportNarrative {
             let config = (try? ConfigLoader.load(from: configURL)) ?? ReportConfig()
             let metrics = CoreDashboard.executiveMetrics(config: config, dataDir: dataDir)
             guard ReportNarrativeInput.hasAnyData(metrics) else { return nil }
-            return ReportNarrativeInput(metrics: metrics)
+            return ReportNarrativeInput(metrics: metrics, percentFormat: config.percentFormat)
         }.value
         guard let input else { return nil }
 
@@ -166,7 +168,7 @@ enum ReportNarrative {
     }
 }
 
-// MARK: - Gated FoundationModels implementation (macOS 27 only)
+// MARK: - Gated FoundationModels implementation (macOS 27 gate)
 
 // Same gate discipline as FoundationModelsInsightGenerator: `compiler(>=6.4)`
 // is the real discriminator (Xcode 27 only); on the default toolchain this
@@ -187,11 +189,6 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
     provided numbers; never invent metrics, and never name devices or people.
     """
 
-    /// Low temperature: the narrative restates the metrics, it doesn't create.
-    /// GenerationOptions init verified against the 27 SDK swiftinterface :3157
-    /// (`temperature` property :3147).
-    private static let options = GenerationOptions(temperature: 0.1)
-
     func narrative(_ input: ReportNarrativeInput) async throws -> String {
         AppLogger.platform.notice(
             "Report narrative requested (tier=\(config.resolvedTier.rawValue, privacy: .public))")
@@ -201,13 +198,12 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
             guard case .available = model.availability else {
                 throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
             }
-            let prompt = input.promptContext(maxApproxTokens: model.contextSize / 4)
-            return try await respond(model: model, prompt: prompt)
+            return try await respond(model: model, input: input)
         } catch let error as FleetInsightError {
             throw error
         } catch {
             AppLogger.platform.error(
-                "Report narrative generation failed: \(error.localizedDescription, privacy: .private)")
+                "Report narrative generation failed: \(error.englishDescription, privacy: .private)")
             throw FleetInsightError.generationFailed(
                 FoundationModelsInsightGenerator.userMessage(for: error))
         }
@@ -216,34 +212,37 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
     /// Same capability probes as `FoundationModelsInsightGenerator.respond`:
     /// plain text when guided generation is unsupported, reasoning options
     /// only when advertised.
-    private func respond<M: LanguageModel>(model: M, prompt: String) async throws -> String {
+    private func respond(
+        model: SystemLanguageModel, input: ReportNarrativeInput
+    ) async throws -> String {
         let caps = model.capabilities
-        let session = LanguageModelSession(model: model, instructions: Self.instructions)
-
-        guard caps.contains(.guidedGeneration) else {
-            let response = try await session.respond(to: prompt, options: Self.options)
-            return response.content
-        }
-
-        if caps.contains(.reasoning) {
-            let contextOptions = ContextOptions(
-                reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel
-            )
+        let guided = caps.contains(.guidedGeneration)
+        return try await PromptFit.run(
+            model: model, instructions: Self.instructions,
+            schema: guided ? FleetIntelligence.GeneratedReportNarrative.generationSchema : nil,
+            render: { input.promptContext(maxApproxTokens: $0) }
+        ) { prompt in
+            let session = LanguageModelSession(model: model, instructions: Self.instructions)
+            guard guided else {
+                return try await session.respond(to: prompt, options: PromptFit.options).content
+            }
+            if caps.contains(.reasoning) {
+                let response = try await session.respond(
+                    to: prompt,
+                    generating: FleetIntelligence.GeneratedReportNarrative.self,
+                    options: PromptFit.options,
+                    contextOptions: ContextOptions(
+                        reasoningLevel: config.resolvedReasoningLevel.asContextReasoningLevel)
+                )
+                return response.content.narrative
+            }
             let response = try await session.respond(
                 to: prompt,
                 generating: FleetIntelligence.GeneratedReportNarrative.self,
-                options: Self.options,
-                contextOptions: contextOptions
+                options: PromptFit.options
             )
             return response.content.narrative
         }
-
-        let response = try await session.respond(
-            to: prompt,
-            generating: FleetIntelligence.GeneratedReportNarrative.self,
-            options: Self.options
-        )
-        return response.content.narrative
     }
 }
 

@@ -195,17 +195,25 @@ extension HtmlReport {
         let gap: ContactGap?
         let contact: Date?
         var binaryMissing = false
+        /// The management findings that list the Mac (`ManagementReport.interventionFindings`).
+        var management: [ManagementHealth.Finding] = []
 
         /// The row's reason cell.
-        var reason: String { binaryMissing ? BinaryMissing.shortLabel : gap?.label ?? "—" }
+        var reason: String {
+            if binaryMissing { return BinaryMissing.shortLabel }
+            let parts = (gap.map { [$0.label] } ?? []) + management.map(\.title)
+            return parts.isEmpty ? "—" : parts.joined(separator: "; ")
+        }
     }
 
     /// The Macs with a reason first, so the row cap never hides the Macs the binary and
     /// contact-gap lines lead to: without the Jamf binary, then a contact gap (Jamf binary
     /// silent before inventory not updating, the longest silence first, stale or not), then
-    /// the Macs that are only stale, oldest first. Each Mac once.
+    /// the Macs a management finding lists (`management`, by record ID), then the Macs that
+    /// are only stale, oldest first. Each Mac once.
     func interventionMacs(
-        _ computers: [[String: Any]], now: Date = Date()
+        _ computers: [[String: Any]], now: Date = Date(),
+        management: [String: [ManagementHealth.Finding]] = [:]
     ) -> [InterventionMac] {
         let rows = computers.compactMap { item -> InterventionMac? in
             let age = staleRuleAge(of: item, now: now)
@@ -216,10 +224,12 @@ extension HtmlReport {
             }
             let isStale = age.map(isStale) ?? false
             let gap = contactGap(of: item, now: now)
-            guard isStale || gap != nil else { return nil }
+            let findings = management.isEmpty ? [] : management[
+                DeviceInventoryService.recordFromComputer(item, source: "computers").id] ?? []
+            guard isStale || gap != nil || !findings.isEmpty else { return nil }
             return InterventionMac(
                 item: item, age: age, isStale: isStale, gap: gap,
-                contact: ComputerDates(item: item).contact)
+                contact: ComputerDates(item: item).contact, management: findings)
         }
         func rank(_ gap: ContactGap?) -> Int {
             gap.flatMap(ContactGap.allCases.firstIndex(of:)) ?? 0
@@ -230,9 +240,13 @@ extension HtmlReport {
                 ? rank($0.gap) < rank($1.gap)
                 : ($0.age ?? .days(0)) > ($1.age ?? .days(0))
         }
-        let staleOnly = rows.filter { $0.isStale && $0.gap == nil }
-            .sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
-        return missing + gaps + staleOnly
+        func byAge(_ lhs: InterventionMac, _ rhs: InterventionMac) -> Bool {
+            (lhs.age ?? .days(0)) > (rhs.age ?? .days(0))
+        }
+        let managed = rows.filter { $0.gap == nil && !$0.management.isEmpty }.sorted(by: byAge)
+        let staleOnly = rows.filter { $0.isStale && $0.gap == nil && $0.management.isEmpty }
+            .sorted(by: byAge)
+        return missing + gaps + managed + staleOnly
     }
 
     /// The Macs the "Needs attention" stale, contact-gap and Jamf-binary lines count: stale
@@ -242,12 +256,15 @@ extension HtmlReport {
     /// stale and a gap has one row with both. Titled by the stale rule alone when no other
     /// reason applies.
     func buildInterventionList(
-        computersInventory: [[String: Any]], now: Date = Date()
+        computersInventory: [[String: Any]], now: Date = Date(),
+        management: ManagementHealth? = nil
     ) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let rule = config.staleRule
         guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
-        let macs = interventionMacs(computersInventory, now: now)
+        let macs = interventionMacs(
+            computersInventory, now: now,
+            management: ManagementReport.interventionFindings(management))
         guard !macs.isEmpty else {
             return .omitted(
                 "no Mac has gone more than \(rule.days) days without a \(rule.basisPhrase)")
@@ -258,7 +275,9 @@ extension HtmlReport {
              mac.contact.map { CoreDashboard.dayText($0) } ?? "—", mac.reason]
         }
         let staleTitle = "Macs with no \(rule.basisPhrase) for more than \(rule.days) days"
-        let plain = macs.allSatisfy { $0.gap == nil && !$0.binaryMissing }
+        let plain = macs.allSatisfy {
+            $0.gap == nil && !$0.binaryMissing && $0.management.isEmpty
+        }
         let title = plain
             ? "\(staleTitle) (\(macs.count))" : "Macs to follow up (\(macs.count))"
         return .shown(f.block(
@@ -274,13 +293,16 @@ extension HtmlReport {
     private func interventionNote(_ macs: [InterventionMac], rule: StaleRule) -> String {
         let gaps = macs.filter { $0.gap != nil }.count
         let missing = macs.filter(\.binaryMissing).count
-        guard gaps > 0 || missing > 0 else { return "" }
+        let managed = macs.filter { !$0.management.isEmpty }.count
+        guard gaps > 0 || missing > 0 || managed > 0 else { return "" }
         var parts = ["\(macs.filter(\.isStale).count) with no \(rule.basisPhrase) for more "
                      + "than \(rule.days) days"]
         if gaps > 0 { parts.append("\(gaps) with a contact gap") }
         if missing > 0 { parts.append("\(missing) enrolled without the Jamf binary") }
+        if managed > 0 { parts.append("\(managed) with a management finding") }
         var text = parts.joined(separator: ", ") + "."
         if gaps > 0 { text += " A Mac that is both has one row." }
+        if managed > 0 { text += " A Mac with several reasons has one row." }
         if missing > 0 {
             text += " Macs without the binary are not counted as stale. The fleet totals and "
                 + "percentages in this report come from Jamf's own summaries and may still "
@@ -370,7 +392,8 @@ extension HtmlReport {
             let showsAffected = items.contains { $0["affected"] != nil }
             let tableRows = items.map { item -> [String] in
                 let check = item["check"] as? String
-                    ?? item["rule_id"] as? String ?? item["name"] as? String ?? ""
+                    ?? item["rule_id"] as? String
+                    ?? AuditFinding.label(forAuditName: item["name"] as? String ?? "")
                 let detail = item["detail"] as? String
                     ?? item["message"] as? String ?? item["recommendation"] as? String ?? ""
                 let resource = item["policy"] as? String
@@ -456,11 +479,12 @@ extension HtmlReport {
 
     // MARK: - purchaseCohorts
 
-    /// Macs grouped by purchase-date year, as bars.
+    /// Macs grouped by the year of their PO date, as bars. Jamf Pro holds a PO date only where
+    /// the organization entered one, so the title says how much of the inventory the bars cover.
     func buildPurchaseCohorts(computersInventory: [[String: Any]]) -> HtmlBlock {
         let dates = computersInventory.map { inventoryPurchaseDate($0) }
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !dates.isEmpty else { return .omitted("no purchase dates in the inventory") }
+        guard !dates.isEmpty else { return .omitted("no PO dates in the inventory") }
 
         var byYear: [String: Int] = [:]
         for raw in dates {
@@ -468,12 +492,13 @@ extension HtmlReport {
             guard !year.isEmpty, year.allSatisfy(\.isNumber) else { continue }
             byYear[year, default: 0] += 1
         }
-        guard !byYear.isEmpty else { return .omitted("no purchase date with a readable year") }
+        guard !byYear.isEmpty else { return .omitted("no PO date with a readable year") }
 
         let rows = byYear.keys.sorted().map { (label: $0, count: byYear[$0] ?? 0) }
+        let dated = byYear.values.reduce(0, +)
         return .shown(HtmlSectionFormatters.block(
             id: "purchase-cohorts",
-            title: "Purchase cohorts (\(dates.count) Mac\(dates.count == 1 ? "" : "s"))",
+            title: "Purchase cohorts (\(dated) of \(computersInventory.count) Macs with a PO date)",
             body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
     }
 
@@ -522,9 +547,10 @@ extension HtmlReport {
 
     // MARK: - protectAlerts
 
-    /// Protect alerts grouped by severity, capped by `html.section_limits.protect_alerts`
-    /// (default 25, bounded [1, 200]). Reads jamf-cli's flattened alert rows from the
-    /// `protect-alerts` kind directory `ReportEngine.protectCollect` writes.
+    /// Open Protect alerts (not Resolved or AutoResolved) grouped by severity, capped by
+    /// `html.section_limits.protect_alerts` (default 25, bounded [1, 200]). Reads jamf-cli's
+    /// flattened alert rows from the `protect-alerts` kind directory `ReportEngine.protectCollect`
+    /// writes.
     func buildProtectAlerts(protectDataDir: URL?) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let cap = config.html?.sectionLimits?.resolvedProtectAlerts ?? 25
@@ -532,11 +558,18 @@ extension HtmlReport {
         guard let dir = protectDataDir else {
             return .omitted("not configured: protect.enabled is off in config.yaml")
         }
-        let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir)
+        guard let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir) else {
+            return .omitted("the newest protect-alerts file could not be read")
+        }
         guard !alerts.isEmpty else { return .omitted("no Protect alerts in the snapshot") }
+        let open = alerts.filter { ProtectAlertRow.isOpen(status: $0["status"] as? String) }
+        let closed = alerts.count - open.count
+        guard !open.isEmpty else {
+            return .omitted("no open Protect alerts (\(closed) Resolved or AutoResolved)")
+        }
 
         var bySeverity: [String: [[String: Any]]] = [:]
-        for alert in alerts {
+        for alert in open {
             let sev = (alert["severity"] as? String ?? "unknown").lowercased()
             bySeverity[sev, default: []].append(alert)
         }
@@ -563,6 +596,7 @@ extension HtmlReport {
                     ? eventType
                     : ((alert["analytics"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
                 let date = (alert["created"] as? String).map { String($0.prefix(10)) } ?? "—"
+                let status = (alert["status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—"
 
                 // Wrap device cell in a link to its audit-evidence anchor when known.
                 let deviceCell: String
@@ -575,14 +609,14 @@ extension HtmlReport {
                 }
                 return "<tr>\(deviceCell)" +
                     "<td>\(f.escapeHTML(description))</td>" +
-                    "<td>\(f.escapeHTML(date))</td></tr>"
+                    "<td>\(f.escapeHTML(date))</td><td>\(f.escapeHTML(status))</td></tr>"
             }
             totalShown += take
             parts.append("""
             <div class="audit-severity-group">
               <h4>\(f.renderSeverityPill(sev)) (\(sevAlerts.count))</h4>
               \(f.renderCappedRows(
-                  headers: ["Computer", "Alert", "Date"], rowHTML: Array(alertRows),
+                  headers: ["Computer", "Alert", "Date", "Status"], rowHTML: Array(alertRows),
                   expanded: expandAll))
             </div>
             """)
@@ -590,72 +624,9 @@ extension HtmlReport {
 
         return .shown(f.block(
             id: "protect-alerts",
-            title: "Protect alerts (showing \(totalShown) of \(alerts.count))",
+            title: "Open Protect alerts (showing \(totalShown) of \(open.count))"
+                + (closed > 0 ? "; \(closed) Resolved or AutoResolved not listed" : ""),
             body: parts.joined(separator: "\n")))
-    }
-
-    // MARK: - insightsDrift
-
-    /// Protect insights snapshot comparison, using up to
-    /// `html.section_limits.insights_drift_snapshots` (default 2, bounded [1, 12]) snapshots.
-    /// Values are failing-device counts (`totalFail`) per insight, read from the
-    /// `protect-insights` kind directory `ReportEngine.protectCollect` writes.
-    ///
-    /// When more than two snapshots are requested, the table gains one column per additional
-    /// snapshot labelled "N ago" (oldest first, current last).
-    func buildInsightsDrift(protectDataDir: URL?) -> HtmlBlock {
-        let f = HtmlSectionFormatters.self
-        let snapshotCap = config.html?.sectionLimits?.resolvedInsightsDriftSnapshots ?? 2
-
-        guard let dir = protectDataDir else {
-            return .omitted("not configured: protect.enabled is off in config.yaml")
-        }
-        let allSnapshots = loadProtectInsightSnapshots(dataDir: dir)
-        guard allSnapshots.count >= 2 else {
-            return .omitted("needs two or more Protect insights snapshots; "
-                + "\(allSnapshots.count) found")
-        }
-
-        // Take the most recent `snapshotCap` snapshots; fall back to all available if fewer.
-        let window = Array(allSnapshots.suffix(snapshotCap))
-
-        // Collect all insight labels across the window.
-        var insightKeys: [String] = []
-        for snapshot in window {
-            for key in snapshot.keys where !insightKeys.contains(key) {
-                insightKeys.append(key)
-            }
-        }
-        insightKeys.sort()
-
-        // Build headers: "Insight", then one column per snapshot from oldest → "Current".
-        var headers = ["Insight"]
-        for idx in 0 ..< window.count {
-            if idx == window.count - 1 {
-                headers.append("Current")
-            } else if idx == window.count - 2 {
-                headers.append("Previous")
-            } else {
-                headers.append("\(window.count - 1 - idx) ago")
-            }
-        }
-
-        // Plain text: renderTable escapes every cell.
-        let tableRows = insightKeys.map { key -> [String] in
-            var row = [key]
-            for snapshot in window {
-                row.append(snapshot[key].map { "\($0)" } ?? "—")
-            }
-            return row
-        }
-
-        return .shown(f.block(
-            id: "insights-drift",
-            title: "Protect insights drift (\(window.count) of \(allSnapshots.count) snapshots)",
-            body: """
-            <p class="empty-hint">Values are failing-device counts per insight.</p>
-            \(f.renderCappedTable(headers: headers, rows: tableRows, expanded: expandAll))
-            """))
     }
 
     // MARK: - agentHealth
@@ -691,11 +662,11 @@ extension HtmlReport {
                 "\(agent.installed)",
                 "\(max(agent.reporting - agent.installed, 0))",
                 "\(max(total - agent.reporting, 0))",
-                pct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+                config.percentFormat.text(pct),
             ])
             barCards.append(HtmlSectionFormatters.SectionCard(
                 name: agent.name,
-                value: pct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+                value: pct.map { PercentFormat.whole.text($0) } ?? "\u{2014}",
                 sublabel: agent.reporting > 0
                     ? "\(agent.installed) of \(total) installed"
                     : "no Mac reports \(agent.column)"
@@ -740,17 +711,13 @@ extension HtmlReport {
     // MARK: - Protect helpers
 
     /// Load JSON for a Protect kind (e.g. `protect-alerts`) from `dataDir`.
-    /// Same algorithm as `loadJSON(kind:)`, parameterized for test callers.
-    private func loadProtectJSON(kind: String, dataDir: URL) -> [[String: Any]] {
+    /// Same algorithm as `loadJSON(kind:)`, parameterized for test callers. Empty when there is no
+    /// snapshot; nil when the newest file is there but cannot be read or parsed.
+    private func loadProtectJSON(kind: String, dataDir: URL) -> [[String: Any]]? {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
-        if fm.fileExists(atPath: subdir.path),
-           let files = try? fm.contentsOfDirectory(
-            at: subdir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-           ) {
+        if let files = FileManager.snapshotFolderEntries(in: subdir) {
             candidates = files.filter { $0.pathExtension == "json" }
         }
         if let files = try? fm.contentsOfDirectory(
@@ -764,71 +731,14 @@ extension HtmlReport {
         }
         // Shared rule (filename stamp, manifest + conflict copies excluded).
         guard let newest = FileManager.newestSnapshot(among: candidates) else { return [] }
-        let data: Data
-        do {
-            data = try Data(contentsOf: newest)
-        } catch {
-            AppLogger.platform.debug(
-                "loadProtectJSON: could not read '\(newest.path, privacy: .private)' — \(error, privacy: .private)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else { return nil }
         guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
             AppLogger.platform.debug(
                 "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
             )
-            return []
+            return nil
         }
         return result
-    }
-
-    /// Load Protect insights snapshots, reduced to failing-device counts
-    /// (`totalFail`) per insight label, oldest first.
-    private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Int]] {
-        let fm = FileManager.default
-        let subdir = dataDir.appendingPathComponent("protect-insights", isDirectory: true)
-        guard fm.fileExists(atPath: subdir.path),
-              let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-              ) else { return [] }
-        return files
-            .filter { $0.pathExtension == "json" }
-            // Shared rule (`FileSystemHelpers`): order by the filename stamp,
-            // excluding the manifest, `.partial` staging files and sync-conflict
-            // copies. Raw mtime mis-ordered the series on a synced volume — the
-            // provider re-stamps on materialize — and counted a conflict copy as
-            // an extra day of drift.
-            .filter(FileManager.isSelectableSnapshot)
-            .sorted { FileManager.isOlderSnapshot($0, than: $1) }
-            .compactMap { url -> [String: Int]? in
-                let data: Data
-                do {
-                    data = try Data(contentsOf: url)
-                } catch {
-                    AppLogger.platform.debug(
-                        // swiftlint:disable:next line_length
-                        "loadProtectInsightSnapshots: could not read \(url.path, privacy: .private) — \(error, privacy: .private)"
-                    )
-                    return nil
-                }
-                // jamf-cli's flattened row: label, section, enabled,
-                // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
-                let parsed = try? JSONSerialization.jsonObject(with: data)
-                guard let rows = parsed as? [[String: Any]] else {
-                    AppLogger.platform.debug(
-                        "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
-                    )
-                    return nil
-                }
-                var byLabel: [String: Int] = [:]
-                for row in rows {
-                    guard let label = row["label"] as? String else { continue }
-                    byLabel[label] = asInt(row["totalFail"]) ?? 0
-                }
-                return byLabel
-            }
     }
 
     // MARK: - cleanupAnalysis
@@ -1089,9 +999,9 @@ extension HtmlReport {
 
         // Date + key metrics, oldest first.
         let tableRows: [[String]] = summaries.map { s in
-            let fvStr = s.fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—"
-            let sipStr = s.sipPct.map { String(format: "%.1f%%", $0) } ?? "—"
-            let compStr = s.compliancePct.map { String(format: "%.1f%%", $0) } ?? "—"
+            let fvStr = config.percentFormat.text(s.fileVaultPct)
+            let sipStr = config.percentFormat.text(s.sipPct)
+            let compStr = config.percentFormat.text(s.compliancePct)
             let macs = s.totalDevices > 0 ? "\(s.totalDevices)" : "—"
             return [s.date, macs, fvStr, sipStr, compStr]
         }
@@ -1112,7 +1022,7 @@ extension HtmlReport {
         }
         let count = summaries.count
         return .shown(f.block(id: "timeline", title: "Historical trends", body: """
-            <p class="timeline-note">\(count) snapshots &middot; metrics from workspace
+            <p class="timeline-note">\(HtmlSectionFormatters.plural(count, "snapshot")) &middot; metrics from workspace
             summaries</p>
             \(skippedNote)
             \(renderTimelineSVG(summaries: summaries))
@@ -1142,10 +1052,8 @@ extension HtmlReport {
             .deletingLastPathComponent()
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
-            at: summariesDir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
+        guard let files = FileManager.snapshotFolderEntries(
+            in: summariesDir, includingPropertiesForKeys: nil
         ) else { return ([], 0) }
 
         let candidates = files
@@ -1154,7 +1062,8 @@ extension HtmlReport {
         var skipped = 0
         var snapshots: [SummarySnapshot] = []
         for url in candidates {
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(
+                    url, inside: dataDir.deletingLastPathComponent()),
                   let obj = try? JSONSerialization.jsonObject(with: data),
                   let dict = obj as? [String: Any],
                   let date = dict["date"] as? String
@@ -1208,17 +1117,20 @@ extension HtmlReport {
     /// Plots up to 3 percentage series (FileVault, SIP, Compliance) on a 0–100 scale
     /// on the left y-axis. Total devices is omitted from the SVG to keep the y-axis
     /// coherent; it appears in the accompanying table.
-    func renderTimelineSVG(summaries: [SummarySnapshot]) -> String {
+    func renderTimelineSVG(summaries rawSummaries: [SummarySnapshot]) -> String {
+        // Oldest first; two runs on one day draw one point, the newest.
+        let summaries = HtmlSectionFormatters.newestPerDay(rawSummaries) { String($0.date.prefix(10)) }
         guard summaries.count >= 2 else {
             return "<p class=\"empty-note\">Not enough data for a trend chart.</p>"
         }
 
         let svgW: Double = 620
-        let svgH: Double = 200
+        let svgH: Double = 220
         let leftPad: Double = 48
         let topPad: Double = 16
         let rightPad: Double = 16
-        let bottomPad: Double = 36
+        // Room for the date row and, below it, the legend.
+        let bottomPad: Double = 56
         let plotW = svgW - leftPad - rightPad
         let plotH = svgH - topPad - bottomPad
         let n = summaries.count
@@ -1231,14 +1143,20 @@ extension HtmlReport {
             topPad + plotH - (min(max(pct, 0), 100) / 100.0) * plotH
         }
 
-        // Series definitions: (label, color, values)
+        // Series definitions: (label, metric, values). The colour is the metric's palette
+        // colour on the light and the dark theme (`.chart-series`).
         let f = HtmlSectionFormatters.self
-        typealias Series = (label: String, color: String, values: [Double?])
+        typealias Series = (label: String, metric: TrendSeries.Metric, values: [Double?])
         let allSeries: [Series] = [
-            ("FileVault %", "#2D5EA2", summaries.map { $0.fileVaultPct }),
-            ("SIP %",       "#43A047", summaries.map { $0.sipPct }),
-            ("Compliance %", "#E65100", summaries.map { $0.compliancePct }),
+            ("FileVault %", .fileVault, summaries.map { $0.fileVaultPct }),
+            ("SIP %", .sip, summaries.map { $0.sipPct }),
+            ("Compliance %", .compliance, summaries.map { $0.compliancePct }),
         ]
+        func tint(_ metric: TrendSeries.Metric) -> String {
+            String(format: "--c:#%06X;--c-dark:#%06X",
+                   ChartPalette.hex(forMetric: metric, scheme: .light),
+                   ChartPalette.hex(forMetric: metric, scheme: .dark))
+        }
         // Only include series that have at least one non-nil value.
         let activeSeries = allSeries.filter { $0.values.contains(where: { $0 != nil }) }
 
@@ -1260,16 +1178,14 @@ extension HtmlReport {
             """
         }
 
-        // X-axis labels (show at most 6)
+        // X-axis labels: at most 6, the first and last date always among them.
         var xLabels = ""
-        let labelStep = max(1, n / 6)
-        for i in 0 ..< n {
-            guard i % labelStep == 0 || i == n - 1 else { continue }
+        for i in HtmlSectionFormatters.labelIndices(count: n) {
             let xCoord = xPos(i)
             let dateLabel = String(summaries[i].date.prefix(10))
             xLabels += """
             <text x="\(String(format: "%.1f", xCoord))" \
-            y="\(String(format: "%.1f", svgH - 4))" \
+            y="\(String(format: "%.1f", topPad + plotH + 14))" \
             text-anchor="middle" \
             style="font-size:9px;fill:var(--subtext)">\(f.escapeHTML(dateLabel))</text>
             """
@@ -1278,6 +1194,7 @@ extension HtmlReport {
         // Render each series as a polyline + dots
         var seriesHTML = ""
         for series in activeSeries {
+            seriesHTML += "<g class=\"chart-series\" style=\"\(tint(series.metric))\">"
             // Build point list; skip nil values by breaking the polyline.
             var segments: [[Int]] = []
             var current: [Int] = []
@@ -1297,7 +1214,7 @@ extension HtmlReport {
                     return "\(String(format: "%.1f", xPos(i))),\(String(format: "%.1f", yPos(val)))"
                 }.joined(separator: " ")
                 seriesHTML += """
-                <polyline fill="none" stroke="\(series.color)" stroke-width="2"
+                <polyline fill="none" stroke="currentColor" stroke-width="2"
                   stroke-linejoin="round" points="\(points)"/>
                 """
             }
@@ -1311,22 +1228,23 @@ extension HtmlReport {
                 seriesHTML += """
                 <circle cx="\(String(format: "%.1f", xPos(i)))" \
                 cy="\(String(format: "%.1f", yPos(val)))" \
-                r="3" fill="\(series.color)" aria-label="\(f.escapeHTML(series.label)): \(String(format: "%.1f", val))%"/>
+                r="3" fill="currentColor" aria-label="\(f.escapeHTML(series.label)): \(config.percentFormat.text(val))"/>
                 """
             }
+            seriesHTML += "</g>"
         }
 
         // Legend
         let legendItems = activeSeries.map { series -> String in
             """
-            <g>
-              <rect x="0" y="-6" width="14" height="6" fill="\(series.color)"/>
+            <g class="chart-series" style="\(tint(series.metric))">
+              <rect x="0" y="-6" width="14" height="6" fill="currentColor"/>
               <text x="18" y="0" style="font-size:10px;fill:var(--text)">\(f.escapeHTML(series.label))</text>
             </g>
             """
         }
         var legendX: Double = leftPad
-        let legendY = topPad + plotH + bottomPad - 4
+        let legendY = svgH - 6
         var legendHTML = ""
         for item in legendItems {
             legendHTML += "<g transform=\"translate(\(String(format: "%.0f", legendX)),\(String(format: "%.0f", legendY)))\">"

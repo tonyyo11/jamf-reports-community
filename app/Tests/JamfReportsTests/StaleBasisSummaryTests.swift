@@ -68,8 +68,9 @@ final class StaleBasisSummaryTests: XCTestCase {
 
         let summaries = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
-        ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(summariesDir: summaries)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        ReportEngine(config: config, dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: summaries, day: .testNoon)
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let file = summaries.appendingPathComponent("summary_\(today).json")
         let object = try JSONSerialization.jsonObject(with: Data(contentsOf: file))
         return (object as? [String: Any])?["staleCount"] as? Int

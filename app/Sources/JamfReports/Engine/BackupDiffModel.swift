@@ -293,7 +293,10 @@ enum BackupDiffModel {
         guard let data = text.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data),
               let (redacted, changed) = redactingSecrets(in: root)
-        else { return LogRedactor.redactedForSharing(text, profile: profile, scopeIDs: scopeIDs) }
+        else {
+            return LogRedactor.redactedForSharing(
+                maskingCredentialText(text) ?? text, profile: profile, scopeIDs: scopeIDs)
+        }
         guard changed else { return text }
         // Failing to re-encode must not fall back to the unmasked text.
         guard let out = try? JSONSerialization.data(
@@ -328,7 +331,7 @@ enum BackupDiffModel {
             let parts = array.map { redactingSecrets(in: $0) ?? ($0, false) }
             return (parts.map(\.0), parts.contains { $0.1 })
         case let string as String:
-            return redactingEmbeddedJSON(string)
+            return redactingEmbeddedJSON(string) ?? maskingCredentialText(string).map { ($0, true) }
         default:
             return nil
         }
@@ -347,6 +350,29 @@ enum BackupDiffModel {
         else { return nil }
         return (text, true)
     }
+
+    /// `key: value` / `key = value` lines and plist `<key>…</key><string>…</string>` pairs in
+    /// text that is not JSON (a profile payload, a script setting), with the value of a
+    /// credential-shaped key masked by the same key rule; nil when nothing was masked.
+    private static func maskingCredentialText(_ text: String) -> String? {
+        var out = text
+        var changed = false
+        for pattern in credentialTextPatterns {
+            let ns = out as NSString
+            for match in pattern.matches(in: out, range: NSRange(location: 0, length: ns.length))
+                .reversed() where isSensitiveLeafKey(ns.substring(with: match.range(at: 1))) {
+                out = (out as NSString).replacingCharacters(
+                    in: match.range(at: 2), with: redactedPlaceholder)
+                changed = true
+            }
+        }
+        return changed ? out : nil
+    }
+
+    private static let credentialTextPatterns: [NSRegularExpression] = [
+        #"<key>\s*([A-Za-z0-9_.-]+)\s*</key>\s*<string>([^<]*)</string>"#,
+        #"(?m)^[ \t]*[-*]?[ \t]*["']?([A-Za-z0-9_.-]+)["']?[ \t]*[:=][ \t]*(\S[^\r\n]*)$"#,
+    ].compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
     /// Elements of `lhs` not matched by `rhs`, preserving duplicates.
     private static func multisetSubtract(_ lhs: [String], _ rhs: [String]) -> [String] {

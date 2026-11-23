@@ -24,21 +24,17 @@ enum ConnectionEnvironments {
             case .invalidID:
                 "The ID must be letters, digits, hyphens, underscores or dots, with no spaces."
             case .duplicateID:
-                "This ID is listed more than once."
+                L("This ID is listed more than once.")
             case .alreadyInConnection(let profile):
-                "This ID is already in the connection, as profile \(profile)."
+                L("This ID is already in the connection, as profile \(profile).")
             case .invalidName:
-                "The name made from this label is not a usable profile name."
+                L("The name made from this label is not a usable profile name.")
             case .profileExists(let name):
-                "A jamf-cli profile named \(name) already exists and was not made by this app's "
-                    + "Add environments, or it is in use (it is in a connection, has a workspace, "
-                    + "or is not a Platform profile). Registering it would overwrite its "
-                    + "credentials. Pick another label."
+                L("A jamf-cli profile named \(name) already exists and was not made by this app's Add environments, or it is in use (it is in a connection, has a workspace, or is not a Platform profile). Registering it would overwrite its credentials. Pick another label.")
             case .caseVariant(let existing):
-                "A name that differs from \(existing) only by letter case would share its folder. "
-                    + "Pick another label."
+                L("A name that differs from \(existing) only by letter case would share its folder. Pick another label.")
             case .duplicateName:
-                "Another line makes the same profile name. Pick another label."
+                L("Another line makes the same profile name. Pick another label.")
             }
         }
     }
@@ -55,8 +51,8 @@ enum ConnectionEnvironments {
         var previewText: String {
             if let refusal { return refusal.message }
             return reRegisters
-                ? "Profile \(profile) (left in jamf-cli by an earlier attempt; registered again)"
-                : "Profile \(profile)"
+                ? L("Profile \(profile) (left in jamf-cli by an earlier attempt; registered again)")
+                : L("Profile \(profile)")
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Pinned identity values used to verify the jamf-cli binary's code signature
 /// before passing user-supplied OAuth credentials to it (P9-A-07 follow-up),
@@ -68,8 +69,7 @@ enum JamfCLIIdentity {
         let inode: UInt64
     }
 
-    nonisolated(unsafe) private static var verifiedFingerprints: Set<Fingerprint> = []
-    private static let cacheLock = NSLock()
+    private static let verifiedFingerprints = Mutex<Set<Fingerprint>>([])
 
     /// Verify the jamf-cli binary at `executable` if enforcement is
     /// active. Returns `.success` when the binary is trusted (either
@@ -124,9 +124,7 @@ enum JamfCLIIdentity {
     /// production. Calling between tests prevents one test's verifier
     /// stub from contaminating another.
     static func clearVerificationCacheForTesting() {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        verifiedFingerprints.removeAll()
+        verifiedFingerprints.withLock { $0.removeAll() }
     }
 
     // MARK: - Cache primitives
@@ -149,14 +147,10 @@ enum JamfCLIIdentity {
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        return verifiedFingerprints.contains(fp)
+        verifiedFingerprints.withLock { $0.contains(fp) }
     }
 
     private static func cacheInsert(_ fp: Fingerprint) {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        verifiedFingerprints.insert(fp)
+        verifiedFingerprints.withLock { _ = $0.insert(fp) }
     }
 }

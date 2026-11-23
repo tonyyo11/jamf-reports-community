@@ -3,6 +3,7 @@ import XCTest
 
 /// The Trends insight input: each metric the screen offers, at the end of the selected range
 /// against its start. Built from the screen's own series, so these drive a real `TrendStore`.
+@MainActor
 final class TrendInsightInputTests: XCTestCase {
 
     private func summary(

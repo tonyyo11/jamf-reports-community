@@ -6,6 +6,8 @@ struct BackupsView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var bridge = CLIBridge()
     @State private var backups: [BackupRecord] = []
+    /// The `dataSource` `backups` was listed for; the list and its Delete and Diff wait for it.
+    @State private var loadedSource: String?
     @State private var selectedBackups = Set<BackupRecord.ID>()
     @State private var backupLabel = ""
     @State private var backupOutput: [CLIBridge.LogLine] = []
@@ -26,12 +28,11 @@ struct BackupsView: View {
     @State private var showDeleteConfirm = false
     /// Set when Protect is connected and the backups folder is on storage other Macs reach.
     @State private var syncedChoice: ProtectBackup.SyncedStorageChoice?
+    @State private var proChoice: ProBackup.SyncedStorageChoice?
 
-    private var backupsDirectory: URL {
-        let root = ProfileService.workspaceURL(for: workspace.profile)
-            ?? ProfileService.workspacesRoot()
-                .appendingPathComponent(ProfileName.pathComponent(workspace.profile))
-        return root.appendingPathComponent("backups", isDirectory: true)
+    private var backupsDirectory: URL? {
+        ProfileService.workspaceURL(for: workspace.profile)?
+            .appendingPathComponent("backups", isDirectory: true)
     }
 
     /// The header's folder. Demo mode names the demo workspace, not this Mac's
@@ -43,14 +44,15 @@ struct BackupsView: View {
             : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "backups") + "/"
     }
 
-    private static let demoRevealHelp =
-        "Demo backups are not on disk. Revealing them needs a live profile."
+    private static var demoRevealHelp: String {
+        L("Demo backups are not on disk. Revealing them needs a live profile.")
+    }
 
     // Demo backups are not on disk, and the demo profile's folder could be a
     // real workspace's: nothing below opens, runs or deletes in demo mode.
 
     private func revealBackupsFolder() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, let backupsDirectory else { return }
         SystemActions.openFolder(backupsDirectory)
     }
 
@@ -73,20 +75,31 @@ struct BackupsView: View {
         backups.contains { selectedBackups.contains($0.id) && $0.isEmpty }
     }
 
+    /// `pro diff` cannot read a backup without a Jamf Pro part (failed, skipped or Jamf School).
+    private var selectionLacksJamfPro: Bool {
+        backups.contains { selectedBackups.contains($0.id) && $0.lacksJamfPro }
+    }
+
     private var diffSelectionHint: String {
         switch selectedBackups.count {
-        case 0: "Command-click to select multiple"
-        case 1: "Select 1 more to diff"
-        case 2: selectionIncludesEmptyBackup ? "An empty backup cannot be diffed" : "Ready to diff"
-        default: "Select exactly 2 to diff"
+        case 0: L("Command-click to select multiple")
+        case 1: L("Select 1 more to diff")
+        case 2:
+            selectionIncludesEmptyBackup ? L("An empty backup cannot be diffed")
+                : selectionLacksJamfPro ? L("A backup without Jamf Pro cannot be diffed")
+                : L("Ready to diff")
+        default: L("Select exactly 2 to diff")
         }
     }
 
     private func diffLatestHelp(for backup: BackupRecord) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        if backup.isEmpty { return "This backup has no files, so there is nothing to compare." }
-        if diffTarget?.id == backup.id { return "This is the latest backup with files." }
-        return "Compare this backup with the latest one that has files."
+        if backup.isEmpty { return L("This backup has no files, so there is nothing to compare.") }
+        if backup.noJamfPro {
+            return L("Diff compares Jamf Pro backups; this backup holds Jamf Protect only.")
+        }
+        if diffTarget?.id == backup.id { return L("This is the latest backup with files.") }
+        return L("Compare this backup with the latest one that has files.")
     }
 
     private var shouldShowBackupLogBody: Bool {
@@ -96,10 +109,14 @@ struct BackupsView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             header
-            summary
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("backups"))
+            } else {
+                summary
+            }
             errorBanner
             protectBanner
-            backupsTable
+            if loadedSource == dataSource { backupsTable }
             logCard
         }
         .sheet(isPresented: $showingDiff) {
@@ -116,7 +133,15 @@ struct BackupsView: View {
         } message: {
             Text("This cannot be undone.")
         }
-        .task(id: workspace.profile) {
+        .task(id: dataSource) {
+            // The previous workspace's switches and backups must not show (or write) for this one.
+            syncedChoice = nil
+            proChoice = nil
+            if loadedSource != dataSource {
+                loadedSource = nil
+                backups = []
+                selectedBackups = []
+            }
             // Sweep abandoned .tmp-* staging dirs (interrupted backups) before
             // listing — production accumulated one that was months old.
             if !workspace.demoMode {
@@ -127,7 +152,7 @@ struct BackupsView: View {
                 }.value
                 if !removed.isEmpty {
                     workspace.toast = Toast(
-                        message: "Removed \(removed.count) abandoned backup staging folder\(removed.count == 1 ? "" : "s")",
+                        message: (removed.count == 1 ? L("Removed \(removed.count) abandoned backup staging folder") : L("Removed \(removed.count) abandoned backup staging folders")),
                         style: .success
                     )
                 }
@@ -139,49 +164,51 @@ struct BackupsView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Configuration Backups",
-            title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
+            kicker: L("Configuration Backups"),
+            title: loadedSource == dataSource
+                ? (backups.count == 1 ? L("\(backups.count) backup") : L("\(backups.count) backups")) : L("Backups"),
             subtitle: backupsFolderDisplayPath,
             wrapsTrailing: true
         ) {
-            AnyView(
-                WrappingRow {
-                    backupLabelField
-                    PNPButton(title: "Reveal in Finder", icon: "folder") {
-                        revealBackupsFolder()
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? Self.demoRevealHelp
-                          : "Open the backups directory for this workspace in Finder.")
-                    Mono(
-                        text: diffSelectionHint,
-                        size: 10.5,
-                        color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
-                            ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
-                    )
-                    PNPButton(
-                        title: isRunningDiff ? "Diffing..." : "Diff Selected",
-                        icon: "arrow.left.arrow.right",
-                        style: .neutral
-                    ) {
-                        diffSelected()
-                    }
-                    .disabled(
-                        workspace.demoMode || isRunningBackup || isRunningDiff
-                            || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                    PNPButton(
-                        title: isRunningBackup ? "Backing Up..." : "New Backup",
-                        icon: "externaldrive.badge.plus",
-                        style: .gold
-                    ) {
-                        runBackup()
-                    }
-                    .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            WrappingRow {
+                backupLabelField
+                PNPButton(title: L("Reveal in Finder"), icon: "folder") {
+                    revealBackupsFolder()
                 }
-            )
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? Self.demoRevealHelp
+                      : L("Open the backups directory for this workspace in Finder."))
+                Mono(
+                    text: diffSelectionHint,
+                    size: 10.5,
+                    color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
+                        && !selectionLacksJamfPro
+                        ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
+                )
+                PNPButton(
+                    title: isRunningDiff ? L("Diffing...") : L("Diff Selected"),
+                    icon: "arrow.left.arrow.right",
+                    style: .neutral
+                ) {
+                    diffSelected()
+                }
+                .disabled(
+                    workspace.demoMode || isRunningBackup || isRunningDiff
+                        || loadedSource != dataSource
+                        || selectedBackups.count != 2 || selectionIncludesEmptyBackup
+                        || selectionLacksJamfPro)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                PNPButton(
+                    title: isRunningBackup ? L("Backing Up...") : L("New Backup"),
+                    icon: "externaldrive.badge.plus",
+                    style: .gold
+                ) {
+                    runBackup()
+                }
+                .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            }
         }
     }
 
@@ -207,7 +234,9 @@ struct BackupsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let errorMessage {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -219,12 +248,21 @@ struct BackupsView: View {
     /// synced storage the storage banner says why Protect was skipped, so the summary does not.
     @ViewBuilder
     private var protectBanner: some View {
-        if let syncedChoice { syncedStorageBanner(syncedChoice) }
+        if syncedChoice != nil || proChoice != nil { syncedStorageBanner }
+        if latestBackup?.proSkipped == true, latestBackup?.noJamfPro != true, proChoice == nil {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
+                Text("The latest backup has no Jamf Pro part: it was skipped. Run History has the reason; Diff compares Jamf Pro backups and skips this one.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.secondary)
+            }
+        }
         if latestBackup?.proFailed == true {
-            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
-                Text("The latest backup's Jamf Pro part failed, so it holds only what Jamf "
-                     + "Protect exported. Run History has the error; Diff compares Jamf Pro "
-                     + "backups and skips this one.")
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn, action: runHistoryAction
+            ) {
+                Text("The latest backup's Jamf Pro part failed, so it holds only what Jamf Protect exported. Run History has the error; Diff compares Jamf Pro backups and skips this one.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }
@@ -232,7 +270,8 @@ struct BackupsView: View {
         if let protect = latestBackup?.protect, !isSyncedStorageSkip(protect) {
             InlineBanner(
                 icon: protect.isIncomplete ? "exclamationmark.triangle.fill" : "shield",
-                tone: protect.isIncomplete ? .warn : .info
+                tone: protect.isIncomplete ? .warn : .info,
+                action: protect.isIncomplete ? runHistoryAction : nil
             ) {
                 Text(protect.protectSummary)
                     .font(.footnote)
@@ -241,64 +280,118 @@ struct BackupsView: View {
         }
     }
 
+    /// The banners that say Run History has the reason or the error.
+    private var runHistoryAction: InlineBannerAction {
+        InlineBannerAction(label: L("Open Run History"), icon: "clock.arrow.circlepath") {
+            NotificationCenter.default.post(
+                name: .navigateToTab, object: nil, userInfo: ["tab": Tab.runs.rawValue])
+        }
+    }
+
     private func isSyncedStorageSkip(_ protect: BackupProductResult) -> Bool {
         guard let syncedChoice, let reason = protect.reason else { return false }
         return reason == ProtectBackup.syncedStorageReason(place: syncedChoice.place)
     }
 
-    private func syncedStorageBanner(_ choice: ProtectBackup.SyncedStorageChoice) -> some View {
-        InlineBanner(icon: "lock.shield", tone: choice.allowed ? .info : .warn) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(choice.allowed
-                     ? "Jamf Protect is backed up in this folder, which is \(choice.place). "
-                        + "Its backups contain action configurations with request headers and "
-                        + "data-forwarding settings."
-                     : "Jamf Protect is not backed up: this workspace is \(choice.place), and a "
-                        + "Protect backup contains action configurations with request headers "
-                        + "and data-forwarding settings. Jamf Pro backups are not affected.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Back up Jamf Protect in this folder", isOn: Binding(
-                    get: { choice.allowed },
-                    set: { setProtectOnSyncedStorage($0) }))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .font(.footnote)
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp
-                          : SharedConfigPin.Key.protectBackupOnSyncedStorage.rawValue)
-                Text("Your organization's storage and access policy decides whether this "
-                     + "folder may hold them.")
+    private var syncedStorageBanner: some View {
+        let allAllowed = (proChoice.map { $0.setting == .allowed } ?? true)
+            && (syncedChoice?.allowed ?? true)
+        return InlineBanner(icon: "lock.shield", tone: allAllowed ? .info : .warn) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let proChoice { proChoiceSection(proChoice) }
+                if let syncedChoice { protectChoiceSection(syncedChoice) }
+                Text("Your organization's storage and access policy decides whether this folder may hold them.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
 
-    private func setProtectOnSyncedStorage(_ on: Bool) {
+    private func proChoiceSection(_ choice: ProBackup.SyncedStorageChoice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(proChoiceText(choice))
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // An unreadable config.yaml leaves nothing to write the switch into.
+            if choice.setting != .configUnreadable {
+                choiceToggle(
+                    L("Back up Jamf Pro in this folder"), isOn: choice.setting == .allowed,
+                    key: .proBackupOnSyncedStorage, choice: .pro)
+            }
+        }
+    }
+
+    private func proChoiceText(_ choice: ProBackup.SyncedStorageChoice) -> String {
+        let secrets = L("A Jamf Pro backup contains LDAP, SMTP and API-client configuration and scripts that can hold secrets.")
+        switch choice.setting {
+        case .allowed:
+            return L("Jamf Pro is backed up in this folder, which is \(choice.place). \(secrets)")
+        case .declined:
+            return L("Jamf Pro is not backed up: this workspace is \(choice.place). \(secrets)")
+        case .awaitingConfirmation:
+            return L("Jamf Pro backups are turned on in config.yaml but wait for confirmation on this Mac, so they are skipped for now. Turn the switch on here to confirm. \(secrets)")
+        case .configUnreadable:
+            return L("config.yaml could not be read; Jamf Pro is not backed up here (\(choice.place)). Fix the file in Config Doctor, then choose.")
+        case .notChosen:
+            return L("Choose whether Jamf Pro is backed up in this folder, which is \(choice.place). \(secrets) Scheduled backups that already ran here continue for \(BackupMaintenance.graceRunsBeforeAsking) runs while you decide, then stop. A new workspace asks before its first backup.")
+        }
+    }
+
+    private func protectChoiceSection(_ choice: ProtectBackup.SyncedStorageChoice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(choice.allowed
+                 ? "Jamf Protect is backed up in this folder, which is \(choice.place). Its backups contain action configurations with request headers and data-forwarding settings."
+                 : "Jamf Protect is not backed up: this workspace is \(choice.place), and a Protect backup contains action configurations with request headers and data-forwarding settings.")
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            choiceToggle(
+                L("Back up Jamf Protect in this folder"), isOn: choice.allowed,
+                key: .protectBackupOnSyncedStorage, choice: .protect)
+        }
+    }
+
+    private func choiceToggle(
+        _ title: String, isOn: Bool, key: SharedConfigPin.Key,
+        choice: BackupChoiceConfigWriter.Choice
+    ) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { isOn }, set: { setBackupChoice(choice, on: $0) }))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.footnote)
+            .disabled(workspace.demoMode)
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : key.rawValue)
+    }
+
+    private func setBackupChoice(_ choice: BackupChoiceConfigWriter.Choice, on: Bool) {
         guard !workspace.demoMode else { return }
         do {
-            try ProtectBackupConfigWriter.save(onSyncedStorage: on, profile: workspace.profile)
+            try BackupChoiceConfigWriter.save(choice, on: on, profile: workspace.profile)
         } catch {
-            errorMessage = "Couldn't save the Jamf Protect backup setting: "
-                + error.localizedDescription
+            errorMessage = L("Couldn't save the backup setting: \(error.localizedDescription)")
         }
-        Task { await refreshSyncedChoice() }
+        Task {
+            await refreshSyncedChoice()
+            // The save cleared the attention item its choice settles; redraw the banner now.
+            await workspace.refreshDataFreshness()
+        }
     }
 
     /// Off the main actor: it decodes config.yaml and probes the volume.
     private func refreshSyncedChoice() async {
-        guard !workspace.demoMode else { syncedChoice = nil; return }
+        guard !workspace.demoMode else { syncedChoice = nil; proChoice = nil; return }
         let profile = workspace.profile
-        let choice = await Task.detached(priority: .utility) {
-            let config = ProfileService.workspaceURL(for: profile).flatMap {
-                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
-            }
-            return ProtectBackup.syncedStorageChoice(profile: profile, config: config)
+        let choices = await Task.detached(priority: .utility) {
+            let read = ProBackup.readConfig(profile: profile)
+            return (ProtectBackup.syncedStorageChoice(profile: profile, config: read.config),
+                    ProBackup.syncedStorageChoice(
+                        profile: profile, config: read.config, decodeFailure: read.failure))
         }.value
         guard profile == workspace.profile else { return }
-        syncedChoice = choice
+        syncedChoice = choices.0
+        proChoice = choices.1
     }
 
     private var backupsTable: some View {
@@ -316,10 +409,14 @@ struct BackupsView: View {
                                 Text("Jamf Pro part failed: Jamf Protect only")
                                     .font(Theme.Fonts.mono(10.5))
                                     .foregroundStyle(Theme.Colors.warn)
+                            } else if backup.proSkipped, !backup.noJamfPro {
+                                Text("Jamf Pro part skipped")
+                                    .font(Theme.Fonts.mono(10.5))
+                                    .foregroundStyle(Theme.Colors.warn)
                             } else if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Text.tertiary(contrast).opacity(0.65))
+                                    .foregroundStyle(.cellSecondary.opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }
@@ -328,41 +425,25 @@ struct BackupsView: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(backup.accessibilityLabel)
                     }
-                    .width(min: 130, ideal: 200)
+                    .width(min: 100, ideal: 160)
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)
                     }
-                    .width(min: 92, ideal: 104, max: 130)
+                    .width(min: 112, ideal: 120, max: 150)
                     TableColumn("Files") { backup in
                         Mono(text: "\(backup.fileCount)")
                     }
-                    .width(min: 40, ideal: 52, max: 70)
+                    .width(min: 36, ideal: 44, max: 70)
                     TableColumn("Size") { backup in
                         Mono(text: backup.sizeLabel)
                     }
-                    .width(min: 60, ideal: 70, max: 90)
-                    // Reveal, Diff Latest and Delete at their natural widths, so none is cut off.
+                    .width(min: 56, ideal: 64, max: 90)
+                    // Full buttons while the column has room, icons alone below that, so no
+                    // action is cut off at a narrow window.
                     TableColumn("") { backup in
-                        HStack(spacing: 6) {
-                            PNPButton(title: "Reveal", icon: "folder", size: .sm) {
-                                reveal(backup)
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(workspace.demoMode ? Self.demoRevealHelp : "")
-                            PNPButton(title: "Diff Latest", icon: "arrow.left.arrow.right", size: .sm) {
-                                diff(backup, against: diffTarget)
-                            }
-                            .disabled(
-                                workspace.demoMode || isRunningDiff
-                                    || !BackupRecord.canDiff(backup, against: diffTarget))
-                            .help(diffLatestHelp(for: backup))
-                            PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
-                                pendingDelete = backup
-                                showDeleteConfirm = true
-                            }
-                            .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Delete this backup")
-                            .accessibilityHint("Shows a confirmation dialog to delete this backup")
+                        ViewThatFits(in: .horizontal) {
+                            backupActions(backup, iconOnly: false)
+                            backupActions(backup, iconOnly: true)
                         }
                         .contextMenu {
                             Button("Reveal in Finder") { reveal(backup) }
@@ -377,7 +458,7 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode || isRunningBackup)
                         }
                     }
-                    .width(min: 284, ideal: 290, max: 320)
+                    .width(min: 112, ideal: 120, max: 320)
                 }
                 .frame(minHeight: 390)
                 .scrollContentBackground(.hidden)
@@ -385,14 +466,42 @@ struct BackupsView: View {
         }
     }
 
+    private func backupActions(_ backup: BackupRecord, iconOnly: Bool) -> some View {
+        HStack(spacing: 6) {
+            PNPButton(title: L("Reveal"), icon: "folder", size: .sm, iconOnly: iconOnly) {
+                reveal(backup)
+            }
+            .disabled(workspace.demoMode)
+            .help(workspace.demoMode ? Self.demoRevealHelp : (iconOnly ? L("Reveal") : ""))
+            PNPButton(
+                title: L("Diff Latest"), icon: "arrow.left.arrow.right", size: .sm,
+                iconOnly: iconOnly
+            ) {
+                diff(backup, against: diffTarget)
+            }
+            .disabled(
+                workspace.demoMode || isRunningDiff
+                    || !BackupRecord.canDiff(backup, against: diffTarget))
+            .help(diffLatestHelp(for: backup))
+            PNPButton(
+                title: L("Delete"), icon: "trash", style: .danger, size: .sm, iconOnly: iconOnly
+            ) {
+                pendingDelete = backup
+                showDeleteConfirm = true
+            }
+            .disabled(workspace.demoMode || isRunningBackup)
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : L("Delete this backup"))
+            .accessibilityHint("Shows a confirmation dialog to delete this backup")
+        }
+    }
+
     private var emptyState: some View {
         EmptyStateView(
             systemImage: "externaldrive",
-            title: "No backups yet",
-            message: "Backups are created by scheduled or manual backup runs. "
-                + "Create a restore point before making config changes.",
+            title: L("No backups yet"),
+            message: L("Backups are created by scheduled or manual backup runs. Create a restore point before making config changes."),
             primaryAction: EmptyStateAction(
-                label: "New Backup",
+                label: L("New Backup"),
                 icon: "externaldrive.badge.plus"
             ) { runBackup() }
         )
@@ -402,11 +511,19 @@ struct BackupsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
-            StatTile(label: "Backups", value: "\(backups.count)", sub: "Configuration snapshots")
-            StatTile(label: "Disk used", value: FileDisplay.size(totalBytes), sub: "JSON backup files")
-            StatTile(label: "Latest", value: latestBackup?.createdLabel ?? "None", sub: latestBackup?.name ?? "No backup")
-            StatTile(label: "Selected", value: "\(selectedBackups.count)", sub: "Choose two to diff")
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: L("Backups"), value: "\(backups.count)",
+                     sub: L("Configuration snapshots"), fillsHeight: true)
+            StatTile(label: L("Disk used"), value: FileDisplay.size(totalBytes),
+                     sub: L("JSON backup files"), fillsHeight: true)
+            StatTile(
+                label: L("Latest"), value: latestBackup?.createdLabel ?? L("None"),
+                sub: latestBackup?.name ?? L("No backup"),
+                fillsHeight: true,
+                action: latestBackup.map { latest in { selectedBackups = [latest.id] } },
+                actionHint: L("Selects the latest backup in the list"))
+            StatTile(label: L("Selected"), value: "\(selectedBackups.count)",
+                     sub: L("Choose two to diff"), fillsHeight: true)
         }
     }
 
@@ -420,13 +537,13 @@ struct BackupsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "terminal")
                         .foregroundStyle(Theme.Colors.gold)
-                    Mono(text: isRunningBackup ? "Backup running" : "Backup output", color: Theme.Text.secondary)
+                    Mono(text: isRunningBackup ? L("Backup running") : L("Backup output"), color: Theme.Text.secondary)
                     if !shouldShowBackupLogBody {
-                        Mono(text: "No output yet.", size: 10.5)
+                        Mono(text: L("No output yet."), size: 10.5)
                     }
                     Spacer()
                     if let backupExitCode {
-                        Pill(text: "EXIT \(backupExitCode)", tone: backupExitCode == 0 ? .teal : .danger)
+                        Pill(text: L("EXIT \(backupExitCode)"), tone: backupExitCode == 0 ? .teal : .danger)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -450,17 +567,17 @@ struct BackupsView: View {
     private var diffSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                SectionHeader(title: "Backup Diff")
+                SectionHeader(title: L("Backup Diff"))
                 Spacer()
                 if let diffExitCode {
-                    Pill(text: "EXIT \(diffExitCode)", tone: diffExitCode == 0 ? .teal : .danger)
+                    Pill(text: L("EXIT \(diffExitCode)"), tone: diffExitCode == 0 ? .teal : .danger)
                 }
-                PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
+                PNPButton(title: L("Copy"), icon: "doc.on.doc", size: .sm) {
                     copyDiffToPasteboard()
                 }
                 .disabled(diffOutput.isEmpty)
                 .accessibilityLabel("Copy the whole diff to the clipboard")
-                PNPButton(title: "Done", size: .sm) {
+                PNPButton(title: L("Done"), size: .sm) {
                     showingDiff = false
                 }
                 .keyboardShortcut(.cancelAction)
@@ -478,7 +595,7 @@ struct BackupsView: View {
                     Spacer()
                     SegmentedControl(
                         selection: $diffMode,
-                        options: [(DiffMode.summary, "Summary", nil), (DiffMode.raw, "Raw", nil)]
+                        options: [(DiffMode.summary, L("Summary"), nil), (DiffMode.raw, L("Raw"), nil)]
                     )
                 }
             }
@@ -538,8 +655,7 @@ struct BackupsView: View {
             if !diffParseFailed {
                 // The quotes inside new_value are jamf-cli's: it sends each changed field as
                 // a JSON string. Raw shows its output as received; Copy masks secrets.
-                Text("jamf-cli sends each changed field as a JSON string, so quotes inside it "
-                     + "show escaped. Raw is its output unchanged; Copy masks secrets.")
+                Text("jamf-cli sends each changed field as a JSON string, so quotes inside it show escaped. Raw is its output unchanged; Copy masks secrets.")
                     .font(Theme.Fonts.mono(10.5))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.horizontal, 6)
@@ -556,7 +672,7 @@ struct BackupsView: View {
     /// isn't the expected JSON array falls back to Raw rather than rendering an
     /// empty summary, which would read as "no differences".
     private func applyDiffPayload(_ payload: Data) {
-        diffRawText = String(data: payload, encoding: .utf8) ?? ""
+        diffRawText = String(decoding: payload, as: UTF8.self)
         guard let items = BackupDiffModel.parse(payload) else {
             diffParseFailed = true
             diffGroups = []
@@ -599,7 +715,7 @@ struct BackupsView: View {
             } catch {
                 backupExitCode = -1
                 isRunningBackup = false
-                errorMessage = "Backup failed: \(error.localizedDescription)"
+                errorMessage = L("Backup failed: \(error.localizedDescription)")
                 return
             }
             backupExitCode = exit
@@ -608,7 +724,7 @@ struct BackupsView: View {
                 backupLabel = ""
                 await reload()
             } else {
-                errorMessage = CLIBridge.explainExit(exit, operation: "Backup for \(profile)")
+                errorMessage = CLIBridge.explainExit(exit, operation: L("Backup for \(profile)"))
             }
         }
     }
@@ -647,39 +763,53 @@ struct BackupsView: View {
             } catch {
                 diffExitCode = -1
                 isRunningDiff = false
-                errorMessage = "Backup diff failed: \(error.localizedDescription)"
+                errorMessage = L("Backup diff failed: \(error.localizedDescription)")
                 return
             }
             applyDiffPayload(result.payload)
             diffExitCode = result.exitCode
             isRunningDiff = false
             if result.exitCode != 0 {
-                errorMessage = CLIBridge.explainExit(result.exitCode, operation: "Backup diff")
+                errorMessage = CLIBridge.explainExit(result.exitCode, operation: L("Backup diff"))
             }
         }
     }
 
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
     private func reload() async {
+        let source = dataSource
         let profile = workspace.profile
         // Walks every backup folder and reads its manifest, which can be slow on a synced share.
-        let listed = workspace.demoMode
-            ? DemoData.backups
-            : await Task.detached(priority: .userInitiated) {
-                BackupLibrary().list(profile: profile)
-            }.value
-        guard profile == workspace.profile else { return }
+        let listed: [BackupRecord]?
+        if workspace.demoMode {
+            listed = DemoData.backups
+        } else {
+            listed = await ScreenLoad.paint(
+                stillCurrent: { source == dataSource },
+                read: { BackupLibrary().list(profile: profile) })
+        }
+        guard let listed else { return }
         backups = listed
         selectedBackups = selectedBackups.intersection(Set(backups.map(\.id)))
+        loadedSource = source
     }
 
     @MainActor
     private func deleteBackup(_ backup: BackupRecord) async {
         guard !workspace.demoMode else { return }
-        do {
-            try FileManager.default.removeItem(at: backup.url)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        // A backup folder can hold thousands of files on synced or SMB storage.
+        let url = backup.url
+        let failure: String? = await Task.detached {
+            do {
+                try FileManager.default.removeItem(at: url)
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+        if let failure { errorMessage = failure }
         await reload()
     }
 
@@ -776,7 +906,9 @@ struct BackupLibrary {
             fileCount: manifest.fileCount ?? stats.fileCount,
             url: dir,
             protect: manifest.protect,
-            proFailed: manifest.pro?.state == .failed
+            proFailed: manifest.pro?.state == .failed,
+            proSkipped: manifest.pro?.state == .skipped,
+            noJamfPro: manifest.pro?.isNoJamfPro == true
         )
     }
 
@@ -821,7 +953,7 @@ struct BackupLibrary {
 
     private func parseDate(_ text: String?) -> Date? {
         guard let text else { return nil }
-        return ISO8601DateFormatter().date(from: text)
+        return ISO8601Time.parse(text)
     }
 
     private struct BackupManifest {
@@ -845,7 +977,7 @@ private struct DiffGroupView: View {
     private func variantLabel(_ variant: BackupDiffModel.Variant) -> String {
         let shown = variant.names.prefix(3).joined(separator: ", ")
         let rest = variant.names.count - min(3, variant.names.count)
-        return rest > 0 ? "\(shown) +\(rest) more" : shown
+        return rest > 0 ? L("\(shown) +\(rest) more") : shown
     }
 
     @ViewBuilder
@@ -899,7 +1031,7 @@ private struct DiffGroupView: View {
                 Text(group.change)
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(group.names.count == 1 ? "1 object" : "\(group.names.count) objects")
+                Text(group.names.count == 1 ? L("1 object") : L("\(group.names.count) objects"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.secondary)
             }
@@ -912,7 +1044,7 @@ private struct DiffGroupView: View {
             // Members changed the same field to different values: name the field
             // once, then one line per value, rather than one card per object.
             if !group.variants.isEmpty {
-                Text(group.fields.map { $0.isEmpty ? "(value)" : $0 }.joined(separator: ", "))
+                Text(group.fields.map { $0.isEmpty ? L("(value)") : $0 }.joined(separator: ", "))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.secondary)
                     .padding(.leading, 12)
@@ -942,7 +1074,7 @@ private struct DiffGroupView: View {
                 HStack(spacing: 4) {
                     Image(systemName: showNames ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold))
-                    Text(showNames ? "Hide objects" : "Show objects")
+                    Text(showNames ? L("Hide objects") : L("Show objects"))
                         .font(Theme.Fonts.mono(10.5))
                 }
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -950,8 +1082,8 @@ private struct DiffGroupView: View {
             .buttonStyle(.plain)
             .padding(.leading, 12)
             .accessibilityLabel(showNames
-                ? "Hide the objects changed in \(group.resource)"
-                : "Show the objects changed in \(group.resource)")
+                ? L("Hide the objects changed in \(group.resource)")
+                : L("Show the objects changed in \(group.resource)"))
 
             if showNames {
                 Text(group.names.joined(separator: ", "))

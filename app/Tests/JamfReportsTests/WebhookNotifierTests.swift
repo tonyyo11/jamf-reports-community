@@ -374,7 +374,7 @@ final class WebhookNotifierTests: XCTestCase {
         XCTAssertFalse(slack.contains("\\\\"), slack)
     }
 
-    // MARK: - Minimal-detail fact reduction (main.swift assembly helpers)
+    // MARK: - Minimal-detail fact reduction (HeadlessRun.swift assembly helpers)
 
     func testSuccessFactsFullKeepsRichFacts() {
         let full = successFacts(

@@ -17,6 +17,7 @@ struct CustomizeView: View {
     @State private var chartSavePNGs: Bool = false
     @State private var chartsLoaded = false
     @State private var htmlWithWorkbook: Bool = false
+    @State private var percentDecimals: Int = 1
 
     @State private var applySaved = false
     @State private var saveError: String?
@@ -71,13 +72,23 @@ struct CustomizeView: View {
     /// the chart options were never loaded or saved at all. Demo mode has no config.yaml to
     /// read, so it shows the defaults.
     private func loadOptions() {
-        let charts = workspace.demoMode
-            ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
-        chartSavePNGs = charts.savePNGs
-        chartPerMajor = charts.perMajorCharts
-        htmlWithWorkbook = !workspace.demoMode
-            && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
         saveNote = nil
+        let profile = workspace.profile
+        let demo = workspace.demoMode
+        // Three reads of config.yaml, which can sit on a synced share: off the main actor.
+        Task {
+            let (charts, html, decimals) = await Task.detached(priority: .userInitiated) {
+                demo ? (ChartsOptions.defaults, false, 1)
+                    : (ChartsConfigLoader.load(profile: profile),
+                       HTMLReportConfigLoader.withWorkbook(profile: profile),
+                       DisplayConfigLoader.percentFormat(profile: profile).decimals)
+            }.value
+            guard profile == workspace.profile, demo == workspace.demoMode else { return }
+            chartSavePNGs = charts.savePNGs
+            chartPerMajor = charts.perMajorCharts
+            htmlWithWorkbook = html
+            percentDecimals = decimals
+        }
     }
 
     /// A failed Apply, and what a saved one did not keep.
@@ -123,38 +134,35 @@ struct CustomizeView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Report Options",
-            title: "Customize Reports",
-            subtitle: "Chart and HTML options for generated reports, and where to change "
-                + "what else a report shows"
+            kicker: L("Report Options"),
+            title: L("Customize Reports"),
+            subtitle: L("Chart and HTML options for generated reports, and where to change what else a report shows")
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    PNPButton(
-                        title: "How to customize",
-                        icon: "questionmark.circle",
-                        style: .ghost,
-                        size: .sm
-                    ) {
-                        showGuide = true
-                    }
-                    // Apply writes the options into config.yaml, which in
-                    // demo mode would create one under the demo profile's name.
-                    PNPButton(
-                        title: applySaved ? "Saved" : "Apply",
-                        icon: applySaved ? "checkmark.circle" : "checkmark",
-                        style: .gold
-                    ) {
-                        saveError = nil
-                        applyAndSave()
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            HStack(spacing: 8) {
+                PNPButton(
+                    title: L("How to customize"),
+                    icon: "questionmark.circle",
+                    style: .ghost,
+                    size: .sm
+                ) {
+                    showGuide = true
                 }
-                .sheet(isPresented: $showGuide) {
-                    CustomizeGuideSheet()
+                // Apply writes the options into config.yaml, which in
+                // demo mode would create one under the demo profile's name.
+                PNPButton(
+                    title: applySaved ? L("Saved") : L("Apply"),
+                    icon: applySaved ? "checkmark.circle" : "checkmark",
+                    style: .gold
+                ) {
+                    saveError = nil
+                    applyAndSave()
                 }
-            )
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+            }
+            .sheet(isPresented: $showGuide) {
+                CustomizeGuideSheet()
+            }
         }
     }
 
@@ -164,11 +172,8 @@ struct CustomizeView: View {
     private var sheetsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Workbook sheets", style: .body)
-                Text("The Overview's Generate makes the Full Instance report, with every "
-                     + "sheet. For a shorter one, choose a template or your own sheets with "
-                     + "Generate\u{2026} on the Generated Reports screen, or use the "
-                     + "command-line tool:")
+                SectionHeader(title: L("Workbook sheets"), style: .body)
+                Text("The Overview's Generate makes the Full Instance report, with every sheet. For a shorter one, choose a template or your own sheets with Generate\u{2026} on the Generated Reports screen, or use the command-line tool:")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -189,7 +194,7 @@ struct CustomizeView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Command-line tool", icon: "terminal", size: .sm) {
+                PNPButton(title: L("Command-line tool"), icon: "terminal", size: .sm) {
                     NotificationCenter.default.post(
                         name: .navigateToTab,
                         object: nil,
@@ -209,13 +214,14 @@ struct CustomizeView: View {
             scoreCardsCard
             chartsCard
             HTMLWithWorkbookCard(isOn: $htmlWithWorkbook, isDemo: workspace.demoMode)
+            PercentagesCard(decimals: $percentDecimals, isDemo: workspace.demoMode)
         }
         .frame(width: 260)
     }
 
     /// The selected cards the Overview shows: one whose control the policy ignores is not.
     private var offeredScoreCardCount: Int {
-        workspace.selectedScoreCards.filter { workspace.isOffered($0) }.count
+        workspace.shownScoreCards.count
     }
 
     /// The Overview's score cards and sections are chosen in one editor on the
@@ -225,14 +231,12 @@ struct CustomizeView: View {
     private var scoreCardsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Overview", style: .body)
-                Text("Score cards and Overview sections — what shows, in what order — "
-                     + "are chosen on the Overview. \(offeredScoreCardCount) "
-                     + "score cards selected.")
+                SectionHeader(title: L("Overview"), style: .body)
+                Text("Score cards and Overview sections — what shows, in what order — are chosen on the Overview. \(offeredScoreCardCount) score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                PNPButton(title: "Customize Overview", icon: "slider.horizontal.3", size: .sm) {
+                PNPButton(title: L("Customize Overview"), icon: "slider.horizontal.3", size: .sm) {
                     workspace.overviewCustomizeRequested = true
                     NotificationCenter.default.post(
                         name: .navigateToTab,
@@ -248,23 +252,22 @@ struct CustomizeView: View {
     private var chartsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Charts", style: .body)
+                SectionHeader(title: L("Charts"), style: .body)
                     .padding(.bottom, 10)
 
                 chartToggleRow(
-                    title: "Per-major macOS charts",
-                    detail: "Majors found in the fleet",
+                    title: L("Per-major macOS charts"),
+                    detail: L("Majors found in the fleet"),
                     isOn: $chartPerMajor,
                     hasDivider: true
                 )
                 chartToggleRow(
-                    title: "Save PNGs alongside xlsx",
-                    detail: "Charts/*.png",
+                    title: L("Save PNGs alongside xlsx"),
+                    detail: L("Charts/*.png"),
                     isOn: $chartSavePNGs,
                     hasDivider: false
                 )
-                Text("The device-state trend and the compliance trend are set under "
-                     + "charts in config.yaml.")
+                Text("The device-state trend and the compliance trend are set under charts in config.yaml.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -308,13 +311,16 @@ struct CustomizeView: View {
         )
         let profile = workspace.profile
         let withWorkbook = htmlWithWorkbook
+        let decimals = percentDecimals
         Task {
             do {
                 // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
                 try Self.writeOptions(
-                    chartOptions, withWorkbook: withWorkbook, profile: profile
+                    chartOptions, withWorkbook: withWorkbook, percentDecimals: decimals,
+                    profile: profile
                 ) { saveNote = $0 }
+                workspace.reloadPercentFormat()
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -330,17 +336,25 @@ struct CustomizeView: View {
 
 extension CustomizeView {
     /// Writes this screen's options, charts first. Each write's note reaches `noting` as soon
-    /// as it is made, so a failed html write does not lose the charts write's note.
+    /// as it is made, so a failed later write does not lose an earlier write's note.
     nonisolated static func writeOptions(
-        _ chartOptions: ChartsOptions, withWorkbook: Bool, profile: String,
-        noting: (ProfileSaveNote) -> Void
+        _ chartOptions: ChartsOptions, withWorkbook: Bool, percentDecimals: Int,
+        profile: String, noting: (ProfileSaveNote) -> Void
     ) throws {
         let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
+        var lines = [charts.report.statusLine].compactMap { $0 }
         if let saved = charts.report.note(for: profile) { noting(saved) }
         let html = try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
-        guard let line = html.report.statusLine else { return }
-        let lines = [charts.report.statusLine, line].compactMap { $0 }
-        noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        if let line = html.report.statusLine {
+            lines.append(line)
+            noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        }
+        let display = try DisplayConfigWriter.save(
+            percentDecimals: percentDecimals, profile: profile)
+        if let line = display.report.statusLine {
+            lines.append(line)
+            noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+        }
     }
 }
 
@@ -352,12 +366,12 @@ private struct HTMLWithWorkbookCard: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private static let title = "Write the HTML report with every workbook"
+    private static var title: String { L("Write the HTML report with every workbook") }
 
     var body: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "HTML report", style: .body)
+                SectionHeader(title: L("HTML report"), style: .body)
                 HStack(alignment: .top, spacing: 12) {
                     Text(Self.title)
                         .font(.footnote.weight(.medium))
@@ -369,6 +383,34 @@ private struct HTMLWithWorkbookCard: View {
                         .help(isDemo ? DemoData.liveOnlyHelp : "")
                 }
                 Text("Scheduled runs and the command-line tool write it too.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The picker for `display.percent_decimals`: how every screen and report prints a percentage.
+private struct PercentagesCard: View {
+    @Binding var decimals: Int
+    let isDemo: Bool
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: L("Percentages"), style: .body)
+                Picker(L("Percentages"), selection: $decimals) {
+                    Text(verbatim: PercentFormat.standard.text(56.7)).tag(1)
+                    Text(verbatim: PercentFormat.whole.text(56.7)).tag(0)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(isDemo)
+                .help(isDemo ? DemoData.liveOnlyHelp : "")
+                Text("Screens, workbooks, HTML reports and alert cards round to this. Stored figures and thresholds keep full precision.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)

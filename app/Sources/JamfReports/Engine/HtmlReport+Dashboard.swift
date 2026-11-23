@@ -31,6 +31,9 @@ extension HtmlReport {
         case notEmbedded(String)
         /// No page to show. The reason goes in the appendix; nil when the template has none.
         case absent(String?)
+        /// A page is there but could not be read (a link, a non-regular file, a read error):
+        /// the reason for the appendix and the `[warn]` line, so it is not told as never collected.
+        case unreadable(String)
 
         /// True when the page itself is in the report, so the sections it repeats can leave.
         var isEmbedded: Bool {
@@ -92,9 +95,33 @@ extension HtmlReport {
     private static let dashboardNotCollected = "not collected yet; with jamf-cli 1.31.0 or "
         + "later, collect saves jamf-cli's dashboard every two days"
 
+    /// `BoundedFile`'s description repeats "could not be read", which the appendix already says.
+    private static func readFailureText(_ error: Error) -> String {
+        if case BoundedFile.Failure.unreadable(let code) = error {
+            return String(cString: strerror(code))
+        }
+        return error.localizedDescription
+    }
+
+    /// A page name comes from a folder a peer can write to, so it is filtered before it
+    /// reaches a log line or the appendix.
+    private static func unreadable(_ name: String, _ why: String) -> DashboardState {
+        .unreadable(ConfigSchema.displayText(name) + ": " + why)
+    }
+
     /// The newest dashboard snapshot, as the report can use it.
     func dashboardState() -> DashboardState {
-        let dir = dataDir.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
+        let dir: URL
+        do {
+            dir = try WorkspacePaths.confinedFolder([ReportEngine.dashboardKind], under: dataDir)
+        } catch {
+            return Self.unreadable(ReportEngine.dashboardKind, WorkspacePaths.refusal(of: error))
+        }
+        // The picker leaves out a link that resolves outside the folder, which would read as
+        // never collected; the newest entry by stamp, link or not, decides here.
+        if let problem = FileManager.plantedNewestSnapshot(in: dir, fileExtension: "html") {
+            return .unreadable(problem)
+        }
         guard let url = FileManager.newestHTMLSnapshot(in: dir) else {
             return .absent(Self.dashboardNotCollected)
         }
@@ -108,12 +135,12 @@ extension HtmlReport {
         } catch BoundedFile.Failure.tooLarge {
             let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]
                 as? Int64) ?? Int64(Self.maxEmbeddedDashboardBytes)
-            let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            let size = String(format: "%.1f MB", Double(bytes) / 1_000_000)
             return .notEmbedded(Self.dashboardNoteSection(
                 "The dashboard collected \(collected) is \(size), too large to embed. Open "
                     + "\(url.lastPathComponent) from the jamf-cli-data/dashboard folder."))
         } catch {
-            return .absent(Self.dashboardNotCollected)
+            return Self.unreadable(url.lastPathComponent, Self.readFailureText(error))
         }
         let page = Self.dashboardPageForEmbedding(String(decoding: data, as: UTF8.self))
         let srcdoc = HtmlSectionFormatters.escapeHTML(page)
@@ -211,6 +238,7 @@ extension HtmlReport {
 
     private static func dashboardDateText(_ date: Date) -> String {
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return "on " + fmt.string(from: date)

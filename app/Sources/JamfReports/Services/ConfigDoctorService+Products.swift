@@ -2,7 +2,7 @@ import Foundation
 
 extension ConfigDoctorService {
 
-    /// One `.suggest` row on the Jamf Pro workspace whose `protect.profile` names a Protect (or
+    /// One `.suggest` row on the Jamf Pro workspace whose Protect slot names a Protect (or
     /// Security Cloud) login that also has a workspace folder. 2.9.0 listed that login as a
     /// workspace, so a catch-up, a scheduled run or a click may have made a folder for it. The
     /// app reads nothing in it (the Protect data is in this workspace), and removes nothing.
@@ -12,21 +12,17 @@ extension ConfigDoctorService {
         discovered: () -> [JamfCLIProfile],
         folderExists: (String) -> Bool = { ProfileService.hasWorkspace($0) }
     ) -> [DoctorRow] {
-        guard config.protect?.isEnabled == true,
-              let named = config.protect?.resolvedProfile, !named.isEmpty, named != profile,
-              discovered().contains(where: { $0.name == named && $0.product.isNeverAWorkspace }),
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
+        guard let named = environment.protect, named != profile,
+              discovered().contains(where: { $0.name == named && ProfileService.neverAWorkspace($0) }),
               folderExists(named) else { return [] }
         let shown = ConfigSchema.displayText(named)
         return [DoctorRow(
             id: "protect.profile_folder",
             severity: .suggest,
-            title: "The Jamf Protect login has a workspace folder it does not need",
-            detail: "protect.profile names '\(shown)', a Jamf Protect login. It is not a Jamf Pro "
-                + "workspace, so the app no longer lists or runs it, and its Protect data is "
-                + "collected into this workspace. A folder named for it under the workspace "
-                + "root, made by an earlier version, is not read.",
-            hint: "Remove the '\(ProfileName.pathComponent(named))' folder from the workspace "
-                + "root when you no longer need its history. The app never deletes it."
+            title: L("The Jamf Protect login has a workspace folder it does not need"),
+            detail: L("\(environment.protectKey) names '\(shown)', a Jamf Protect login. It is not a Jamf Pro workspace, so the app no longer lists or runs it, and its Protect data is collected into this workspace. A folder named for it under the workspace root, made by an earlier version, is not read."),
+            hint: L("Remove the '\(ProfileName.pathComponent(named))' folder from the workspace root when you no longer need its history. The app never deletes it.")
         )]
     }
 
@@ -38,36 +34,58 @@ extension ConfigDoctorService {
             discovered: { ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]) })
     }
 
-    /// One `.warn` row when `protect.profile` names a login jamf-cli knows to be another product
+    /// One `.warn` row when the Protect slot names a login jamf-cli knows to be another product
     /// (a Jamf Pro or School profile, say): collect, backup and the dashboard skip Protect for it
     /// rather than send Protect commands to the wrong API. Nothing is asked when `resolved`
     /// cannot tell.
     static func protectProfileProductRows(
         config: ReportConfig,
+        workspace: String,
         resolved: (String) -> ProfileAuthMethod.Resolved?
     ) -> [DoctorRow] {
-        guard config.protect?.isEnabled == true,
-              let named = config.protect?.resolvedProfile, !named.isEmpty,
-              let product = resolved(named)?.product,
-              resolved(named)?.protectRefusal(profile: named) != nil else { return [] }
+        let environment = EnvironmentProfiles.resolve(config: config, workspace: workspace)
+        guard let named = environment.protect, let auth = resolved(named),
+              auth.protectRefusal(profile: named) != nil else { return [] }
+        let product = auth.product
         let shown = ConfigSchema.displayText(named)
+        let key = environment.protectKey
         return [DoctorRow(
             id: "protect.profile_product",
             severity: .warn,
-            title: "protect.profile is not a Jamf Protect login",
-            detail: "protect.profile names '\(shown)', a \(product.displayName) profile. Protect "
-                + "commands would go to the wrong API, so Jamf Protect is not collected, backed "
-                + "up or added to the dashboard until it names a Jamf Protect login.",
-            hint: "Set protect.profile to the profile `jamf-cli protect setup` created, or turn "
-                + "protect.enabled off."
+            title: L("\(key) is not a Jamf Protect login"),
+            detail: L("\(key) names '\(shown)', a \(product.displayName) profile. Protect commands would go to the wrong API, so Jamf Protect is not collected, backed up or added to the dashboard until it names a Jamf Protect login."),
+            hint: environment.source == .profilesBlock
+                ? L("Set profiles.protect to the profile `jamf-cli protect setup` created, or clear it.")
+                : L("Set protect.profile to the profile `jamf-cli protect setup` created, or turn protect.enabled off.")
+        )]
+    }
+
+    /// The same `.warn` row for `profiles.security_cloud` naming a login of another known product.
+    static func securityCloudProfileProductRows(
+        config: ReportConfig,
+        workspace: String,
+        resolved: (String) -> ProfileAuthMethod.Resolved?
+    ) -> [DoctorRow] {
+        guard let named = EnvironmentProfiles.resolve(config: config, workspace: workspace)
+            .securityCloud,
+              let auth = resolved(named),
+              auth.securityCloudRefusal(profile: named) != nil else { return [] }
+        let product = auth.product
+        return [DoctorRow(
+            id: "security_cloud.profile_product",
+            severity: .warn,
+            title: L("profiles.security_cloud is not a Jamf Security Cloud login"),
+            detail: L("profiles.security_cloud names '\(ConfigSchema.displayText(named))', a \(product.displayName) profile. Security Cloud commands would go to the wrong API, so Jamf Security Cloud is not collected until it names a Jamf Security Cloud login."),
+            hint: L("Set profiles.security_cloud to the profile `jamf-cli security setup` created, or clear it.")
         )]
     }
 
     /// `protectProfileProductRows` for the live `config list`; it asks jamf-cli only for a
     /// workspace that has Protect on.
-    static func protectProfileProductRows(config: ReportConfig) -> [DoctorRow] {
+    static func protectProfileProductRows(config: ReportConfig, workspace: String) -> [DoctorRow] {
         protectProfileProductRows(
-            config: config, resolved: { ProfileAuthMethod.resolve(profile: $0) })
+            config: config, workspace: workspace,
+            resolved: { ProfileAuthMethod.resolve(profile: $0) })
     }
 
     /// One `.suggest` row while backups leave Jamf Protect out because the workspace is on
@@ -81,13 +99,74 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "protect.backup_synced_storage",
             severity: .suggest,
-            title: "Backups leave Jamf Protect out on this storage",
-            detail: "This workspace is \(choice.place). A Protect backup contains action "
-                + "configurations with request headers and data-forwarding settings, so backups "
-                + "here hold Jamf Pro only.",
-            hint: "If your organization's storage and access policy allows it, turn on "
-                + "\"Back up Jamf Protect in this folder\" in Backups (\(key))."
+            title: L("Backups leave Jamf Protect out on this storage"),
+            detail: L("This workspace is \(choice.place). A Protect backup contains action configurations with request headers and data-forwarding settings, so backups here hold Jamf Pro only."),
+            hint: L("If your organization's storage and access policy allows it, turn on \"Back up Jamf Protect in this folder\" in Backups (\(key)).")
         )]
+    }
+
+    /// Which of the two applies to account names in saved snapshots, as a `.suggest`, and a
+    /// `.warn` when this Mac keeps them on storage other Macs reach. `configured` is what
+    /// config.yaml says, `effective` what this Mac does after the pin (`SharedConfigPin`).
+    static func accountNameRows(
+        configured: Bool, effective: Bool, onSharedStorage: () -> Bool
+    ) -> [DoctorRow] {
+        let key = SharedConfigPin.Key.keepAccountNames.rawValue
+        let earlier = L("Snapshots saved before this build still hold the names; they leave only through retention or by deleting the files.")
+        guard effective else {
+            let waiting = configured
+                ? L(" \(key) is true in config.yaml but not confirmed on this Mac, so names are still removed.")
+                : ""
+            return [DoctorRow(
+                id: "snapshots.account_names", severity: .suggest,
+                title: L("Names no report reads are removed from new snapshots"),
+                detail: L("New computer, mobile and enrollment snapshots leave out account names, FileVault users, real name, phone, position, room and the enrollment contact fields. The username and email under user and location stay (Offline Outreach reads them), as do the username columns of the patch and update failure reports.\(waiting) \(earlier)"),
+                hint: L("Set \(key) to true only if your own tools read those fields."))]
+        }
+        var rows = [DoctorRow(
+            id: "snapshots.account_names", severity: .suggest,
+            title: L("Names no report reads are kept in new snapshots"),
+            detail: L("\(key) is true, so new snapshots hold the account names jamf-cli returns. \(earlier)"),
+            hint: L("Set it to false to remove them from new snapshots."))]
+        if onSharedStorage() {
+            rows.append(DoctorRow(
+                id: "snapshots.account_names_shared", severity: .warn,
+                title: L("Names no report reads are kept on shared storage"),
+                detail: L("This workspace's data folder is reachable by other Macs or a sync provider, and \(key) keeps account names in snapshots saved there."),
+                hint: L("Set \(key) to false unless your organization's storage policy allows it.")))
+        }
+        return rows
+    }
+
+    /// One `.suggest` row while backups skip Jamf Pro, or are about to, because the workspace is
+    /// on storage other Macs reach and the choice is not in effect on this Mac. Whether that
+    /// storage may hold Jamf Pro's configuration is the organization's call, so this points at
+    /// the setting.
+    static func proSyncedBackupRows(_ choice: ProBackup.SyncedStorageChoice?) -> [DoctorRow] {
+        guard let choice, choice.setting != .allowed,
+              choice.setting != .configUnreadable else { return [] }
+        let key = SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue
+        let secrets = L("A Jamf Pro backup contains LDAP, SMTP and API-client configuration and scripts that can hold secrets.")
+        let title: String
+        let consequence: String
+        let hint: String
+        switch choice.setting {
+        case .notChosen:
+            title = L("Jamf Pro backups on this storage need a choice")
+            consequence = L("Scheduled backups that already ran here continue for \(BackupMaintenance.graceRunsBeforeAsking) runs, then skip Jamf Pro and read as Partial.")
+            hint = L("If your organization's storage and access policy allows it, turn on \"Back up Jamf Pro in this folder\" in Backups (\(key)); otherwise set it to false to record that Jamf Pro stays out.")
+        case .awaitingConfirmation:
+            title = L("Jamf Pro backups are waiting for confirmation on this Mac")
+            consequence = L("\(key) is on in config.yaml but not confirmed here, so backups skip Jamf Pro and read as Partial.")
+            hint = L("Confirm it in the shared config row, or from the Backups switch.")
+        default:
+            title = L("Backups leave Jamf Pro out on this storage")
+            consequence = L("\(key) is false, so backups here skip Jamf Pro.")
+            hint = L("If your organization's storage and access policy allows it, turn on \"Back up Jamf Pro in this folder\" in Backups (\(key)).")
+        }
+        return [DoctorRow(
+            id: "backup.pro_synced_storage", severity: .suggest, title: title,
+            detail: L("This workspace is \(choice.place). \(secrets) \(consequence)"), hint: hint)]
     }
 
     /// One `.fail` row for a workspace whose profile is an organization-level Platform
@@ -99,10 +178,8 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "platform.organization_level",
             severity: .fail,
-            title: "This profile is an organization-level Platform integration",
-            detail: "'\(ConfigSchema.displayText(profile))' names no environment ID or tenant "
-                + "ID, so its credential reaches only Jamf Account. No Jamf Pro report can be "
-                + "collected with it, and collecting stops at once.",
+            title: L("This profile is an organization-level Platform integration"),
+            detail: L("'\(ConfigSchema.displayText(profile))' names no environment ID or tenant ID, so its credential reaches only Jamf Account. No Jamf Pro report can be collected with it, and collecting stops at once."),
             hint: PlatformScopeLevel.organizationLevelReason
         )]
     }
@@ -142,14 +219,9 @@ extension ConfigDoctorService {
         return [DoctorRow(
             id: "platform.twin",
             severity: .suggest,
-            title: "Two workspaces collect the same Jamf Pro",
-            detail: "'\(platform)' (Platform API) and '\(twin)' (oauth2) reach the same Jamf Pro "
-                + "server, and both have a workspace. Jamf Reports collects one profile per "
-                + "fleet, so history is split across two folders and a consolidated report "
-                + "counts the fleet twice.",
-            hint: "Keep '\(platform)' as the workspace and exclude '\(twin)' under Automation > "
-                + "Excluded profiles. Keep the oauth2 profile in jamf-cli for the commands the "
-                + "gateway refuses. Nothing is changed for you."
+            title: L("Two workspaces collect the same Jamf Pro"),
+            detail: L("'\(platform)' (Platform API) and '\(twin)' (oauth2) reach the same Jamf Pro server, and both have a workspace. Jamf Reports collects one profile per fleet, so history is split across two folders and a consolidated report counts the fleet twice."),
+            hint: L("Merge '\(platform)' into '\(twin)' from Data Sources › Environment › Merge another workspace into this one. '\(twin)' keeps running the Jamf Pro commands and '\(platform)' becomes its Platform API profile. Nothing is changed until you merge.")
         )]
     }
 

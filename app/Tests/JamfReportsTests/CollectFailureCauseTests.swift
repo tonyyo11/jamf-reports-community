@@ -69,6 +69,7 @@ final class CollectFailureCauseTests: XCTestCase {
         let collector = CauseLogCollector()
         // Every kind fails, so the run is dead and throws; this test reads what was recorded.
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append)
         return collector.texts
@@ -134,6 +135,7 @@ final class CollectFailureCauseTests: XCTestCase {
         try script.write(to: stub, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: { _ in })
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
@@ -157,6 +159,7 @@ final class CollectFailureCauseTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
         let collector = CauseLogCollector()
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.inventory],
             force: true, locateJamfCLI: { stub }, onLine: collector.append)
         return collector.texts

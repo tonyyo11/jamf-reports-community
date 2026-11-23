@@ -26,8 +26,13 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Internal planning docs / Claude Code session state
-.claude/
+# Internal planning docs / Claude Code session state (project skills, workflows and the
+# review agents they use are tracked)
+.claude/*
+!.claude/agents/
+!.claude/skills/
+!.claude/workflows/
+.superpowers/
 .serena/
 Community Edition Recap.rtf
 
@@ -40,9 +45,6 @@ dist/
 app/.build/
 app/.swiftpm/
 app/build/
-# Intermediate icon outputs — only the source script and AppIcon.icns are committed.
-app/iconset/AppIcon.iconset/
-app/iconset/AppIcon-1024.png
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/

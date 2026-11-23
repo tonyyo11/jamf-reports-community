@@ -37,6 +37,8 @@ final class ConnectionCredentialsModel {
         /// behind: recorded by the store, in no connection and with no workspace folder, so
         /// registering it again loses nothing.
         var canReRegister: @MainActor (String) -> Bool = { _ in false }
+        /// The server a jamf-cli profile stores, as the profile list shows it; nil when unknown.
+        var storedURL: @MainActor (String) -> String? = { _ in nil }
     }
 
     enum Outcome: Equatable {
@@ -113,9 +115,28 @@ final class ConnectionCredentialsModel {
 
     // MARK: - Gateway
 
-    /// The gateway URL of the connection's region; nil for a region this build has no host for.
+    /// What an Other region's host is: every member of one connection shares the gateway, so the
+    /// first member whose stored profile URL is readable decides. Nil when none is.
+    private var otherHostCheck: GatewayURLCheck? {
+        connection.members.lazy
+            .compactMap { self.deps.storedURL($0.profile) }
+            .compactMap { GatewayRegion.startingURL(fromStored: $0) }
+            .first.map { GatewayRegion.check($0) }
+    }
+
+    /// The gateway URL of the connection's region, or the host its members' profiles store for
+    /// an Other region; nil when there is none or it is not usable (a retired gateway included).
     var gatewayURL: String? {
-        GatewayRegion(rawValue: connection.region.rawValue)?.url
+        if let region = GatewayRegion(rawValue: connection.region.rawValue) { return region.url }
+        if case .ok(let url) = otherHostCheck { return url }
+        return nil
+    }
+
+    /// Why the connection has no usable gateway host, nil when it has one.
+    var gatewayProblem: String? {
+        guard gatewayURL == nil else { return nil }
+        if case .retired = otherHostCheck { return GatewayRegion.retiredRefusal }
+        return L("This connection's gateway host is unknown, so Jamf Reports cannot register profiles against it. Add the profiles from onboarding instead.")
     }
 
     var scope: OnboardingFlow.PlatformScope {
@@ -175,7 +196,7 @@ final class ConnectionCredentialsModel {
             hasRun = true
         }
         guard let context = await deps.jamfCLI() else {
-            runError = "Could not find jamf-cli. Install it from the sidebar's setup step."
+            runError = L("Could not find jamf-cli. Install it from the sidebar's setup step.")
             return
         }
         // Moved, not copied: the stored value is empty from here and the local copy is wiped.
@@ -190,6 +211,7 @@ final class ConnectionCredentialsModel {
             await updateAll(context, gatewayURL: gatewayURL, clientID: id, secret: secret)
         }
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
     }
 
     private func addEnvironments(
@@ -223,11 +245,11 @@ final class ConnectionCredentialsModel {
             // connections.json is a plain file; its ID goes to jamf-cli as a flag value.
             guard ConnectionEnvironments.isUsableID(member.scopeID) else {
                 let reason = member.scopeID.isEmpty
-                    ? "No ID is recorded for this profile."
-                    : "The ID recorded for this profile cannot be used."
+                    ? L("No ID is recorded for this profile.")
+                    : L("The ID recorded for this profile cannot be used.")
                 rows.append(Row(
                     label: member.label, profile: member.profile,
-                    outcome: .skipped(reason + " Use Update credentials on its own workspace."),
+                    outcome: .skipped(L("\(reason) Use Update credentials on its own workspace.")),
                     isNew: false))
                 continue
             }
@@ -269,7 +291,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a registered profile: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -294,7 +316,7 @@ final class ConnectionCredentialsModel {
         do {
             _ = try deps.provisionWorkspace(planned.profile)
         } catch {
-            note = "The workspace could not be created: \(error.localizedDescription)"
+            note = L("The workspace could not be created: \(error.localizedDescription)")
         }
         let member = Connection.Member(
             profile: planned.profile, scopeID: planned.entry.scopeID,
@@ -305,9 +327,9 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 AddEnvironments: could not record a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
-            note = (note.map { $0 + " " } ?? "") + "It could not be recorded in the connection."
+            note = (note.map { $0 + " " } ?? "") + L("It could not be recorded in the connection.")
         }
         return note
     }
@@ -337,7 +359,7 @@ final class ConnectionCredentialsModel {
             AppLogger.auth.warning(
                 """
                 UpdateCredentials: could not refresh a member: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """)
         }
     }
@@ -348,35 +370,41 @@ extension ConnectionCredentialsModel.Row {
     /// connection does not use, with the command that removes it.
     var message: String { message(tenantLevel: false) }
 
+    private static func answered(_ version: String?) -> String {
+        version.map { L("Jamf Pro \($0) answered.") } ?? L("Jamf Pro answered.")
+    }
+
     func message(tenantLevel: Bool) -> String {
         switch outcome {
         case .refused(let refusal):
-            return "Not registered. \(refusal.message)"
+            return L("Not registered. \(refusal.message)")
         case .registrationFailed(let text):
-            return "jamf-cli could not register \(profile): \(text)"
+            return L("jamf-cli could not register \(profile): \(text)")
         case .added(let version, let note):
-            let base = (reRegistered ? "Added (registered the earlier jamf-cli profile again). "
-                : "Added. ") + "Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
+            let lead = reRegistered
+                ? L("Added (registered the earlier jamf-cli profile again).") : L("Added.")
+            let base = "\(lead) \(Self.answered(version))"
             return note.map { "\(base) \($0)" } ?? base
         case .updated(let version):
-            return "Credentials updated. Jamf Pro " + (version.map { "\($0) " } ?? "") + "answered."
+            return "\(L("Credentials updated.")) \(Self.answered(version))"
         case .notJamfPro:
             let reason = tenantLevel
                 ? ConnectionCheck.Verdict.notJamfProTenantText + " "
-                : "No Jamf Pro answers for this ID, so its MDM is probably Jamf School: Jamf "
-                    + "School is read with a School API key, in its own Jamf School workspace. "
-            return (isNew ? "Not added to the connection. " : "") + reason + removalHint
+                : L("No Jamf Pro answers for this ID, so its MDM is probably Jamf School: Jamf School is read with a School API key, in its own Jamf School workspace. ")
+            return isNew
+                ? L("Not added to the connection. \(reason)\(removalHint)") : reason + removalHint
         case .rejected(let kind):
             return ConnectionCheck.Verdict.rejectedID(kind).message + " " + removalHint
         case .notConfirmed(let exitCode):
             let cause = exitCode == CLIBridge.exitCodeTimedOut
-                ? "no answer within \(Int(ConnectionCheck.timeout)) seconds"
-                : exitCode.map { "exit \($0)" } ?? "jamf-cli did not run"
-            return (isNew ? "Not added: " : "") + "the check could not confirm the ID (\(cause)). "
-                + "Check the client ID, secret and API privileges. " + removalHint
+                ? L("no answer within \(Int(ConnectionCheck.timeout)) seconds")
+                : exitCode.map { L("exit \($0)") } ?? L("jamf-cli did not run")
+            return isNew
+                ? L("Not added: the check could not confirm the ID (\(cause)). Check the client ID, secret and API privileges. \(removalHint)")
+                : L("the check could not confirm the ID (\(cause)). Check the client ID, secret and API privileges. \(removalHint)")
         case .missingPermission(let names):
-            return (isNew ? "Not added: " : "")
-                + ConnectionCheck.Verdict.missingPermissionText(names: names) + " " + removalHint
+            let text = ConnectionCheck.Verdict.missingPermissionText(names: names)
+            return isNew ? L("Not added: \(text) \(removalHint)") : "\(text) \(removalHint)"
         case .skipped(let reason):
             return reason
         }
@@ -384,8 +412,6 @@ extension ConnectionCredentialsModel.Row {
 
     private var removalHint: String {
         guard leavesProfileRegistered else { return "" }
-        return "The jamf-cli profile \(profile) stays registered. Add the same label again to "
-            + "register it with new credentials, or remove it with "
-            + "jamf-cli config remove-profile \(ProfileName.shellWord(profile))."
+        return L("The jamf-cli profile \(profile) stays registered. Add the same label again to register it with new credentials, or remove it with jamf-cli config remove-profile -- \(ProfileName.shellWord(profile)).")
     }
 }

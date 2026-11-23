@@ -12,8 +12,7 @@ struct ConnectionHealthTip: Tip {
     var title: Text { Text("Check your connection") }
 
     var message: Text? {
-        Text("Run jamf-cli doctor to confirm your credentials resolve and the "
-            + "server is reachable before generating reports.")
+        Text("Run jamf-cli doctor to confirm your credentials resolve and the server is reachable before generating reports.")
     }
 
     var image: Image? { Image(systemName: "stethoscope") }
@@ -26,8 +25,7 @@ struct EATrackingTip: Tip {
     var title: Text { Text("Bring in custom EAs") }
 
     var message: Text? {
-        Text("Pick the Extension Attributes jamf-cli already collected and adopt "
-            + "them as tracked fields — no manual config editing required.")
+        Text("Pick the Extension Attributes jamf-cli already collected and adopt them as tracked fields — no manual config editing required.")
     }
 
     var image: Image? { Image(systemName: "tablecells.badge.ellipsis") }

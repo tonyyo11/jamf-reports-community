@@ -299,7 +299,10 @@ final class OneCollectAtATimeTests: XCTestCase {
     /// cannot push the coordinator into backoff.
     func testTheBackgroundRefreshDoesNotCountAnAppRefusalAsAFailure() async throws {
         _ = try makeStore()
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         try await whileACollectRuns {
             coordinator.refreshIfStale(profile: profile, tier: .refresh)
             try await waitUntil { !coordinator.isRefreshing(profile: profile, tier: .refresh) }
@@ -317,7 +320,7 @@ final class OneCollectAtATimeTests: XCTestCase {
         onboarding.profileName = profile
         let runsBefore = try recordedRuns()
         try await whileACollectRuns {
-            await setup.run(initialize: { _ in 0 })
+            await setup.run(initialize: { _, _ in 0 })
             await onboarding.runFirstReport(workspaceStore: store)
         }
         XCTAssertEqual(setup.statuses[profile], .failed(running))

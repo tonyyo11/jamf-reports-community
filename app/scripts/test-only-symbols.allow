@@ -11,3 +11,7 @@ StubTickerRegistrar               # TickerRegistrar test double; tests run the t
 invokeRetryForTesting             # ErrorStateView: fires the retry action without a rendered button
 controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
 controlTextDidEndEditing          # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
+
+# --- jamf-cli command catalog -------------------------------------------------
+privilegesListed  # CommandCatalog query: "lists none" (nil) versus "not in the catalog" (nil path), asserted by the catalog tests
+urlSession  # URLSessionTaskDelegate redirect hook in HTTPSession.RedirectRule: URLSession calls it, a test calls it directly

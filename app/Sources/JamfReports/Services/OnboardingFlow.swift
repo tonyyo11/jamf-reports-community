@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Observation
 
 @MainActor
@@ -21,14 +22,14 @@ final class OnboardingFlow {
 
         var label: String {
             switch self {
-            case .welcome: "Welcome"
-            case .installCLI: "Install jamf-cli"
-            case .workspace: "Workspace"
-            case .authenticate: "Authenticate"
-            case .validate: "Validate"
-            case .addProducts: "Add products"
-            case .firstReport: "First report"
-            case .schoolConnect: "Connect School"
+            case .welcome: L("Welcome")
+            case .installCLI: L("Install jamf-cli")
+            case .workspace: L("Workspace")
+            case .authenticate: L("Authenticate")
+            case .validate: L("Validate")
+            case .addProducts: L("Add products")
+            case .firstReport: L("First report")
+            case .schoolConnect: L("Connect School")
             }
         }
     }
@@ -64,8 +65,8 @@ final class OnboardingFlow {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .oauth2: "Jamf Pro server (OAuth2)"
-            case .platformGateway: "Jamf Account (Platform API, recommended for Jamf Cloud)"
+            case .oauth2: L("Jamf Pro server (OAuth2)")
+            case .platformGateway: L("Jamf Account (Platform API, recommended for Jamf Cloud)")
             }
         }
     }
@@ -97,27 +98,31 @@ final class OnboardingFlow {
         case invalidProfile
         case profileCaseConflict(existing: String)
         case invalidJamfURL
+        case invalidGatewayHost(String)
         case invalidScopeID
         case missingJamfCLI
         case missingWorkspace
+        case workspaceHasConfig(String)
         case processFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile:
-                "Use a name without a line break or tab, that doesn't start or end with a space, "
-                    + "and is short enough to be a folder name."
+                L("Use a name without a line break or tab, that doesn't start or end with a space, and is short enough to be a folder name.")
             case .profileCaseConflict(let existing):
-                "A workspace named \(existing) already exists, and a name that differs from it "
-                    + "only by letter case would share its folder. Choose a different name."
+                L("A workspace named \(existing) already exists, and a name that differs from it only by letter case would share its folder. Choose a different name.")
             case .invalidJamfURL:
-                "Jamf Pro URL must start with https:// and include a valid host."
+                L("Jamf Pro URL must start with https:// and include a valid host.")
+            case .invalidGatewayHost(let problem):
+                problem
             case .invalidScopeID:
                 OnboardingFlow.scopeIDProblemText
             case .missingJamfCLI:
-                "Could not find jamf-cli on PATH."
+                L("Could not find jamf-cli on PATH.")
             case .missingWorkspace:
-                "Create the workspace before running this step."
+                L("Create the workspace before running this step.")
+            case .workspaceHasConfig(let name):
+                L("\(name) already has a config.yaml, so it was not made a Jamf Protect environment. Nothing was changed.")
             case .processFailed(let message):
                 message
             }
@@ -150,26 +155,29 @@ final class OnboardingFlow {
 
         var label: String {
             switch self {
-            case .environment: "Environment"
-            case .tenant: "Tenant (legacy)"
+            case .environment: L("Environment")
+            case .tenant: L("Tenant (legacy)")
             }
         }
 
         /// Shown under the scope picker in onboarding and Update credentials.
-        static let caption = "Environment is the level to use: it reaches Jamf Pro, Blueprints, "
-            + "Compliance Benchmarks and DDM. Tenant is legacy: "
-            + "direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints."
+        static var caption: String {
+            L("Environment is the level to use: it reaches Jamf Pro, Blueprints, Compliance Benchmarks and DDM. Tenant is legacy: direct Jamf Pro endpoints only, with no Compliance Benchmarks or Blueprints.")
+        }
 
         var idFieldLabel: String {
             switch self {
-            case .environment: "Environment ID"
-            case .tenant: "Tenant ID"
+            case .environment: L("Environment ID")
+            case .tenant: L("Tenant ID")
             }
         }
     }
 
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
+    /// The picker is on Other. Kept apart from `gatewayURL` so typing a host that names a region
+    /// does not switch the picker under the field.
+    var gatewayOtherSelected = false
     var platformScope: PlatformScope = .environment
     var platformScopeID = ""
     var platformClientID = ""
@@ -221,6 +229,15 @@ final class OnboardingFlow {
     var connectionValidated = false
     var firstReportExitCode: Int32?
 
+    /// The connection was checked: a Jamf Pro or Platform profile that validated, or a School
+    /// profile whose Connect step confirmed it (School has no Validate step).
+    var connectionConfirmed: Bool {
+        productPath == .school ? schoolConnected : connectionValidated
+    }
+
+    /// The first report ran to the end, so setup is finished and only leaving the screen is left.
+    var firstReportSucceeded: Bool { firstReportExitCode == 0 && !isRunningFirstReport }
+
     var isRegisteringProfile = false
     var isValidatingConnection = false
     var isRunningFirstReport = false
@@ -230,6 +247,8 @@ final class OnboardingFlow {
     /// Start over removes exactly those: a folder or profile that existed before is never listed.
     var createdWorkspaces: [String] = []
     var createdProfiles: [String] = []
+    /// Workspaces whose config.yaml this run wrote, so only those get a `platform` slot.
+    var configsWritten: Set<String> = []
     var validationOutput: [CLIBridge.LogLine] = []
     var validationExitCode: Int32?
     /// The gateway's answer about a Platform API profile's scope ID; nil for OAuth2 profiles
@@ -396,7 +415,7 @@ final class OnboardingFlow {
     /// configured root so it agrees with `workspaceURL` directly above — the
     /// two used to answer the same question differently once the root moved.
     var workspacePreviewPath: String {
-        let name = profileName.trimmed.isEmpty ? "<profile>" : profileName.trimmed
+        let name = profileName.trimmed.isEmpty ? L("<profile>") : profileName.trimmed
         return WorkspaceRootStore.displayPath(profile: name) + "/"
     }
 
@@ -441,6 +460,10 @@ final class OnboardingFlow {
             schoolConnected = false
             schoolConnectionError = nil
         }
+        if currentStep == .firstReport {
+            // An earlier step can change the profile, so the first report is run again.
+            firstReportExitCode = nil
+        }
         currentStep = sequence[idx - 1]
         lastError = nil
     }
@@ -449,7 +472,14 @@ final class OnboardingFlow {
         let profile = profileName.trimmed
         let existed = ProfileService.workspaceURL(for: profile)
             .map { FileManager.default.fileExists(atPath: $0.path) } ?? true
-        try Self.createJamfCLIOnlyWorkspace(for: profile)
+        // Platform or OAuth is chosen on a later step; a Platform registration adds its slot.
+        if try Self.createJamfCLIOnlyWorkspace(
+            for: profile, as: .init(school: productPath == .school)) {
+            configsWritten.insert(profile)
+        } else if productPath == .school, configsWritten.contains(profile) {
+            // Set up Jamf School after the check found no Jamf Pro: this setup's own file.
+            try ProfilesConfigWriter.schoolTakesTheMDMSlot(workspace: profile)
+        }
         if !existed, !createdWorkspaces.contains(profile) { createdWorkspaces.append(profile) }
         workspaceCreated = true
         lastError = nil
@@ -457,7 +487,7 @@ final class OnboardingFlow {
 
     /// The folders of `profile`'s workspace, private to this user and kept out of Spotlight.
     /// Add environments creates its workspaces through this too.
-    static func createWorkspaceFolders(for profile: String) throws {
+    nonisolated static func createWorkspaceFolders(for profile: String) throws {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
@@ -497,14 +527,10 @@ final class OnboardingFlow {
         let neverIndex = workspace.appendingPathComponent(".metadata_never_index")
         if !fm.fileExists(atPath: neverIndex.path) {
             do {
-                try Data().write(to: neverIndex, options: .atomic)
-                try? fm.setAttributes(
-                    [.posixPermissions: NSNumber(value: Int16(0o600))],
-                    ofItemAtPath: neverIndex.path
-                )
+                try AtomicInstall.write(Data(), to: neverIndex, mode: 0o600)
             } catch {
                 AppLogger.auth.warning(
-                    "OnboardingFlow: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                    "OnboardingFlow: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
                 )
             }
         }
@@ -529,6 +555,10 @@ final class OnboardingFlow {
         // the health strip read both through ProfileAuthMethod's process-lifetime cache,
         // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
         ProfileAuthMethod.invalidateCache()
+        PlatformTwin.invalidateCache()
+        if proConnectionType == .platformGateway, profileRegistered {
+            try recordOwnPlatformSlot(profileName.trimmed)
+        }
     }
 
     private func registerOAuth2Profile() async throws {
@@ -560,7 +590,7 @@ final class OnboardingFlow {
 
         guard result.exitCode == 0 else {
             let combined = redactedCredentialOutput(result.combined.trimmed)
-            let message = combined.isEmpty ? "jamf-cli exited \(result.exitCode)." : combined
+            let message = combined.isEmpty ? L("jamf-cli exited \(result.exitCode).") : combined
             throw FlowError.processFailed(message)
         }
 
@@ -574,11 +604,14 @@ final class OnboardingFlow {
     }
 
     private func registerPlatformGatewayProfile() async throws {
+        guard let gatewayURL = normalizedGatewayURL else {
+            throw FlowError.invalidGatewayHost(
+                GatewayRegion.problem(with: self.gatewayURL) ?? GatewayRegion.invalidHostText)
+        }
         guard isPlatformScopeIDValid else { throw FlowError.invalidScopeID }
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
         try Self.signatureGate(binary: binary)
         guard isProfileNameValid else { throw FlowError.invalidProfile }
-        guard isGatewayURLValid else { throw FlowError.invalidJamfURL }
 
         isRegisteringProfile = true
         defer { isRegisteringProfile = false }
@@ -589,7 +622,7 @@ final class OnboardingFlow {
         try await Self.registerPlatformProfile(
             binary: binary,
             profile: profileName.trimmed,
-            gatewayURL: gatewayURL.trimmed,
+            gatewayURL: gatewayURL,
             scope: platformScope,
             scopeID: platformScopeID.trimmed,
             clientID: platformClientID.trimmed,
@@ -603,6 +636,16 @@ final class OnboardingFlow {
         validationOutput.removeAll()
         connectionCheck = nil
         lastError = nil
+    }
+
+    /// A Platform API workspace collects the Platform kinds as its own profile, so the block
+    /// this run wrote names it in `platform` too. A config.yaml that was already there is left.
+    func recordOwnPlatformSlot(
+        _ profile: String, appSupport: URL = AppSupport.directory()
+    ) throws {
+        guard configsWritten.contains(profile) else { return }
+        try ProfilesConfigWriter.save(
+            .platform, to: profile, workspace: profile, appSupport: appSupport)
     }
 
     // MARK: - Registration (Protect on the Pro path, School on the School path)
@@ -660,7 +703,7 @@ final class OnboardingFlow {
             )
             guard result.exitCode == 0 else {
                 let redacted = protectRedactedOutput(result.combined.trimmed)
-                let msg = redacted.isEmpty ? "jamf-cli exited \(result.exitCode)." : redacted
+                let msg = redacted.isEmpty ? L("jamf-cli exited \(result.exitCode).") : redacted
                 protectConnectionError = msg
                 return
             }
@@ -690,7 +733,7 @@ final class OnboardingFlow {
             protectConfigNote = ProductSetupChecks.joined(protectConfigNote, checkNote, defaultNote)
         } catch {
             protectConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
     }
@@ -762,7 +805,7 @@ final class OnboardingFlow {
             )
             guard result.exitCode == 0 else {
                 let redacted = schoolRedactedOutput(result.combined.trimmed)
-                let msg = redacted.isEmpty ? "jamf-cli exited \(result.exitCode)." : redacted
+                let msg = redacted.isEmpty ? L("jamf-cli exited \(result.exitCode).") : redacted
                 schoolConnectionError = msg
                 return
             }
@@ -792,7 +835,7 @@ final class OnboardingFlow {
             schoolConfigNote = ProductSetupChecks.joined(schoolConfigNote, checkNote, defaultNote)
         } catch {
             schoolConnectionError = ProductSetupChecks.joined(
-                "Connected, but config update failed: \(error.localizedDescription)",
+                "Connected, but config update failed: \(error.englishDescription)",
                 checkNote, defaultNote)
         }
         // A rejected answer keeps the profile: the School API key works without the gateway.
@@ -972,8 +1015,7 @@ final class OnboardingFlow {
 
         validationExitCode = exit
         guard exit == 0 else {
-            lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
-                + "client ID, secret, and API role privileges, then retry."
+            lastError = L("jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry.")
             return
         }
         guard proConnectionType == .platformGateway else {
@@ -1015,13 +1057,13 @@ final class OnboardingFlow {
         do {
             try connectionStore.recordMember(
                 profile: profile, scopeID: scopeID, product: product,
-                region: .region(forGatewayURL: gatewayURL.trimmed),
+                region: .region(forGatewayURL: normalizedGatewayURL ?? gatewayURL.trimmed),
                 level: platformScope == .tenant ? .tenant : .environment)
         } catch {
             AppLogger.auth.warning(
                 """
                 OnboardingFlow: could not record the connection: \
-                \(error.localizedDescription, privacy: .private)
+                \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -1038,9 +1080,11 @@ final class OnboardingFlow {
         }
     }
 
-    /// One first-report stage (collect or generate) for a profile, streaming log lines.
+    /// One first-report stage (collect or generate) for a profile, streaming log lines. The
+    /// `Date` is the run's start, one for all stages, so the collect and the report that
+    /// follows date the day's summary the same across midnight.
     typealias FirstReportStep = (
-        String, @escaping @Sendable (CLIBridge.LogLine) -> Void
+        String, Date, @escaping @Sendable (CLIBridge.LogLine) -> Void
     ) async throws -> Int32
 
     /// Runs the first report. The Jamf Pro path collects (refresh + inventory
@@ -1057,19 +1101,25 @@ final class OnboardingFlow {
     /// calls; tests inject spies to prove ordering without spawning jamf-cli.
     func runFirstReport(
         workspaceStore: WorkspaceStore,
-        collect: @escaping FirstReportStep = { profile, onLine in
-            try await CLIBridge().collect(
-                profile: profile, tiers: [.refresh, .inventory], force: true, onLine: onLine
-            )
+        now: Date = Date(),
+        collect: @escaping FirstReportStep = { profile, now, onLine in
+            try await WorkspaceStore.recordingCollect(
+                profile: profile, honesty: CollectHonestyWatcher()
+            ) { recorded in
+                try await CLIBridge().collect(
+                    profile: profile, tiers: [.refresh, .inventory], force: true, now: now,
+                    onLine: { onLine($0); recorded($0) }
+                )
+            }.exit
         },
-        generate: @escaping FirstReportStep = { profile, onLine in
+        generate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
-                try await CLIBridge().generate(profile: profile, onLine: onLine)
+                try await CLIBridge().generate(profile: profile, now: now, onLine: onLine)
             }
         },
-        schoolGenerate: @escaping FirstReportStep = { profile, onLine in
+        schoolGenerate: @escaping FirstReportStep = { profile, now, onLine in
             try await CLIBridge.holdingGenerate {
-                try await CLIBridge().schoolGenerate(profile: profile, onLine: onLine)
+                try await CLIBridge().schoolGenerate(profile: profile, now: now, onLine: onLine)
             }
         }
     ) async {
@@ -1087,7 +1137,7 @@ final class OnboardingFlow {
 
         let collectExit: Int32
         do {
-            collectExit = try await collect(profile, onLine)
+            collectExit = try await collect(profile, now, onLine)
         } catch {
             firstReportExitCode = -1
             lastError = error.localizedDescription
@@ -1095,14 +1145,14 @@ final class OnboardingFlow {
         }
         guard collectExit == 0 else {
             firstReportExitCode = collectExit
-            lastError = "Collect exited \(collectExit) — check the log above."
+            lastError = L("Collect exited \(collectExit) — check the log above.")
             return
         }
 
         let exit: Int32
         do {
             let step = productPath == .school ? schoolGenerate : generate
-            exit = try await step(profile, onLine)
+            exit = try await step(profile, now, onLine)
         } catch {
             firstReportExitCode = -1
             lastError = error.localizedDescription
@@ -1117,7 +1167,7 @@ final class OnboardingFlow {
         if exit == 0 {
             await finishSetup(in: workspaceStore)
         } else {
-            lastError = "Generate exited \(exit) — check the log above."
+            lastError = L("Generate exited \(exit) — check the log above.")
         }
     }
 
@@ -1138,6 +1188,12 @@ final class OnboardingFlow {
             workspaceStore.reloadFromDisk()
         }
         guard !workspaceStore.demoMode else { return }
+        // From the Add sheet another workspace is still active; Overview should open on this one.
+        let created = profileName.trimmed
+        if workspaceStore.profile != created,
+           workspaceStore.profiles.contains(where: { $0.name == created }) {
+            workspaceStore.setProfile(created)
+        }
         saveWebhook(in: workspaceStore)
         let base = AutomationPolicy.current()
         guard automation.enabled, !base.isManaged else { return }
@@ -1164,8 +1220,7 @@ final class OnboardingFlow {
             // The reason is left out: a config error can quote the file.
             AppLogger.webhook.warning("onboarding: could not save the notify block")
             workspaceStore.toast = Toast(
-                message: "Setup finished, but the webhook was not saved — add it under "
-                    + "Automation › Notifications",
+                message: L("Setup finished, but the webhook was not saved — add it under Automation › Notifications"),
                 style: .warning)
         }
     }
@@ -1195,26 +1250,26 @@ final class OnboardingFlow {
         if enforce {
             guard let teamID = expectedTeamID, verify(binary, teamID) else {
                 throw FlowError.processFailed(
-                    "jamf-cli signature verification failed — binary may be untrusted"
+                    L("jamf-cli signature verification failed — binary may be untrusted")
                 )
             }
         } else {
             // SF-7: audit-log the skip so reviewers can confirm which gate was off.
             AppLogger.auth.info(
-                "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .public))"
+                "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .private))"
             )
         }
     }
 
-    var isGatewayURLValid: Bool { normalizedURL(gatewayURL.trimmed) != nil }
+    var isGatewayURLValid: Bool { normalizedGatewayURL != nil }
 
     /// The ID goes to `config add-profile` as a flag value, so it passes the check Add
     /// environments applies to each ID.
     var isPlatformScopeIDValid: Bool { ConnectionEnvironments.isUsableID(platformScopeID.trimmed) }
 
-    nonisolated static let scopeIDProblemText = "Use only letters, digits, dots, hyphens and "
-        + "underscores, and don't start with a hyphen. Copy the ID from Jamf Account without "
-        + "spaces."
+    nonisolated static var scopeIDProblemText: String {
+        L("Use only letters, digits, dots, hyphens and underscores, and don't start with a hyphen. Copy the ID from Jamf Account without spaces.")
+    }
 
     /// Shown under the ID field once something is typed that the check refuses.
     var platformScopeIDProblem: String? {
@@ -1336,16 +1391,24 @@ final class OnboardingFlow {
             profileSlug: profileSlug, protectProfileName: protectProfileName)
     }
 
-    /// The same write for a Protect profile jamf-cli already has (the Add sheet).
+    /// The same write for a Protect profile jamf-cli already has (the Add sheet, off the main
+    /// actor).
     @discardableResult
-    static func writeProtectConfig(
-        profileSlug: String, protectProfileName: String
+    nonisolated static func writeProtectConfig(
+        profileSlug: String, protectProfileName: String,
+        appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
+        // Decided once; the block writer confirms the slot itself.
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profileSlug) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: protectProfileName.trimmingCharacters(in: .whitespaces),
+                workspace: profileSlug, appSupport: appSupport)
+        }
         let report = try writeProductBlock(
             "protect", profile: protectProfileName, for: profileSlug)
         SharedConfigPin.confirmWritten(
             protectProfileName.trimmingCharacters(in: .whitespaces),
-            key: .protectProfile, profile: profileSlug)
+            key: .protectProfile, profile: profileSlug, appSupport: appSupport)
         return report
     }
 
@@ -1357,10 +1420,13 @@ final class OnboardingFlow {
         try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
     }
 
-    static func writeProductBlock(
+    nonisolated static func writeProductBlock(
         _ key: String, profile name: String, for profileSlug: String
     ) throws -> ConfigSaveReport {
-        try ConfigService.saveBlock(key: key, profile: profileSlug) { root in
+        let slot = key == "school_cli" ? "jamf_school" : key
+        return try ConfigService.saveBlock(
+            key: key, profile: profileSlug, profilesSlot: slot, slotValue: name
+        ) { root in
             var block = root.value(for: key)?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
             block.set("enabled", value: .scalar(.bool(true)))
             block.set("profile", value: .scalar(.string(name)))
@@ -1449,25 +1515,25 @@ final class OnboardingFlow {
         try await Task.detached(priority: .userInitiated) {
             let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
             guard master >= 0 else {
-                throw FlowError.processFailed("posix_openpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("posix_openpt failed: errno \(errno)"))
             }
             guard Darwin.grantpt(master) == 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("grantpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("grantpt failed: errno \(errno)"))
             }
             guard Darwin.unlockpt(master) == 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("unlockpt failed: errno \(errno)")
+                throw FlowError.processFailed(L("unlockpt failed: errno \(errno)"))
             }
             guard let slaveCStr = Darwin.ptsname(master) else {
                 Darwin.close(master)
-                throw FlowError.processFailed("ptsname failed: errno \(errno)")
+                throw FlowError.processFailed(L("ptsname failed: errno \(errno)"))
             }
             let slavePath = String(cString: slaveCStr)
             let slave = Darwin.open(slavePath, O_RDWR | O_NOCTTY)
             guard slave >= 0 else {
                 Darwin.close(master)
-                throw FlowError.processFailed("open(slave) failed: errno \(errno)")
+                throw FlowError.processFailed(L("open(slave) failed: errno \(errno)"))
             }
 
             // Disable echo on the slave so the secret written to stdin is not
@@ -1497,7 +1563,13 @@ final class OnboardingFlow {
             process.standardError = slaveHandle
             let box = TimedProcessBox()
             box.set(process)
-            process.terminationHandler = { [box] _ in box.disarmTimeout() }
+            // Buffered, so an exit before the wait below is not lost.
+            let (exits, exitSignal) = AsyncStream<Void>.makeStream()
+            process.terminationHandler = { [box] _ in
+                box.disarmTimeout()
+                exitSignal.yield()
+                exitSignal.finish()
+            }
 
             do {
                 try signatureGate(
@@ -1511,9 +1583,10 @@ final class OnboardingFlow {
                 try process.run()
             } catch {
                 Darwin.close(slave)
-                throw FlowError.processFailed("launch failed: \(error.localizedDescription)")
+                throw FlowError.processFailed(L("launch failed: \(error.localizedDescription)"))
             }
 
+            box.stopIfClosing()
             box.armTimeout(timeout)
 
             // Close the slave end in the parent so reads on master see EOF when
@@ -1527,15 +1600,21 @@ final class OnboardingFlow {
             // slave end is open), because closing the handle under a blocked
             // reader raises NSFileHandleOperationException on macOS 26.
             let collector = PTYOutputCollector()
-            let drain = Task.detached(priority: .userInitiated) {
-                var buffer = [UInt8](repeating: 0, count: 4096)
-                while true {
-                    let count = buffer.withUnsafeMutableBytes {
-                        Darwin.read(master, $0.baseAddress, $0.count)
+            // read(2) blocks, so it runs on a dispatch thread, not the cooperative pool.
+            let drain = Task {
+                await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        var buffer = [UInt8](repeating: 0, count: 4096)
+                        while true {
+                            let count = buffer.withUnsafeMutableBytes {
+                                Darwin.read(master, $0.baseAddress, $0.count)
+                            }
+                            if count < 0 && errno == EINTR { continue }
+                            guard count > 0 else { break }
+                            collector.append(Data(buffer[0..<count]))
+                        }
+                        done.resume()
                     }
-                    if count < 0 && errno == EINTR { continue }
-                    guard count > 0 else { break }
-                    await collector.append(Data(buffer[0..<count]))
                 }
             }
 
@@ -1546,47 +1625,41 @@ final class OnboardingFlow {
             for line in ptyLines(stdin) {
                 let deadline = Date().addingTimeInterval(ptyPromptGrace)
                 while process.isRunning, !box.didTimeOut, Date() < deadline,
-                    await collector.byteCount() <= seenBytes {
+                    collector.byteCount() <= seenBytes {
                     try? await Task.sleep(nanoseconds: 50_000_000)
                 }
                 guard process.isRunning, !box.didTimeOut else { break }
                 // Counted before the write, so a prompt that arrives during it still counts.
-                seenBytes = await collector.byteCount()
+                seenBytes = collector.byteCount()
                 line.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
                     guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
                     _ = Darwin.write(master, base, bytes.count)
                 }
             }
 
-            process.waitUntilExit()
+            for await _ in exits { break }
             // The child's exit closes the last slave end, which ends the drain.
             await drain.value
             try? masterHandle.close()
             if box.didTimeOut {
                 throw FlowError.processFailed(
-                    "jamf-cli did not finish within \(Int(timeout.rounded())) s")
+                    L("jamf-cli did not finish within \(Int(timeout.rounded())) s"))
             }
 
-            let combined = await collector.snapshot()
+            let combined = collector.snapshot()
             return PTYResult(exitCode: process.terminationStatus, combined: combined)
         }.value
     }
 }
 
-private actor PTYOutputCollector {
-    private var buffer = Data()
+private final class PTYOutputCollector: Sendable {
+    private let buffer = Mutex(Data())
 
-    func append(_ data: Data) {
-        buffer.append(data)
-    }
+    func append(_ data: Data) { buffer.withLock { $0.append(data) } }
 
-    func byteCount() -> Int {
-        buffer.count
-    }
+    func byteCount() -> Int { buffer.withLock { $0.count } }
 
-    func snapshot() -> String {
-        String(data: buffer, encoding: .utf8) ?? ""
-    }
+    func snapshot() -> String { String(decoding: buffer.withLock { $0 }, as: UTF8.self) }
 }
 
 private extension String {

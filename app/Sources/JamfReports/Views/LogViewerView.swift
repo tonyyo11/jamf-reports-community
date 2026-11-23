@@ -30,11 +30,10 @@ struct LogViewerView: View {
             if filtered.isEmpty {
                 EmptyStateView(
                     systemImage: "doc.text.magnifyingglass",
-                    title: "No diagnostic events yet",
+                    title: L("No diagnostic events yet"),
                     message: workspace.demoMode
-                        ? "No demo events match these filters."
-                        : "Events are captured as you use the app this session — "
-                            + "trigger a Refresh or report run, then Refresh this view."
+                        ? L("No demo events match these filters.")
+                        : L("Events are captured as you use the app this session — trigger a Refresh or report run, then Refresh this view.")
                 )
             } else {
                 logRows

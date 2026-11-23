@@ -36,7 +36,7 @@ final class TickLockWriteFailureTests: XCTestCase {
         try XCTSkipIf(
             lock.claim().kind != "writeFailed", "the directory is writable (running as root?)")
 
-        let exit = await runTick(arguments: ["--tick"], lock: lock)
+        let exit = await runTick(arguments: ["--tick"], environment: TickEnvironment(lock: lock))
 
         XCTAssertEqual(exit, 1, "a write failure is not the queued exit code")
         XCTAssertNil(TickLock.takeBlockedSince(), "no wake was turned away")

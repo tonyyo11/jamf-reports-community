@@ -1,0 +1,10 @@
+[
+  {
+    "id": "2",
+    "general": {
+      "remoteManagement": {
+        "managed": true
+      }
+    }
+  }
+]

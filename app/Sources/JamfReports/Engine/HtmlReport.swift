@@ -26,9 +26,9 @@ let HTMLReportSHA256Placeholder = String(repeating: "0", count: 64)
 struct HtmlReport: Sendable {
     let config: ReportConfig
     let dataDir: URL
-    /// The profile this report is for, from the caller. Its workspace holds the config.yaml
-    /// and the shared-config pin. Not read from config.yaml, which a peer can edit.
-    var profile: String? = nil
+    /// The workspace this report is for, from the caller. It holds the config.yaml and the
+    /// shared-config pin. Not read from config.yaml, which a peer can edit.
+    var workspace: WorkspaceID? = nil
     /// GUI-generate-only AI executive narrative (F3). nil (the default) omits
     /// the `.aiNarrative` section entirely — headless callers never set it.
     var aiNarrative: String? = nil
@@ -56,12 +56,11 @@ struct HtmlReport: Sendable {
         var historyFile: String = ""
     }
 
-    /// The profile's workspace, which holds its config.yaml and its shared-config pin.
+    /// The workspace's folder, which holds its config.yaml and its shared-config pin.
     /// `jamf_cli.data_dir` can name any folder, so the parent of `dataDir` is the workspace only
-    /// as a fallback: when the caller named no profile or its workspace has no config.yaml.
+    /// as a fallback: when the caller named no workspace or it has no config.yaml.
     private var workspaceURL: URL {
-        if let profile, !profile.isEmpty,
-           let workspace = ProfileService.workspaceURL(for: profile),
+        if let workspace = workspace.map({ WorkspacePaths.workspaceURL(for: $0) }),
            FileManager.default.fileExists(
                atPath: workspace.appendingPathComponent("config.yaml").path) {
             return workspace
@@ -94,8 +93,7 @@ struct HtmlReport: Sendable {
     ///
     /// - Parameters:
     ///   - outputURL: Destination file URL.
-    ///   - profileName: Workspace profile slug for the header. Empty reads the config's
-    ///     `jamf_cli.profile`.
+    ///   - profileName: The workspace's name for the header. Empty leaves it out.
     ///   - sections: The sections to render, as the active `ReportTemplate.htmlSections`
     ///     lists them. `nil` renders every section (`FullInstanceTemplate`).
     /// - Returns: The embedded SHA-256 source fingerprint.
@@ -140,23 +138,23 @@ struct HtmlReport: Sendable {
 
     func buildSummaryTiles(
         total: Int,
-        fileVaultPct: Double,
-        sipPct: Double,
-        firewallPct: Double,
-        gatekeeperPct: Double,
+        fileVaultPct: Double?,
+        sipPct: Double?,
+        firewallPct: Double?,
+        gatekeeperPct: Double?,
         fleet: SecurityFleetCounts?
     ) -> String {
         let tiles: [(String, String, Double?, SecurityControl?)] = [
             ("Computers", "\(total)", nil, nil),
-            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct, .fileVault),
-            ("SIP", String(format: "%.1f%%", sipPct), sipPct, .sip),
-            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct, .firewall),
-            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct, .gatekeeper),
+            ("FileVault", config.percentFormat.text(fileVaultPct), fileVaultPct, .fileVault),
+            ("SIP", config.percentFormat.text(sipPct), sipPct, .sip),
+            ("Firewall", config.percentFormat.text(firewallPct), firewallPct, .firewall),
+            ("Gatekeeper", config.percentFormat.text(gatekeeperPct), gatekeeperPct, .gatekeeper),
         ]
         let tileHTML = tiles.map { label, value, pct, control -> String in
             let ignored = control.map { config.resolvedSecurityPolicy.level(for: $0) == .ignore }
                 ?? false
-            let statusClass = ignored ? ""
+            let statusClass = ignored || pct == nil ? ""
                 : control.map { securityTileClass($0, pct: pct ?? 0, fleet: fleet) } ?? ""
             let label = ignored ? label + " (not counted)" : label
             let hardwareMacs = control == .fileVault ? fleet?.fileVaultOffHardwareEncrypted ?? 0 : 0
@@ -207,12 +205,18 @@ struct HtmlReport: Sendable {
         let secSummary = inputs.security.first { $0["section"] as? String == "summary" }
         let secData = secSummary?["data"] as? [String: Any] ?? [:]
         let total = inputs.totalDevices
+        // Through the fleet counts, so a control no Mac reported shows no share.
+        func share(_ control: SecurityControl, _ key: String) -> Double? {
+            let reported = asInt(secData[key])
+            return (inputs.fleet.map { $0.onCount(control, reported: reported) } ?? reported)
+                .map { computePct($0, total: total) }
+        }
         let tiles = buildSummaryTiles(
             total: total,
-            fileVaultPct: computePct(asInt(secData["filevault_encrypted"]), total: total),
-            sipPct: computePct(asInt(secData["sip_enabled"]), total: total),
-            firewallPct: computePct(asInt(secData["firewall_enabled"]), total: total),
-            gatekeeperPct: computePct(asInt(secData["gatekeeper_enabled"]), total: total),
+            fileVaultPct: share(.fileVault, "filevault_encrypted"),
+            sipPct: share(.sip, "sip_enabled"),
+            firewallPct: share(.firewall, "firewall_enabled"),
+            gatekeeperPct: share(.gatekeeper, "gatekeeper_enabled"),
             fleet: inputs.fleet)
         // Without fleet counts the sentence could only say it has none to word.
         let note = inputs.fleet.map { $0.totalDevices > 0 } == true
@@ -262,7 +266,7 @@ struct HtmlReport: Sendable {
         let colorCls = pct >= 95 ? "compliance-hero-green"
                        : pct >= 80 ? "compliance-hero-amber"
                        : "compliance-hero-red"
-        let pctStr = String(format: "%.0f%%", pct)
+        let pctStr = PercentFormat.whole.text(pct)
         let label = "\(pctStr) Computer Compliance &middot; \(failing) of \(total) "
             + "computer\(total == 1 ? "" : "s") have failures"
         return """
@@ -393,20 +397,21 @@ struct HtmlReport: Sendable {
             .map { (label: $0.element.version, count: $0.element.count) }
         return .shown(HtmlSectionFormatters.block(
             id: "os-chart", title: "OS version distribution",
-            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
+            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll, colored: .version)))
     }
 
     /// Compliance of the first ten patch titles as bars on a 0–100% track.
     func buildPatchChart(patchStatus: [[String: Any]]) -> HtmlBlock {
         guard !patchStatus.isEmpty else { return .omitted("no patch-status snapshot") }
-        let rows = patchStatus.prefix(10).map { item -> (label: String, pct: Double) in
-            let pct = (item["compliance_pct"] as? String ?? "0")
-                .replacingOccurrences(of: "%", with: "")
-            return (item["title"] as? String ?? "", Double(pct) ?? 0)
-        }
+        // A title with no measured share ("N/A", no devices) has no bar, not a 0% one.
+        let rows = patchStatus.compactMap { item -> (label: String, pct: Double)? in
+            patchTitlePct(item).map { (item["title"] as? String ?? "", $0) }
+        }.prefix(10).map { $0 }
+        guard !rows.isEmpty else { return .omitted("no patch title has a measured share") }
         return .shown(HtmlSectionFormatters.block(
             id: "patch-chart", title: "Patch compliance (first 10 titles)",
-            body: HtmlSectionFormatters.renderPercentBars(rows)))
+            body: HtmlSectionFormatters.renderPercentBars(
+                rows, colored: .title, percent: config.percentFormat)))
     }
 
     // MARK: - Policies, profiles and apps
@@ -424,7 +429,7 @@ struct HtmlReport: Sendable {
         let enabled = asInt(summary["enabled"]) ?? 0
         let disabled = asInt(summary["disabled"]) ?? 0
         guard !findings.isEmpty else {
-            return .omitted("no policy findings; \(total) policies, \(enabled) enabled")
+            return .omitted("no policy findings; \(total == 1 ? "1 policy" : "\(total) policies"), \(enabled) enabled")
         }
         func rank(_ finding: [String: Any]) -> Int {
             switch (finding["severity"] as? String ?? "").lowercased() {
@@ -447,7 +452,7 @@ struct HtmlReport: Sendable {
             default: return nil
             }
         }
-        let note = "\(total) policies: \(enabled) enabled, \(disabled) disabled. "
+        let note = "\(total == 1 ? "1 policy" : "\(total) policies"): \(enabled) enabled, \(disabled) disabled. "
             + "\(findings.count) finding\(findings.count == 1 ? "" : "s"), "
             + "\(asInt(summary["warnings"]) ?? 0) of them warnings."
         let body = "<p class=\"block-note\">\(HtmlSectionFormatters.escapeHTML(note))</p>"
@@ -479,7 +484,7 @@ struct HtmlReport: Sendable {
         _ report: FailureReport?, id: String, noun: String, kind: String, total: Int
     ) -> HtmlBlock {
         guard let report else { return .omitted("no \(kind) snapshot") }
-        let window = report.days.map { "the last \($0) days" } ?? "the report window"
+        let window = report.days.map { "the last \(HtmlSectionFormatters.plural($0, "day"))" } ?? "the report window"
         guard !report.failures.isEmpty else {
             return .omitted("no \(noun) reported install errors in \(window)")
         }
@@ -487,15 +492,20 @@ struct HtmlReport: Sendable {
             (asInt($0["errors"]) ?? 0) > (asInt($1["errors"]) ?? 0)
         }
         let rows = ordered.map { item in
-            [item["name"] as? String ?? "", item["device_type"] as? String ?? "",
+            [FailureRowName.display(
+                name: item["name"] as? String,
+                id: item["id"] as? String ?? asInt(item["id"]).map(String.init),
+                noun: noun == "app" ? "app" : "profile"),
+             item["device_type"] as? String ?? "",
              "\(asInt(item["errors"]) ?? 0)", "\(asInt(item["devices"]) ?? 0)",
              item["top_error"] as? String ?? item["last_error"] as? String ?? ""]
         }
         let count = ordered.count
         let healthy = total > count ? " (\(total - count) of \(total) had none)" : ""
         let note = "\(count) \(noun)\(count == 1 ? "" : "s") reported install errors in "
-            + "\(window)\(healthy): \(report.totalErrors) errors on \(report.uniqueDevices) "
-            + "device\(report.uniqueDevices == 1 ? "" : "s")."
+            + "\(window)\(healthy): "
+            + "\(HtmlSectionFormatters.plural(report.totalErrors, "error")) on "
+            + "\(HtmlSectionFormatters.plural(report.uniqueDevices, "device"))."
         let body = "<p class=\"block-note\">\(HtmlSectionFormatters.escapeHTML(note))</p>"
             + HtmlSectionFormatters.renderCappedTable(
                 headers: ["Name", "Device type", "Errors", "Devices", "Top error"],
@@ -532,12 +542,12 @@ struct HtmlReport: Sendable {
         let history = loadHistory(path: histPath)
         guard history.count >= 2 else {
             return HtmlSectionFormatters.block(
-                id: "os-adoption-trend", title: "OS adoption trend",
+                id: "os-adoption-trend", title: "Mac count history",
                 body: "<p class=\"empty-note\">Not enough history yet (\(history.count) "
                     + "snapshot(s)). Run again after collecting more data.</p>")
         }
         return HtmlSectionFormatters.block(
-            id: "os-adoption-trend", title: "OS adoption trend",
+            id: "os-adoption-trend", title: "Mac count history",
             body: renderHistorySVG(history: history))
     }
 
@@ -574,7 +584,7 @@ struct HtmlReport: Sendable {
         return fallback
     }
 
-    private func warn(_ msg: String) {
+    func warn(_ msg: String) {
         AppLogger.report.warning("\(msg, privacy: .private)")
         onLine?(.init(timestamp: Date(), level: .warn, text: msg))
     }
@@ -589,13 +599,13 @@ struct HtmlReport: Sendable {
         var versions: [(String, Int)] = []
         for item in security {
             guard item["section"] as? String == "os_version" else { continue }
-            let ver = item["os_version"] as? String ?? "Unknown"
+            let ver = item["os_version"] as? String ?? ""
+            guard OSVersionName.isMeasured(ver) else { continue }
             let count = asInt(item["count"]) ?? 0
             versions.append((ver, count))
         }
 
-        let dateFormatter = ISO8601DateFormatter()
-        let ts = dateFormatter.string(from: Date())
+        let ts = ISO8601Time.string(Date())
         let entry: [String: Any] = [
             "ts": ts,
             "versions": versions.map { ["v": $0.0, "c": $0.1] },
@@ -657,7 +667,8 @@ struct HtmlReport: Sendable {
 
     /// Render a small inline SVG line chart from history entries.
     /// Shows total device count over time. No external dependencies.
-    func renderHistorySVG(history: [HistoryEntry]) -> String {
+    func renderHistorySVG(history rawHistory: [HistoryEntry]) -> String {
+        let history = HtmlSectionFormatters.newestPerDay(rawHistory) { String($0.timestamp.prefix(10)) }
         guard history.count >= 2 else { return "<p class=\"empty-note\">Not enough data.</p>" }
 
         let totals: [Int] = history.map { entry in
@@ -676,9 +687,11 @@ struct HtmlReport: Sendable {
         let plotW = svgWidth - leftPad - rightPad
         let plotH = svgHeight - topPad - bottomPad
 
-        let maxVal = Double(totals.max() ?? 1)
-        let minVal = Double(totals.min() ?? 0)
-        let yRange = max(maxVal - minVal, 1)
+        // A count axis starts at 0 and steps by whole numbers, so no tick repeats.
+        let axis = HtmlSectionFormatters.countAxis(max: totals.max() ?? 1)
+        let maxVal = Double(axis.top)
+        let minVal = 0.0
+        let yRange = maxVal
 
         func xPos(_ i: Int) -> Double {
             leftPad + (Double(i) / Double(totals.count - 1)) * plotW
@@ -694,11 +707,9 @@ struct HtmlReport: Sendable {
 
         // Y-axis grid lines (4 lines)
         var gridLines = ""
-        for idx in 0...4 {
-            let yFrac = Double(idx) / 4.0
-            let yVal = maxVal - yFrac * (maxVal - minVal)
-            let yCoord = topPad + plotH * yFrac
-            let label = "\(Int(yVal.rounded()))"
+        for (idx, tick) in axis.ticks.reversed().enumerated() {
+            let yCoord = topPad + plotH * Double(idx) / 4.0
+            let label = "\(tick)"
             gridLines += """
             <line x1="\(String(format: "%.1f", leftPad))" y1="\(String(format: "%.1f", yCoord))" \
             x2="\(String(format: "%.1f", svgWidth - rightPad))" y2="\(String(format: "%.1f", yCoord))" \
@@ -710,9 +721,7 @@ struct HtmlReport: Sendable {
 
         // X-axis labels (show at most 6)
         var xLabels = ""
-        let labelStep = max(1, totals.count / 6)
-        for i in totals.indices {
-            guard i % labelStep == 0 || i == totals.count - 1 else { continue }
+        for i in HtmlSectionFormatters.labelIndices(count: totals.count) {
             let xCoord = xPos(i)
             xLabels += """
             <text x="\(String(format: "%.1f", xCoord))" y="\(String(format: "%.1f", svgHeight - 4))" \
@@ -730,7 +739,7 @@ struct HtmlReport: Sendable {
 
         return """
         <svg viewBox="0 0 \(Int(svgWidth)) \(Int(svgHeight))" class="history-svg" \
-        role="img" aria-label="OS adoption trend">
+        role="img" aria-label="Mac count history">
           \(gridLines)
           <polyline fill="none" stroke="var(--accent)" stroke-width="2" \
           stroke-linejoin="round" points="\(polylinePoints)"/>
@@ -759,7 +768,7 @@ struct HtmlReport: Sendable {
     }
 
     func loadJSONData(kind: String) -> Data? {
-        newestSnapshotURL(kind: kind).flatMap { try? Data(contentsOf: $0) }
+        newestSnapshotURL(kind: kind).flatMap { BoundedFile.readLogged($0, inside: dataDir) }
     }
 
     /// The newest snapshot file for `kind`, from its subdirectory and the flat
@@ -770,12 +779,7 @@ struct HtmlReport: Sendable {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
-        if fm.fileExists(atPath: subdir.path),
-           let files = try? fm.contentsOfDirectory(
-            at: subdir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-           ) {
+        if let files = FileManager.snapshotFolderEntries(in: subdir) {
             candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
         }
         if let files = try? fm.contentsOfDirectory(
@@ -828,6 +832,7 @@ struct HtmlReport: Sendable {
 
     func formattedNow() -> String {
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: Date())
@@ -901,13 +906,10 @@ struct HtmlReport: Sendable {
         return "—"
     }
 
-    /// Extract purchase date string from a `computers list` record.
+    /// The PO date from a `computers list` record: Jamf Pro's Purchasing section has no field
+    /// named purchase date. Blank when the record has none.
     func inventoryPurchaseDate(_ item: [String: Any]) -> String {
-        if let purchasing = item["purchasing"] as? [String: Any] {
-            if let d = purchasing["purchaseDate"] as? String, !d.isEmpty { return d }
-            if let d = purchasing["purchase_date"] as? String, !d.isEmpty { return d }
-        }
-        return item["purchase_date"] as? String ?? item["purchaseDate"] as? String ?? ""
+        (item["purchasing"] as? [String: Any])?["poDate"] as? String ?? ""
     }
 
     /// Fill each record's department and building name from its `departmentId` and

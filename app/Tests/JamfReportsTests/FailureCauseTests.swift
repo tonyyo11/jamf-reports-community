@@ -24,6 +24,25 @@ final class FailureCauseTests: XCTestCase {
         + "Inventory > Devices: Read (devices:read). Names are as the permission picker shows "
         + "them: <map URL>"
 
+    /// jamf-cli's timeout hint names flags (`--page-size`, `--section`, `--filter`) the app
+    /// chooses itself (jamf-cli #476), so the Run History line carries the app's own advice.
+    func testAServerTimeoutCarriesTheAppHintNotJamfCLIFlagAdvice() {
+        let flagAdvice = "the request asked for more than the server could assemble in time; "
+            + "for a list, pass a smaller --page-size or narrow it with --section or --filter"
+        let message = "fetching page 0: the server did not answer in time: gateway timeout"
+        for hint in [flagAdvice, "the server did not answer in time; retry later", nil] {
+            let cause = classify(message, hint: hint, exit: 1)
+            XCTAssertEqual(cause.serverTimedOut, true)
+            XCTAssertEqual(cause.hint, FailureCause.serverTimeoutHint)
+            let line = ReportEngine.causeSuffix(cause)
+            XCTAssertFalse(line.contains("--page-size"), line)
+            XCTAssertTrue(line.contains("turn it off in Data Sources"), line)
+        }
+        let other = classify("unexpected end of JSON input", hint: "retry", exit: 1)
+        XCTAssertNil(other.serverTimedOut)
+        XCTAssertEqual(other.hint, "retry", "any other failure keeps jamf-cli's hint")
+    }
+
     // Rule 1
 
     func testOwnershipForbiddenIsAScopeRejectionEvenWithAPermissionHint() {
@@ -153,7 +172,7 @@ final class FailureCauseTests: XCTestCase {
             exitCode: 0, stdout: Data(), sawSoftwareUpdatePlansOffOnStderr: true)
         XCTAssertEqual(cause.kind, .softwareUpdatePlansOff)
         XCTAssertTrue(cause.isPermanent)
-        XCTAssertTrue(cause.label.contains("jamf_cli.collect_skip"), cause.label)
+        XCTAssertTrue(cause.label.contains("Data Sources"), cause.label)
     }
 
     func testTheWatcherSeesTheSoftwareUpdatePlansLine() {

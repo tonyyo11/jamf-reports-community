@@ -71,7 +71,7 @@ final class ScheduleStoreTests: XCTestCase {
         s.multiTarget = MultiTarget(scope: .all)
         s.excludedProfiles = ["dummy"]
         let record = try XCTUnwrap(ScheduleRecord(schedule: s))
-        XCTAssertTrue(record.allProfiles)
+        XCTAssertTrue(record.allWorkspaces)
         XCTAssertEqual(record.label, "com.github.tonyyo11.jamf-reports-community.multi.fleet")
         let back = record.toSchedule()
         XCTAssertTrue(back.isMulti)
@@ -152,7 +152,7 @@ final class ScheduleStoreTests: XCTestCase {
         let records = ScheduleStore(url: url).load()
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.enabled, true)
-        XCTAssertEqual(records.first?.allProfiles, false)
+        XCTAssertEqual(records.first?.allWorkspaces, false)
         XCTAssertNil(records.first?.tiers)
     }
 }

@@ -35,7 +35,7 @@ struct ReportsView: View {
     private var reportsFolderDisplayPath: String {
         workspace.demoMode
             ? DemoData.workspaceDisplayPath(
-                profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
+                profile: DemoData.org.profile, subpath: L("Generated Reports")) + "/"
             : WorkspaceRootStore.displayPath(of: reportsDirectory, profile: workspace.profile) + "/"
     }
 
@@ -95,9 +95,9 @@ struct ReportsView: View {
     /// The profile menu's label: "All Profiles", the one chosen, or how many.
     static func profileFilterLabel(_ selection: Set<String>) -> String {
         switch selection.count {
-        case 0: return "All Profiles"
-        case 1: return selection.first ?? "All Profiles"
-        default: return "\(selection.count) profiles"
+        case 0: return L("All Profiles")
+        case 1: return selection.first ?? L("All Profiles")
+        default: return L("\(selection.count) profiles")
         }
     }
 
@@ -125,19 +125,19 @@ struct ReportsView: View {
                             }
                             .accessibilityLabel(r.accessibilityLabel)
                         }
-                        .width(min: 220, ideal: 360)
+                        .width(min: 220, ideal: 220)
                         TableColumn("Type") { r in
                             Text(r.source).font(.footnote).lineLimit(1).help(r.source)
                         }
-                        .width(min: 110, ideal: 170)
+                        .width(min: 110, ideal: 110)
                         TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
-                            .width(min: 44, ideal: 56, max: 72)
+                            .width(min: 44, ideal: 44, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
-                            .width(min: 52, ideal: 64, max: 84)
+                            .width(min: 52, ideal: 52, max: 84)
                         TableColumn("Size") { r in Mono(text: r.size) }
-                            .width(min: 56, ideal: 68, max: 90)
+                            .width(min: 56, ideal: 56, max: 90)
                         TableColumn("Generated") { r in Mono(text: r.date) }
-                            .width(min: 96, ideal: 112, max: 140)
+                            .width(min: 96, ideal: 96, max: 140)
                     }
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)
@@ -174,7 +174,8 @@ struct ReportsView: View {
         .sheet(isPresented: $showGenerate) {
             GenerateSheet(
                 profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
-                schoolWorkspace: workspace.isSchoolWorkspace, onGenerated: reload)
+                schoolWorkspace: workspace.isSchoolWorkspace,
+                noJamfPro: !workspace.environmentProducts.has(.jamfPro), onGenerated: reload)
         }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
@@ -209,89 +210,86 @@ struct ReportsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             PageHeader(
-                kicker: "Generated Reports",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-                title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
+                kicker: L("Generated Reports"),
+                breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
+                title: reports.count == 1 ? L("1 report") : L("\(reports.count) reports"),
                 subtitle: reportsFolderDisplayPath,
                 wrapsTrailing: true
             ) {
-                AnyView(
-                    WrappingRow {
-                        PNPButton(title: "Reveal in Finder", icon: "folder") {
-                            revealReportsFolder()
-                        }
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode
-                              ? "Demo reports are not on disk. Revealing their folder "
-                                + "needs a live profile."
-                              : "Open the Generated Reports folder in Finder")
+                WrappingRow {
+                    PNPButton(title: L("Reveal in Finder"), icon: "folder") {
+                        revealReportsFolder()
+                    }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? L("Demo reports are not on disk. Revealing their folder needs a live profile.")
+                          : L("Open the Generated Reports folder in Finder"))
+                    PNPButton(
+                        title: L("Period report"),
+                        icon: "calendar.badge.clock",
+                        style: .neutral
+                    ) {
+                        // The sheet reads the workspace's summaries.
+                        guard !workspace.demoMode else { return }
+                        showPeriodReport = true
+                    }
+                    .disabled(workspace.demoMode)
+                    .help(
+                        workspace.demoMode
+                        ? DemoData.liveOnlyHelp
+                        : L("Fleet numbers for a period, with start, end and change")
+                    )
+                    PNPButton(
+                        title: L("Generate\u{2026}"),
+                        icon: "doc.badge.plus",
+                        style: .gold
+                    ) {
+                        // The sheet runs jamf-cli against the selected profile.
+                        guard !workspace.demoMode else { return }
+                        Task { await presentGenerate() }
+                    }
+                    .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                    .help(
+                        workspace.demoMode
+                        ? DemoData.liveOnlyHelp
+                        : L("Choose a template or sheets and the formats, then generate")
+                    )
+                    // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
+                    if workspace.environmentProducts.has(.jamfPro) {
                         PNPButton(
-                            title: "Period report",
-                            icon: "calendar.badge.clock",
+                            title: isGeneratingPDF ? L("Generating...") : L("Export PDF"),
+                            icon: "doc.richtext",
                             style: .neutral
                         ) {
-                            // The sheet reads the workspace's summaries.
-                            guard !workspace.demoMode else { return }
-                            showPeriodReport = true
-                        }
-                        .disabled(workspace.demoMode)
-                        .help(
-                            workspace.demoMode
-                            ? DemoData.liveOnlyHelp
-                            : "Fleet numbers for a period, with start, end and change"
-                        )
-                        PNPButton(
-                            title: "Generate\u{2026}",
-                            icon: "doc.badge.plus",
-                            style: .gold
-                        ) {
-                            // The sheet runs jamf-cli against the selected profile.
-                            guard !workspace.demoMode else { return }
-                            Task { await presentGenerate() }
+                            generatePDFReport()
                         }
                         .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
                         .help(
                             workspace.demoMode
                             ? DemoData.liveOnlyHelp
-                            : "Choose a template or sheets and the formats, then generate"
+                            : L("Render the HTML report to PDF via WKWebView")
                         )
-                        // Both render Jamf Pro data; a Jamf School workspace has a workbook only.
-                        if !workspace.isSchoolWorkspace {
-                            PNPButton(
-                                title: isGeneratingPDF ? "Generating..." : "Export PDF",
-                                icon: "doc.richtext",
-                                style: .neutral
-                            ) {
-                                generatePDFReport()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Render the HTML report to PDF via WKWebView"
-                            )
-                            PNPButton(
-                                title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
-                                icon: "doc.text",
-                                style: .neutral
-                            ) {
-                                runExportInventoryCSV()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Export a wide CSV of all computer inventory"
-                            )
+                        PNPButton(
+                            title: isExportingCSV ? L("Exporting...") : L("Export Inventory CSV"),
+                            icon: "doc.text",
+                            style: .neutral
+                        ) {
+                            runExportInventoryCSV()
                         }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : L("Export a wide CSV of all computer inventory")
+                        )
                     }
-                )
+                }
             }
             HStack(spacing: 8) {
                 SegmentedControl(
                     selection: $filter,
                     options: [
-                        ("All", "All", nil),
+                        ("All", L("All"), nil),
                         ("xlsx", "xlsx", nil),
                         ("html", "html", nil),
                         ("pdf", "pdf", nil),
@@ -334,11 +332,10 @@ struct ReportsView: View {
     private var emptyState: some View {
         EmptyStateView(
             systemImage: "doc.badge.plus",
-            title: "No reports yet",
-            message: "Reports are generated from the Overview screen using "
-                + "jamf-cli snapshots and optionally a CSV export.",
+            title: L("No reports yet"),
+            message: L("Reports are generated from the Overview screen using jamf-cli snapshots and optionally a CSV export."),
             primaryAction: EmptyStateAction(
-                label: "Go to Overview",
+                label: L("Go to Overview"),
                 icon: "house"
             ) { requestOverviewTab() }
         )
@@ -360,27 +357,25 @@ struct ReportsView: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 200) {
             StatTile(
-                label: "Total reports",
+                label: L("Total reports"),
                 value: "\(reportStats.count)",
-                sub: "Generated outputs"
-            )
+                sub: L("Generated outputs"), fillsHeight: true)
             StatTile(
-                label: "Disk used",
+                label: L("Disk used"),
                 value: FileDisplay.size(reportStats.totalBytes),
-                sub: "xlsx · html · pdf · csv"
-            )
+                sub: L("xlsx · html · pdf · csv"), fillsHeight: true)
             StatTile(
-                label: "Snapshots archived",
+                label: L("Snapshots archived"),
                 value: "\(snapshotCount)",
-                sub: snapshotFamilies.count == 1 ? "1 family" : "\(snapshotFamilies.count) families"
-            )
+                sub: snapshotFamilies.count == 1
+                    ? L("1 family") : L("\(snapshotFamilies.count) families"),
+                fillsHeight: true)
             StatTile(
-                label: "Auto-archived",
+                label: L("Auto-archived"),
                 value: "\(reportStats.archivedCount)",
-                sub: "Moved to /archive"
-            )
+                sub: L("Moved to /archive"), fillsHeight: true)
         }
     }
 
@@ -404,7 +399,8 @@ struct ReportsView: View {
     }
 
     private func icon(for name: String) -> String {
-        switch URL(fileURLWithPath: name).pathExtension.lowercased() {
+        if ReportEngine.isCSVFolderName(name) { return "folder" }
+        return switch URL(fileURLWithPath: name).pathExtension.lowercased() {
         case "xlsx": "tablecells"
         case "html": "safari"
         case "pdf": "doc.richtext"
@@ -433,9 +429,11 @@ struct ReportsView: View {
     /// read lands on a large workspace.
     private func presentGenerate() async {
         let profile = workspace.profile
-        generateFreshness = await Task.detached(priority: .userInitiated) {
+        let freshness = await Task.detached(priority: .userInitiated) {
             SnapshotFreshness.evaluate(profile: profile)
         }.value
+        guard profile == workspace.profile, !Task.isCancelled else { return }
+        generateFreshness = freshness
         showGenerate = true
     }
 
@@ -445,7 +443,9 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let stem = ExportNaming.stem(for: .pdf, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: .pdf, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         panel.nameFieldStringValue = "\(stem)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
@@ -475,20 +475,20 @@ struct ReportsView: View {
                     isGeneratingPDF = false
                     workspace.globalStatus = nil
                     workspace.toast = WorkspaceStore.exportFailureToast(
-                        error, operation: "PDF generation")
+                        error, operation: L("PDF generation"))
                     if !CLIBridgeError.isCollectRefusal(error) {
-                        reportError = "PDF generation failed: \(error.localizedDescription)"
+                        reportError = L("PDF generation failed: \(error.localizedDescription)")
                     }
                     return
                 }
                 isGeneratingPDF = false
                 workspace.globalStatus = nil
                 if code == 0 {
-                    workspace.toast = Toast(message: "PDF report generated", style: .success)
+                    workspace.toast = Toast(message: L("PDF report generated"), style: .success)
                     SystemActions.open(dest, profile: profile)
                     reload()
                 } else {
-                    let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
+                    let msg = CLIBridge.explainExit(code, operation: L("PDF report generation"))
                     workspace.toast = Toast(message: msg, style: .danger)
                     reportError = msg
                 }
@@ -502,7 +502,9 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let stem = ExportNaming.stem(for: .csv, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: .csv, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         panel.nameFieldStringValue = "\(stem)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
@@ -532,20 +534,20 @@ struct ReportsView: View {
                     isExportingCSV = false
                     workspace.globalStatus = nil
                     workspace.toast = WorkspaceStore.exportFailureToast(
-                        error, operation: "CSV export")
+                        error, operation: L("CSV export"))
                     if !CLIBridgeError.isCollectRefusal(error) {
-                        reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                        reportError = L("Inventory CSV export failed: \(error.localizedDescription)")
                     }
                     return
                 }
                 isExportingCSV = false
                 workspace.globalStatus = nil
                 if code == 0 {
-                    workspace.toast = Toast(message: "Inventory CSV exported", style: .success)
+                    workspace.toast = Toast(message: L("Inventory CSV exported"), style: .success)
                     SystemActions.reveal(dest, profile: profile)
                     reload()
                 } else {
-                    let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")
+                    let msg = CLIBridge.explainExit(code, operation: L("Inventory CSV export"))
                     workspace.toast = Toast(message: msg, style: .danger)
                     reportError = msg
                 }
@@ -582,23 +584,19 @@ struct ReportsView: View {
         )
     }
 
-    /// What a generated report's name starts with: each `ExportNaming.reportKind` and `_`,
-    /// longest first, so "jamf_report_prod_..." yields "prod", not "report".
-    nonisolated static let reportPrefixes: [String] = Set(
-        GenerateOutputType.allCases.flatMap { type in
-            [false, true].map { ExportNaming.reportKind(for: type, schoolMode: $0) + "_" }
-        }
-    ).sorted { ($0.count, $0) > ($1.count, $1) }
-
-    /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
-    /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
-    /// prefix and the last date is the profile, decoded with `ProfileName`, so any
+    /// The profile in a report's filename, written `<prefix>_<kind>_<profile>_<yyyy-MM-dd>…`
+    /// ("jamf_report_meridian-prod_2026-04-24_073305.xlsx"; any `output.file_prefix`, and
+    /// the pre-2.12 names with none, through `ExportNaming.reportNameParts`). Everything
+    /// between the kind and the last date is the profile, decoded with `ProfileName`, so any
     /// name reads back exactly. Without a date, the first `_` segment is taken.
     /// `ExportNaming` files (`<kind>-<profile>-<yyyy-MM-dd_HHmmss>`) are read only for
     /// the kinds that save into a reports folder: kinds and profiles both have hyphens.
     /// Nil for an unknown prefix or kind, or when no profile precedes the date.
     nonisolated static func profile(fromReportFilename filename: String) -> String? {
-        let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        // A CSV folder has no extension to drop, and a dotted profile name must not read as one.
+        let stem = ReportEngine.isCSVFolderName(filename)
+            ? String(filename.dropLast(ReportEngine.csvFolderSuffix.count))
+            : URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         let exportName = #/
             (?: period-report-\d{8}-\d{8} | outreach-stale-devices | patch-compliance
               | audit-findings | devices )
@@ -607,11 +605,7 @@ struct ReportsView: View {
         if let match = stem.wholeMatch(of: exportName) {
             return ProfileName.name(fromPathComponent: String(match.1))
         }
-        let lowered = stem.lowercased()
-        guard let prefix = reportPrefixes.first(where: { lowered.hasPrefix($0) }) else {
-            return nil
-        }
-        let rest = String(stem.dropFirst(prefix.count))
+        guard let rest = ExportNaming.reportNameParts(stem)?.rest else { return nil }
         let part: Substring
         if let date = rest.matches(of: #/(?:^|_)\d{4}-\d{2}-\d{2}/#).last {
             part = rest[..<date.range.lowerBound]

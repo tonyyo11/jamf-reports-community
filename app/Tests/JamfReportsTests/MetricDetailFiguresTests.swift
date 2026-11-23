@@ -21,8 +21,18 @@ final class MetricDetailFiguresTests: XCTestCase {
         XCTAssertFalse(one.hasChange)
 
         let many = MetricDetailFigures.make(values: [90, 95, 96], value: value, delta: delta)
-        XCTAssertEqual([many.current, many.previous, many.change], ["96.0%", "95.0%", "+6.0pp"])
+        // Change is against Previous, as the tiles show it (production: 126 then 114 read −5).
+        XCTAssertEqual([many.current, many.previous, many.change], ["96.0%", "95.0%", "+1.0pp"])
         XCTAssertTrue(many.hasChange)
+        // Across a definition change only the newest run compares.
+        let across = MetricDetailFigures.make(
+            values: [90, 71], comparable: [71], value: value, delta: delta)
+        XCTAssertEqual([across.current, across.previous, across.change],
+                       ["71.0%", "—", "Not comparable"])
+        XCTAssertFalse(across.hasChange)
+        let run = MetricDetailFigures.make(
+            values: [90, 71, 73], comparable: [71, 73], value: value, delta: delta)
+        XCTAssertEqual([run.previous, run.change], ["71.0%", "+2.0pp"])
         XCTAssertEqual(MetricDetailFigures.summaryCount(0), "0 summaries")
         XCTAssertEqual(MetricDetailFigures.summaryCount(1), "1 summary")
     }

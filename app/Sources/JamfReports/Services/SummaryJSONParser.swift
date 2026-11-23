@@ -67,7 +67,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // score counts as EDR).
              securityAgentCoverage,
              // The mobile devices' own figures, apart from the Mac fields (mobile spec 4.2).
-             mobile
+             mobile,
+             // Environment model P9: products that landed, Protect figures, aggregate maps.
+             products, protectComputerCount, protectMatched, protectOpenAlerts,
+             protectAlertCounts, securityCloudDeviceCount, securityCloudMatched,
+             securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
+             lastSeenBuckets
     }
 
     var id: String { date }
@@ -156,6 +161,24 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Every device that is not a Mac (`MobileSummary`). Nil when the environment has no mobile
     /// devices or on a summary written before 2.11; `TrendStore` backfills recent days.
     private(set) var mobile: MobileSummary?
+    /// Slot names whose collect landed a source that day, sorted (P9-R1). Nil before P9.
+    private(set) var products: [String]?
+    /// Jamf Protect figures (P9-R2); nil when Protect is absent or nothing measured them.
+    private(set) var protectComputerCount: Int?
+    private(set) var protectMatched: MobileSummary.Share?
+    private(set) var protectOpenAlerts: Int?
+    private(set) var protectAlertCounts: [String: Int]?
+    /// Jamf Security Cloud figures (P12); nil when it is absent or its risk list was not read.
+    /// `securityCloudMatched` is rows matched to this environment's inventory over rows with an
+    /// `externalId`; `securityCloudRiskCounts` is by lower-cased `riskCategory`.
+    private(set) var securityCloudDeviceCount: Int?
+    private(set) var securityCloudMatched: MobileSummary.Share?
+    private(set) var securityCloudRiskCounts: [String: Int]?
+    /// Aggregate maps (P9-R3); a key with no devices is left out, no devices means nil.
+    private(set) var osMajorCounts: [String: Int]?
+    private(set) var modelFamilyCounts: [String: Int]?
+    private(set) var mobileFormFactorCounts: [String: Int]?
+    private(set) var lastSeenBuckets: LastSeenBuckets?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -169,8 +192,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
         return resolved
     }
 
-    var parsedDate: Date {
-        SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
+    /// `date` as a day, parsed once at construction: Trends reads it per point per redraw.
+    /// `.distantPast` for a summary whose date is not a day.
+    let parsedDate: Date
+
+    private static func day(_ text: String) -> Date {
+        SummaryJSONParser.dateFormatter.date(from: text) ?? Date.distantPast
     }
 
     /// This summary with every value it lacks taken from `older`, the same day's earlier
@@ -209,12 +236,41 @@ struct DailySummary: Codable, Identifiable, Sendable {
         return merged.isEmpty ? nil : merged
     }
 
+    /// This summary with `products` unioned in (nil leaves it) and the four Protect fields
+    /// replaced by each group of `protect` that this run measured.
+    func withEnvironment(
+        products added: [String]?, protect: ProtectSummaryFigures?,
+        securityCloud: SecurityCloudSummaryFigures? = nil
+    ) -> DailySummary {
+        var resolved = self
+        if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
+        if let computers = protect?.computers {
+            resolved.protectComputerCount = computers.count
+            resolved.protectMatched = computers.matched
+        }
+        if let alerts = protect?.alerts {
+            resolved.protectOpenAlerts = alerts.open
+            resolved.protectAlertCounts = alerts.counts
+        }
+        if let securityCloud {
+            resolved.securityCloudDeviceCount = securityCloud.count
+            resolved.securityCloudMatched = securityCloud.matched
+            resolved.securityCloudRiskCounts = securityCloud.riskCounts
+        }
+        return resolved
+    }
+
     func filling(from older: DailySummary) -> DailySummary {
         let olderIsReal = older.complianceIsProxy == false && complianceIsProxy != false
         let olderComplianceWins = older.compliancePct != nil
             && (compliancePct == nil || olderIsReal)
         let patchFromOlder = patchPct == nil
         let scoreFromOlder = securityScore == nil
+        // A breakdown comes with its total, never beside the other day's: the range check
+        // rejects counts above the total. A `{met, of}` share stands alone.
+        let protectAlertsFromOlder = protectOpenAlerts == nil && protectAlertCounts == nil
+        let securityCloudFromOlder = securityCloudDeviceCount == nil
+            && securityCloudRiskCounts == nil
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
@@ -250,8 +306,46 @@ struct DailySummary: Codable, Identifiable, Sendable {
             patchPctBasis: patchFromOlder ? older.patchPctBasis : patchPctBasis,
             securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis,
             securityAgentCoverage: mergedAgentCoverage(older.securityAgentCoverage),
-            mobile: mobile.map { $0.filling(from: older.mobile) } ?? older.mobile
+            mobile: mobile.map { $0.filling(from: older.mobile) } ?? older.mobile,
+            products: products.map { Array(Set($0).union(older.products ?? [])).sorted() }
+                ?? older.products,
+            protectComputerCount: protectComputerCount ?? older.protectComputerCount,
+            protectMatched: protectMatched ?? older.protectMatched,
+            protectOpenAlerts: protectAlertsFromOlder ? older.protectOpenAlerts : protectOpenAlerts,
+            protectAlertCounts: protectAlertsFromOlder
+                ? older.protectAlertCounts : protectAlertCounts,
+            securityCloudDeviceCount: securityCloudFromOlder
+                ? older.securityCloudDeviceCount : securityCloudDeviceCount,
+            securityCloudMatched: securityCloudMatched ?? older.securityCloudMatched,
+            securityCloudRiskCounts: securityCloudFromOlder
+                ? older.securityCloudRiskCounts : securityCloudRiskCounts,
+            osMajorCounts: mergedOSMajor(older.osMajorCounts),
+            modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
+            mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
+            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets)
         )
+    }
+
+    /// Per platform group: a group this run measured replaces the older one, a group it did not
+    /// measure keeps the older keys (Mac keys start "macOS"; every other key is mobile).
+    private func mergedOSMajor(_ older: [String: Int]?) -> [String: Int]? {
+        guard let current = osMajorCounts else { return older }
+        func isMac(_ key: String) -> Bool { key.hasPrefix("macOS") }
+        var merged = current
+        let hasMac = current.keys.contains(where: isMac)
+        let hasMobile = current.keys.contains { !isMac($0) }
+        for (key, count) in older ?? [:] where isMac(key) ? !hasMac : !hasMobile {
+            merged[key] = count
+        }
+        return merged
+    }
+
+    /// The computers and mobile halves each fall back to the older summary's half.
+    private func mergedLastSeen(_ older: LastSeenBuckets?) -> LastSeenBuckets? {
+        guard let current = lastSeenBuckets else { return older }
+        return LastSeenBuckets(
+            computers: current.computers ?? older?.computers,
+            mobile: current.mobile ?? older?.mobile)
     }
 
     init(
@@ -287,9 +381,22 @@ struct DailySummary: Codable, Identifiable, Sendable {
         patchPctBasis: String? = nil,
         securityScoreBasis: String? = nil,
         securityAgentCoverage: [String: Double]? = nil,
-        mobile: MobileSummary? = nil
+        mobile: MobileSummary? = nil,
+        products: [String]? = nil,
+        protectComputerCount: Int? = nil,
+        protectMatched: MobileSummary.Share? = nil,
+        protectOpenAlerts: Int? = nil,
+        protectAlertCounts: [String: Int]? = nil,
+        securityCloudDeviceCount: Int? = nil,
+        securityCloudMatched: MobileSummary.Share? = nil,
+        securityCloudRiskCounts: [String: Int]? = nil,
+        osMajorCounts: [String: Int]? = nil,
+        modelFamilyCounts: [String: Int]? = nil,
+        mobileFormFactorCounts: [String: Int]? = nil,
+        lastSeenBuckets: LastSeenBuckets? = nil
     ) {
         self.date = date
+        parsedDate = Self.day(date)
         self.totalDevices = totalDevices
         self.fileVaultPct = fileVaultPct
         self.compliancePct = compliancePct
@@ -322,11 +429,24 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.securityScoreBasis = securityScoreBasis
         self.securityAgentCoverage = securityAgentCoverage
         self.mobile = mobile
+        self.products = products
+        self.protectComputerCount = protectComputerCount
+        self.protectMatched = protectMatched
+        self.protectOpenAlerts = protectOpenAlerts
+        self.protectAlertCounts = protectAlertCounts
+        self.securityCloudDeviceCount = securityCloudDeviceCount
+        self.securityCloudMatched = securityCloudMatched
+        self.securityCloudRiskCounts = securityCloudRiskCounts
+        self.osMajorCounts = osMajorCounts
+        self.modelFamilyCounts = modelFamilyCounts
+        self.mobileFormFactorCounts = mobileFormFactorCounts
+        self.lastSeenBuckets = lastSeenBuckets
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decode(String.self, forKey: .date)
+        parsedDate = Self.day(date)
         totalDevices = try container.decode(Int.self, forKey: .totalDevices)
         fileVaultPct = try container.decodeIfPresent(Double.self, forKey: .fileVaultPct)
         compliancePct = try container.decodeIfPresent(Double.self, forKey: .compliancePct)
@@ -364,6 +484,27 @@ struct DailySummary: Codable, Identifiable, Sendable {
         securityAgentCoverage = try container.decodeIfPresent(
             [String: Double].self, forKey: .securityAgentCoverage)
         mobile = try container.decodeIfPresent(MobileSummary.self, forKey: .mobile)
+        products = try container.decodeIfPresent([String].self, forKey: .products)
+        protectComputerCount = try container.decodeIfPresent(
+            Int.self, forKey: .protectComputerCount)
+        protectMatched = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .protectMatched)
+        protectOpenAlerts = try container.decodeIfPresent(Int.self, forKey: .protectOpenAlerts)
+        protectAlertCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .protectAlertCounts)
+        securityCloudDeviceCount = try container.decodeIfPresent(
+            Int.self, forKey: .securityCloudDeviceCount)
+        securityCloudMatched = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .securityCloudMatched)
+        securityCloudRiskCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .securityCloudRiskCounts)
+        osMajorCounts = try container.decodeIfPresent([String: Int].self, forKey: .osMajorCounts)
+        modelFamilyCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .modelFamilyCounts)
+        mobileFormFactorCounts = try container.decodeIfPresent(
+            [String: Int].self, forKey: .mobileFormFactorCounts)
+        lastSeenBuckets = try container.decodeIfPresent(
+            LastSeenBuckets.self, forKey: .lastSeenBuckets)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -401,11 +542,24 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(securityScoreBasis, forKey: .securityScoreBasis)
         try container.encodeIfPresent(securityAgentCoverage, forKey: .securityAgentCoverage)
         try container.encodeIfPresent(mobile, forKey: .mobile)
+        try container.encodeIfPresent(products, forKey: .products)
+        try container.encodeIfPresent(protectComputerCount, forKey: .protectComputerCount)
+        try container.encodeIfPresent(protectMatched, forKey: .protectMatched)
+        try container.encodeIfPresent(protectOpenAlerts, forKey: .protectOpenAlerts)
+        try container.encodeIfPresent(protectAlertCounts, forKey: .protectAlertCounts)
+        try container.encodeIfPresent(securityCloudDeviceCount, forKey: .securityCloudDeviceCount)
+        try container.encodeIfPresent(securityCloudMatched, forKey: .securityCloudMatched)
+        try container.encodeIfPresent(securityCloudRiskCounts, forKey: .securityCloudRiskCounts)
+        try container.encodeIfPresent(osMajorCounts, forKey: .osMajorCounts)
+        try container.encodeIfPresent(modelFamilyCounts, forKey: .modelFamilyCounts)
+        try container.encodeIfPresent(mobileFormFactorCounts, forKey: .mobileFormFactorCounts)
+        try container.encodeIfPresent(lastSeenBuckets, forKey: .lastSeenBuckets)
     }
 }
 
 extension DailySummary {
-    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`, or a
+    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`, a count
+    /// is negative, or a
     /// mobile share counts more devices than report the field.
     var numbersAreInRange: Bool {
         let limit = SummaryJSONParser.maxSummaryNumber
@@ -420,16 +574,52 @@ extension DailySummary {
         let counts = [totalDevices] + bands + [
             staleCount, actionItemsP0, actionItemsP1, actionItemsP2, noBaselineActive,
             mobileDeviceCount,
-        ].compactMap { $0 } + (mobile?.counts ?? [])
+        ].compactMap { $0 } + (mobile?.counts ?? []) + environmentCounts
         return percents.allSatisfy { $0.isFinite && abs($0) <= Double(limit) }
-            && counts.allSatisfy { (-limit...limit).contains($0) }
+            // A count of devices is never negative; a summary with one is damaged.
+            && counts.allSatisfy { (0...limit).contains($0) }
             && mobile?.sharesAreConsistent != false
+            && environmentFieldsAreConsistent
+    }
+
+    /// Every P9 and P12 count, the matched pairs included, for the shared range check.
+    private var environmentCounts: [Int] {
+        let maps = [
+            protectAlertCounts, securityCloudRiskCounts, osMajorCounts, modelFamilyCounts,
+            mobileFormFactorCounts,
+        ].compactMap { $0 }.flatMap { $0.values }
+        let pairs = [protectMatched, securityCloudMatched].compactMap { $0 }
+            .flatMap { [$0.met, $0.of] }
+        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount]
+            .compactMap { $0 } + maps + pairs
+            + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
+    }
+
+    /// Counts are not negative, the matched pair has met <= of (of >= 0 follows from met >= 0), and no severity has more open
+    /// alerts than the total.
+    private var environmentFieldsAreConsistent: Bool {
+        if environmentCounts.contains(where: { $0 < 0 }) { return false }
+        if let protectMatched, protectMatched.met < 0 || protectMatched.met > protectMatched.of {
+            return false
+        }
+        if let protectOpenAlerts, let protectAlertCounts,
+           protectAlertCounts.values.contains(where: { $0 > protectOpenAlerts }) { return false }
+        if let securityCloudMatched,
+           securityCloudMatched.met < 0 || securityCloudMatched.met > securityCloudMatched.of {
+            return false
+        }
+        if let securityCloudDeviceCount, let securityCloudRiskCounts,
+           securityCloudRiskCounts.values.contains(where: { $0 > securityCloudDeviceCount }) {
+            return false
+        }
+        return true
     }
 }
 
 struct SummaryJSONParser {
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
         f.calendar = Calendar(identifier: .iso8601)
         // Use system timezone to match Calendar.current in TrendStore
@@ -448,8 +638,22 @@ struct SummaryJSONParser {
         guard let dir = try? WorkspacePaths.summariesDir(for: profile),
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
         else { return nil }
-        return names.filter(CloudStorage.isCanonicalSummaryFilename).max()
+        // A peer can write a future-dated name; it must not stay "newest" for years.
+        let tomorrow = dateFormatter.string(from: Date().addingTimeInterval(86_400))
+        return names.filter(CloudStorage.isCanonicalSummaryFilename)
             .map { String($0.dropFirst("summary_".count).prefix(10)) }
+            .filter { $0 <= tomorrow }.max()
+    }
+
+    /// Devices (Macs plus mobile) in the newest canonical summary for `profile`, by the date in
+    /// its name. Nil when there is no readable summary. A School or mobile-only day writes
+    /// `totalDevices` 0 beside its `mobileDeviceCount`, so the sum is what the fleet holds.
+    static func newestDeviceCount(profile: String) -> Int? {
+        guard let day = newestSummaryDay(profile: profile),
+              let dir = try? WorkspacePaths.summariesDir(for: profile),
+              let summary = try? parse(dir.appendingPathComponent("summary_\(day).json"))
+        else { return nil }
+        return summary.totalDevices + (summary.mobileDeviceCount ?? 0)
     }
 
     /// Real summaries are a few KB; anything near this is corrupt or hostile.
@@ -497,7 +701,7 @@ struct SummaryJSONParser {
                     return try parse(url)
                 } catch {
                     AppLogger.collect.warning(
-                        "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
                     )
                     return nil
                 }

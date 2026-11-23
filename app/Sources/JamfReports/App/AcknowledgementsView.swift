@@ -26,9 +26,9 @@ struct AcknowledgementsView: View {
 
         var resourceName: String {
             switch self {
-            case .license: return "LICENSE"
-            case .notice: return "NOTICE"
-            case .thirdParty: return "THIRD_PARTY_NOTICES"
+            case .license: return L("LICENSE")
+            case .notice: return L("NOTICE")
+            case .thirdParty: return L("THIRD_PARTY_NOTICES")
             }
         }
 
@@ -69,12 +69,12 @@ struct AcknowledgementsView: View {
     private func text(for tab: Tab) -> String {
         let resource = "\(tab.resourceName).\(tab.resourceExtension)"
         guard let url = Self.resourceURL(for: tab) else {
-            return "Resource not bundled: \(resource)"
+            return L("Resource not bundled: \(resource)")
         }
         do {
             return try String(contentsOf: url, encoding: .utf8)
         } catch {
-            return "Could not read \(resource): \(error.localizedDescription)"
+            return L("Could not read \(resource): \(error.localizedDescription)")
         }
     }
 

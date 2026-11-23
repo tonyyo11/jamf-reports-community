@@ -13,7 +13,7 @@ enum AIConfigWriter {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
             case .turnedOffByPolicy: "AI is turned off by the AIPolicy preference"
             }
         }

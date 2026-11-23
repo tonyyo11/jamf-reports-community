@@ -52,20 +52,47 @@ extension OnboardingFlow {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    /// A workspace for a profile: the folders and the minimal config.yaml, confirmed on this Mac
-    /// as onboarding confirms it. A config.yaml already there is kept as it is. Returns whether
-    /// it wrote one.
+    /// A workspace for a profile: the folders and the minimal config.yaml with its `profiles:`
+    /// block (D3), confirmed on this Mac as onboarding confirms it. A config.yaml already there
+    /// is kept as it is. Returns whether it wrote one.
     @discardableResult
-    static func createJamfCLIOnlyWorkspace(for profile: String) throws -> Bool {
+    static func createJamfCLIOnlyWorkspace(
+        for profile: String, as kind: ProfilesConfigWriter.NewWorkspace
+    ) throws -> Bool {
         try createWorkspaceFolders(for: profile)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
         }
         let config = workspace.appendingPathComponent("config.yaml")
         guard !FileManager.default.fileExists(atPath: config.path) else { return false }
-        try ScaffoldService.writeMinimalConfig(to: config, profile: profile)
-        SharedConfigPin.confirmWrittenConfig(at: config, profile: profile)
+        let written = try ScaffoldService.writeMinimalConfig(
+            to: config, profile: profile, workspace: kind)
+        SharedConfigPin.confirmWrittenConfig(written, at: config, profile: profile)
         return true
+    }
+
+    /// A Protect-only environment (P8): the workspace folder named after the login and one
+    /// config.yaml (minimal settings plus `profiles: {protect: <login>}`, no MDM slot), created
+    /// in one exclusive write and confirmed on this Mac. A config.yaml already there is never
+    /// overwritten.
+    nonisolated static func createProtectOnlyEnvironment(
+        login: String, appSupport: URL = AppSupport.directory()
+    ) throws {
+        try createWorkspaceFolders(for: login)
+        guard let workspace = ProfileService.workspaceURL(for: login) else {
+            throw FlowError.invalidProfile
+        }
+        let config = workspace.appendingPathComponent("config.yaml")
+        let written: String
+        do {
+            written = try ScaffoldService.createProtectOnlyConfig(at: config, profile: login)
+        } catch CocoaError.fileWriteFileExists {
+            throw FlowError.workspaceHasConfig(login)
+        }
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: config, profile: login, appSupport: appSupport)
+        SharedConfigPin.confirmWritten(
+            login, key: .protectProfile, profile: login, appSupport: appSupport)
     }
 }
 

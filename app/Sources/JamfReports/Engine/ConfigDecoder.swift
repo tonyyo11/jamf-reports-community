@@ -20,7 +20,9 @@ struct ReportConfig: Decodable, Sendable {
     var branding: BrandingConfig?
     var platform: PlatformConfig?
     var protect: ProtectConfig?
+    var backup: BackupConfig?
     var schoolCli: SchoolCLIConfig?
+    var profiles: ProfilesConfig?
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
     var retention: RetentionConfig?
@@ -28,6 +30,7 @@ struct ReportConfig: Decodable, Sendable {
     var ai: AIConfig?
     var html: HTMLReportConfig?
     var securityPolicy: SecurityControlPolicy?
+    var display: DisplayConfig?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case securityAgents = "security_agents"
@@ -42,7 +45,9 @@ struct ReportConfig: Decodable, Sendable {
         case branding
         case platform
         case protect
+        case backup
         case schoolCli = "school_cli"
+        case profiles
         case notify
         case alerts
         case retention
@@ -50,6 +55,7 @@ struct ReportConfig: Decodable, Sendable {
         case ai
         case html
         case securityPolicy = "security_policy"
+        case display
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,
@@ -97,11 +103,32 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
-    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
-    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
-    /// screen save keeps it.
+    /// Sources `collect` never runs: any but the core ones (`ReportEngine.optionalKinds`).
+    /// Read only through `SharedConfigPin.collectSkip`; written by the Data Sources switches
+    /// (`CollectSkipConfigWriter`), and a Config screen save keeps it.
     var collectSkip: [String]?
+    /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
+    /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
+    var keepAccountNames: Bool?
+    /// `run_budget_minutes`: how long a scheduled run may hold the lock before it leaves the
+    /// rest for the next run. `scan_budget_minutes`: the same for one pass of a per-device
+    /// scan. Absent or not a whole number reads as the default.
+    var runBudgetMinutes: Int?
+    var scanBudgetMinutes: Int?
+
+    static let defaultRunBudgetMinutes = 45
+    static let defaultScanBudgetMinutes = 30
+    static let runBudgetRange = 10...240
+    static let scanBudgetRange = 5...240
+
+    var resolvedRunBudgetMinutes: Int {
+        min(max(runBudgetMinutes ?? Self.defaultRunBudgetMinutes,
+                Self.runBudgetRange.lowerBound), Self.runBudgetRange.upperBound)
+    }
+    var resolvedScanBudgetMinutes: Int {
+        min(max(scanBudgetMinutes ?? Self.defaultScanBudgetMinutes,
+                Self.scanBudgetRange.lowerBound), Self.scanBudgetRange.upperBound)
+    }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case dataDir = "data_dir"
@@ -110,7 +137,12 @@ struct JamfCLIConfig: Decodable, Sendable {
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
+        case keepAccountNames = "keep_account_names"
+        case runBudgetMinutes = "run_budget_minutes"
+        case scanBudgetMinutes = "scan_budget_minutes"
     }
+
+    var keepsAccountNames: Bool { keepAccountNames ?? false }
 
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
@@ -128,6 +160,23 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// `0` or negative preserves the keep-forever escape hatch (returned
     /// verbatim; downstream treats `<= 0` as unlimited).
     var resolvedMaxCacheAgeHours: Int { maxCacheAgeHours ?? 168 }
+}
+
+extension JamfCLIConfig {
+    /// A mistyped `keep_account_names` reads as false rather than failing the whole decode; the
+    /// other keys decode as the synthesized initializer did.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataDir = try c.decodeIfPresent(String.self, forKey: .dataDir)
+        profile = try c.decodeIfPresent(String.self, forKey: .profile)
+        useCachedData = try c.decodeIfPresent(Bool.self, forKey: .useCachedData)
+        requireManifest = try c.decodeIfPresent(Bool.self, forKey: .requireManifest)
+        maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
+        collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
+        keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+        runBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .runBudgetMinutes)
+        scanBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .scanBudgetMinutes)
+    }
 }
 
 // MARK: - ComplianceFramework
@@ -583,6 +632,13 @@ struct OutputConfig: Decodable, Sendable {
     var archiveEnabled: Bool?
     var archiveDir: String?
     var keepLatestRuns: Int?        // key is `keep_latest_runs`
+    /// `csv_folder`: write a folder of CSVs, one per workbook tab, beside every report workbook.
+    var csvFolder: Bool?
+    /// `timestamp_authority`: an RFC 3161 authority's https URL; each run's manifest hash is
+    /// sent there and the reply saved as `<stem>.tsr`. Absent is off.
+    var timestampAuthority: String?
+    /// `file_prefix`: what every generated report's name starts with (default `jamf`).
+    var filePrefix: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
@@ -590,6 +646,9 @@ struct OutputConfig: Decodable, Sendable {
         case archiveEnabled = "archive_enabled"
         case archiveDir = "archive_dir"
         case keepLatestRuns = "keep_latest_runs"
+        case csvFolder = "csv_folder"
+        case timestampAuthority = "timestamp_authority"
+        case filePrefix = "file_prefix"
     }
 
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
@@ -598,6 +657,18 @@ struct OutputConfig: Decodable, Sendable {
     /// Never below 1: `archiveOldRuns` keeps this many, so 0 archived the report just written
     /// and a negative number trapped in `dropFirst`.
     var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
+    var writesCSVFolder: Bool { csvFolder ?? false }
+    /// `file_prefix` when it can start a file name, else `jamf` (`ExportNaming.validFilePrefix`).
+    var resolvedFilePrefix: String {
+        ExportNaming.validFilePrefix(filePrefix) ?? ExportNaming.defaultFilePrefix
+    }
+    /// `timestamp_authority` when it is an https URL with a host; anything else is off.
+    var timestampAuthorityURL: URL? {
+        let typed = (timestampAuthority ?? "").trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: typed), url.scheme?.lowercased() == "https",
+              url.host?.isEmpty == false else { return nil }
+        return url
+    }
 }
 
 extension OutputConfig {
@@ -609,6 +680,10 @@ extension OutputConfig {
         archiveEnabled = try c.decodeIfPresent(Bool.self, forKey: .archiveEnabled)
         archiveDir = try c.decodeIfPresent(String.self, forKey: .archiveDir)
         keepLatestRuns = c.wholeNumber(.keepLatestRuns)
+        // A mistyped value reads as off instead of failing the whole config.yaml decode.
+        csvFolder = try? c.decodeIfPresent(Bool.self, forKey: .csvFolder)
+        timestampAuthority = try? c.decodeIfPresent(String.self, forKey: .timestampAuthority)
+        filePrefix = try? c.decodeIfPresent(String.self, forKey: .filePrefix)
     }
 }
 
@@ -738,6 +813,38 @@ struct ProtectConfig: Decodable, Sendable {
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
 }
 
+// MARK: - backup
+
+/// `backup:` settings for the Jamf Pro half of a backup.
+struct BackupConfig: Decodable, Sendable {
+    /// `pro_on_synced_storage`: back Jamf Pro up even when the workspace is on storage other
+    /// Macs reach. Absent means the operator has not chosen yet (the app asks). A value that is
+    /// not a boolean, or a `backup:` that is not a mapping, reads as false: a typo fails toward
+    /// keeping Jamf Pro off shared storage, and Config Doctor names it. On a shared workspace
+    /// `SharedConfigPin` decides what this Mac uses.
+    var proOnSyncedStorage: Bool?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case proOnSyncedStorage = "pro_on_synced_storage"
+    }
+
+    init(proOnSyncedStorage: Bool? = nil) { self.proOnSyncedStorage = proOnSyncedStorage }
+
+    /// A mistyped value or block costs this block only, never the whole config.yaml decode.
+    init(from decoder: Decoder) throws {
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+            proOnSyncedStorage = false
+            return
+        }
+        if let typed = try? container.decodeIfPresent(Bool.self, forKey: .proOnSyncedStorage) {
+            proOnSyncedStorage = typed
+        } else {
+            proOnSyncedStorage = container.contains(.proOnSyncedStorage)
+                && ((try? container.decodeNil(forKey: .proOnSyncedStorage)) != true) ? false : nil
+        }
+    }
+}
+
 // MARK: - school_cli
 
 /// Configuration for Jamf School integration.
@@ -766,6 +873,30 @@ struct SchoolCLIConfig: Decodable, Sendable {
     /// recorded in a Jamf Pro workspace, which the app does not use there.
     func isForeign(toWorkspace workspace: String) -> Bool {
         isEnabled && !isPrimary(forWorkspace: workspace)
+    }
+}
+
+// MARK: - profiles
+
+/// `profiles:` — the jamf-cli profile that serves each product in this workspace (environment).
+/// A blank or absent slot is a product the environment does not have. When the block is present
+/// the old keys (`jamf_cli.profile`, `protect.enabled/profile`, `school_cli`) are not read for
+/// profiles; `EnvironmentProfiles.resolve` is the one reader of both forms. Slots decode like
+/// `jamf_cli.profile`: an unquoted number reads as its digits, any other non-text value fails the
+/// decode, which Config Doctor reports.
+struct ProfilesConfig: Decodable, Sendable, Equatable {
+    var jamfPro: String?
+    var platform: String?
+    var jamfSchool: String?
+    var protect: String?
+    var securityCloud: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case jamfPro = "jamf_pro"
+        case platform
+        case jamfSchool = "jamf_school"
+        case protect
+        case securityCloud = "security_cloud"
     }
 }
 
@@ -1180,14 +1311,12 @@ struct HTMLReportConfig: Decodable, Sendable {
 /// Configurable display caps for HTML report sections.
 ///
 /// `protectAlerts` is bounded [1, 200]; values outside this range are clamped
-/// silently.  `insightsDriftSnapshots` is bounded [1, 12].
+/// silently.
 struct HTMLSectionLimits: Decodable, Sendable {
     var protectAlerts: Int?
-    var insightsDriftSnapshots: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case protectAlerts = "protect_alerts"
-        case insightsDriftSnapshots = "insights_drift_snapshots"
     }
 
     /// Maximum protect alerts to display per run. Clamped to [1, 200].
@@ -1198,18 +1327,6 @@ struct HTMLSectionLimits: Decodable, Sendable {
                 "html.section_limits.protect_alerts=\(raw) out of [1,200]; clamped."
             )
             return max(1, min(200, raw))
-        }
-        return raw
-    }
-
-    /// Number of insight snapshots to compare. Clamped to [1, 12].
-    var resolvedInsightsDriftSnapshots: Int {
-        let raw = insightsDriftSnapshots ?? 2
-        if raw < 1 || raw > 12 {
-            AppLogger.collect.warning(
-                "html.section_limits.insights_drift_snapshots=\(raw) out of [1,12]; clamped."
-            )
-            return max(1, min(12, raw))
         }
         return raw
     }
@@ -1267,7 +1384,7 @@ enum ConfigLoader {
                 if let detail = ConfigLoader.describeDecodingFailure(e) {
                     return "Config decode failed (\(ctx)): \(detail)"
                 }
-                return "Config decode failed (\(ctx)): \(e.localizedDescription)"
+                return "Config decode failed (\(ctx)): \(e.englishDescription)"
             }
         }
 
@@ -1391,6 +1508,12 @@ enum ConfigLoader {
         return node
     }
 
+    /// A raw value as the decoder reads it into a text field: a string, or an unquoted number
+    /// as its digits (the `decodeConfig` retry). Nil for anything else.
+    static func textValue(_ value: Any?) -> String? {
+        (value as? String) ?? (value as? Int).map(String.init)
+    }
+
     // MARK: - YAML → JSON conversion
 
     /// A quoted `"true"`, `"false"` or `"null"` reads as a boolean or null, so a hand-quoted
@@ -1459,9 +1582,11 @@ enum ConfigLoader {
         case .mapping(let mapping):
             var dict: [String: Any] = [:]
             for entry in mapping.entries {
-                // A `profile` value is a jamf-cli profile name, which can be spelled `true` or
-                // `null`. YAMLCodec already types an unquoted token, so a string stays a string.
-                if entry.key == "profile", case .scalar(.string(let name)) = entry.value {
+                // A `profile` value or a `profiles` slot is a jamf-cli profile name, which can be
+                // spelled `true` or `null`. YAMLCodec already types an unquoted token, so a
+                // string stays a string.
+                if entry.key == "profile" || path == ["profiles"],
+                   case .scalar(.string(let name)) = entry.value {
                     dict[entry.key] = name
                 } else {
                     dict[entry.key] = nodeToJSONObject(

@@ -39,7 +39,7 @@ struct CLIStatusChip: View {
                 .shadow(color: dotColor.opacity(0.6), radius: 3)
                 .scaleEffect(isWarn && breathing ? 1.0 : (isWarn ? 0.85 : 1.0))
                 .opacity(isWarn && breathing ? 1.0 : (isWarn ? 0.7 : 1.0))
-                .animation(
+                .motionSafeAnimation(
                     isWarn
                         ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
                         : .default,
@@ -77,7 +77,7 @@ struct CLIStatusChip: View {
     private var chipPopover: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("JAMF-CLI PATH")
-                .font(Theme.Fonts.mono(9, weight: .semibold))
+                .font(Theme.Fonts.mono(10, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Text(popoverPathText)
@@ -91,7 +91,7 @@ struct CLIStatusChip: View {
 
     private var popoverPathText: String {
         if workspace.demoMode { return DemoData.jamfCLINote }
-        return workspace.jamfCLIPath ?? "not found on PATH"
+        return workspace.jamfCLIPath ?? L("not found on PATH")
     }
 
     private var cliStatusText: String {
@@ -102,8 +102,8 @@ struct CLIStatusChip: View {
 
     /// The chip's label. `nonisolated` so tests can call it without a view.
     nonisolated static func statusText(path: String?, version: String?, demoMode: Bool) -> String {
-        if demoMode { return "jamf-cli · demo" }
-        guard path != nil else { return "jamf-cli missing" }
-        return "jamf-cli \(version ?? "unknown") · live"
+        if demoMode { return L("jamf-cli · demo") }
+        guard path != nil else { return L("jamf-cli missing") }
+        return L("jamf-cli \(version ?? "unknown") · live")
     }
 }

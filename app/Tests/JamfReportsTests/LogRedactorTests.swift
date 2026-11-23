@@ -314,6 +314,24 @@ final class LogRedactorTests: XCTestCase {
 
     // MARK: - redactedForSharing
 
+    func testConnectedProfileNamesAreRemovedFromASharedLog() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("redact-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = root.appendingPathComponent("Acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try "protect:\n  enabled: true\n  profile: Acme-Protect\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let shared = LogRedactor.redactedForSharing(
+            "[info] collecting protect-alerts for Acme-Protect", profiles: ["Acme"],
+            scopeIDs: { _ in [] }, serverHosts: { _ in [] })
+        XCTAssertFalse(shared.contains("Acme"), shared)
+    }
+
     /// The fixture line from `FailureCauseTests`: jamf-cli names the host and the environment ID.
     private let environmentNotFound = "API request failed with status 404 Not Found, traceId "
         + "0000000000000000 (method=GET, url=https://us.api.jamfcloud.com/compliance-benchmarks/"
@@ -347,5 +365,25 @@ final class LogRedactorTests: XCTestCase {
         let shared = LogRedactor.redactedForSharing(
             "client_secret: super-secret-value-1234", profile: nil)
         XCTAssertFalse(shared.contains("super-secret-value-1234"))
+    }
+
+    func testAConnectedLoginNamedLikeALogWordMasksNothing() {
+        let forms = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "partial"))
+        XCTAssertFalse(forms.contains("partial"), "\(forms)")
+        let named = LogRedactor.profileNameForms(
+            of: "Example", environment: EnvironmentProfiles(jamfPro: "Example", platform: "Example-API"))
+        XCTAssertTrue(named.contains("Example-API"))
+    }
+
+    func testTheMDMSlotAddsNoSeedAndALongLoginIsDropped() {
+        let long = String(repeating: "a", count: 130)
+        let forms = LogRedactor.profileNameForms(
+            of: "Example",
+            environment: EnvironmentProfiles(
+                jamfPro: "OtherMDM", platform: "Example-API", protect: long))
+        XCTAssertFalse(forms.contains("OtherMDM"), "\(forms)")
+        XCTAssertFalse(forms.contains(long), "\(forms)")
+        XCTAssertTrue(forms.contains("Example") && forms.contains("Example-API"), "\(forms)")
     }
 }

@@ -14,7 +14,8 @@ final class OnboardingAutomationChoiceTests: XCTestCase {
     /// legacy-plist import marked done so `applyAutomationPolicy` never reads the real
     /// ~/Library/LaunchAgents.
     private func makeStore(
-        storedPolicy: AutomationPolicy? = nil, demo: Bool = false, realProfile: Bool = true
+        storedPolicy: AutomationPolicy? = nil, demo: Bool = false, realProfile: Bool = true,
+        otherProfile: String? = nil
     ) throws -> (WorkspaceStore, StubTickerRegistrar) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("OnbAuto-\(UUID().uuidString)", isDirectory: true)
@@ -47,8 +48,10 @@ final class OnboardingAutomationChoiceTests: XCTestCase {
             demoMode: demo, tickerRegistrar: registrar,
             jamfCLIProfileNames: { [] },
             discoverProfiles: {
-                realProfile ? [JamfCLIProfile(name: profile, url: "", schedules: 0, status: .idle)]
-                    : []
+                (otherProfile.map { [JamfCLIProfile(name: $0, url: "", schedules: 0, status: .idle)] }
+                    ?? [])
+                    + (realProfile
+                        ? [JamfCLIProfile(name: profile, url: "", schedules: 0, status: .idle)] : [])
             },
             jamfCLIInstallation: { nil })
         store.resolveAuthMethod = { _ in nil }
@@ -70,6 +73,19 @@ final class OnboardingAutomationChoiceTests: XCTestCase {
 
         XCTAssertTrue(policy().isManaged)
         XCTAssertEqual(registrar.registerCalls, 1)
+    }
+
+    /// New workspace from the Add sheet: another workspace is active when setup finishes, and
+    /// Overview must open on the one just made.
+    func testFinishingSetupMakesTheNewWorkspaceActive() async throws {
+        let (store, _) = try makeStore(otherProfile: "onb-earlier")
+        store.reloadFromDisk()
+        store.setProfile("onb-earlier")
+        XCTAssertEqual(store.profile, "onb-earlier")
+
+        await makeFlow().finishSetup(in: store)
+
+        XCTAssertEqual(store.profile, profile)
     }
 
     func testUntickedLeavesThePolicyAndTheAgentAlone() async throws {

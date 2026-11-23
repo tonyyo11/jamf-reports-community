@@ -1,7 +1,7 @@
 # One app-owned ticker: moving scheduling off `~/Library/LaunchAgents`
 
-Status: design approved in conversation 2026-09-05, awaiting spec review.
-Target release: 2.9.0, branched off main after 2.8.0 ships.
+Status: shipped in 2.8.0 (design approved in conversation 2026-09-05; the target below said
+2.9.0).
 
 ## Problem
 

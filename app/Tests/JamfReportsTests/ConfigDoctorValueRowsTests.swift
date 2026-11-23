@@ -97,6 +97,43 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        "both are read case-insensitively")
     }
 
+    func testKnownWebhookHostsRaiseNoHostRow() throws {
+        let urls = [
+            "https://hooks.slack.com/services/T0/B0/xyz",
+            "https://acme.webhook.office.com/webhookb2/abc",
+            "https://prod-12.westus.logic.azure.com:443/workflows/abc?sig=s",
+            "https://prod-12.westus.logic.azure.us/workflows/abc",
+            "https://abc.12.environment.api.powerplatform.com/powerautomate/x",
+            "https://abc.environment.api.gov.powerplatform.microsoft.us/x",
+            "https://abc.environment.api.high.powerplatform.microsoft.us/x",
+            "https://abc.environment.api.appsplatform.us/x",
+            "https://HOOKS.SLACK.COM/services/T0/B0/xyz",
+        ]
+        for url in urls {
+            let found = try rows("notify:\n  enabled: true\n  url: \"\(url)\"\n")
+            XCTAssertNil(detail(found, "notify.url"), "\(url) is a known host")
+        }
+    }
+
+    func testAnUnknownWebhookHostWarnsWithTheHostOnlyAndNeverTheURL() throws {
+        let urls = [
+            "https://relay.example.com/hooks/SECRETPATH?sig=SECRETSIG",
+            "https://hooks.slack.com.evil.example/services/SECRETPATH",
+            "https://discord.com/api/webhooks/1/SECRETPATH",
+        ]
+        for url in urls {
+            let found = try rows("notify:\n  enabled: true\n  url: \"\(url)\"\n")
+            let row = try XCTUnwrap(found.first { $0.title == "notify.url" }, url)
+            XCTAssertEqual(row.severity, .warn)
+            let text = row.detail + (row.hint ?? "")
+            XCTAssertTrue(text.contains(URL(string: url)?.host ?? "?"))
+            XCTAssertFalse(text.contains("SECRET"), "the path and signature are the secret")
+        }
+        let off = "notify:\n  enabled: false\n  url: \"https://relay.example.com/x\"\n"
+        let disabled = try rows(off)
+        XCTAssertNil(detail(disabled, "notify.url"), "a webhook that is off is not judged")
+    }
+
     func testAnEnabledNotifyBlockWithoutAUsableURLSaysNothingIsSentAndNeverShowsTheURL() throws {
         let empty = try rows("notify:\n  enabled: true\n  url: \"\"\n")
         XCTAssertEqual(detail(empty, "notify.url"),
@@ -108,7 +145,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        + "The app sends no webhook.")
         let shown = plain.map { $0.title + $0.detail + ($0.hint ?? "") }.joined()
         XCTAssertFalse(shown.contains("hooks.example.com"), "a webhook URL is a secret")
-        let https = "notify:\n  enabled: true\n  url: \"https://hooks.example.com/x\"\n"
+        let https = "notify:\n  enabled: true\n  url: \"https://hooks.slack.com/services/x\"\n"
         XCTAssertEqual(try rows(https), [])
         XCTAssertEqual(try rows("notify:\n  enabled: false\n  url: \"\"\n"), [],
                        "off is a choice, not a mistake")
@@ -176,20 +213,19 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                                 + "  min_collect_interval_hours: 12\n"), [])
     }
 
-    func testCollectSkipEntriesThatAreNotSkippableKindsAreNamed() throws {
+    func testCollectSkipNamesCoreAndUnknownEntries() throws {
         let found = try rows("jamf_cli:\n  collect_skip: [update_status, computers, Foo]\n")
         XCTAssertEqual(
-            detail(found, "jamf_cli.collect_skip"),
-            "\"computers\", \"Foo\" are not kinds collect can skip, so they skip nothing and "
-                + "the stall guard does not apply to them.")
+            found.first { $0.id == "config.value.jamf_cli.collect_skip.core" }?.detail,
+            "\"computers\" is always collected: the daily summary and most screens are built "
+                + "from it.")
         XCTAssertEqual(
-            detail(try rows("jamf_cli:\n  collect_skip: [computers]\n"), "jamf_cli.collect_skip"),
-            "\"computers\" is not a kind collect can skip, so it skips nothing and the stall "
-                + "guard does not apply to it.")
-        XCTAssertTrue(found.first?.hint?.contains("patch-device-failures") == true,
-                      "the hint lists what can be skipped")
-        XCTAssertTrue(found.first?.hint?.contains("sofa") == true, "sofa can be skipped")
+            found.first { $0.id == "config.value.jamf_cli.collect_skip" }?.detail,
+            "\"Foo\" is not a source this app collects, so it turns nothing off.")
+        XCTAssertFalse(found.contains { $0.detail.contains("stall guard") })
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [update_status, Profile-Status]\n"), [])
+        XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [protect-computers]\n"), [],
+                       "beside an MDM Protect's computer list is optional")
     }
 
     /// `sofa` was reported as "not a kind collect can skip" until it became skippable.
@@ -211,12 +247,9 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         html:
           section_limits:
             protect_alerts: 500
-            insights_drift_snapshots: 0
         """)
         XCTAssertEqual(detail(found, "html.section_limits.protect_alerts"),
                        "500 is outside 1 to 200. The app uses 200.")
-        XCTAssertEqual(detail(found, "html.section_limits.insights_drift_snapshots"),
-                       "0 is outside 1 to 12. The app uses 1.")
         XCTAssertEqual(try rows("html:\n  section_limits:\n    protect_alerts: 25\n"), [])
     }
 
@@ -316,7 +349,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         XCTAssertEqual(eaSheets.sheetPlan.map(\.name), ConfigDoctorService.eaWarningsSheetNames)
         let school = SchoolDashboard(
             config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
-            workbook: Workbook())
+            workbook: Workbook(), now: .testNoon)
         XCTAssertEqual(school.sheetPlan.map(\.name), ConfigDoctorService.schoolSheetNames)
     }
 
@@ -545,4 +578,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         }
         try body(root, workspace)
     }
+    func testAFilePrefixThatCannotStartAFileNameIsNamed() throws {
+        let id = "config.value.output.file_prefix"
+        XCTAssertTrue(try rows("output:\n  file_prefix: acme_co\n").contains { $0.id == id })
+        XCTAssertTrue(try rows("output:\n  file_prefix: 2026\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  file_prefix: acme-co\n").contains { $0.id == id })
+        XCTAssertFalse(try rows("output:\n  keep_latest_runs: 3\n").contains { $0.id == id })
+    }
+
 }

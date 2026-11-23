@@ -2,7 +2,7 @@ import Foundation
 
 /// What Data Sources > Additional Products says about Jamf Protect, and the write that
 /// disconnects it. The connection itself is `protect.enabled/profile` in the workspace's
-/// config.yaml (`ConnectedProducts`); the jamf-cli profile it names lives in jamf-cli.
+/// config.yaml (`EnvironmentProfiles`); the jamf-cli profile it names lives in jamf-cli.
 enum ProtectConnection {
     enum State: Equatable, Sendable {
         case notConnected
@@ -33,26 +33,33 @@ enum ProtectConnection {
         let base = "Jamf Protect is disconnected from this workspace."
         guard !profileMissing else { return base }
         return base + " The jamf-cli profile \(profile) is still in jamf-cli; "
-            + "jamf-cli config remove-profile \(ProfileName.shellWord(profile)) removes it."
+            + "jamf-cli config remove-profile -- \(ProfileName.shellWord(profile)) removes it."
     }
 
     /// Sets `protect.enabled: false` and removes `protect.profile` through the scoped block
     /// writer, so every other key in the block stays and a comment there is copied out first
     /// (`ConfigSaveReport.backupName`). A workspace with no `protect` block is left alone.
     /// The changed profile is then confirmed on this Mac: disconnecting is the operator's own
-    /// act, and an unconfirmed `protect.profile` would read as drift on the next run.
+    /// act, and an unconfirmed `protect.profile` would read as drift on the next run. Under a
+    /// `profiles:` block it clears `profiles.protect` instead.
     @discardableResult
     static func disconnect(
         workspace profile: String, appSupport: URL = AppSupport.directory()
     ) throws -> ConfigSaveReport {
-        let report = try ConfigService.saveBlock(key: "protect", profile: profile) { root in
+        if ProfilesConfigWriter.hasProfilesBlock(workspace: profile) {
+            return try ProfilesConfigWriter.save(
+                .protect, to: nil, workspace: profile, appSupport: appSupport)
+        }
+        let report = try ConfigService.saveBlock(
+            key: "protect", profile: profile, profilesSlot: "protect"
+        ) { root in
             guard var block = root.value(for: "protect")?.mapping else { return }
             block.set("enabled", value: .scalar(.bool(false)))
             block.entries.removeAll { $0.key == "profile" }
             root.set("protect", value: .mapping(block))
         }.report
-        SharedConfigPin.confirmBestEffort(
-            profile: profile, keys: [.protectProfile], appSupport: appSupport)
+        SharedConfigPin.confirmWritten(
+            "", key: .protectProfile, profile: profile, appSupport: appSupport)
         return report
     }
 }

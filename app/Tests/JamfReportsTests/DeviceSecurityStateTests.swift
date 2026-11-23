@@ -498,7 +498,7 @@ final class DeviceSecurityStateTests: XCTestCase {
             fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
             source: "computers.json")
         mac.name = "=HYPERLINK(\"https://x\",\"y\")"
-        mac.serial = "-3"
+        mac.serial = "-3+cmd"
         mac.osVersion = "\r=2"
         mac.user = "+1"
         mac.email = "@sum"
@@ -509,7 +509,7 @@ final class DeviceSecurityStateTests: XCTestCase {
                 .components(separatedBy: "\n").dropFirst().first)
         XCTAssertEqual(
             row,
-            "\"\t=HYPERLINK(\"\"https://x\"\",\"\"y\"\")\",\t-3,\"\t\r=2\",\t+1,\t@sum,"
+            "\"\t=HYPERLINK(\"\"https://x\"\",\"\"y\"\")\",\t-3+cmd,\"\t\r=2\",\t+1,\t@sum,"
                 + "\t\t=1,UNENCRYPTED,,high")
     }
 

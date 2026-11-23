@@ -13,6 +13,8 @@ struct Kicker: View {
     let text: String
     var tone: Tone = .muted
     var breadcrumbs: [Breadcrumb] = []
+    /// False where the caption sits above a title that is the heading (`PageHeader`).
+    var isHeading = true
 
     var body: some View {
         HStack(spacing: 4) {
@@ -36,12 +38,14 @@ struct Kicker: View {
                 Text("/")
                     .font(Theme.Fonts.mono(10, weight: .bold))
                     .foregroundStyle(Theme.Colors.hairlineStrong)
+                    .accessibilityHidden(true)
             }
 
-            Text(text.uppercased())
+            Text(LShown(text).localizedUppercase)
                 .font(Theme.Fonts.mono(10.5, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(color)
+                .accessibilityAddTraits(isHeading ? .isHeader : [])
         }
     }
 
@@ -58,7 +62,7 @@ struct Kicker: View {
 
 // MARK: - Page header (kicker + serif H1 + subtitle)
 
-struct PageHeader: View {
+struct PageHeader<Trailing: View>: View {
     let kicker: String
     var kickerTone: Kicker.Tone = .gold
     var breadcrumbs: [Breadcrumb] = []
@@ -68,7 +72,7 @@ struct PageHeader: View {
     /// True when `trailing` is a `WrappingRow` of controls: they sit beside the title when
     /// they fit and under it, wrapping, when they do not. False keeps one row.
     var wrapsTrailing = false
-    @ViewBuilder var trailing: () -> AnyView
+    let trailing: Trailing
 
     init(
         kicker: String,
@@ -78,7 +82,7 @@ struct PageHeader: View {
         subtitle: String? = nil,
         lastModified: Date? = nil,
         wrapsTrailing: Bool = false,
-        @ViewBuilder trailing: @escaping () -> AnyView = { AnyView(EmptyView()) }
+        @ViewBuilder trailing: () -> Trailing
     ) {
         self.kicker = kicker
         self.kickerTone = kickerTone
@@ -87,7 +91,7 @@ struct PageHeader: View {
         self.subtitle = subtitle
         self.lastModified = lastModified
         self.wrapsTrailing = wrapsTrailing
-        self.trailing = trailing
+        self.trailing = trailing()
     }
 
     var body: some View {
@@ -96,18 +100,18 @@ struct PageHeader: View {
                 HStack(alignment: .bottom) {
                     titleBlock
                     Spacer()
-                    trailing()
+                    trailing
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     titleBlock
-                    trailing()
+                    trailing
                 }
             }
         } else {
             HStack(alignment: .bottom) {
                 titleBlock
                 Spacer()
-                trailing()
+                trailing
             }
         }
     }
@@ -115,11 +119,13 @@ struct PageHeader: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
+                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs,
+                       isHeading: false)
                 if let ageLabel = stalenessLabel {
                     Text("·")
                         .font(Theme.Fonts.mono(10.5, weight: .bold))
                         .foregroundStyle(Theme.Colors.hairlineStrong)
+                        .accessibilityHidden(true)
                     Text(ageLabel.uppercased())
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.5)
@@ -129,8 +135,10 @@ struct PageHeader: View {
                 }
             }
             Text(title)
-                .font(Theme.Fonts.serif(26, weight: .bold))
+                .font(Theme.Fonts.serifTitle())
                 .foregroundStyle(Theme.Colors.fg)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
                     .font(.callout)
@@ -159,7 +167,7 @@ struct PageHeader: View {
 
         if let days = components.day, days >= 1 {
             if effectiveKickerTone == .gold { return nil } // Only show if stale
-            return "Updated \(days) \(days == 1 ? "day" : "days") ago"
+            return (days == 1 ? L("Updated \(days) day ago") : L("Updated \(days) days ago"))
         }
         return nil
     }
@@ -171,6 +179,22 @@ struct PageHeader: View {
         case .teal:  Theme.Colors.tealBright
         case .warn:  Theme.Colors.warn
         case .danger: Theme.Colors.danger
+        }
+    }
+}
+
+extension PageHeader where Trailing == EmptyView {
+    init(
+        kicker: String,
+        kickerTone: Kicker.Tone = .gold,
+        breadcrumbs: [Breadcrumb] = [],
+        title: String,
+        subtitle: String? = nil,
+        lastModified: Date? = nil
+    ) {
+        self.init(kicker: kicker, kickerTone: kickerTone, breadcrumbs: breadcrumbs, title: title,
+                  subtitle: subtitle, lastModified: lastModified, wrapsTrailing: false) {
+            EmptyView()
         }
     }
 }
@@ -229,7 +253,7 @@ struct Pill: View {
     var body: some View {
         HStack(spacing: 4) {
             if let icon { Image(systemName: icon).font(.system(size: 9, weight: .semibold)) }
-            Text(text.uppercased())
+            Text(LShown(text).localizedUppercase)
         }
         .font(Theme.Fonts.mono(10.5, weight: .semibold))
         .tracking(0.6)
@@ -283,7 +307,9 @@ struct PNPButton: View {
     var icon: String? = nil
     var style: Style = .neutral
     var size: Size = .md
-    var action: () -> Void = {}
+    /// Draws only the icon (a narrow row); the title stays the VoiceOver label and tooltip.
+    var iconOnly = false
+    var action: () -> Void
 
     var body: some View {
         Button(action: action) {
@@ -293,10 +319,12 @@ struct PNPButton: View {
                         .font(.system(fontStyle, weight: .semibold))
                         .imageScale(.small)
                 }
-                Text(title)
-                    .font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                if !(iconOnly && icon != nil) {
+                    Text(title)
+                        .font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .padding(.horizontal, hPad)
             .frame(minHeight: height)
@@ -348,15 +376,9 @@ struct PNPToggle: View {
     @Binding var isOn: Bool
     var label: String = ""
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Button {
-            if reduceMotion {
-                isOn.toggle()
-            } else {
-                withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
-            }
+            withMotionSafeAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
@@ -380,8 +402,8 @@ struct PNPToggle: View {
         // adding 2pt top+bottom padding lifts the interactive area to 36×26pt.
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .accessibilityLabel(label.isEmpty ? "Toggle" : label)
-        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityLabel(label.isEmpty ? L("Toggle") : label)
+        .accessibilityValue(isOn ? L("On") : L("Off"))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -397,7 +419,15 @@ struct SegmentedControl<Value: Hashable>: View {
         self.options = options.map { ($0.0, $0.1, $0.2) }
     }
 
+    /// A row too long for the window (German runs long) scrolls instead of widening the page.
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            segments
+            ScrollView(.horizontal, showsIndicators: false) { segments }
+        }
+    }
+
+    private var segments: some View {
         HStack(spacing: 1) {
             ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
                 Button {
@@ -456,17 +486,40 @@ struct StatTile: View {
     /// a caller that holds the caption to one line can still let a long title
     /// wrap. Nil leaves the label to the surrounding `lineLimit`.
     var labelLineLimit: Int? = nil
+    /// The sparkline's vertical scale; pass `0...100` for a share so a small move stays small.
+    var sparkDomain: ClosedRange<Double>? = nil
+    /// Opens what the number counts. Nil leaves the tile inert, laid out as before.
+    var action: (() -> Void)? = nil
+    /// Where `action` goes, for the tooltip and VoiceOver ("Opens Computers, filtered to stale").
+    var actionHint: String? = nil
+
+    @State private var hovering = false
 
     // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
     // to Accessibility text size while keeping the design baseline at 32pt.
     @ScaledMetric(relativeTo: .largeTitle) private var displaySize: CGFloat = 32
 
     var body: some View {
+        if let action {
+            Button(action: action) { surface }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .pointerStyle(.link)
+                .help(actionHint ?? "")
+                .accessibilityHint(actionHint ?? "")
+        } else {
+            surface
+        }
+    }
+
+    private var surface: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
                 .transformEnvironment(\.lineLimit) { limit in
                     if let labelLineLimit { limit = labelLineLimit }
                 }
+                // Keeps a long title out from under the chevron overlay.
+                .padding(.trailing, action != nil ? 14 : 0)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
                     .font(Theme.Fonts.serif(displaySize, weight: .bold))
@@ -475,7 +528,8 @@ struct StatTile: View {
                 if let delta {
                     HStack(spacing: 3) {
                         if deltaTrend != .flat {
-                            Image(systemName: deltaPointsUp(delta) ? "arrow.up" : "arrow.down")
+                            Image(systemName: Self.deltaPointsUp(delta, trend: deltaTrend)
+                                    ? "arrow.up" : "arrow.down")
                                 .font(.system(size: 10, weight: .bold))
                         }
                         Text(delta)
@@ -488,7 +542,7 @@ struct StatTile: View {
                 Text(sub).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
             if let sparkValues, !sparkValues.isEmpty {
-                Sparkline(values: sparkValues, color: defaultSparklineColor)
+                Sparkline(values: sparkValues, color: defaultSparklineColor, domain: sparkDomain)
                     .frame(height: 32)
                     .padding(.top, 2)
             }
@@ -501,8 +555,19 @@ struct StatTile: View {
         .background(Theme.Colors.winBG2)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
-                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                .strokeBorder(hovering ? Theme.Colors.gold.opacity(0.7) : Theme.Colors.hairlineStrong,
+                              lineWidth: hovering ? 1 : 0.5)
         )
+        .overlay(alignment: .topTrailing) {
+            // An overlay, so an actionable tile is laid out exactly as an inert one.
+            if action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hovering ? Theme.Colors.gold : Theme.Colors.fgMuted)
+                    .padding(10)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(fullAccessibilityLabel)
@@ -526,11 +591,19 @@ struct StatTile: View {
         sub: String?
     ) -> String {
         var parts = ["\(label): \(value)"]
+        // The direction word follows the number; "better"/"worse" is the tile's verdict, so a
+        // stale count that fell reads "down, better" and one that rose reads "up, worse".
         if let delta {
-            switch deltaTrend {
-            case .up:   parts.append("up \(delta)")
-            case .down: parts.append("down \(delta)")
-            case .flat: break
+            let verdict = switch deltaTrend {
+            case .up: L(", better")
+            case .down: L(", worse")
+            case .flat: ""
+            }
+            // A flat tile still draws a signed delta, so it is announced without a verdict;
+            // "No Data", "Not comparable" and a zero change stay silent.
+            if deltaTrend != .flat || Self.isSignedChange(delta) {
+                let direction = deltaPointsUp(delta, trend: deltaTrend) ? "up" : "down"
+                parts.append("\(direction) \(delta)\(verdict)")
             }
         }
         if let sub { parts.append(sub) }
@@ -545,15 +618,22 @@ struct StatTile: View {
         }
     }
 
-    /// Arrow glyph reflects the delta's literal numeric sign ("+"/"−" prefix),
-    /// independent of `deltaTrend`'s good/bad color. A metric like Stale
-    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw
-    /// count still went up — the arrow must say up, matching the number,
-    /// while the color still says bad.
-    private func deltaPointsUp(_ delta: String) -> Bool {
+    /// A signed, non-zero change such as "+12" or "−1.5pp"; "+0", "+0.0pp" and text with no
+    /// sign are not.
+    nonisolated private static func isSignedChange(_ delta: String) -> Bool {
+        guard ["+", "−", "-"].contains(where: { delta.hasPrefix($0) }) else { return false }
+        let magnitude = delta.dropFirst().filter { $0.isNumber || $0 == "." }
+        return (Double(magnitude) ?? 0) != 0
+    }
+
+    /// Arrow glyph and VoiceOver direction reflect the delta's literal numeric sign
+    /// ("+"/"−" prefix), independent of `deltaTrend`'s good/bad color. A metric like Stale
+    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw count still
+    /// went up — the arrow must say up, matching the number, while the color says bad.
+    nonisolated static func deltaPointsUp(_ delta: String, trend: Trend) -> Bool {
         if delta.hasPrefix("+") { return true }
         if delta.hasPrefix("−") || delta.hasPrefix("-") { return false }
-        return deltaTrend == .up
+        return trend == .up
     }
 
     private var defaultSparklineColor: Color {
@@ -710,6 +790,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack {
             Text(title).font(.system(style, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
 
             // Handle legacy trailing parameter
@@ -744,6 +825,7 @@ struct StatusBar: View {
                 if status.contains("...") || status.lowercased().contains("running") || status.lowercased().contains("collecting") {
                     ProgressView().controlSize(.small)
                         .scaleEffect(0.7)
+                        .accessibilityLabel(status)
                 } else {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10))
@@ -812,7 +894,7 @@ struct EditableNumberStepper: View {
     static func accessibilityName(label: String?, prefix: String?, suffix: String?) -> String {
         if let label, !label.isEmpty { return label }
         let joined = [prefix, suffix].compactMap { $0 }.joined(separator: " ")
-        return joined.isEmpty ? "Value" : joined
+        return joined.isEmpty ? L("Value") : joined
     }
 
     private var name: String {

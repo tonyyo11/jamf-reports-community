@@ -25,9 +25,9 @@ enum DashboardChartExport {
         var userMessage: String {
             switch self {
             case .renderFailed:
-                return "Could not render the chart for export."
+                return L("Could not render the chart for export.")
             case .writeFailed(let error):
-                return "Could not save PNG: \(error.localizedDescription)"
+                return L("Could not save PNG: \(error.localizedDescription)")
             }
         }
     }
@@ -46,12 +46,13 @@ enum DashboardChartExport {
         subtitle: String? = nil,
         footnote: String? = nil,
         suggestedFilename: String,
+        percentFormat: PercentFormat,
         @ViewBuilder content: @escaping () -> Content
     ) -> Result<URL, ExportError>? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = suggestedFilename
-        panel.title = "Export Chart as PNG"
+        panel.title = L("Export Chart as PNG")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
         let exportView = DashboardExportCanvas(
@@ -60,7 +61,9 @@ enum DashboardChartExport {
             footnote: footnote,
             content: content
         )
-        let renderer = ImageRenderer(content: exportView)
+        // An image renders outside the window, so it gets the workspace's format here.
+        let renderer = ImageRenderer(
+            content: exportView.environment(\.percentFormat, percentFormat))
         renderer.scale = 2.0
 
         guard let image = renderer.nsImage,
@@ -68,7 +71,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .public)'"
+                "DashboardChartExport: render pipeline returned nil for '\(title, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }
@@ -78,7 +81,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport: write failed for chart '\(title, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport: write failed for chart '\(title, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }
@@ -93,17 +96,19 @@ enum DashboardChartExport {
     @discardableResult
     static func render<Content: View>(
         suggestedFilename: String,
+        percentFormat: PercentFormat,
         @ViewBuilder content: @escaping () -> Content
     ) -> Result<URL, ExportError>? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = suggestedFilename
-        panel.title = "Export Chart as PNG"
+        panel.title = L("Export Chart as PNG")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
         let framed = content()
             .frame(width: 848, height: 448)
             .environment(\.colorScheme, .light)
+            .environment(\.percentFormat, percentFormat)
             .environment(\.dynamicTypeSize, .large) // pin DynamicTypeSize so PNG exports stay deterministic regardless of OS accessibility settings
         let renderer = ImageRenderer(content: framed)
         renderer.scale = 2.0
@@ -113,7 +118,7 @@ enum DashboardChartExport {
               let bitmap = NSBitmapImageRep(data: tiff),
               let pngData = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
             AppLogger.ui.error(
-                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .public)'"
+                "DashboardChartExport.render: render pipeline returned nil for '\(suggestedFilename, privacy: .private)'"
             )
             return .failure(.renderFailed)
         }
@@ -123,7 +128,7 @@ enum DashboardChartExport {
             return .success(url)
         } catch {
             AppLogger.ui.error(
-                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .public)' — \(error.localizedDescription, privacy: .private)"
+                "DashboardChartExport.render: write failed for '\(suggestedFilename, privacy: .private)' — \(error.localizedDescription, privacy: .private)"
             )
             return .failure(.writeFailed(underlying: error))
         }
@@ -151,15 +156,15 @@ enum DashboardChartExport {
 /// Shared export header used by both `DashboardExportCanvas` and other custom
 /// export views like `BarChartExportView`. Provides consistent title typography
 /// across all export templates.
-public struct DashboardExportHeader: View {
+public struct DashboardExportHeader<Trailing: View>: View {
     let title: String
     let subtitle: String?
-    let headerTrailing: AnyView?
+    let headerTrailing: Trailing
 
-    public init(title: String, subtitle: String? = nil, headerTrailing: (() -> AnyView)? = nil) {
+    public init(title: String, subtitle: String? = nil, @ViewBuilder headerTrailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
-        self.headerTrailing = headerTrailing?()
+        self.headerTrailing = headerTrailing()
     }
 
     public var body: some View {
@@ -174,12 +179,19 @@ public struct DashboardExportHeader: View {
                 Text(title)
                     .font(.system(size: 28, weight: .bold, design: .serif))
                     .foregroundStyle(Color(hex: 0x111827))
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .multilineTextAlignment(.leading)
             }
             Spacer()
             headerTrailing
         }
+    }
+}
+
+extension DashboardExportHeader where Trailing == EmptyView {
+    public init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }
 
@@ -200,7 +212,7 @@ private struct DashboardExportCanvas<Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
-                Text(footnote ?? "Source: jamf-cli snapshots · Generated \(Self.timestamp())")
+                Text(footnote ?? L("Source: jamf-cli snapshots · Generated \(Self.timestamp())"))
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color(hex: 0x64748B))
                 Spacer()
@@ -215,6 +227,7 @@ private struct DashboardExportCanvas<Content: View>: View {
 
     private static func timestamp() -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date())

@@ -33,6 +33,24 @@ final class AppCollectRunHistoryTests: XCTestCase {
         return (store, lock, workspace)
     }
 
+    /// Self-remediation and catch-up collect unattended, so Run History is the only record.
+    func testAutomaticCollectsAreRecordedAsBackgroundRefreshes() async throws {
+        let collectors: [@Sendable (String) async throws -> Void] = [
+            { try await WorkspaceStore.defaultCatchUpCollector($0, nil) },
+            { try await WorkspaceStore.defaultRemediationCollector($0, [.refresh], nil) },
+        ]
+        for collector in collectors {
+            let (_, _, workspace) = try makeStore()
+            try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
+            try "jamf_cli:\n  profile: alpha\n".write(
+                to: workspace.appendingPathComponent("config.yaml"),
+                atomically: true, encoding: .utf8)
+            // Tests find no jamf-cli, so the collect fails: a run that happened, not a refusal.
+            try? await collector(profile)
+            XCTAssertEqual(entries().map(\.name), ["Background refresh"])
+        }
+    }
+
     private func entries() -> [RunHistoryService.RunSummary] {
         RunHistoryService.list(profile: profile)
     }
@@ -225,29 +243,21 @@ final class AppCollectRunHistoryTests: XCTestCase {
     func testAnAppCollectIsNoScheduledRunInHealthInputsOrTheOverdueCheck() async throws {
         let (store, _, workspace) = try makeStore()
         defer { AutomationHealthModel.shared.issues = [] }
-        let twoHoursAgo = Calendar.current.dateComponents(
-            [.hour, .minute], from: Date().addingTimeInterval(-2 * 3600))
-        let daily = Schedule(
-            name: "Daily", profile: profile,
-            schedule: String(format: "Daily %02d:%02d",
-                             twoHoursAgo.hour ?? 0, twoHoursAgo.minute ?? 0),
-            cadence: "custom", mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok,
-            artifacts: [], enabled: true,
-            launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")
+        let daily = dailyScheduleFiringAtTen(profile: profile)
         store.schedules = [daily]
 
         await run(.tier, on: store) { _ in 0 }
         XCTAssertTrue(fm.fileExists(atPath: statusFile(workspace).path), "precondition")
         // The workspace has to predate the fire for the schedule to be overdue at all.
-        try fm.setAttributes([.creationDate: Date(timeIntervalSinceNow: -3 * 86_400)],
+        try fm.setAttributes([.creationDate: Date.testNoon.addingTimeInterval(-3 * 86_400)],
                              ofItemAtPath: workspace.path)
 
         let inputs = LaunchAgentService.healthInputs(schedules: [daily], statusProfile: nil)
         XCTAssertNil(inputs.first?.lastRunFinishedAt)
         XCTAssertNil(inputs.first?.lastRunSuccess)
 
-        let afterTheWindow = Date().addingTimeInterval(TickLock.wakeInterval + 61)
-        await store.refreshAutomationHealth(now: afterTheWindow)
+        pinTickLockReleasedAt(nil)
+        await store.refreshAutomationHealth(now: .testNoonAfterTheLockWindow)
         XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue],
                        "a manual collect is not the schedule's run")
     }

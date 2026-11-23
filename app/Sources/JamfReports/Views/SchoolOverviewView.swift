@@ -8,32 +8,47 @@ struct SchoolOverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
+    @State private var scanTurnedOff = false
     @State private var checklist: GettingStartedChecklist?
-    @State private var reloadToken = 0
+    /// The `dataSource` `snapshot` and `checklist` were read for; the content waits for it to
+    /// match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
-    private var staleDays: Int { Int(workspace.configState.staleDeviceDays) ?? 30 }
+    private var staleDays: Int { workspace.configState.staleRule.days }
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Jamf School",
-                title: "Overview",
+                kicker: L("Jamf School"),
+                title: L("Overview"),
                 subtitle: workspace.profile,
-                lastModified: snapshot.collectedAt
+                // The demo dataset is fixed; an age measured from today would keep growing.
+                lastModified: workspace.demoMode ? nil : snapshot.collectedAt
             )
-            if let checklist, !checklist.isComplete {
-                GettingStartedCard(checklist: checklist, onAction: perform)
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("overview"))
+            } else {
+                if let checklist, !checklist.isComplete {
+                    GettingStartedCard(checklist: checklist, onAction: perform)
+                }
+                if snapshot.devicesDate != nil {
+                    SchoolDeviceTiles(
+                        snapshot: snapshot, staleDays: staleDays,
+                        now: workspace.demoMode ? DemoData.referenceDate : Date(),
+                        filters: [.all], opens: openDevices)
+                }
+                if let health = SchoolDeviceHealth(snapshot, scanTurnedOff: scanTurnedOff) {
+                    SchoolDeviceHealthCard(health: health)
+                }
+                if !snapshot.overview.isEmpty { resourcesCard }
+                if !snapshot.isDetected { emptyState }
             }
-            if snapshot.devicesDate != nil {
-                SchoolDeviceTiles(snapshot: snapshot, staleDays: staleDays)
-            }
-            if !snapshot.overview.isEmpty { resourcesCard }
-            if !snapshot.isDetected { emptyState }
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: "\(workspace.profile)#\(reloadToken)") { await reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reloadToken += 1
+            reloads += 1
         }
     }
 
@@ -41,8 +56,9 @@ struct SchoolOverviewView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "graduationcap",
-                title: "No Jamf School data yet",
-                message: "Collect from Jamf School to see its devices, users and classes here."
+                title: L("No Jamf School data yet"),
+                message: L("Collect from Jamf School to see its devices, users and classes here."),
+                primaryAction: workspace.firstCollectEmptyAction()
             )
         }
     }
@@ -51,7 +67,7 @@ struct SchoolOverviewView: View {
     private var resourcesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "In Jamf School")
+                SectionHeader(title: L("In Jamf School"))
                 EqualHeightTileGrid(minTileWidth: 160) {
                     ForEach(snapshot.overview) { row in
                         StatTile(label: row.resource, value: row.value.isEmpty ? "—" : row.value,
@@ -65,27 +81,52 @@ struct SchoolOverviewView: View {
 
     // MARK: - Loading
 
-    private func reload() async {
-        guard !workspace.demoMode else { return }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; checklist = nil }
         let profile = workspace.profile
-        guard ProfileService.isValid(profile) else { return }
+        if workspace.demoMode {
+            // The demo district, never this Mac's workspace; its checklist is done.
+            snapshot = DemoData.schoolSnapshot
+            loadedSource = source
+            return
+        }
+        guard ProfileService.isValid(profile) else {
+            loadedSource = source
+            return
+        }
         let connected = !workspace.profiles.isEmpty
-        let (loaded, scheduled, reported) = await Task.detached(priority: .utility) {
-            let loaded = SchoolFleetService.load(profile: profile)
-            let hasAgent = ScheduleStore().load().map { $0.toSchedule() }
-                .contains { $0.profile == profile }
-            let policy = AutomationPolicy.current()
-            let scheduled = scheduleCovered(
-                hasAgent: hasAgent, policyIsManaged: policy.isManaged,
-                excluded: policy.excludedProfiles.contains(profile))
-            let reported = !ReportLibrary().list(profile: profile).isEmpty
-            return (loaded, scheduled, reported)
-        }.value
-        guard profile == workspace.profile else { return }
+        guard let (loaded, scheduled, reported, scanOff) = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
+                let loaded = SchoolFleetService.load(profile: profile)
+                let scanOff = ReportEngine.schoolScanTurnedOff(profile: profile)
+                let hasAgent = ScheduleStore().load().map { $0.toSchedule() }
+                    .contains { $0.profile == profile }
+                let policy = AutomationPolicy.current()
+                let scheduled = scheduleCovered(
+                    hasAgent: hasAgent, policyIsManaged: policy.isManaged,
+                    excluded: policy.excludedWorkspaces.contains(profile))
+                let reported = !ReportLibrary().list(profile: profile).isEmpty
+                return (loaded, scheduled, reported, scanOff)
+            }
+        ) else { return }
         snapshot = loaded
+        scanTurnedOff = scanOff
         checklist = .buildSchool(
             connected: connected, collected: loaded.isDetected,
             scheduled: scheduled, reported: reported)
+        loadedSource = source
+    }
+
+    /// Only the unfiltered list opens from here: the Devices screen's filters are its own.
+    private func openDevices(_ filter: SchoolDevicesView.Filter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: ["tab": Tab.schoolDevices.rawValue])
     }
 
     private func perform(_ step: GettingStartedStep) {
@@ -93,7 +134,7 @@ struct SchoolOverviewView: View {
         case .collect:
             Task {
                 await workspace.runFirstCollect()
-                reloadToken += 1
+                reloads += 1
             }
         default:
             NotificationCenter.default.post(

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import ServiceManagement
 
 /// What Login Items › "Allow in the Background" says about our one agent.
@@ -79,37 +80,39 @@ struct SMAppServiceRegistrar: TickerRegistrar {
     func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
 }
 
-/// Test double. `@unchecked Sendable`: a lock guards every stored property.
-final class StubTickerRegistrar: TickerRegistrar, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _status: TickerStatus
-    private var _registerCalls = 0
-    private var _unregisterCalls = 0
-    private var _registerError: Error?
+/// Test double; a mutex guards its state.
+final class StubTickerRegistrar: TickerRegistrar, Sendable {
+    private struct State {
+        var status: TickerStatus
+        var registerCalls = 0
+        var unregisterCalls = 0
+        var registerError: (any Error)?
+    }
+    private let state: Mutex<State>
 
-    init(status: TickerStatus = .enabled) { _status = status }
+    init(status: TickerStatus = .enabled) { state = Mutex(State(status: status)) }
 
     var status: TickerStatus {
-        get { lock.withLock { _status } }
-        set { lock.withLock { _status = newValue } }
+        get { state.withLock { $0.status } }
+        set { state.withLock { $0.status = newValue } }
     }
-    var registerCalls: Int { lock.withLock { _registerCalls } }
-    var unregisterCalls: Int { lock.withLock { _unregisterCalls } }
+    var registerCalls: Int { state.withLock { $0.registerCalls } }
+    var unregisterCalls: Int { state.withLock { $0.unregisterCalls } }
     var registerError: Error? {
-        get { lock.withLock { _registerError } }
-        set { lock.withLock { _registerError = newValue } }
+        get { state.withLock { $0.registerError } }
+        set { state.withLock { $0.registerError = newValue } }
     }
 
     func register() throws {
-        try lock.withLock {
-            _registerCalls += 1
-            if let e = _registerError { throw e }
-            _status = .enabled
+        try state.withLock { state in
+            state.registerCalls += 1
+            if let e = state.registerError { throw e }
+            state.status = .enabled
         }
     }
 
     func unregister() throws {
-        lock.withLock { _unregisterCalls += 1; _status = .notRegistered }
+        state.withLock { $0.unregisterCalls += 1; $0.status = .notRegistered }
     }
 
     func openLoginItems() {}

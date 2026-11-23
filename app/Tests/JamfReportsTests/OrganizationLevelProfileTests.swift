@@ -113,8 +113,8 @@ final class OrganizationLevelProfileTests: XCTestCase {
 
     private func route(_ bin: URL, sink: Sink, calls: Counter) async throws {
         try await CollectRouter.run(
-            profile: profile, tiers: [.scan], force: true, config: nil,
-            proCollect: { _, _, _, _, _, _ in calls.bump(); return .collected },
+            workspace: WorkspaceID(validating: profile), tiers: [.scan], force: true, config: nil,
+            proCollect: { _, _, _, _, _, _, _ in calls.bump(); return .collected },
             resolved: { ProfileAuthMethod.resolve(profile: $0, binary: bin, configFile: nil) },
             onLine: sink.append)
     }
@@ -172,7 +172,7 @@ final class OrganizationLevelProfileTests: XCTestCase {
             "An organization-level integration reaches only Jamf Account"))
         flow.selected.insert("org")
         var initialized: [String] = []
-        await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
         XCTAssertEqual(initialized.sorted(), ["env", "tenant"])
     }
 
@@ -190,13 +190,13 @@ final class OrganizationLevelProfileTests: XCTestCase {
             ConfigDoctorService.organizationLevelRows(profile: profile, auth: nil).isEmpty)
     }
 
-    func testRunnableProfilesLeaveAnOrganizationProfileOutUntilItHasAFolder() {
+    func testRunnableWorkspacesLeaveAnOrganizationProfileOutUntilItHasAFolder() {
         let org = JamfCLIProfile(
             name: "org", url: "", schedules: 0, status: .idle, authMethod: "platform",
             platformLevel: .organization)
-        XCTAssertTrue(ProfileService.runnableProfiles(
+        XCTAssertTrue(ProfileService.runnableWorkspaces(
             [org], excluding: [], hasWorkspace: { _ in false }).isEmpty)
-        XCTAssertEqual(ProfileService.runnableProfiles(
+        XCTAssertEqual(ProfileService.runnableWorkspaces(
             [org], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 

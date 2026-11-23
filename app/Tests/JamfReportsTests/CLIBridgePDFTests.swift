@@ -98,6 +98,37 @@ final class CLIBridgePDFTests: XCTestCase {
         )
     }
 
+    /// The HTML save panel and the Generate sheet's folder follow the same rule as the PDF.
+    func testHTMLAndAChosenWorkbookFolderRefuseSensitiveDestinations() async {
+        let calls: [() async throws -> Int32] = [
+            { try await self.bridge.generateHTML(
+                profile: "jrc-test-no-such-profile-xyzzy",
+                outFile: "/etc/jrc-test-denied.html", onLine: { _ in }) },
+            { try await self.bridge.generate(
+                profile: "jrc-test-no-such-profile-xyzzy",
+                outputDir: URL(fileURLWithPath: "/etc/jrc-test-denied"), onLine: { _ in }) },
+            { try await self.bridge.schoolGenerate(
+                profile: "jrc-test-no-such-profile-xyzzy",
+                outputDir: URL(fileURLWithPath: "/etc/jrc-test-denied"), onLine: { _ in }) },
+        ]
+        for (index, call) in calls.enumerated() {
+            do {
+                _ = try await call()
+                XCTFail("call \(index): a sensitive destination must be refused")
+            } catch let error as CLIBridgeError {
+                guard case .directoryOperationFailed = error else {
+                    return XCTFail("call \(index): unexpected CLIBridgeError: \(error)")
+                }
+            } catch {
+                XCTFail("call \(index): unexpected error type: \(error)")
+            }
+        }
+        if let leaked = ProfileService.workspaceURL(for: "jrc-test-no-such-profile-xyzzy") {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: leaked.path),
+                           "refused before any workspace is made")
+        }
+    }
+
     func testExportInventoryCSVRefusesSensitiveDestination() async {
         do {
             _ = try await bridge.exportInventoryCSV(

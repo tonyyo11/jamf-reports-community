@@ -56,6 +56,7 @@ enum ConfigSchema {
         "columns": "2.11",
         "exceptions.control_id": "2.11",
         "jamf_cli.allow_live_overview": "2.9",
+        "html.section_limits.insights_drift_snapshots": "2.12",
         "jamf_cli.enabled": "2.9",
         "mobile_columns": "2.11",
         "security_policy.score_weights": "2.9",
@@ -231,7 +232,9 @@ enum ConfigSchema {
         "branding": Node(BrandingConfig.CodingKeys.self),
         "platform": Node(PlatformConfig.CodingKeys.self),
         "protect": Node(ProtectConfig.CodingKeys.self),
+        "backup": Node(BackupConfig.CodingKeys.self),
         "school_cli": Node(SchoolCLIConfig.CodingKeys.self),
+        "profiles": Node(ProfilesConfig.CodingKeys.self),
         "notify": Node(NotifyConfig.CodingKeys.self),
         "alerts": Node(AlertsConfig.CodingKeys.self, [
             "rules": Node(AlertRule.CodingKeys.self, list: true),
@@ -249,5 +252,6 @@ enum ConfigSchema {
             "off_values": Node(SecurityControlPolicy.ControlKeys.self),
             "score_factors": Node(SecurityControlPolicy.FactorKeys.self, list: true),
         ]),
+        "display": Node(DisplayConfig.CodingKeys.self),
     ])
 }

@@ -13,9 +13,7 @@ struct AdoptTargetTip: Tip {
     var title: Text { Text("How should this column be tracked?") }
 
     var message: Text? {
-        Text("Custom EA reports the full distribution of a column's values. "
-            + "Security Agent checks each device against a single "
-            + "connected / installed value.")
+        Text("Custom EA reports the full distribution of a column's values. Security Agent checks each device against a single connected / installed value.")
     }
 
     var image: Image? { Image(systemName: "slider.horizontal.3") }
@@ -29,9 +27,7 @@ struct ConnectedValueTip: Tip {
     var title: Text { Text("Set the connected value") }
 
     var message: Text? {
-        Text("Enter what this column shows when the agent is installed or "
-            + "connected. It is matched as a case-insensitive substring, so "
-            + "\"Installed\" also matches \"Installed and running\".")
+        Text("Enter what this column shows when the agent is installed or connected. It is matched as a case-insensitive substring, so \"Installed\" also matches \"Installed and running\".")
     }
 
     var image: Image? { Image(systemName: "checkmark.seal") }

@@ -38,18 +38,8 @@ struct ComplianceBandingService: Sendable {
             }
         }
 
-        /// Aligned to existing Theme tokens (green/info/gold/warn/danger/gray)
-        /// so the donut reads consistently with the rest of the app's bands.
-        var colorHex: UInt32 {
-            switch self {
-            case .pass:   return 0x30D158  // ok / green
-            case .low:    return 0x0A84FF  // info / blue
-            case .medLow: return 0xE8B614  // gold
-            case .medium: return 0xFF9F0A  // warn / orange
-            case .high:   return 0xFF453A  // danger / red
-            case .noData: return 0x8E8E93  // muted gray
-            }
-        }
+        /// One fixed colour per band on every screen and report (`ChartPalette`).
+        var colorHex: UInt32 { ChartPalette.hex(forBand: self) }
 
         /// Returns the band that contains the given failure count, or
         /// `.noData` when `failures` is nil.
@@ -116,13 +106,13 @@ struct ComplianceBandingService: Sendable {
     /// A macOS major as the Per-OS Breakdown and the posture insight name it.
     static func osLabel(_ major: Int) -> String {
         switch major {
-        case 12: return "macOS Monterey 12"
-        case 13: return "macOS Ventura 13"
-        case 14: return "macOS Sonoma 14"
-        case 15: return "macOS Sequoia 15"
-        case 26: return "macOS Tahoe 26"
-        case 27: return "macOS Golden Gate 27"
-        default: return "macOS \(major)"
+        case 12: return L("macOS Monterey 12")
+        case 13: return L("macOS Ventura 13")
+        case 14: return L("macOS Sonoma 14")
+        case 15: return L("macOS Sequoia 15")
+        case 26: return L("macOS Tahoe 26")
+        case 27: return L("macOS Golden Gate 27")
+        default: return L("macOS \(major)")
         }
     }
 }

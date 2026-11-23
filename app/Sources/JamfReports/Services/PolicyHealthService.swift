@@ -96,7 +96,11 @@ struct PolicyHealthService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let policyDir = dir.appendingPathComponent("policy-status", isDirectory: true)
         let profileDir = dir.appendingPathComponent("profile-status", isDirectory: true)
 
@@ -117,7 +121,7 @@ struct PolicyHealthService: Sendable {
 
         // Load policy data
         if let policyURL, FileManager.default.fileExists(atPath: policyURL.path) {
-            if let policyData = try? Data(contentsOf: policyURL) {
+            if let policyData = BoundedFile.readSnapshotLogged(policyURL) {
                 if let policyReports = try? JSONDecoder().decode(
                     [PolicyStatusReport].self, from: policyData
                 ), let firstReport = policyReports.first {
@@ -129,19 +133,15 @@ struct PolicyHealthService: Sendable {
                         .contentModificationDate
                 } else {
                     AppLogger.collect.info(
-                        "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
+                        "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .private)"
                     )
                 }
-            } else {
-                AppLogger.collect.info(
-                    "PolicyHealthService: could not read policy-status file \(policyURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 
         // Load profile data
         if let profileURL, FileManager.default.fileExists(atPath: profileURL.path) {
-            if let profileData = try? Data(contentsOf: profileURL) {
+            if let profileData = BoundedFile.readSnapshotLogged(profileURL) {
                 if let envelopes = try? JSONDecoder().decode(
                     [ProfileStatusEnvelope].self, from: profileData
                 ) {
@@ -163,13 +163,9 @@ struct PolicyHealthService: Sendable {
                     }
                 } else {
                     AppLogger.collect.warning(
-                        "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
+                        "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .private)"
                     )
                 }
-            } else {
-                AppLogger.collect.warning(
-                    "PolicyHealthService: could not read profile-status file \(profileURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 
@@ -215,7 +211,8 @@ struct PolicyHealthService: Sendable {
             guard row.name != nil || rawId != nil else { return nil }
             return ProfileFailure(
                 id: "\(index)-\(rawId ?? row.name ?? "")",
-                name: row.name ?? "Profile \(rawId ?? "?")",
+                // jamf-cli repeats the id as the name for a profile it could not resolve.
+                name: (row.name == rawId ? nil : row.name) ?? L("Profile \(rawId ?? "?")"),
                 deviceType: row.deviceType ?? "—",
                 errors: row.errors?.intValue ?? 0,
                 devices: row.devices?.intValue ?? 0,

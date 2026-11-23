@@ -18,6 +18,13 @@ enum OSVersionName {
         Double(text.trimmingCharacters(in: CharacterSet(charactersIn: "% "))) ?? 0
     }
 
+    /// False for a blank version and for jamf-cli's literal "Unknown" (a Mac with no
+    /// inventory): Jamf did not measure it, so no distribution counts it.
+    static func isMeasured(_ raw: String) -> Bool {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty && text.caseInsensitiveCompare("unknown") != .orderedSame
+    }
+
     static func normalized(_ raw: String) -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
@@ -26,11 +33,11 @@ enum OSVersionName {
     }
 
     /// `rows` with the rows of one release combined (counts and shares add), in order of
-    /// first appearance.
+    /// first appearance. A row with no measured version is left out.
     static func merged(_ rows: [Row]) -> [Row] {
         var merged: [Row] = []
         var position: [String: Int] = [:]
-        for row in rows {
+        for row in rows where isMeasured(row.version) {
             let name = normalized(row.version)
             if let index = position[name] {
                 merged[index].count += row.count

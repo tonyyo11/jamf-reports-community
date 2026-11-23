@@ -16,6 +16,9 @@ final class TickFailureLogTests: XCTestCase {
             try FileManager.default.createDirectory(
                 at: workspacesRoot.appendingPathComponent(name, isDirectory: true),
                 withIntermediateDirectories: true)
+            // A multi-profile run covers workspaces only (D24): a folder with a config.yaml.
+            try Data().write(to: workspacesRoot.appendingPathComponent(name)
+                .appendingPathComponent("config.yaml"))
         }
         setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
         addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }

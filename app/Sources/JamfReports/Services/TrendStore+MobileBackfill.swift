@@ -42,9 +42,7 @@ extension TrendStore {
             guard let snapshot = newestByDay[day] else { continue }
             let key = "\(snapshot.url.path)|\(staleDays)"
             figures[day] = MobileBackfillCache.shared.figures(for: key) {
-                BoundedFile.readLogged(
-                    snapshot.url, limit: BoundedFile.inventoryLimit, category: .collect
-                ).flatMap {
+                BoundedFile.readLogged(snapshot.url, inside: dataDir).flatMap {
                     MobileSummary.fromMobileDevicesList(
                         $0, latestByMajor: [:], staleDays: staleDays, now: snapshot.date)
                 }

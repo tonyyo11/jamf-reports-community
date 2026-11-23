@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Per-agent history for days the app recorded before it wrote `securityAgentCoverage`,
 /// rebuilt from the dated `ea-results` snapshots the way `resolvingMobile` rebuilds
@@ -68,7 +69,7 @@ extension TrendStore {
             guard let snapshot = newestByDay[day] else { continue }
             let key = "\(profile)|\(day)|\(snapshot.url.lastPathComponent)|\(signature)"
             let counts = AgentBackfillCache.shared.counts(for: key) {
-                decodedAgentCounts(at: snapshot.url, agents: agents)
+                decodedAgentCounts(at: snapshot.url, agents: agents, inside: dataDir)
             }
             if !counts.isEmpty { result[day] = counts }
         }
@@ -76,10 +77,11 @@ extension TrendStore {
     }
 
     private nonisolated static func decodedAgentCounts(
-        at url: URL, agents: [SecurityAgentConfig]
+        at url: URL, agents: [SecurityAgentConfig], inside root: URL
     ) -> [String: Int] {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.inventoryLimit, category: .report) else { return [:] }
+        guard let data = BoundedFile.readLogged(url, inside: root, category: .report) else {
+            return [:]
+        }
         let decoded = EAResultRow.decodeSnapshot(data)
         guard let rows = decoded.rows, decoded.reason == "array" || decoded.reason == "envelope"
         else { return [:] }
@@ -95,20 +97,14 @@ extension TrendStore {
 /// Per-session memory of what each dated `ea-results` snapshot said about the agents, so the
 /// 13 MB files are decoded once however often the Overview and Trends reload. An empty entry
 /// records a snapshot that could not be used, which is not retried either.
-private final class AgentBackfillCache: @unchecked Sendable {
+private final class AgentBackfillCache: Sendable {
     static let shared = AgentBackfillCache()
-    private let lock = NSLock()
-    private var entries: [String: [String: Int]] = [:]
+    private let entries = Mutex<[String: [String: Int]]>([:])
 
     func counts(for key: String, compute: () -> [String: Int]) -> [String: Int] {
-        lock.lock()
-        let hit = entries[key]
-        lock.unlock()
-        if let hit { return hit }
+        if let hit = entries.withLock({ $0[key] }) { return hit }
         let value = compute()
-        lock.lock()
-        entries[key] = value
-        lock.unlock()
+        entries.withLock { $0[key] = value }
         return value
     }
 }

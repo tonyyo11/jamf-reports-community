@@ -57,7 +57,7 @@ final class FleetWorkbookEmitterTests: XCTestCase {
 
     func testEmitReturnsNilWhenNoData() throws {
         let url = try FleetWorkbookEmitter.emit(
-            group: ReportGroup(name: "g", profiles: ["x"]),
+            group: ReportGroup(name: "g", workspaces: ["x"]),
             lookbackDays: 7, timestamp: "t",
             outputDir: FileManager.default.temporaryDirectory,
             summariesFor: { _ in [] })
@@ -73,7 +73,7 @@ final class FleetWorkbookEmitterTests: XCTestCase {
               security: 97, bands: ["NIST": band(pass: 90, low: 10)]),
         ]
         let url = try FleetWorkbookEmitter.emit(
-            group: ReportGroup(name: "Prod Fleet", profiles: ["a"]),
+            group: ReportGroup(name: "Prod Fleet", workspaces: ["a"]),
             lookbackDays: 7, timestamp: "2026-06-18_101010",
             outputDir: dir, summariesFor: { _ in summaries })
         let written = try XCTUnwrap(url)

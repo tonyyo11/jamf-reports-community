@@ -109,9 +109,9 @@ struct SecurityPostureService: Sendable {
             snapshot.staleBasis = config?.thresholds?.resolvedStaleBasis ?? StaleBasis.default
             return snapshot
         } catch let LoadError.decodeFailed(reason) {
-            return .failed("Couldn't read the latest security snapshot — \(reason).")
+            return .failed(L("Couldn't read the latest security snapshot — \(reason)."))
         } catch {
-            return .failed("Couldn't read the latest security snapshot.")
+            return .failed(L("Couldn't read the latest security snapshot."))
         }
     }
 
@@ -137,17 +137,15 @@ struct SecurityPostureService: Sendable {
     private static func decode(
         at url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
     ) throws -> Snapshot {
-        guard let data = try? Data(contentsOf: url) else {
-            AppLogger.platform.warning(
-                "SecurityPostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
-            )
-            throw LoadError.decodeFailed("could not read \(url.lastPathComponent)")
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
+            throw LoadError.decodeFailed(
+                L("could not read \(ConfigSchema.displayText(url.lastPathComponent))"))
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(
-                "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
+                "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .private)"
             )
-            throw LoadError.decodeFailed("failed to decode \(url.lastPathComponent)")
+            throw LoadError.decodeFailed(L("failed to decode \(url.lastPathComponent)"))
         }
 
         var summary: SecuritySummaryData?
@@ -168,16 +166,18 @@ struct SecurityPostureService: Sendable {
             }
         }
         let total = summary?.totalDevices ?? 0
+        let fleet = SecurityFleetCounts.build(items: items, hardware: hardware, policy: policy)
+            ?? .empty
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
         var sourceDates: [String: Date] = [:]
         if let mtime { sourceDates["security"] = mtime }
         return Snapshot(
             totalDevices: total,
-            fileVaultEncrypted: summary?.fileVaultEncrypted,
-            sipEnabled: summary?.sipEnabled,
-            firewallEnabled: summary?.firewallEnabled,
-            gatekeeperEnabled: summary?.gatekeeperEnabled,
+            fileVaultEncrypted: fleet.onCount(.fileVault, reported: summary?.fileVaultEncrypted),
+            sipEnabled: fleet.onCount(.sip, reported: summary?.sipEnabled),
+            firewallEnabled: fleet.onCount(.firewall, reported: summary?.firewallEnabled),
+            gatekeeperEnabled: fleet.onCount(.gatekeeper, reported: summary?.gatekeeperEnabled),
             osVersions: OSVersionName.merged(osVersions.map {
                 .init(version: $0.osVersion, count: $0.count, pct: $0.pct)
             }).map { Snapshot.OSVersion(osVersion: $0.version, count: $0.count, pct: $0.pct) }
@@ -185,8 +185,7 @@ struct SecurityPostureService: Sendable {
             sourceFile: url,
             snapshotDate: mtime,
             sourceDates: sourceDates,
-            fleetCounts: SecurityFleetCounts.build(
-                items: items, hardware: hardware, policy: policy) ?? .empty,
+            fleetCounts: fleet,
             policy: policy
         )
     }

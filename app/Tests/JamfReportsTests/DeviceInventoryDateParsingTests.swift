@@ -13,15 +13,12 @@ final class DeviceInventoryDateParsingTests: XCTestCase {
         ).daysSinceContact
     }
 
-    /// Half a day past the whole days, so a daylight-saving change in between
-    /// cannot move the count.
     private func stamp(daysAgo: Int, fractionalSeconds: Bool) -> String {
         let formatter = ISO8601DateFormatter()
         if fractionalSeconds {
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         }
-        return formatter.string(
-            from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 43_200))
+        return formatter.string(from: Date().calendarDays(ago: daysAgo))
     }
 
     func testContactTimesWithMillisecondsGetAContactAge() {

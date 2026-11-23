@@ -302,6 +302,20 @@ final class CoreDashboardMobileReportTests: XCTestCase {
                      "all rows unknown is already said by the Unknown counts")
     }
 
+    func testFleetSummaryOSDistributionCountsOneReleaseOnce() throws {
+        let rows = ["17.5", "17.5.0", "Unknown", "18.1"].enumerated().map {
+            #"{"mobileDeviceId":"\#($0.offset)","deviceType":"iOS","general":{"osVersion":"\#($0.element)"}}"#
+        }
+        let dir = try dataDir(kind: "mobile-devices-list", json: "[\(rows.joined(separator: ","))]")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileFleetSummary()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Fleet Summary"))
+        XCTAssertEqual(counterBlock(ws, title: "OS Version Distribution"),
+                       ["17.5": "2", "18.1": "1"])
+    }
+
     /// Managed + Unmanaged + Unknown must add up to the total on this sheet too.
     func testInventorySummaryListsDevicesWithNoManagementState() throws {
         let dir = try dataDir(kind: "mobile-device-inventory-details", json: """

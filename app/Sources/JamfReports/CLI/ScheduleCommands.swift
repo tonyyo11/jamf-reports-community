@@ -17,7 +17,7 @@ struct Schedules: AsyncParsableCommand {
             let records = ScheduleStore().load()
             if records.isEmpty { print("no hand-built schedules"); return }
             for r in records {
-                let target = r.allProfiles ? "all-profiles" : r.profile
+                let target = r.allWorkspaces ? "all-profiles" : r.workspace
                 let flag = r.enabled ? "" : " (disabled)"
                 print("\(r.label)\t\(target)\t\(Self.effectiveMode(of: r))\t\(r.schedule)\(flag)")
             }
@@ -53,8 +53,10 @@ struct Schedules: AsyncParsableCommand {
             name: String, profile: String, allProfiles: Bool, exclude: String?,
             mode: String, cadence: String, tiers: String?, disabled: Bool
         ) throws -> ScheduleRecord {
-            guard ProfileService.isValid(profile) else {
-                throw Invalid(description: "invalid profile '\(profile)'")
+            // Before the product pre-check below reads config.yaml: a case variant's would be
+            // another spelling's.
+            if let refusal = CLIRun.profileRefusal(profile) {
+                throw Invalid(description: refusal)
             }
             guard mode != Schedule.RunMode.retiredCSVAssistedRaw else {
                 throw Invalid(description: "csv-assisted mode was retired in 2.11; use jamf-cli-full")
@@ -63,13 +65,17 @@ struct Schedules: AsyncParsableCommand {
                 throw Invalid(description: "unknown mode '\(mode)'")
             }
             _ = try LaunchAgentWriter.calendarIntervals(for: cadence)
+            if !allProfiles, let refusal = ProfileService.connectedProfileRefusal(of: profile) {
+                throw Invalid(description: refusal)
+            }
             // A schedule for a base profile of another product would only ever be skipped.
             if !allProfiles, runMode != .jamfCLIOnly {
                 let config = collectRoutingConfig(profile: profile)
-                // A School workspace collects and generates, but has nothing for `pro backup`.
+                // A School workspace has nothing for `pro backup`; with Protect it backs up
+                // Protect alone.
                 let refusal = runMode == .backup
                     ? CollectRouter.backupRefusal(profile: profile, config: config)
-                    : CollectRouter.proRunRefusal(
+                    : CollectRouter.runRefusal(
                         profile: profile, operation: "A \(runMode.rawValue) schedule",
                         config: config)
                 if let refusal { throw Invalid(description: refusal) }

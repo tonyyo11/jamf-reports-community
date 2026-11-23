@@ -23,7 +23,7 @@ struct ConnectionStore: Sendable {
             AppLogger.auth.error(
                 """
                 connections.json could not be decoded — moved to \
-                \(aside?.lastPathComponent ?? "(move failed)", privacy: .public)
+                \(aside?.lastPathComponent ?? "(move failed)", privacy: .private)
                 """
             )
             return []

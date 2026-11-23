@@ -10,7 +10,8 @@ that.
 |---|---|---|---|
 | Jamf Pro, direct | One Jamf Pro instance's Jamf Pro API and Classic API. The only choice for an on-premises server. | Jamf Pro: **Settings > System > API roles and clients** | The privileges on the client's API role |
 | Jamf Platform API (recommended for Jamf Cloud) | Through Jamf's gateway: the Jamf Pro and Classic APIs of the Jamf Pro tenant in the integration's environment, plus Compliance Benchmarks, blueprint status and DDM status | Jamf Account: **Integrations** | The integration's scope level and permissions |
-| Jamf Protect | Protect overview, alerts, computers, insights and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
+| Jamf Protect | Protect overview, alerts, computers and plans | Jamf Protect console: **API Clients** | The role assigned to the API client |
+| Jamf Security Cloud | The device risk list only (`security risk list`); the app never runs a Security Cloud command that changes anything | `jamf-cli security setup` in Terminal, then **Add to this environment** on the Data Sources screen | The access of the credential you give `security setup`; read access to device risk is enough |
 | Jamf School | School overview, devices, device groups, users, classes, apps, profiles, locations, iBeacons and DEP devices | Jamf School console: **Organization > Settings > API** | The API methods allowed for the key |
 
 Create the Jamf Account integration at the **environment** level. A tenant-level integration
@@ -23,10 +24,10 @@ is [jamf-cli's own recommendation](https://github.com/Jamf-Concepts/jamf-cli/wik
 Jamf Cloud only, so an on-premises or GovCloud server keeps the direct connection. jamf-cli
 refuses a few dozen Jamf Pro and Classic commands on a gateway profile (device actions among
 them, exit 8); Jamf Reports runs none of them, but keep a direct profile for your own use of
-those commands. Jamf Reports collects one profile per fleet: when the direct profile reaches
-the same Jamf Pro as the gateway profile, setup keeps the gateway profile as the workspace
-and leaves the direct one out of collects and consolidated reports (tick it to collect it
-anyway; Config Doctor names a pair that already has two workspaces).
+those commands. Jamf Reports collects each fleet once: when the direct profile reaches the
+same Jamf Pro as the gateway profile, setup proposes one workspace for the pair, named after
+the direct profile, with the gateway profile as its Platform API profile, which collects the
+Platform reports (Config Doctor names a pair that already has two workspaces).
 Jamf Protect is a separate connection with its own credentials, added at onboarding's
 **Add products** step or later from **Data Sources**. Jamf School has its own workspace and
 credentials.
@@ -210,7 +211,8 @@ inventory, groups, patch titles and audit checks as the areas above and, on a Pl
 profile, blueprints and benchmarks. A section the credential cannot read is left out of the
 page, which says so at the top; the rest of the page still lands.
 
-**Backups** (optional) read every object type they export. A type the credential cannot
+**Backups** (optional) read every object type they export. On shared storage the Jamf Pro
+part runs only once the workspace's choice allows it (`backup.pro_on_synced_storage`). A type the credential cannot
 read is listed in the backup's `_failures` file and the rest is kept, so a read-limited
 credential produces a partial backup rather than none. When Jamf Protect is connected to
 the workspace, a Jamf Pro backup also runs `jamf-cli protect backup` with the Protect API
@@ -222,12 +224,12 @@ turn on **Back up Jamf Protect in this folder** (see
 ## Jamf Protect and Jamf School
 
 **Jamf Protect.** Create an API client under **API Clients** in the Jamf Protect console and
-assign it the most restrictive role that can read computers, alerts, insights and plans.
+assign it the most restrictive role that can read computers, alerts and plans.
 Jamf's current documentation and the app's form place the page at **Administrative > API
 Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide still says
 **Settings > API Clients**. Connect it with the Protect URL, client ID and client secret. It
 is not covered by your Jamf Account integration. **Data Sources > Additional Products >
-Disconnect** turns Protect off in the workspace and leaves the jamf-cli profile, which
+Disconnect**, or **Remove** on the Protect row of the Environment card, turns Protect off in the workspace and leaves the jamf-cli profile, which
 `jamf-cli config remove-profile <name>` removes. Protect can be connected to a Jamf Pro or,
 experimentally, a Jamf School workspace.
 
@@ -241,6 +243,16 @@ come from a Jamf Account integration for the Platform API, whose region, tenant 
 and secret are saved on the same School profile. The integration needs `blueprints:read`; when
 the tenant ID or the permission is wrong, setup says which, and the School API key keeps
 working either way. Without these fields a School collect skips blueprints.
+
+## Logins limited to some sites
+
+A Jamf Pro user account can be limited to some sites. If jamf-cli signs in as one (a profile with
+`--auth-method token`), every list and report it returns covers only those sites, and Jamf Pro
+gives no error. After each collect, Jamf Reports compares the server-wide device totals in
+`pro overview` with the devices that login can list. When the login sees fewer, the collect log,
+Run History and Config Doctor say so, and the HTML report, workbook, webhook cards, report-group
+exports and period report note that they cover only part of the server. A Jamf Pro API client
+(`oauth2`) has no site limit and sees every site, so use one for fleet-wide reports.
 
 ## Reading a permission error
 
@@ -283,8 +295,9 @@ jamf-cli -p <profile> pro scripts list --output json | head -c 1500
 
 ## Shared workspaces
 
-Every Mac collecting into a shared workspace must have a jamf-cli profile with the name the
-workspace's `config.yaml` uses, connected the same way. See
+Every Mac collecting into a shared workspace must have a jamf-cli profile with the same name
+as the workspace folder (and, with a `profiles:` block, the Platform API and Jamf Protect
+profiles it names), connected the same way. See
 [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#shared-workspace-several-macs-one-history).
 
 ## Moving an existing integration

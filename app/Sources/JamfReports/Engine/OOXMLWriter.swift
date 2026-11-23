@@ -69,11 +69,7 @@ enum CellValue: Sendable {
             })
         }
         let s = String(String.UnicodeScalarView(kept))
-        // Escape formula-injection: cells starting with =, +, -, @ get a leading tab.
-        if let first = s.first, "=+-@".contains(first) {
-            return .string("\t" + s)
-        }
-        return .string(s)
+        return .string(StaleDeviceService.formulaGuarded(s))
     }
 }
 
@@ -154,8 +150,21 @@ final class Worksheet: @unchecked Sendable {
     private(set) var freezePane: FreezePane? = nil
     private(set) var imageEmbeds: [ImageEmbed] = []
 
+    /// The report's site-scope sentence, written once into the header's blank row by
+    /// `writeSheetHeader` (set from `Workbook.siteScopeNote`; nil leaves the row blank).
+    var siteScopeNote: String?
+
     init(name: String) {
         self.name = name
+    }
+
+    /// Writes the scope sentence at (`row`, 0), followed by `extra` in the same cell, replacing
+    /// a cell already there. Nothing happens when there is neither.
+    func writeSiteScopeNote(row: Int, extra: String? = nil) {
+        let text = [siteScopeNote, extra].compactMap { $0 }.joined(separator: " ")
+        guard !text.isEmpty else { return }
+        cells.removeAll { $0.row == row && $0.col == 0 }
+        write(text, row: row, col: 0, format: .yellow)
     }
 
     func write(_ value: Any?, row: Int, col: Int, format: CellFormat? = nil) {
@@ -250,9 +259,16 @@ final class Worksheet: @unchecked Sendable {
 final class Workbook: @unchecked Sendable {
     private var sheets: [Worksheet] = []
     let accentColor: String
+    /// `display.percent_decimals`: the `0.0%` or `0%` number format of percentage cells. The
+    /// stored value keeps full precision either way.
+    let percentFormat: PercentFormat
+    /// Set once by `ReportEngine.generate` when the login is site-limited; every tab added
+    /// afterwards carries it in its header.
+    var siteScopeNote: String?
 
-    init(accentColor: String = "#2D5EA2") {
+    init(accentColor: String = "#2D5EA2", percentFormat: PercentFormat = .standard) {
         self.accentColor = accentColor
+        self.percentFormat = percentFormat
     }
 
     @discardableResult
@@ -260,11 +276,15 @@ final class Workbook: @unchecked Sendable {
         let sanitized = sanitizeSheetName(name)
         let unique = uniqueSheetName(sanitized)
         let ws = Worksheet(name: unique)
+        ws.siteScopeNote = siteScopeNote
         sheets.append(ws)
         return ws
     }
 
     var firstSheet: Worksheet? { sheets.first }
+
+    /// The tabs in their written order.
+    var worksheets: [Worksheet] { sheets }
 
     /// Return the first worksheet whose name matches `name` (exact, after sanitization).
     func sheet(named name: String) -> Worksheet? {
@@ -281,14 +301,21 @@ final class Workbook: @unchecked Sendable {
         sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
-    /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
+    /// Write the workbook to `url` atomically: built in memory, written once to a staged file
+    /// beside it (one exclusive create, one descriptor, no reopen by path), then installed by
+    /// `AtomicInstall`, which replaces a link at `url` instead of writing through it.
     func write(to url: URL) throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempURL = tempDir.appendingPathComponent(UUID().uuidString + ".xlsx")
-        try buildZIP(at: tempURL)
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        AtomicInstall.removeStaleStaging(in: dir, now: Date())
+        let staged = AtomicInstall.stagedURL(for: url)
+        do {
+            try buildZIP().write(to: staged, options: .withoutOverwriting)
+            try AtomicInstall.install(staged, at: url)
+        } catch {
+            AtomicInstall.discard(staged)
+            throw error
+        }
     }
 
     // MARK: - Private ZIP assembly
@@ -300,12 +327,17 @@ final class Workbook: @unchecked Sendable {
     /// returned bytes into the entry's compressed size. The provider MUST return
     /// only the requested slice `data[position ..< position + requested]`.
     /// Returning the whole blob on every call inflates `compressedSize` to a
-    /// multiple of the real length — for a STORED entry that desynchronizes
-    /// `compressedSize` from `uncompressedSize`, which Excel rejects as corrupt
-    /// worksheet content even though the ZIP container still opens.
+    /// multiple of the real length, which Excel rejects as corrupt worksheet
+    /// content even though the ZIP container still opens.
+    ///
+    /// XML parts are deflated: stored, a 6,000-Mac workbook was 89 MB. Images are already
+    /// compressed and stay stored.
     private static func addData(_ data: Data, path: String, to archive: Archive) throws {
         let size = Int64(data.count)
-        try archive.addEntry(with: path, type: .file, uncompressedSize: size) { position, requested in
+        let method: CompressionMethod = path.hasPrefix("xl/media/") ? .none : .deflate
+        try archive.addEntry(
+            with: path, type: .file, uncompressedSize: size, compressionMethod: method
+        ) { position, requested in
             let start = Int(position)
             guard start < data.count else { return Data() }
             let end = Swift.min(start + requested, data.count)
@@ -313,8 +345,8 @@ final class Workbook: @unchecked Sendable {
         }
     }
 
-    private func buildZIP(at url: URL) throws {
-        let archive = try Archive(url: url, accessMode: .create)
+    private func buildZIP() throws -> Data {
+        let archive = try Archive(accessMode: .create)
 
         try Self.addData(Data(contentTypesXML().utf8), path: "[Content_Types].xml", to: archive)
         try Self.addData(Data(rootRelsXML().utf8), path: "_rels/.rels", to: archive)
@@ -374,6 +406,8 @@ final class Workbook: @unchecked Sendable {
                 )
             }
         }
+        guard let data = archive.data else { throw CocoaError(.fileWriteUnknown) }
+        return data
     }
 
     // MARK: - XML generators
@@ -485,7 +519,8 @@ final class Workbook: @unchecked Sendable {
 
         // numFmts
         xml += "<numFmts count=\"3\">"
-        xml += "<numFmt numFmtId=\"164\" formatCode=\"0.0%\"/>"
+        let pctCode = percentFormat.decimals == 0 ? "0%" : "0.0%"
+        xml += "<numFmt numFmtId=\"164\" formatCode=\"\(pctCode)\"/>"
         xml += "<numFmt numFmtId=\"165\" formatCode=\"yyyy-mm-dd\"/>"
         xml += "<numFmt numFmtId=\"166\" formatCode=\"0\"/>"
         xml += "</numFmts>"
@@ -909,6 +944,7 @@ extension Worksheet {
                    value: title, format: .title)
         mergeRange(firstRow: 1, firstCol: 0, lastRow: 1, lastCol: ncols - 1,
                    value: subtitle, format: .subtitle)
+        writeSiteScopeNote(row: 2)
         return 3
     }
 }

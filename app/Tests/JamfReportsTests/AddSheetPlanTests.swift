@@ -67,8 +67,8 @@ final class AddSheetPlanTests: XCTestCase {
             profile("protect", .protect), profile("cloud", .securityCloud),
         ])
         XCTAssertEqual(rows.map(\.use), [
-            .newWorkspace, .newWorkspace, .newWorkspace, .addToCurrent,
-            .unavailable(AddSheetPlan.securityCloudReason),
+            .newWorkspace, .newWorkspace, .newWorkspace, .addToCurrent(.protect),
+            .unavailable(ExistingCLISetupFlow.securityCloudReason),
         ])
     }
 
@@ -127,6 +127,136 @@ final class AddSheetPlanTests: XCTestCase {
     func testNothingUnassignedOrOnlyUnavailableOpensNewWorkspace() {
         XCTAssertEqual(preselection([]), .newWorkspace)
         XCTAssertEqual(preselection([profile("cloud", .securityCloud)]), .newWorkspace)
+    }
+
+    // MARK: - Rows and Re-check
+
+    private func discovery(
+        _ profiles: [JamfCLIProfile], workspaces: [String] = [], currentProtect: String? = nil
+    ) -> AddSheetDiscovery {
+        AddSheetDiscovery(
+            unassigned: unassigned(profiles, workspaces: workspaces),
+            currentProtect: currentProtect)
+    }
+
+    private func listing(
+        _ found: AddSheetDiscovery?, _ choice: AddSheetPlan.Choice = .newWorkspace,
+        takesProtect: Bool = true, demo: Bool = false, checking: Bool = false
+    ) -> AddSheetPlan.Listing {
+        AddSheetPlan.listing(
+            demoMode: demo, isChecking: checking, choice: choice, takesProtect: takesProtect,
+            discovery: found)
+    }
+
+    private func names(_ listing: AddSheetPlan.Listing) -> [String] {
+        if case .rows(let rows) = listing { return rows.map(\.name) }
+        return []
+    }
+
+    func testNewWorkspaceListsEveryoneButProtectAndKeepsRefusedRowsWithTheirReason() {
+        let found = discovery([
+            profile("lab"), profile("p", .protect), profile("cloud", .securityCloud),
+            profile("org", level: .organization),
+        ])
+        guard case .rows(let rows) = listing(found) else { return XCTFail("no rows") }
+        XCTAssertEqual(rows.map(\.name), ["lab", "cloud", "org"])
+        XCTAssertEqual(rows.map(\.use), [
+            .newWorkspace, .unavailable(ExistingCLISetupFlow.securityCloudReason),
+            .unavailable(PlatformScopeLevel.organizationLevelReason),
+        ])
+    }
+
+    func testAddToCurrentListsOnlyProtectLogins() {
+        let found = discovery([profile("lab"), profile("p", .protect)])
+        XCTAssertEqual(names(listing(found, .addToCurrent)), ["p"])
+    }
+
+    func testAddToCurrentSaysWhyThereIsNothingToAdd() {
+        XCTAssertEqual(listing(discovery([profile("lab")]), .addToCurrent),
+                       .empty("No Jamf Protect profile in jamf-cli is free to add. Connect new "
+                           + "above."))
+        XCTAssertEqual(
+            listing(discovery([profile("p", .protect)], currentProtect: "other"), .addToCurrent),
+            .empty("This workspace already has Jamf Protect."))
+    }
+
+    func testAChoiceOfAddToCurrentIsIgnoredWhenTheWorkspaceCannotTakeProtect() {
+        let found = discovery([profile("lab"), profile("p", .protect)])
+        XCTAssertEqual(names(listing(found, .addToCurrent, takesProtect: false)), ["lab"])
+    }
+
+    func testListingStatesFollowDemoReadingAndUnreadable() {
+        XCTAssertEqual(listing(discovery([profile("lab")]), demo: true), .demo)
+        XCTAssertEqual(listing(nil, checking: true), .reading)
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(listing(unreadable, checking: true), .unreadable)
+        guard case .empty(let text) = listing(discovery([])) else { return XCTFail("not empty") }
+        XCTAssertTrue(text.hasPrefix("Every jamf-cli profile already has a workspace."))
+    }
+
+    func testRecheckPreselectsAgainOnlyWhileTheChoiceIsUntouched() {
+        let found = discovery([profile("p", .protect)])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: true,
+            requested: nil), .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: .jamfPro), .newWorkspace)
+    }
+
+    func testRecheckShowsAProfileAddedAfterLaunch() {
+        let before = discovery([profile("lab")])
+        let after = discovery([profile("lab"), profile("made-in-terminal")])
+        XCTAssertEqual(names(listing(before)), ["lab"])
+        XCTAssertEqual(names(listing(after)), ["lab", "made-in-terminal"])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: after, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testTheStepFallsBackToNewWorkspaceWhenTheWorkspaceCannotTakeProtect() {
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: true), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.step(choice: .addToCurrent, takesProtect: false),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: true),
+                       .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.step(choice: .newWorkspace, takesProtect: false),
+                       .newWorkspace)
+    }
+
+    func testDemoModeOutranksReadingAndUnreadable() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(listing(nil, demo: true, checking: true), .demo)
+        XCTAssertEqual(listing(unreadable, demo: true), .demo)
+    }
+
+    func testRecheckWithAWorkspaceThatCannotTakeProtectOpensNewWorkspace() {
+        let found = discovery([profile("p", .protect)])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: false, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testRecheckOfUnreadableProfilesOpensNewWorkspace() {
+        let unreadable = AddSheetDiscovery(unassigned: nil, currentProtect: nil)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: unreadable, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil), .newWorkspace)
+    }
+
+    func testRecheckDropsAProfileThatGainedAWorkspace() {
+        let all = [profile("lab"), profile("p", .protect)]
+        let before = discovery(all)
+        let after = discovery(all, workspaces: ["lab"])
+        XCTAssertEqual(names(listing(before)), ["lab"])
+        XCTAssertEqual(listing(after), .empty("Every jamf-cli profile already has a workspace. "
+            + "Profiles made in Terminal appear here after Re-check."))
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: after, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil), .addToCurrent)
     }
 
     // MARK: - Which workspace takes Jamf Protect
@@ -189,12 +319,13 @@ final class AddSheetPlanTests: XCTestCase {
             + "it twice. Set it up only to collect it anyway.")
     }
 
-    func testAPlatformProfileBesideAnOAuth2WorkspaceIsNoted() {
+    /// R3's other direction is a suggestion (`EnvironmentProposal`), not a note.
+    func testAPlatformProfileBesideAnOAuth2WorkspaceHasNoNote() {
         let notes = AddSheetPlan.twinNotes(
             unassigned: [login("gw", auth: "platform", url: gateway)],
             workspaces: [login("direct", auth: "oauth2", url: "acme.jamfcloud.com")],
             learn: { _ in "https://acme.jamfcloud.com" })
-        XCTAssertTrue(notes["gw"]?.hasPrefix("Same Jamf Pro as direct,") == true)
+        XCTAssertEqual(notes, [:])
     }
 
     func testAFailedProbeAnotherHostOrNoWorkspaceNotesNothing() {
@@ -223,5 +354,353 @@ final class AddSheetPlanTests: XCTestCase {
             if !$0.contains($1) { $0.append($1) }
         }, "a profile was probed twice: \(asked)")
         XCTAssertFalse(asked.isEmpty)
+    }
+
+    // MARK: - Platform profiles adopted from the sheet
+
+    private func platform(_ name: String, url: String) -> JamfCLIProfile {
+        JamfCLIProfile(name: name, url: url, schedules: 0, status: .idle, authMethod: "platform",
+                       product: .pro, platformLevel: .environment)
+    }
+
+    func testAProfileOnTheRetiredGatewayIsUnavailableWithTheRefusal() {
+        let rows = unassigned([
+            platform("old", url: "us.apigw.jamf.com"), platform("new", url: "us.api.jamfcloud.com"),
+        ])
+        XCTAssertEqual(rows[0].use, .unavailable(GatewayRegion.retiredRefusal))
+        XCTAssertEqual(rows[1].use, .newWorkspace)
+    }
+
+    /// One decision: the Add sheet's unavailable reason is the one the adoption screen refuses
+    /// the same profile with, for every profile either can reject.
+    @MainActor
+    func testTheAddSheetAndTheAdoptionScreenGiveTheSameReason() {
+        let refused = [
+            platform("old", url: "us.apigw.jamf.com"),
+            profile("org", level: .organization),
+            profile("cloud", .securityCloud),
+        ]
+        let rows = unassigned(refused)
+        let flow = ExistingCLISetupFlow(profiles: refused)
+        for (row, source) in zip(rows, refused) {
+            let reason = try? XCTUnwrap(flow.refusals[source.name])
+            XCTAssertEqual(row.use, .unavailable(reason ?? ""), source.name)
+            XCTAssertEqual(ExistingCLISetupFlow.refusal(for: source), reason, source.name)
+        }
+    }
+
+    /// A Protect login on a retired host or at organization level is refused before the Protect
+    /// offer, as the adoption screen refuses it.
+    @MainActor
+    func testAProtectLoginOnARetiredHostOrAtOrganizationLevelIsStillUnavailable() {
+        let retired = JamfCLIProfile(
+            name: "old", url: "us.apigw.jamf.com", schedules: 0, status: .idle,
+            authMethod: "platform", product: .protect, platformLevel: .environment)
+        let org = profile("org", .protect, level: .organization)
+        let rows = unassigned([retired, org])
+        let flow = ExistingCLISetupFlow(profiles: [retired, org])
+        XCTAssertEqual(rows.map(\.use), [
+            .unavailable(GatewayRegion.retiredRefusal),
+            .unavailable(PlatformScopeLevel.organizationLevelReason),
+        ])
+        XCTAssertEqual(flow.refusals["old"], GatewayRegion.retiredRefusal)
+        XCTAssertEqual(flow.refusals["org"], PlatformScopeLevel.organizationLevelReason)
+    }
+
+    /// The adoption screen refuses a Protect login as a workspace; the Add sheet adds it to the
+    /// current one instead, so only the flow lists a reason.
+    @MainActor
+    func testAProtectLoginIsRefusedAsAWorkspaceButOfferedToTheCurrentOne() {
+        let protect = profile("p", .protect)
+        XCTAssertNotNil(ExistingCLISetupFlow.refusal(for: protect))
+        XCTAssertEqual(unassigned([protect]).map(\.use), [.addToCurrent(.protect)])
+    }
+
+    func testARowCarriesWhatTheConnectionCheckReads() {
+        let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
+        let adopted = AddSheetPlan.adoptionProfile(for: row)
+        XCTAssertEqual(adopted.auth, .platform)
+        XCTAssertEqual(adopted.platformLevel, .environment)
+        XCTAssertEqual(adopted.url, "us.api.jamfcloud.com")
+    }
+
+    /// The Add sheet adopts through `ExistingCLISetupFlow` with the row's profile: a rejected ID
+    /// is refused with the check's reason, which the row shows, and no workspace is created.
+    @MainActor
+    func testAnAddSheetPlatformProfileWithARejectedIDIsRefused() async {
+        let row = unassigned([platform("typo", url: "us.api.jamfcloud.com")])[0]
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
+        let rejected = (try? JSONSerialization.data(withJSONObject: [
+            "error": "request failed", "message": "[ENVIRONMENT_NOT_FOUND] not found.",
+        ])) ?? Data()
+        var initialized: [String] = []
+        await flow.run(
+            connectionRunner: { _ in (4, rejected) },
+            initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
+        XCTAssertTrue(initialized.isEmpty)
+        XCTAssertFalse(flow.canContinue)
+        XCTAssertEqual(
+            flow.statuses["typo"],
+            .failed(ConnectionCheck.Verdict.rejectedID(.unknownEnvironment).message))
+    }
+
+    /// The row that showed the connection check's note leaves the list once adopted, so the
+    /// success message carries the note.
+    @MainActor
+    func testASuccessfulAdoptionKeepsTheConnectionChecksNote() async {
+        let row = unassigned([platform("prod", url: "us.api.jamfcloud.com")])[0]
+        let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
+        let forbidden = (try? JSONSerialization.data(withJSONObject: [
+            "error": "request failed", "message": "permission denied (HTTP 403)",
+        ])) ?? Data()
+        await flow.run(
+            connectionRunner: { _ in (5, forbidden) },
+            initialize: { _, _ in 0 }, collect: { _, _ in 0 })
+        let note = ConnectionCheck.Verdict.missingPermission(names: []).message
+        XCTAssertEqual(flow.connectionNotes["prod"], note)
+
+        let outcome = AddSheetPlan.adoptionOutcome(
+            name: "prod", status: flow.statuses["prod"], note: flow.connectionNotes["prod"])
+        XCTAssertEqual(
+            outcome.message,
+            "prod is set up. Switch to it from the workspace menu. " + note)
+        XCTAssertNil(outcome.error)
+    }
+
+    // MARK: - Platform API add-on
+
+    private func openUnassigned(_ profiles: [JamfCLIProfile], open: Bool = true)
+        -> [AddSheetPlan.UnassignedProfile] {
+        AddSheetPlan.unassigned(
+            profiles: profiles, workspaces: [], paired: [], unusable: [:], platformSlotOpen: open)
+    }
+
+    func testFreePlatformProfileIsAddToCurrentWhenSlotEmpty() {
+        let rows = openUnassigned([platform("gw", url: "us.api.jamfcloud.com")])
+        XCTAssertEqual(rows.map(\.use), [.addToCurrent(.platform)])
+    }
+
+    func testPlatformProfileIsNewWorkspaceWhenCurrentHasPlatform() {
+        let rows = openUnassigned(
+            [platform("gw", url: "us.api.jamfcloud.com")], open: false)
+        XCTAssertEqual(rows.map(\.use), [.newWorkspace])
+    }
+
+    func testSchoolWorkspaceOffersNoPlatformAddOn() {
+        // No jamf_pro slot: the slot is not open, and the step lists no Platform row.
+        let found = AddSheetDiscovery(
+            unassigned: openUnassigned(
+                [platform("gw", url: "us.api.jamfcloud.com")], open: false),
+            currentProtect: nil, currentHasJamfPro: false)
+        XCTAssertFalse(found.platformSlotOpen)
+        XCTAssertFalse(AddSheetPlan.currentAcceptsPlatform(takesProtect: true, discovery: found))
+        XCTAssertEqual(names(listing(found, .addToCurrent)), [])
+    }
+
+    func testPlatformRowsListOnlyWhileTheSlotIsOpen() {
+        let rows = openUnassigned(
+            [platform("gw", url: "us.api.jamfcloud.com"), profile("p", .protect)])
+        let open = AddSheetDiscovery(
+            unassigned: rows, currentProtect: nil, currentHasJamfPro: true)
+        XCTAssertEqual(names(listing(open, .addToCurrent)), ["gw", "p"])
+        var filled = open
+        filled.currentPlatform = "other"
+        XCTAssertEqual(names(listing(filled, .addToCurrent)), ["p"])
+    }
+
+    func testSuggestionForCurrentPreselectsAddToCurrent() {
+        let suggestion = EnvironmentProposal.Extension(
+            workspace: "Prod", slot: .platform, profile: "gw")
+        var found = AddSheetDiscovery(
+            unassigned: openUnassigned([profile("lab")]), currentProtect: nil,
+            currentHasJamfPro: true)
+        found.suggestions = [suggestion]
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil, current: "prod"), .addToCurrent)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil, current: "other"), .newWorkspace)
+    }
+
+    func testFreePlatformProfileOnAWorkspaceThatTakesOnePreselectsAddToCurrent() {
+        XCTAssertEqual(AddSheetPlan.preselection(
+            unassigned: openUnassigned([platform("gw", url: "us.api.jamfcloud.com")]),
+            currentAcceptsProtect: false, currentAcceptsPlatform: true, requested: nil),
+            .addToCurrent)
+    }
+
+    func testASuggestionNamesItsWorkspaceInTheProfilesNote() {
+        let notes = AddSheetPlan.suggestionNotes([
+            .init(workspace: "X", slot: .platform, profile: "gw")])
+        XCTAssertEqual(notes.keys.sorted(), ["gw"])
+        XCTAssertTrue(notes["gw"]?.hasPrefix("Same Jamf Pro as X, which has a workspace.") == true)
+    }
+
+    func testAProfileSuggestedForAnotherWorkspaceIsNotAnAddRow() {
+        let gw = platform("gw", url: "us.api.jamfcloud.com")
+        let rows = AddSheetPlan.unassigned(
+            profiles: [gw], workspaces: [], paired: [], unusable: [:], platformSlotOpen: true,
+            platformSuggestedElsewhere: ["gw"])
+        XCTAssertEqual(rows.map(\.use), [.newWorkspace])
+        let found = AddSheetDiscovery(
+            unassigned: rows, currentProtect: nil, currentHasJamfPro: true)
+        XCTAssertEqual(names(listing(found, .addToCurrent)), [])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: found, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil, current: "Y"), .newWorkspace)
+    }
+
+    func testRecheckListsAProfileAddedAfterLaunch() {
+        var before = AddSheetDiscovery(
+            unassigned: openUnassigned([]), currentProtect: nil, currentHasJamfPro: true)
+        before.currentPlatform = nil
+        let after = AddSheetDiscovery(
+            unassigned: openUnassigned([platform("gw", url: "us.api.jamfcloud.com")]),
+            currentProtect: nil, currentHasJamfPro: true)
+        XCTAssertEqual(names(listing(before, .addToCurrent)), [])
+        XCTAssertEqual(names(listing(after, .addToCurrent)), ["gw"])
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: after, takesProtect: true, choice: .newWorkspace, choiceTouched: false,
+            requested: nil), .addToCurrent)
+    }
+
+    func testAPlatformProfileReachingAnotherJamfProIsRefused() {
+        XCTAssertEqual(
+            AddSheetPlan.platformHostRefusal(
+                profile: "gw",
+                verdict: .different(jamfPro: "a.example.com", platform: "b.example.com")),
+            "gw reaches b.example.com, not this workspace's Jamf Pro (a.example.com). "
+                + "Nothing was changed.")
+        XCTAssertNil(AddSheetPlan.platformHostRefusal(profile: "gw", verdict: .same))
+        XCTAssertNil(AddSheetPlan.platformHostRefusal(profile: "gw", verdict: .unknown))
+    }
+
+    func testPlatformMessagesNameTheProfileAndWorkspace() {
+        XCTAssertEqual(
+            AddSheetPlan.platformAddedMessage(profile: "gw", workspace: "prod"),
+            "Platform API profile gw added to prod. The next collect uses it for the Platform "
+                + "reports.")
+        XCTAssertEqual(
+            AddSheetPlan.suggestionText(.init(workspace: "prod", slot: .platform, profile: "gw")),
+            "gw reaches the same Jamf Pro as prod. Add it?")
+    }
+
+    // MARK: - Discovery
+
+    private func plan(
+        _ listed: [JamfCLIProfile], learned: [String: String] = [:]
+    ) -> AddSheetDiscovery {
+        let current = EnvironmentProfiles(jamfPro: "Example")
+        return AddSheetPlan.discovery(
+            listed: listed, currentWorkspace: "Example", current: current,
+            workspaces: ["Example": current], unusable: [:], learnedJamfProURLs: learned)
+    }
+
+    private func use(
+        _ name: String, in found: AddSheetDiscovery
+    ) -> AddSheetPlan.UnassignedProfile.Use? {
+        found.unassigned?.first { $0.name == name }?.use
+    }
+
+    private var exampleOAuth: JamfCLIProfile {
+        login("Example", auth: "oauth2", url: "https://example.jamfcloud.com")
+    }
+
+    func testAPlatformProfilePairedWithAnUnassignedOAuthProfileIsNotAnAddRow() {
+        let found = plan(
+            [exampleOAuth, login("Other", auth: "oauth2", url: "https://other.jamfcloud.com"),
+             platform("Other-API", url: "us.api.jamfcloud.com")],
+            learned: ["Other-API": "https://other.jamfcloud.com"])
+        XCTAssertEqual(use("Other-API", in: found), .newWorkspace)
+    }
+
+    func testAPlatformProfileLearnedOnlyOnTheProbePassStopsBeingAnAddRow() {
+        let listed = [exampleOAuth, platform("Other-API", url: "us.api.jamfcloud.com")]
+        XCTAssertEqual(use("Other-API", in: plan(listed)), .addToCurrent(.platform),
+                       "an unknown host is left to the host check")
+        let probed = plan(listed, learned: ["Other-API": "https://other.jamfcloud.com"])
+        XCTAssertEqual(use("Other-API", in: probed), .newWorkspace)
+        XCTAssertEqual(AddSheetPlan.recheck(
+            found: probed, takesProtect: true, choice: .addToCurrent, choiceTouched: false,
+            requested: nil, current: "Example"), .newWorkspace)
+    }
+
+    func testTwoPlatformProfilesOnAnotherHostAreNeitherAnAddRow() {
+        let url = "https://other.jamfcloud.com"
+        let found = plan(
+            [exampleOAuth, platform("A-API", url: "us.api.jamfcloud.com"),
+             platform("B-API", url: "us.api.jamfcloud.com")],
+            learned: ["A-API": url, "B-API": url])
+        XCTAssertEqual(use("A-API", in: found), .newWorkspace)
+        XCTAssertEqual(use("B-API", in: found), .newWorkspace)
+    }
+
+    func testTheCurrentWorkspacesSuggestionIsAnAddRowWithNoSecondWorkspaceNote() {
+        let found = plan(
+            [exampleOAuth, platform("Example-API", url: "us.api.jamfcloud.com")],
+            learned: ["Example-API": "https://example.jamfcloud.com"])
+        XCTAssertEqual(use("Example-API", in: found), .addToCurrent(.platform))
+        XCTAssertEqual(found.suggestions.map(\.profile), ["Example-API"])
+        XCTAssertNil(found.twinNotes["Example-API"])
+    }
+
+    func testDiscoveryCarriesEveryListedName() {
+        let protectLogin = JamfCLIProfile(
+            name: "Example-Protect", url: "", schedules: 0, status: .idle, product: .protect)
+        XCTAssertEqual(
+            plan([exampleOAuth, protectLogin]).allProfileNames, ["Example", "Example-Protect"])
+    }
+
+    // MARK: - Protect-only environment (P8)
+
+    func testAnUnassignedProtectLoginMayBeItsOwnEnvironmentButIsNeverPreselected() {
+        let rows = unassigned([profile("Acme-Protect", .protect), profile("lab")])
+        let protect = rows.first { $0.name == "Acme-Protect" }
+        XCTAssertEqual(protect.map(AddSheetPlan.offersOwnEnvironment), true)
+        let lab = rows.first { $0.name == "lab" }
+        XCTAssertEqual(lab.map(AddSheetPlan.offersOwnEnvironment), false)
+        // Only the Protect row, nothing to join: still the New workspace step, never a choice made.
+        XCTAssertEqual(
+            AddSheetPlan.preselection(
+                unassigned: protect.map { [$0] } ?? [], currentAcceptsProtect: false,
+                requested: nil),
+            .newWorkspace)
+        XCTAssertEqual(
+            AddSheetPlan.preselection(
+                unassigned: protect.map { [$0] } ?? [], currentAcceptsProtect: true,
+                requested: nil),
+            .addToCurrent)
+    }
+
+    func testALoginAWorkspaceAlreadyNamesIsNotOffered() {
+        let rows = unassigned([profile("Acme-Protect", .protect)], paired: ["Acme-Protect"])
+        XCTAssertTrue(rows.isEmpty)
+    }
+
+    @MainActor
+    func testCreatingAProtectOnlyEnvironmentWritesTheBlockAndKeepsAnExistingConfig() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-protect-only-\(UUID().uuidString)")
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        try OnboardingFlow.createProtectOnlyEnvironment(login: "Acme-Protect", appSupport: support)
+        let config = root.appendingPathComponent("Acme-Protect/config.yaml")
+        let env = EnvironmentProfiles.read(configURL: config, workspace: "Acme-Protect")
+        XCTAssertTrue(env.isProtectOnly)
+        XCTAssertEqual(env.protect, "Acme-Protect")
+        XCTAssertNil(env.jamfPro)
+
+        let before = try Data(contentsOf: config)
+        XCTAssertThrowsError(
+            try OnboardingFlow.createProtectOnlyEnvironment(
+                login: "Acme-Protect", appSupport: support)
+        ) { XCTAssertTrue("\($0)".contains("workspaceHasConfig")) }
+        XCTAssertEqual(try Data(contentsOf: config), before)
     }
 }

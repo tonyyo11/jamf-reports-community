@@ -55,10 +55,10 @@ name as `%2C` and a percent sign as `%25`.
 
 | Command | What it does | Key options |
 |---------|--------------|-------------|
-| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>` |
+| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`); a Jamf School workspace gets the School workbook | `--profile`, `--output <path>`, `--template <id>`, `--csv-folder` |
 | `collect` | Collect fresh `jamf-cli` snapshots (Jamf Pro, Jamf School, and Jamf Protect when connected) | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix); refuses a Jamf School workspace | `--profile`, `--output <path>` |
-| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage | `--profile` |
+| `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`), and Jamf Protect's (`jamf-cli protect backup`) when the workspace has Protect connected and is not on shared storage; a Jamf School workspace with Protect backs up Protect alone. On storage other Macs reach, the Jamf Pro part runs only when `backup.pro_on_synced_storage: true` was chosen | `--profile` |
 | `scaffold` | Write a minimal jamf-cli-only `config.yaml`; with a Jamf Pro CSV export, also add its extra columns as `custom_eas` (read once) | `--csv <path>` (optional), `--out <path>` |
 | `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
@@ -66,6 +66,7 @@ name as `%2C` and a percent sign as `%25`.
 | `device` | Print one device's detail JSON (Jamf Pro profiles only) | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School workspace; refuses a profile that is not one | `--profile` |
 | `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
+| `verify` | Check a report run's manifest: every file's size and SHA-256, and the RFC 3161 timestamp beside it when there is one; exits `1` when anything differs | `<stem>.manifest.json`, `--signer-sha256 <hex>` |
 
 ### Gating a job on config health
 
@@ -105,27 +106,71 @@ A few behaviors worth knowing:
   last line on stdout. If the HTML report cannot be written, `generate` still exits `0` with
   the workbook and prints a `[warn] HTML report not written: …` line to stderr. `html` is a
   separate command and always writes one HTML report.
-- A Jamf Pro `collect` runs at most once per profile per day; a second run the same day
-  exits successfully without re-collecting. A Jamf School workspace collects each source at
-  most every 12 hours instead. Pass `--force` to override either.
-- `generate` on a Jamf School workspace (`school_cli.enabled: true`) writes the School
+- `generate --csv-folder` (or `output.csv_folder: true` in `config.yaml`, which scheduled runs
+  follow) also writes one CSV per workbook tab into a folder beside the workbook, named like
+  it with `_csv` added. It holds the rows the workbook tabs hold, honours `sheets.only`,
+  `skip` and `order`, and moves to the archive with its workbook. A failure prints a
+  `[warn] CSV folder not written: …` line and leaves the workbook as it is.
+- Every workbook run (`generate`, the app, a schedule) and every Generate run in the app also
+  writes `<name>.manifest.json`, named after the workbook (else the run's first file): the size
+  and SHA-256 of the workbook, its HTML report, each CSV in its CSV folder, and the HTML, PDF
+  and CSV formats the Generate run wrote with it. Chart PNGs and the period and fleet reports
+  are not listed; `jamf-reports html` and the Reports screen's PDF and CSV exports write a
+  manifest for their one file. `jamf-reports verify <manifest>` prints `OK`, `CHANGED`, `MISSING` or
+  `UNREADABLE` for each, `EXTRA` for a file added to a listed folder (Finder's `.DS_Store`
+  excepted) and for a file named after the run that the manifest leaves out (a workbook, an
+  HTML or PDF, a CSV folder), and exits `1` unless all match. A manifest that lists no files
+  fails. With `output.timestamp_authority: "https://…"`
+  the manifest's SHA-256, a random nonce and fixed request headers (`User-Agent: JamfReports`)
+  are sent to that RFC 3161 time-stamp authority, nothing else, and its signed reply saved as
+  `<name>.tsr`; `verify` then checks the reply signs this manifest and prints the authority's
+  time, its certificate's SHA-256 fingerprint and whether this Mac trusts its certificate
+  chain, then a note that the timestamp shows the manifest existed by that time, not who wrote
+  it: a public authority signs any file for anyone. It warns when the authority's time is more
+  than five minutes from the time the manifest says it was written, which points to a run
+  sealed again later. Compare that fingerprint with the one the authority publishes: a self-signed
+  certificate can name itself anything. With no `.tsr`, or an untrusted chain, `verify` adds a
+  note: anyone who can write the folder can write a matching manifest, so a match holds only if
+  you trust where the manifest (and the signer fingerprint) came from. For a script or an
+  audit, pass the authority's published fingerprint as `--signer-sha256 <hex>` (64 hex digits;
+  colons and spaces, as `openssl x509 -fingerprint -sha256` prints them, are accepted): `verify`
+  then exits `1` when the run has no `.tsr` or another certificate signed it, and prints `OK`
+  for the signer instead of the note. A failed request is a `[warn] report timestamp not
+  saved: …` line; the reports stand. On a shared workspace the address is used on a Mac only
+  once it is confirmed there (Config Doctor). `https://freetsa.org/tsr` is a free test service,
+  not a qualified authority. To check a reply without this app, macOS's own LibreSSL (3.3.6,
+  macOS 15 and later) does it:
+  `openssl ts -verify -data <stem>.manifest.json -in <stem>.tsr -CAfile <authority CA>.pem`.
+- A full `collect` runs at most once per profile per day, Jamf Pro and Jamf School alike; a
+  second run the same day exits successfully without re-collecting. Pass `--force` to
+  override it. `--force` also fetches every source whether or not it is due; without it, a
+  partial run (`--tiers`) still fetches a Jamf School source at most every 12 hours.
+- `generate` on a Jamf School workspace (`school_cli.enabled: true`, or `profiles.jamf_school` in a config with a `profiles:` block) writes the School
   workbook and ignores `--template`; `html.with_workbook` writes no HTML beside it, since
   there is no School HTML report. `html` refuses a School workspace with a message that points
   at `generate`.
 - Product guard (2.11): a Jamf Pro command never runs on a profile that belongs to another
   product. `backup` and `device` refuse a Jamf School, Jamf Protect or Security Cloud
-  profile and an organization-level Platform API profile; `collect` refuses a Jamf Protect or
+  profile and an organization-level Platform API profile (`backup` takes a Jamf School
+  workspace that has a Jamf Protect profile and backs up Protect alone, 2.12); `collect` refuses a Jamf Protect or
   Security Cloud profile and an organization-level one (a School workspace collects School
   data), and `schedules add` refuses them for a per-profile schedule, as well as `--mode backup`
-  for a School workspace. Each prints
+  for a School workspace without Jamf Protect. Each prints
   the reason once on stderr and exits `1`, before any lock, Run History record or workspace
   file is created. `school-check` refuses a workspace that is not a Jamf School one the same way.
   A scheduled run of such a profile (`--scheduled-run` or the background item) instead prints a
   `[skip]` line and exits `0`, so nothing retries it and no failure webhook is sent.
+- On storage other Macs reach (a sync provider, a network volume, a shared workspace), the
+  Jamf Pro part of `backup` runs only when `backup.pro_on_synced_storage: true`. Without it the
+  command prints `Jamf Pro not backed up: <reason>`, exits `0`, and writes no folder when
+  there is no Protect part either; see
+  [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 - `backup` also backs up Jamf Protect into the same backup folder when the workspace has
   Protect connected.
   When only the Protect part falls short, the Jamf Pro backup stands: the command prints
-  warnings and exits `0`.
+  warnings and exits `0`. On a Jamf School workspace (2.12) the backup is the Protect part
+  alone, `products.pro` in `manifest.json` reads skipped ("no Jamf Pro"), and the command
+  exits with Protect's own exit code when that part failed or came back partial.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
   initial-setup command. It copies the existing file to `<out>.bak-<date-time>`
   first and prints the path on stderr. To add extension attributes to an existing
@@ -243,8 +288,8 @@ jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ```
 
 `collect`, `generate`, `html`, `backup` and `--scheduled-run` take the lock and exit `75`
-when it is held; `schedules run` exits `75` when its run is queued for the background
-item's next wake. Read-only commands such as `check` and `device` take no lock.
+when it is held; `schedules run` instead prints a "queued" line and exits `0` when another run holds
+the lock, and the run happens at the background item's next wake. Read-only commands such as `check` and `device` take no lock.
 
 ## Scheduling
 

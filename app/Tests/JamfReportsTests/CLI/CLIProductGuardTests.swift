@@ -12,6 +12,7 @@ final class CLIProductGuardTests: XCTestCase {
     private let protect = "protect-only"
     private let school = "school-ws"
     private let pro = "pro-ws"
+    private let schoolProtect = "school-protect-ws"
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -22,6 +23,8 @@ final class CLIProductGuardTests: XCTestCase {
         ProfileAuthMethod.invalidateCache()
         try workspace(protect, config: "jamf_cli:\n  profile: \(protect)\n")
         try workspace(pro, config: "jamf_cli:\n  profile: \(pro)\n")
+        try workspace(schoolProtect, config: "school_cli:\n  enabled: true\n"
+            + "protect:\n  enabled: true\n  profile: school-protect-login\n")
         try workspace(school, config: """
             school_cli:
               enabled: true
@@ -87,6 +90,11 @@ final class CLIProductGuardTests: XCTestCase {
     func testBackupRefusesAJamfSchoolWorkspaceWithoutJamfCLI() throws {
         XCTAssertEqual(
             Backup.refusal(profile: school), CollectRouter.schoolBackupReason(profile: school))
+    }
+
+    /// With a Protect profile, `backup` takes a School workspace and backs up Protect alone.
+    func testBackupTakesAJamfSchoolWorkspaceWithProtect() throws {
+        XCTAssertNil(Backup.refusal(profile: schoolProtect))
     }
 
     // MARK: - html and generate

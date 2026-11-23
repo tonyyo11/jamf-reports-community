@@ -18,12 +18,17 @@ extension CLIBridge {
         case collect
         case generate
         case toolUpdate
+        /// A workspace merge (P7): it moves snapshots and summaries between workspaces, so no
+        /// collect, report or tick may run under it.
+        case merge
 
+        /// English: it is read only by log lines.
         var label: String {
             switch self {
             case .collect: "Collect"
             case .generate: "Report"
             case .toolUpdate: "jamf-cli update"
+            case .merge: "Workspace merge"
             }
         }
     }
@@ -47,8 +52,8 @@ extension CLIBridge {
     /// through. Task-local, so a collect started from anywhere else is still refused.
     @TaskLocal private static var generateHoldID: Int?
 
-    /// When the last hold ended.
-    private(set) static var tickLockReleasedAt: Date?
+    /// When the last hold ended. Settable so a test can put it on its own fixed clock.
+    static var tickLockReleasedAt: Date?
 
     /// Whether another live process holds `tickLock`. False for this process's own hold.
     static func tickLockHeldElsewhere() -> Bool {
@@ -62,12 +67,22 @@ extension CLIBridge {
         runningHoldRefusal ?? (tickLockHeldElsewhere() ? .tickLockHeld : nil)
     }
 
+    /// `collectRefusal` with the lock probe (a file read, a sysctl, an xattr) off the main
+    /// actor, for a screen that asks on a timer.
+    static func collectRefusalOffMain() async -> CLIBridgeError? {
+        if let running = runningHoldRefusal { return running }
+        let lock = tickLock()
+        let held = await Task.detached { lock.isHeldByAnotherLiveProcess() }.value
+        return held ? .tickLockHeld : nil
+    }
+
     /// The refusal for the hold running in this process, nil when none runs.
     private static var runningHoldRefusal: CLIBridgeError? {
         switch holdPurpose {
         case .collect: .collectInProgress
         case .generate: .generateInProgress
         case .toolUpdate: .toolUpdateInProgress
+        case .merge: .mergeInProgress
         case nil: nil
         }
     }
@@ -100,7 +115,7 @@ extension CLIBridge {
     ) throws -> Hold {
         if let running = runningHoldRefusal {
             AppLogger.event(
-                .collect, .notice, "\(purpose.label) refused: \(running.localizedDescription)")
+                .collect, .notice, "\(purpose.label) refused: \(running.englishDescription)")
             throw running
         }
         let lock = tickLock()

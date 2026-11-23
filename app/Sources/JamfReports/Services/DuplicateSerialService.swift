@@ -56,6 +56,11 @@ struct DuplicateSerialService: Sendable {
     /// Returns `.empty` (undecoded) when no snapshot exists.
     static func load(profile: String) -> Snapshot {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return .empty }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let kindDir = dir.appendingPathComponent("duplicate-serials", isDirectory: true)
         return load(url: FileManager.newestJSONFile(in: kindDir))
     }
@@ -63,15 +68,12 @@ struct DuplicateSerialService: Sendable {
     /// Test seam: load directly from an arbitrary file URL.
     static func load(url: URL?) -> Snapshot {
         guard let url else { return .empty }
-        guard let data = try? Data(contentsOf: url) else {
-            AppLogger.collect.warning(
-                "DuplicateSerialService: could not read duplicate-serials file \(url.lastPathComponent, privacy: .public)"
-            )
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
             return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .empty
         }
         guard let rows = try? JSONDecoder().decode([DuplicateSerialRow].self, from: data) else {
             AppLogger.collect.warning(
-                "DuplicateSerialService: failed to decode duplicate-serials at \(url.lastPathComponent, privacy: .public)"
+                "DuplicateSerialService: failed to decode duplicate-serials at \(url.lastPathComponent, privacy: .private)"
             )
             return .unreadable
         }

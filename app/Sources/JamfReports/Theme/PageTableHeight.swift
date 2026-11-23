@@ -6,6 +6,10 @@ enum PageTableMetrics {
     /// A table's column header, and a row at the default text size. Larger text makes rows
     /// taller than this, and the table then scrolls a little sooner.
     static let headerHeight: CGFloat = 32
+    /// The space a table keeps above its first row and below its last: about 5 and 9 pt on
+    /// macOS Golden Gate 27.3 (measured 2026-11-20). Without it a one- or two-row table
+    /// scrolled and clipped its first row.
+    static let rowInsets: CGFloat = 14
     static let rowHeight: CGFloat = 28
     /// A row holding a pill, a bar or a button, as the Health Audit findings do (measured at
     /// the default text size). Two points taller than `rowHeight`: sized at 28, the last row of
@@ -17,7 +21,7 @@ enum PageTableMetrics {
 
     /// The table's own height when every row is shown, never less than one row's.
     static func contentHeight(rows: Int, rowHeight: CGFloat = rowHeight) -> CGFloat {
-        headerHeight + CGFloat(max(rows, 1)) * rowHeight
+        headerHeight + rowInsets + CGFloat(max(rows, 1)) * rowHeight
     }
 
     /// Every row when they fit in the viewport, otherwise one screenful that scrolls inside.
@@ -29,7 +33,7 @@ enum PageTableMetrics {
     ) -> CGFloat {
         let content = contentHeight(rows: rows, rowHeight: rowHeight)
         guard viewport.isFinite, viewport > 0 else { return content }
-        let screenful = max(viewport - reserved, headerHeight + 3 * rowHeight)
+        let screenful = max(viewport - reserved, contentHeight(rows: 3, rowHeight: rowHeight))
         return min(content, screenful)
     }
 }

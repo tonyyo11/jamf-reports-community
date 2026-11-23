@@ -69,9 +69,14 @@ Feeds these screens:
 
 ### Tier 3 — Daily digest
 
-Once per collection run, the app writes one `summary.json` file containing about 15
-aggregated fleet metrics for that day: total devices, compliance percent, patch percent,
-FileVault percent, stale device count, security score, and related rolled-up numbers. The
+Once per collection run, the app writes one `summary_<date>.json` file of aggregated fleet
+metrics for that day: total devices, compliance percent, patch percent, FileVault percent,
+stale device count, security score, and related rolled-up numbers. It also carries, where the
+environment has them, a `mobile` object (managed, supervised, passcode and OS-current figures
+for devices that are not Macs), Jamf Protect and Jamf Security Cloud figures (computers,
+matched share, alerts, risk categories), the `products` that landed, each security agent's
+coverage, and four aggregate maps (macOS major version, model family, mobile form factor and
+last-seen buckets). A figure nothing measured is absent, never 0. The
 first collect/generate run of a given day writes the summary; a later run the same day
 replaces it only when it is strictly better — for example it measured a metric the first
 run could not (stale count, real mSCP bands instead of the proxy). One caveat: a
@@ -111,10 +116,10 @@ This table shows where each Overview KPI number comes from:
 | SIP % | Security report SIP enabled / total | 2 |
 | Firewall % | Security report firewall enabled / total | 2 |
 | Gatekeeper % | Security report Gatekeeper enabled / total | 2 |
-| Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — check config for `complianceIsProxy` | 1 or 2 |
+| Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — the summary's `complianceIsProxy` field says which | 1 or 2 |
 | Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
 | Stale Count | Device-compliance rows whose oldest counted date is more than `stale_device_days` days old; the dates are `thresholds.stale_basis` (default the last check-in; inventory and contact come from the `computers` snapshot) | 1 (+ 2 for inventory or contact) |
-| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary; can be disabled via `jamf_cli.collect_skip: [sofa]` | SOFA + 2 |
+| OS Currency % | Share of Macs on the newest release of their own macOS major version, per the SOFA feed; Macs with no known version are left out of both numerator and denominator; can be disabled via `jamf_cli.collect_skip: [sofa]` | SOFA + 2 |
 | Security Score | Weighted share of Macs passing each factor in `security_policy.score_factors` (Config → Scoring; by default the native Jamf Pro factors, plus mSCP and each security agent when configured), over the factors with data, under the workspace's security policy | 2 + config |
 | Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing, over the Macs that reported the control | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |
@@ -177,9 +182,10 @@ behind collection-tier prompts.
 See [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) for the full collection
 mechanics and presets.
 
-The **Collect now** button in the app (visible in **Data Sources**) runs a full, forced
-collection across all tiers, ignoring cadence limits and freshness checks. Use it when
-you need the latest numbers right away.
+The **Collect now** buttons in the app (on the health strip above every screen and on a
+screen's stale-data banner) re-collect the tiers that are behind, ignoring cadence limits and
+freshness checks. The Overview's first-collect banner runs every tier. Use them when you need
+the latest numbers right away.
 
 ## Report-only kinds
 

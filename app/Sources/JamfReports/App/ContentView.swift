@@ -46,6 +46,12 @@ struct ContentView: View {
     }
 
     var body: some View {
+        // Set here, below the store, so a Customize Apply re-renders every screen.
+        root.environment(\.percentFormat, workspace.percentFormat)
+    }
+
+    @ViewBuilder
+    private var root: some View {
         if workspace.profiles.isEmpty && !workspace.demoMode {
             if userPickedOnboarding {
                 OnboardingView(onStartOver: { userPickedOnboarding = false })
@@ -175,17 +181,25 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTab)) { note in
             if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
+                let visibility = workspace.tabVisibility(hiddenRaw: hiddenTabsRaw)
+                if let refusal = visibility.navigationRefusal(to: newTab) {
+                    workspace.toast = Toast(
+                        message: refusal, style: .info,
+                        action: visibility.isAvailable(newTab) ? .settings : nil)
+                    return
+                }
                 workspace.pendingDevicesFilter = DevicesView.DeviceFilter.pending(
                     from: note.userInfo, destination: newTab)
+                workspace.pendingMobileFilter = MobileFinding.pending(
+                    from: note.userInfo, destination: newTab)
+                workspace.pendingAuditSection = newTab == .audit
+                    ? note.userInfo?[MobileDevicesSection.userInfoKey] as? String : nil
                 tab = newTab
             }
         }
         // Switching to a Jamf School workspace removes the Jamf Pro tabs, and disconnecting
         // Protect there removes the Protect tab; do not leave the detail pane on one.
-        .onChange(of: workspace.isSchoolWorkspace) { _, _ in
-            if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
-        }
-        .onChange(of: workspace.protectConnected) { _, _ in
+        .onChange(of: workspace.environmentProducts) { _, _ in
             if !workspace.tabVisibility(hiddenRaw: hiddenTabsRaw).isVisible(tab) { tab = .overview }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToPreviousTab)) { _ in
@@ -213,6 +227,10 @@ struct ContentView: View {
             // cheap). Both no-op in demo mode.
             await workspace.checkHeavyTierStaleness()
             await workspace.autoRefreshAuditIfStale()
+            // MFS-2: one-shot Spotlight + permissions backfill on existing workspaces, once per
+            // app version (`OnboardingFlow.createWorkspace` covers new ones). It walks every
+            // workspace and runs mdutil, so it stays off the main actor.
+            Task.detached(priority: .utility) { WorkspaceMigration.runIfNeeded() }
             // v2.2.0 managed automation: make Login Items agree with the
             // policy-driven schedule. No-op in demo mode.
             await workspace.applyAutomationPolicy()
@@ -225,8 +243,8 @@ struct ContentView: View {
             // scoped to the affected tiers; no-op when nothing is wrong.
             await workspace.remediateStaleDataIfNeeded()
         }
-        .animation(.snappy(duration: 0.28), value: sidebarMode)
-        .animation(.snappy, value: workspace.toast != nil)
+        .motionSafeAnimation(.snappy(duration: 0.28), value: sidebarMode)
+        .motionSafeAnimation(.snappy, value: workspace.toast != nil)
         .onReceive(NotificationCenter.default.publisher(for: .systemActionDenied)) { note in
             if let message = note.userInfo?["message"] as? String {
                 workspace.toast = Toast(message: message, style: .danger)
@@ -269,74 +287,43 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private var detailView: some View {
-        switch tab {
-        case .overview:
-            if workspace.isSchoolWorkspace { SchoolOverviewView() } else { OverviewView() }
-        case .fleet:             FleetOverviewView()
-        case .devices:           DevicesView()
-        case .deviceLookup:      DeviceLookupView()
-        case .trends:            TrendsView()
-        case .audit:             AuditView()
-        case .reports:           ReportsView()
-        case .schedules:         AutomationTab()
-        case .runs:              RunsView()
-        case .config:            ConfigView()
-        case .customize:         CustomizeView()
-        case .sources:           SourcesView()
-        case .backups:           BackupsView()
-        case .settings:          SettingsView()
-        case .onboarding:        OnboardingView().id(onboardingRun)
-        case .securityPosture:   SecurityPostureView()
-        case .compliancePosture: CompliancePostureView()
-        case .complianceBenchmarks: ComplianceBenchmarksView()
-        case .patch:             PatchView()
-        case .updates:           UpdatesView()
-        case .ddmBlueprints:     DDMBlueprintView()
-        case .policyProfile:     PolicyProfileView()
-        case .extensionAttributes: ExtensionAttributesView()
-        case .outreach:          OutreachView()
-        case .protectDashboard:  ProtectView()
-        case .mobileFleet:       MobileFleetView()
-        case .groupInventory:    GroupsView()
-        case .schoolDevices:     SchoolDevicesView()
-        }
+        TabPage(tab: tab, onboardingRun: onboardingRun)
     }
 
     private func subtitle(for tab: Tab) -> String? {
         switch tab {
-        case .overview:          "FLEET"
-        case .fleet:             "WORKSPACE SUMMARY"
-        case .devices:           "INVENTORY"
-        case .deviceLookup:      "LOOKUP"
+        case .overview:          L("FLEET")
+        case .fleet:             L("WORKSPACE SUMMARY")
+        case .devices:           L("INVENTORY")
+        case .deviceLookup:      L("LOOKUP")
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
-        case .audit:             "HEALTH & HYGIENE"
+        case .audit:             L("HEALTH & HYGIENE")
         // Demo mode always shows the schedules list (see `AutomationTab`).
         case .schedules:
             !workspace.demoMode && AutomationPolicy.parse(automationPolicyRaw).isManaged
-                ? "POLICY" : "SCHEDULES"
-        case .runs:              "STDOUT"
+                ? L("POLICY") : L("SCHEDULES")
+        case .runs:              L("STDOUT")
         case .config:            "CONFIG.YAML"
-        case .customize:         "SHEETS"
-        case .sources:           "INPUTS"
-        case .backups:           "CONFIG SNAPSHOTS"
-        case .settings:          "APP"
-        case .onboarding:        "FIRST RUN"
+        case .customize:         L("SHEETS")
+        case .sources:           L("INPUTS")
+        case .backups:           L("CONFIG SNAPSHOTS")
+        case .settings:          L("APP")
+        case .onboarding:        L("FIRST RUN")
         case .reports:           nil
-        case .securityPosture:   "SCORE & CONTROLS"
-        case .compliancePosture: "BANDS & GAPS"
-        case .complianceBenchmarks: "BENCHMARKS & RULES"
-        case .patch:             "TITLES & FAILURES"
-        case .updates:           "PLANS & FAILURES"
-        case .ddmBlueprints:     "DEVICE STATUS · BLUEPRINTS"
-        case .policyProfile:     "FINDINGS & STATUS"
-        case .extensionAttributes: "COVERAGE & VALUES"
-        case .outreach:          "STALE TIERS"
-        case .protectDashboard:  "ALERTS & AGENTS"
-        case .mobileFleet:       "IOS · IPADOS"
-        case .groupInventory:    "CLASSIC API"
-        case .schoolDevices:     "JAMF SCHOOL"
+        case .securityPosture:   L("SCORE & CONTROLS")
+        case .compliancePosture: L("BANDS & GAPS")
+        case .complianceBenchmarks: L("BENCHMARKS & RULES")
+        case .patch:             L("TITLES & FAILURES")
+        case .updates:           L("PLANS & FAILURES")
+        case .ddmBlueprints:     L("DEVICE STATUS · BLUEPRINTS")
+        case .policyProfile:     L("FINDINGS & STATUS")
+        case .extensionAttributes: L("COVERAGE & VALUES")
+        case .outreach:          L("STALE TIERS")
+        case .protectDashboard:  L("ALERTS & AGENTS")
+        case .mobileFleet:       L("IOS · IPADOS")
+        case .groupInventory:    L("CLASSIC API")
+        case .schoolDevices:     L("JAMF SCHOOL")
         }
     }
 
@@ -372,6 +359,14 @@ struct ContentView: View {
                 .font(.body.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
 
+            if let action = toast.action {
+                PNPButton(title: action.label, style: .ghost, size: .sm) {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab, object: nil, userInfo: action.navigation)
+                    workspace.toast = nil
+                }
+            }
+
             Button {
                 workspace.toast = nil
             } label: {
@@ -393,7 +388,7 @@ struct ContentView: View {
         // One timer per toast: onAppear ran once, when the first toast appeared, so a toast
         // that replaced another while it was up never cleared and sat over the page.
         .task(id: toast.id) {
-            try? await Task.sleep(for: .seconds(Toast.displaySeconds))
+            try? await Task.sleep(for: .seconds(toast.displaySeconds))
             guard !Task.isCancelled else { return }
             workspace.dismissToast(ifShowing: toast.id)
         }
@@ -431,5 +426,52 @@ extension SidebarMode {
     ) -> (stored: SidebarMode, overridden: Bool) {
         let shown = effective(stored: stored, isNarrow: isNarrow, overridden: overridden)
         return (shown.next(), overridden || isNarrow)
+    }
+}
+
+/// The screen a sidebar tab shows.
+struct TabPage: View {
+    let tab: Tab
+    let onboardingRun: Int
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        switch tab {
+        case .overview:
+            if workspace.isSchoolWorkspace {
+                SchoolOverviewView()
+            } else if workspace.environmentProducts.isProtectOnly {
+                ProtectView()
+            } else {
+                OverviewView()
+            }
+        case .fleet:             FleetOverviewView()
+        case .devices:           DevicesView()
+        case .deviceLookup:      DeviceLookupView()
+        case .trends:            TrendsView()
+        case .audit:             AuditView()
+        case .reports:           ReportsView()
+        case .schedules:         AutomationTab()
+        case .runs:              RunsView()
+        case .config:            ConfigView()
+        case .customize:         CustomizeView()
+        case .sources:           SourcesView()
+        case .backups:           BackupsView()
+        case .settings:          SettingsView()
+        case .onboarding:        OnboardingView().id(onboardingRun)
+        case .securityPosture:   SecurityPostureView()
+        case .compliancePosture: CompliancePostureView()
+        case .complianceBenchmarks: ComplianceBenchmarksView()
+        case .patch:             PatchView()
+        case .updates:           UpdatesView()
+        case .ddmBlueprints:     DDMBlueprintView()
+        case .policyProfile:     PolicyProfileView()
+        case .extensionAttributes: ExtensionAttributesView()
+        case .outreach:          OutreachView()
+        case .protectDashboard:  ProtectView()
+        case .mobileFleet:       MobileFleetView()
+        case .groupInventory:    GroupsView()
+        case .schoolDevices:     SchoolDevicesView()
+        }
     }
 }

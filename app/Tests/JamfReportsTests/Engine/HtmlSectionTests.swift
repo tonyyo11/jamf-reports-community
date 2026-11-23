@@ -600,9 +600,9 @@ final class HtmlSectionTests: XCTestCase {
     func testPurchaseCohortsWithData() {
         let report = makeReport()
         let inventory: [[String: Any]] = [
-            ["name": "Mac-A", "purchase_date": "2022-06-01"],
-            ["name": "Mac-B", "purchase_date": "2022-11-15"],
-            ["name": "Mac-C", "purchase_date": "2023-02-01"],
+            ["name": "Mac-A", "purchasing": ["poDate": "2022-06-01"]],
+            ["name": "Mac-B", "purchasing": ["poDate": "2022-11-15"]],
+            ["name": "Mac-C", "purchasing": ["poDate": "2023-02-01"]],
         ]
         let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertTrue(html.contains("purchase-cohorts"))
@@ -613,18 +613,35 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertFalse(html.contains("Mac-A"), "a year's count, not the Macs in it")
     }
 
-    func testPurchaseCohortsAreLeftOutWithoutPurchaseDates() {
+    /// From the shape Jamf Pro's API documents, through the save-time strip, to the section:
+    /// Macs with a null or blank Purchasing section count in the denominator only.
+    func testPurchaseCohortsReadTheSectionAsCollected() throws {
+        let collected = Data(#"""
+            [{"id": "1", "purchasing": {"poDate": "2022-06-01", "purchasePrice": "$500",
+                                        "poNumber": "53-1", "vendor": "Example Vendor"}},
+             {"id": "2", "purchasing": {"poDate": "", "vendor": "Example Vendor"}},
+             {"id": "3", "purchasing": null}]
+            """#.utf8)
+        let saved = try XCTUnwrap(ReportEngine.reducingComputers(collected))
+        let inventory = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: saved) as? [[String: Any]])
+        let html = makeReport().buildPurchaseCohorts(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("Purchase cohorts (1 of 3 Macs with a PO date)"), html)
+        XCTAssertTrue(html.contains("2022"))
+    }
+
+    func testPurchaseCohortsAreLeftOutWithoutPODates() {
         let none = makeReport().buildPurchaseCohorts(computersInventory: [])
         XCTAssertTrue(none.html.isEmpty)
-        XCTAssertEqual(none.omission, "no purchase dates in the inventory")
+        XCTAssertEqual(none.omission, "no PO dates in the inventory")
         let undated = makeReport().buildPurchaseCohorts(computersInventory: [["name": "Mac"]])
-        XCTAssertEqual(undated.omission, "no purchase dates in the inventory")
+        XCTAssertEqual(undated.omission, "no PO dates in the inventory")
     }
 
     func testPurchaseCohortsXSS() {
         let report = makeReport()
         let inventory: [[String: Any]] = [
-            ["name": Self.xssPayload, "purchase_date": "2024-01-01"],
+            ["name": Self.xssPayload, "purchasing": ["poDate": "2024-01-01"]],
         ]
         let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))
@@ -776,6 +793,35 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertLessThan(low.lowerBound, info.lowerBound, "Informational is last of the four")
     }
 
+    func testProtectAlertsShowOnlyOpenAlerts() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProtectAlertsOpen-\(UUID().uuidString)", isDirectory: true)
+        let alertsDir = tmp.appendingPathComponent("protect-alerts", isDirectory: true)
+        try FileManager.default.createDirectory(at: alertsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let file = alertsDir.appendingPathComponent("protect-alerts_20261111T000000.json")
+
+        let alerts: [[String: Any]] = [
+            ["severity": "High", "status": "InProgress", "eventType": "GPProcessEvent",
+             "computer": "Mac-Open", "created": "2026-11-10T00:00:00Z"],
+            ["severity": "Low", "status": "AutoResolved", "eventType": "GPFSEvent",
+             "computer": "Mac-Closed", "created": "2026-11-09T00:00:00Z"],
+        ]
+        try JSONSerialization.data(withJSONObject: alerts).write(to: file)
+        let html = makeReport().buildProtectAlerts(protectDataDir: tmp).html
+        XCTAssertTrue(html.contains("Mac-Open"))
+        XCTAssertFalse(html.contains("Mac-Closed"), "an AutoResolved alert is not listed as open")
+        XCTAssertTrue(html.contains("Open Protect alerts (showing 1 of 1); "
+            + "1 Resolved or AutoResolved not listed"))
+        XCTAssertTrue(html.contains("<th>Status</th>"))
+        XCTAssertTrue(html.contains("<td>InProgress</td>"), "each listed alert shows its status")
+
+        try JSONSerialization.data(withJSONObject: [alerts[1]]).write(to: file)
+        let none = makeReport().buildProtectAlerts(protectDataDir: tmp)
+        XCTAssertTrue(none.html.isEmpty)
+        XCTAssertEqual(none.omission, "no open Protect alerts (1 Resolved or AutoResolved)")
+    }
+
     func testProtectAlertsStableOutput() {
         let report = makeReport()
         let a = report.buildProtectAlerts(protectDataDir: nil)
@@ -816,123 +862,6 @@ final class HtmlSectionTests: XCTestCase {
             "Should fall back to analytics when eventType is empty")
         XCTAssertTrue(html.contains("<td>—</td><td>Suspicious Script, Persistence</td>"),
             "An alert with no computer must still render its row")
-    }
-
-    // MARK: - insightsDrift
-
-    func testInsightsDriftIsLeftOutWhenProtectIsNotConfigured() {
-        let block = makeReport().buildInsightsDrift(protectDataDir: nil)
-        XCTAssertTrue(block.html.isEmpty)
-        XCTAssertEqual(block.omission, "not configured: protect.enabled is off in config.yaml")
-    }
-
-    func testInsightsDriftInsufficientSnapshots() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("InsightsDriftTest-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
-        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        // Write exactly one snapshot — jamf-cli's array-of-rows shape.
-        let snap: [[String: Any]] = [
-            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
-             "totalPass": 97, "totalFail": 3, "totalNone": 0],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: snap)
-        let name = "protect-insights_20260101T000000.json"
-        try data.write(to: insightsDir.appendingPathComponent(name))
-
-        let block = makeReport().buildInsightsDrift(protectDataDir: tmp)
-        XCTAssertTrue(block.html.isEmpty)
-        XCTAssertEqual(block.omission,
-                       "needs two or more Protect insights snapshots; 1 found")
-    }
-
-    func testInsightsDriftWithTwoSnapshots() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("InsightsDriftTest2-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
-        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let snap1: [[String: Any]] = [
-            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
-             "totalPass": 90, "totalFail": 10, "totalNone": 0],
-        ]
-        let snap2: [[String: Any]] = [
-            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
-             "totalPass": 99, "totalFail": 1, "totalNone": 0],
-        ]
-        let d1 = try JSONSerialization.data(withJSONObject: snap1)
-        let d2 = try JSONSerialization.data(withJSONObject: snap2)
-        // Canonical stamped filenames order deterministically — no mtime needed.
-        let url1 = insightsDir.appendingPathComponent("protect-insights_20260101T000000.json")
-        let url2 = insightsDir.appendingPathComponent("protect-insights_20260201T000000.json")
-        try d1.write(to: url1)
-        try d2.write(to: url2)
-
-        let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: tmp).html
-        XCTAssertTrue(html.contains("insights-drift"))
-        XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("FileVault Enabled"))
-    }
-
-    /// jamf-cli's real insights row shape is a bare ARRAY of {label, section,
-    /// enabled, totalPass, totalFail, totalNone, cisIDs} objects, not a single
-    /// dict — the drift table must reduce each day to failing-device counts
-    /// per insight label, and say plainly what the numbers mean.
-    func testInsightsDriftRendersFailingDeviceCountsFromRealShape() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("InsightsDriftShape-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
-        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let day1: [[String: Any]] = [
-            ["label": "Unsigned Kernel Extension", "section": "Kernel", "enabled": true,
-             "totalPass": 90, "totalFail": 10, "totalNone": 0, "cisIDs": ""],
-        ]
-        let day2: [[String: Any]] = [
-            ["label": "Unsigned Kernel Extension", "section": "Kernel", "enabled": true,
-             "totalPass": 97, "totalFail": 3, "totalNone": 0, "cisIDs": ""],
-        ]
-        let url1 = insightsDir.appendingPathComponent("protect-insights_20260401T000000.json")
-        let url2 = insightsDir.appendingPathComponent("protect-insights_20260402T000000.json")
-        try JSONSerialization.data(withJSONObject: day1).write(to: url1)
-        try JSONSerialization.data(withJSONObject: day2).write(to: url2)
-
-        let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: tmp).html
-
-        XCTAssertTrue(html.contains("Unsigned Kernel Extension"))
-        XCTAssertTrue(html.contains("failing-device counts"),
-            "Table must say plainly that the numbers are failing-device counts")
-        XCTAssertTrue(html.contains(">10<"), "Previous day's totalFail (10) must render")
-        XCTAssertTrue(html.contains(">3<"), "Current day's totalFail (3) must render")
-    }
-
-    /// renderTable escapes every cell, so the rows hold plain text. Escaped first as well,
-    /// a label with `&` read "&amp;" in the report.
-    func testInsightsDriftEscapesALabelOnce() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("InsightsDriftEscape-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
-        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let label = "Gatekeeper & XProtect <script>alert(1)</script>"
-        for (stamp, fail) in [("20260401T000000", 4), ("20260402T000000", 2)] {
-            let rows: [[String: Any]] = [["label": label, "section": "System", "enabled": true,
-                                          "totalPass": 90, "totalFail": fail, "totalNone": 0]]
-            try JSONSerialization.data(withJSONObject: rows).write(
-                to: insightsDir.appendingPathComponent("protect-insights_\(stamp).json"))
-        }
-
-        let html = makeReport().buildInsightsDrift(protectDataDir: tmp).html
-
-        XCTAssertTrue(html.contains("Gatekeeper &amp; XProtect &lt;script&gt;"), html)
-        XCTAssertFalse(html.contains("&amp;amp;"), "the label was escaped twice")
-        XCTAssertFalse(html.contains("<script>alert"), "the label must still be escaped")
     }
 
     // MARK: - agentHealth

@@ -6,67 +6,94 @@ import Charts
 /// derived from `pro security report`. Designed to grow into the full mSCP
 /// failure-count banding once an Extension Attribute is configured.
 struct CompliancePostureView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
-    @State private var hasLoaded = false
-    /// Bumped by each reload, so a read that a newer one replaced is dropped.
-    @State private var loadGeneration = 0
-    /// False until the first read lands: until then the screen does not say there is no data.
-    @State private var hasRead = false
+    /// The newest ea-results file exists but could not be read, so the proxy below is a stand-in.
+    @State private var mscpUnreadable = false
+    /// The `dataSource` the snapshot and baselines were read for; the content waits for it to
+    /// match, so the screen never says there is no data, or shows another profile's, while one
+    /// loads.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Posture",
-                title: "Compliance Posture",
+                kicker: L("Posture"),
+                title: L("Compliance Posture"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && hasRead {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-            }
-
-            // Show proxy note only when using proxy compliance (no mSCP baselines)
-            if mscpResults.isEmpty && hasRead {
-                proxyNoteCard
-            }
-
-            if let reason = snapshot.loadError {
-                Card(padding: 24) {
-                    ErrorStateView(
-                        title: "Couldn't read compliance data",
-                        message: reason,
-                        commands: ["Re-run collection from Data Sources, then Refresh."],
-                        retry: { reload() }
-                    )
-                }
-            } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
-                if hasRead { emptyState }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("compliance posture"))
             } else {
-                // Show mSCP baseline donuts when available, otherwise proxy bands
-                if !mscpResults.isEmpty {
-                    mscpBaselineDonuts
-                } else {
-                    bandsHeroCard
-                }
-                aiInsightCard
-                controlCoverageCard
-                perOSBreakdownCard
+                content
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+        // Suppressed in demo mode (the demo dataset is intentionally static and
+        // not user-perceivably "stale"). Renders nothing when source is .fresh.
+        if !workspace.demoMode {
+            CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+        }
+
+        if mscpUnreadable {
+            InlineBanner(
+                icon: "exclamationmark.triangle.fill", tone: .warn,
+                action: InlineBannerAction(
+                    label: L("Open Settings"), icon: "gearshape",
+                    help: L("Settings › Logging names the file.")
+                ) {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab, object: nil,
+                        userInfo: ["tab": Tab.settings.rawValue])
+                }
+            ) {
+                Text("The newest ea-results file could not be read, so the mSCP baselines are not shown; the control-gap proxy below stands in. The file is named in Settings › Logging.")
+            }
+        }
+
+        // Show proxy note only when using proxy compliance (no mSCP baselines)
+        if mscpResults.isEmpty {
+            proxyNoteCard
+        }
+
+        if let reason = snapshot.loadError {
+            Card(padding: 24) {
+                ErrorStateView(
+                    title: L("Couldn't read compliance data"),
+                    message: reason,
+                    commands: [L("Re-run collection from Data Sources, then Refresh.")],
+                    retry: { reloads += 1 }
+                )
+            }
+        } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
+            emptyState
+        } else {
+            // Show mSCP baseline donuts when available, otherwise proxy bands
+            if !mscpResults.isEmpty {
+                mscpBaselineDonuts
+            } else {
+                bandsHeroCard
+            }
+            aiInsightCard
+            controlCoverageCard
+            perOSBreakdownCard
         }
     }
 
@@ -74,7 +101,7 @@ struct CompliancePostureView: View {
         if !mscpResults.isEmpty {
             return MSCPComplianceService.evaluatedSummary(mscpResults)
         } else if snapshot.totalDevices > 0 {
-            return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") evaluated by control-gap proxy."
+            return (snapshot.totalDevices == 1 ? L("\(snapshot.totalDevices) device evaluated by control-gap proxy.") : L("\(snapshot.totalDevices) devices evaluated by control-gap proxy."))
         } else {
             return nil
         }
@@ -82,47 +109,51 @@ struct CompliancePostureView: View {
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        loadGeneration += 1
-        if workspace.demoMode {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            mscpResults = []
+            mscpUnreadable = false
+        }
+        guard !workspace.demoMode else {
             snapshot = DemoData.compliancePostureSnapshot
             mscpResults = DemoData.complianceBaselineResults
-            hasRead = true
+            mscpUnreadable = false
+            loadedSource = source
             return
         }
-        let generation = loadGeneration
         let profile = workspace.profile
-        Task {
-            // The security snapshot, the computers snapshot the hardware rule reads and
-            // ea-results are parsed whole; on a large fleet that stalled the screen.
-            let loaded = await Task.detached(priority: .userInitiated) {
+        // The security snapshot, the computers snapshot the hardware rule reads and
+        // ea-results are parsed whole; on a large fleet that stalled the screen.
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
                 (CompliancePostureService.load(profile: profile),
-                 Self.loadBaselineResults(profile: profile))
-            }.value
-            // A read that a profile switch or a later refresh replaced must not paint.
-            guard generation == loadGeneration else { return }
-            snapshot = loaded.0
-            mscpResults = loaded.1
-            hasRead = true
-        }
+                 Self.loadBaselineOutcome(profile: profile))
+            }
+        ) else { return }
+        snapshot = loaded.0
+        mscpResults = loaded.1.results
+        mscpUnreadable = loaded.1.unreadable
+        loadedSource = source
     }
 
     /// The configured mSCP baselines' results; none when config.yaml names none.
-    nonisolated static func loadBaselineResults(
+    nonisolated static func loadBaselineOutcome(
         profile: String
-    ) -> [MSCPComplianceService.BaselineResult] {
+    ) -> (results: [MSCPComplianceService.BaselineResult], unreadable: Bool) {
         guard let workspaceURL = ProfileService.workspaceURL(for: profile),
               let config = try? ConfigLoader.load(
                   from: workspaceURL.appendingPathComponent("config.yaml")),
               let baselines = config.compliance?.resolvedBaselines, !baselines.isEmpty
-        else { return [] }
-        return MSCPComplianceService.load(profile: profile, baselines: baselines)
+        else { return ([], false) }
+        return MSCPComplianceService.loadChecked(profile: profile, baselines: baselines)
     }
 
     // MARK: - Sections
@@ -148,11 +179,11 @@ struct CompliancePostureView: View {
     private var emptyState: some View {
         Card(padding: 24) {
             EmptyStateView(
-                title: "No compliance snapshot yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No compliance snapshot yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["security"])]
+                    profile: workspace.profile, kinds: ["security"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }
@@ -161,14 +192,15 @@ struct CompliancePostureView: View {
         Card {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Compliance Bands", trailing: "Fleet-wide")
+                    SectionHeader(title: L("Compliance Bands"), trailing: L("Fleet-wide"))
                     PNPButton(
-                        title: "Export PNG",
+                        title: L("Export PNG"),
                         icon: "square.and.arrow.down",
                         style: .neutral,
                         size: .sm,
                         action: exportBandsDonut
                     )
+                    .disabled(snapshot.bands.allSatisfy { $0.count == 0 })
                     .accessibilityLabel("Export compliance bands donut as PNG")
                     .help("Save the fleet-wide compliance bands donut as a PNG image")
                 }
@@ -189,7 +221,8 @@ struct CompliancePostureView: View {
             title: "Compliance Bands",
             subtitle: "Compliance Posture",
             footnote: "Source: pro report security · \(total) devices banded by control-gap count",
-            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             CompliancePostureBandsDonutExport(bands: bands)
         }
@@ -204,16 +237,17 @@ struct CompliancePostureView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         SectionHeader(
-                            title: "mSCP Compliance",
+                            title: L("mSCP Compliance"),
                             trailing: result.name
                         )
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
                             action: { exportMSCPDonut(result: result) }
                         )
+                        .disabled(result.totalDevices == 0)
                         .accessibilityLabel("Export \(result.name) compliance donut as PNG")
                         .help("Save the \(result.name) compliance donut as a PNG image")
                     }
@@ -230,7 +264,7 @@ struct CompliancePostureView: View {
                                 Text("Compliance Rate")
                                     .font(.caption)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                                Text(String(format: "%.1f%%", pct))
+                                Text(percentFormat.text(pct))
                                     .font(.title2.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                 Text(result.complianceRateBasisText)
@@ -266,9 +300,7 @@ struct CompliancePostureView: View {
     /// `failures_count_column` config typo without cluttering the normal view.
     @ViewBuilder
     private func noMatchDiagnostic(result: MSCPComplianceService.BaselineResult) -> some View {
-        let msg = "0 of \(result.totalDevices) device\(result.totalDevices == 1 ? "" : "s") matched"
-            + " EA column \"\(result.failuresCountColumn)\" — verify the column name"
-            + " matches your Jamf EA."
+        let msg = (result.totalDevices == 1 ? L("0 of \(result.totalDevices) device matched EA column \"\(result.failuresCountColumn)\" — verify the column name matches your Jamf EA.") : L("0 of \(result.totalDevices) devices matched EA column \"\(result.failuresCountColumn)\" — verify the column name matches your Jamf EA."))
         Text(msg)
             .font(.caption)
             .foregroundStyle(Theme.Colors.warn)
@@ -287,14 +319,14 @@ struct CompliancePostureView: View {
             )
             .foregroundStyle(Color(cgColor: slice.color))
             .accessibilityLabel(slice.label)
-            .accessibilityValue("\(slice.count) devices, \(Int(slice.pct.rounded()))%")
+            .accessibilityValue("\(slice.count) devices, \(PercentFormat.whole.text(slice.pct))")
         }
         .chartLegend(.hidden)
         .accessibilityLabel("\(result.name) compliance bands")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "\(result.name) Compliance Bands",
-                unit: " devices",
+                title: L("\(result.name) Compliance Bands"),
+                unit: L(" devices"),
                 slices: slices.filter { $0.count > 0 }.map { slice in
                     SectorChartDescriptor.Slice(
                         label: slice.label,
@@ -325,14 +357,14 @@ struct CompliancePostureView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", slice.pct))
+                    Text(percentFormat.text(slice.pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(slice.label), \(slice.count) devices, \(Int(slice.pct.rounded())) percent")
+                .accessibilityLabel("\(slice.label), \(slice.count) devices, \(PercentFormat.whole.numberText(slice.pct)) percent")
             }
         }
     }
@@ -345,7 +377,8 @@ struct CompliancePostureView: View {
             subtitle: "Compliance Posture",
             footnote: "Source: mSCP Extension Attribute · \(result.devicesWithData) of "
                 + "\(result.totalDevices) devices evaluated",
-            suggestedFilename: filename
+            suggestedFilename: filename,
+            percentFormat: percentFormat
         ) {
             MSCPComplianceBandsDonutExport(
                 result: result,
@@ -366,14 +399,14 @@ struct CompliancePostureView: View {
             )
             .foregroundStyle(Color(hex: band.colorHex))
             .accessibilityLabel(band.label)
-            .accessibilityValue("\(band.count) devices, \(Int(band.pct.rounded()))%")
+            .accessibilityValue("\(band.count) devices, \(PercentFormat.whole.text(band.pct))")
         }
         .chartLegend(.hidden)
         .accessibilityLabel("Fleet compliance bands")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "Fleet Compliance Bands",
-                unit: " devices",
+                title: L("Fleet Compliance Bands"),
+                unit: L(" devices"),
                 slices: snapshot.bands.filter { $0.count > 0 }.map { band in
                     SectorChartDescriptor.Slice(
                         label: band.label,
@@ -402,14 +435,14 @@ struct CompliancePostureView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", band.pct))
+                    Text(percentFormat.text(band.pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(band.label), \(band.count) devices, \(Int(band.pct.rounded())) percent")
+                .accessibilityLabel("\(band.label), \(band.count) devices, \(PercentFormat.whole.numberText(band.pct)) percent")
             }
         }
     }
@@ -419,14 +452,12 @@ struct CompliancePostureView: View {
     @ViewBuilder
     private var aiInsightCard: some View {
         if AIInsightCard.isOffered(demoMode: workspace.demoMode),
-           let input = FleetInsightInput.posture(
-               .compliance(snapshot, showsBands: mscpResults.isEmpty)) {
+           let input = Localization.english { FleetInsightInput.posture(
+               .compliance(snapshot, showsBands: mscpResults.isEmpty)) } {
             AIInsightCard(
-                title: "AI Posture Insight",
-                idleText: "Suggest which control and macOS version to work first using "
-                    + "on-device intelligence.",
-                provenanceText: "AI-generated from the control-gap counts on this screen — "
-                    + "verify against the bars below.",
+                title: L("AI Posture Insight"),
+                idleText: L("Suggest which control and macOS version to work first using on-device intelligence."),
+                provenanceText: L("AI-generated from the control-gap counts on this screen — verify against the bars below."),
                 input: input
             )
         }
@@ -435,7 +466,7 @@ struct CompliancePostureView: View {
     private var controlCoverageCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Control Coverage Gaps")
+                SectionHeader(title: L("Control Coverage Gaps"))
                 ForEach(snapshot.controlGaps) { gap in
                     controlBar(for: gap)
                 }
@@ -460,7 +491,7 @@ struct CompliancePostureView: View {
                 Text(Self.controlBarCountText(gap))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", gap.pct))
+                Text(percentFormat.text(gap.pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(barColor(for: gap.pct))
                     .frame(minWidth: 56, alignment: .trailing)
@@ -479,27 +510,26 @@ struct CompliancePostureView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap))
+        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap, format: percentFormat))
     }
 
     static func controlBarCountText(_ gap: CompliancePostureService.Snapshot.ControlGap) -> String {
-        let failing = "\(gap.failingDevices) failing"
+        let failing = L("\(gap.failingDevices) failing")
         guard gap.warningDevices > 0 else { return failing }
         return failing + " · " + warningCount(gap.warningDevices)
     }
 
     /// The bar ignores its children for VoiceOver, so the warnings must be in the label.
     static func controlBarAccessibilityLabel(
-        _ gap: CompliancePostureService.Snapshot.ControlGap
+        _ gap: CompliancePostureService.Snapshot.ControlGap, format: PercentFormat
     ) -> String {
-        let label = "\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent "
-            + "failing, \(gap.failingDevices) of \(gap.totalDevices) devices"
+        let label = L("\(gap.control) control coverage, \(format.numberText(gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
         guard gap.warningDevices > 0 else { return label }
         return label + ", " + warningCount(gap.warningDevices)
     }
 
     private static func warningCount(_ count: Int) -> String {
-        count == 1 ? "1 warning" : "\(count) warnings"
+        count == 1 ? L("1 warning") : L("\(count) warnings")
     }
 
     private func barColor(for pct: Double) -> Color {
@@ -526,8 +556,8 @@ struct CompliancePostureView: View {
                 // Always banded by control gaps. Under mSCP donuts, say so rather than
                 // let these bars read as the baselines' failed-rule bands.
                 SectionHeader(
-                    title: "Per-OS Breakdown",
-                    trailing: mscpResults.isEmpty ? nil : "Control-gap proxy"
+                    title: L("Per-OS Breakdown"),
+                    trailing: mscpResults.isEmpty ? nil : L("Control-gap proxy")
                 )
                 .help(Self.perOSProxyHelp)
                 if snapshot.perOSMajor.isEmpty {
@@ -541,8 +571,9 @@ struct CompliancePostureView: View {
         }
     }
 
-    private static let perOSProxyHelp: String = "Each Mac is banded by how many of FileVault, "
-        + "SIP, Firewall and Gatekeeper it fails, not by failed mSCP rules."
+    private static var perOSProxyHelp: String {
+        L("Each Mac is banded by how many of FileVault, SIP, Firewall and Gatekeeper it fails, not by failed mSCP rules.")
+    }
 
     private var perOSGrid: some View {
         VStack(spacing: 8) {
@@ -583,8 +614,8 @@ struct CompliancePostureView: View {
     private func perOSAccessibilityLabel(for row: (osMajor: Int, bands: [ComplianceBand])) -> String {
         let osName = ComplianceBandingService.osLabel(row.osMajor)
         let totalDevices = row.bands.reduce(0) { $0 + $1.count }
-        let majorBand = row.bands.max(by: { $0.count < $1.count })?.label ?? "Unknown"
-        return "\(osName), \(totalDevices) devices, majority in \(majorBand) band"
+        let majorBand = row.bands.max(by: { $0.count < $1.count })?.label ?? L("Unknown")
+        return L("\(osName), \(totalDevices) devices, majority in \(majorBand) band")
     }
 }
 
@@ -594,6 +625,7 @@ struct CompliancePostureView: View {
 /// `band.colorHex` values directly — they're already chosen for category
 /// distinguishability on light backgrounds.
 private struct CompliancePostureBandsDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let bands: [ComplianceBand]
 
     private var visibleBands: [ComplianceBand] { bands.filter { $0.count > 0 } }
@@ -630,7 +662,7 @@ private struct CompliancePostureBandsDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", band.pct))
+                        Text(percentFormat.text(band.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)
@@ -653,6 +685,7 @@ private struct CompliancePostureBandsDonutExport: View {
 
 /// Light-mode export rendering of an mSCP compliance bands donut.
 private struct MSCPComplianceBandsDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let result: MSCPComplianceService.BaselineResult
     let slices: [ChartRenderer.DonutSlice]
 
@@ -686,7 +719,7 @@ private struct MSCPComplianceBandsDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", slice.pct))
+                        Text(percentFormat.text(slice.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)
@@ -699,7 +732,7 @@ private struct MSCPComplianceBandsDonutExport: View {
                             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                         if let pct = result.compliancePct {
-                            Text("Compliance: \(String(format: "%.1f%%", pct))")
+                            Text("Compliance: \(percentFormat.text(pct))")
                                 .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color(hex: 0x475569))
                         }

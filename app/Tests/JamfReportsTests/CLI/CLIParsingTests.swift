@@ -41,9 +41,9 @@ final class CLIParsingTests: XCTestCase {
         }
     }
 
-    func testAllElevenSubcommandsRegistered() {
-        XCTAssertEqual(JamfReportsCLI.subcommandNames.count, 11)
-        XCTAssertEqual(JamfReportsCLI.configuration.subcommands.count, 11)
+    func testAllTwelveSubcommandsRegistered() {
+        XCTAssertEqual(JamfReportsCLI.subcommandNames.count, 12)
+        XCTAssertEqual(JamfReportsCLI.configuration.subcommands.count, 12)
     }
 
     func testTierParsing() {

@@ -77,9 +77,58 @@ final class EASheetsTests: XCTestCase {
         ])
         XCTAssertEqual(written, ["FileVault"])
         let grid = try grid(wb, "FileVault")
-        XCTAssertEqual(try row(grid, "encrypted")[1], "2", "true_value is matched ignoring case")
+        XCTAssertEqual(try row(grid, "encrypted (pass)")[1], "2",
+                       "true_value is matched ignoring case")
         XCTAssertEqual(try row(grid, "Other")[1], "1")
         XCTAssertEqual(try row(grid, "Unknown/Blank")[1], "1")
+    }
+
+    /// A blank is no value: the share is of the Macs that reported one, and with none there
+    /// is no share at all.
+    func testBooleanPercentLeavesBlanksOutOfTheShare() throws {
+        try results([("A", "Token", "0"), ("B", "Token", "0"), ("C", "Token", "0"),
+                     ("D", "Token", "")])
+        let (wb, _) = try write([
+            CustomEAConfig(name: "Token", column: "Token", type: .boolean, trueValue: "0"),
+        ])
+        let pass = try row(try grid(wb, "Token"), "0 (pass)")
+        XCTAssertEqual(pass[1], "3")
+        XCTAssertEqual(pass[2], "1.0", "3 of 3 reporting, not 3 of 4")
+
+        try results([("A", "Token", ""), ("B", "Token", " ")])
+        let (empty, _) = try write([
+            CustomEAConfig(name: "Token", column: "Token", type: .boolean, trueValue: "0"),
+        ])
+        XCTAssertNil(try row(try grid(empty, "Token"), "0 (pass)")[2])
+    }
+
+    func testPercentageTabGivesABlankAndANonNumberNoStatus() throws {
+        try results([("A", "Disk", ""), ("B", "Disk", "87"), ("C", "Disk", "N/A"),
+                     ("D", "Disk", "96%"), ("E", "Disk", "12")])
+        let (wb, _) = try write([
+            CustomEAConfig(name: "Disk", column: "Disk", type: .percentage,
+                           warningThreshold: 80, criticalThreshold: 90),
+        ])
+        let grid = try grid(wb, "Disk")
+        let values = grid.compactMap { $0[0] }.drop { $0 != "Value" }.dropFirst()
+        XCTAssertEqual(Array(values), ["12", "87", "96%", "N/A", "Unknown/Blank"])
+        XCTAssertEqual(try row(grid, "12")[2], "OK")
+        XCTAssertEqual(try row(grid, "96%")[2], "Critical")
+        XCTAssertNil(try row(grid, "N/A")[2], "not a number, so not OK")
+        XCTAssertEqual(try row(grid, "Unknown/Blank")[1], "1")
+        XCTAssertNil(try row(grid, "Unknown/Blank")[2])
+        XCTAssertNil(grid.first { $0[0] == "" }, "no row for the blank value itself")
+    }
+
+    func testVersionTabCountsABlankApartWithNoStatus() throws {
+        try results([("A", "OS", "26.1"), ("B", "OS", "")])
+        let (wb, _) = try write([
+            CustomEAConfig(name: "OS", column: "OS", type: .version, currentVersions: ["26"]),
+        ])
+        let grid = try grid(wb, "OS")
+        XCTAssertEqual(try row(grid, "Unknown/Blank")[1], "1")
+        XCTAssertNil(try row(grid, "Unknown/Blank")[2], "not Outdated")
+        XCTAssertNil(grid.first { $0[0] == "" })
     }
 
     func testPercentageTabGradesAgainstTheThresholds() throws {

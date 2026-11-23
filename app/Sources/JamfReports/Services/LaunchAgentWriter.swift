@@ -34,8 +34,8 @@ enum LaunchAgentWriter {
             let candidate = "\(labelPrefix).multi.\(slug)"
             return isValidLabel(candidate) ? candidate : nil
         }
-        guard ProfileService.isValid(schedule.profile) else { return nil }
-        let candidate = "\(labelPrefix).\(ProfileName.labelComponent(schedule.profile)).\(slug)"
+        guard let workspace = WorkspaceID(schedule.profile) else { return nil }
+        let candidate = "\(labelPrefix).\(workspace.labelComponent).\(slug)"
         return isValidLabel(candidate) ? candidate : nil
     }
 

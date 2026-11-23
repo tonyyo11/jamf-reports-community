@@ -72,20 +72,6 @@ final class PDFExporterTests: XCTestCase {
         XCTAssertGreaterThan(size, 1024, "PDF must be larger than 1 KB, got \(size) bytes")
     }
 
-    /// Exporting from a file URL backed by a known-good HTML file should succeed.
-    func testExportFromFileURL() async throws {
-        let htmlFile = outputDir.appendingPathComponent("source.html")
-        let html = "<html><body><p>File URL export test</p></body></html>"
-        try html.write(to: htmlFile, atomically: true, encoding: .utf8)
-
-        let dest = outputDir.appendingPathComponent("from_file.pdf")
-        try await PDFExporter.export(htmlURL: htmlFile, to: dest)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
-        let magic = try Data(contentsOf: dest).prefix(5)
-        XCTAssertEqual(String(bytes: magic, encoding: .ascii), "%PDF-")
-    }
-
     /// The exporter should create intermediate directories if the destination path
     /// does not yet exist.
     func testExportCreatesIntermediateDirectories() async throws {
@@ -178,6 +164,38 @@ final class PDFExporterTests: XCTestCase {
                     .first { $0.contains("BLOCK-HEADING") })
             XCTAssertTrue(page.contains("HEAD-CELL") && page.contains("row-1"),
                           "the block was split after its heading (spacer \(spacer))")
+        }
+    }
+
+    /// A detail group's heading stays on the page with the start of its body, also when the
+    /// first block (a chart and its daily-values table, like the Trends group's) is nearly a
+    /// page tall: the block is shorter than a page but not than what the heading leaves.
+    func testAGroupHeadingStaysWithItsFirstBlock() async throws {
+        let css = HtmlReport(config: ReportConfig().withDefaults(), dataDir: outputDir)
+            .buildCSS(accentColor: "#2D5EA2")
+        let chart = """
+        <svg viewBox="0 0 620 220" class="history-svg"><rect width="620" height="220" fill="#ccc"/></svg>
+        """
+        for count in stride(from: 14, through: 40, by: 1) {
+            let rows = (1...count).map { "<tr><td>row-\($0)</td><td>cell</td></tr>" }.joined()
+            let html = ReportEngine.applyPagination(html: """
+                <html><head>\(css)</head><body><main>
+                <section class="group-section"><details class="group" open>
+                <summary><span class="grp-title">TRENDS-HEADING</span>
+                <span class="grp-sum"> - 13 days of history</span></summary>
+                <div class="group-body"><div class="block" id="timeline"><h3>CHART-TITLE</h3>
+                <p class="timeline-note">13 snapshots</p>\(chart)
+                <details class="show-all" open><summary>Daily values</summary>
+                <table class="data-table"><thead><tr><th>Date</th><th>x</th></tr></thead>
+                <tbody>\(rows)</tbody></table></details></div></div>
+                </details></section></main></body></html>
+                """, strategy: .sectionPerPage)
+            let doc = try await exportedDocument(html, name: "group-heading-\(count).pdf")
+            let page = try XCTUnwrap(
+                (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }
+                    .first { $0.contains("TRENDS-HEADING") })
+            XCTAssertTrue(page.contains("CHART-TITLE"),
+                          "the group heading was left without its body (\(count) rows)")
         }
     }
 

@@ -25,20 +25,34 @@ enum LogRedactor {
 
     // MARK: - Patterns
 
-    /// Incoming-webhook endpoints, as `https?://` URL patterns: Slack, Teams connectors and
-    /// Workflows (Logic Apps, Power Automate, commercial and US Government clouds) and Discord.
-    /// Shared with `DiagnosticRedactor`; a host added here reaches both, so the two cannot drift.
-    static let webhookURLPatterns: [String] = [
-        #"hooks\.slack\.com/services"#,
-        #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
-        #"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)(?::\d+)?/"#,
+    /// Hosts a Teams, Power Automate or Slack incoming webhook is served from, as host regexes
+    /// (no scheme, port or path), paired with the path the secret follows. One list: the
+    /// redaction patterns below and Config Doctor's known-host check both read it.
+    static let notifyWebhookHosts: [(host: String, path: String)] = [
+        (#"hooks\.slack\.com"#, "/services"),
+        (#"[A-Za-z0-9.\-]+\.webhook\.office\.com"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)"#, "/"),
         // Power Platform trigger hosts: commercial, GCC (`api.gov.powerplatform.microsoft.us`),
         // GCC High (`api.high.…`) and DoD (`api.appsplatform.us`).
-        #"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)(?::\d+)?/"#,
-        #"[A-Za-z0-9.\-]+\.api\.(?:gov|high)\.powerplatform\.microsoft\.us(?::\d+)?/"#,
-        #"[A-Za-z0-9.\-]+\.api\.appsplatform\.us(?::\d+)?/"#,
-        #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#,
-    ].map { #"https?://"# + $0 + #"[^\s"',}]*"# }
+        (#"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.api\.(?:gov|high)\.powerplatform\.microsoft\.us"#, "/"),
+        (#"[A-Za-z0-9.\-]+\.api\.appsplatform\.us"#, "/"),
+    ]
+
+    /// True when `host` (no port) is one of `notifyWebhookHosts`.
+    static func isKnownNotifyWebhookHost(_ host: String) -> Bool {
+        notifyWebhookHosts.contains {
+            host.range(of: "^" + $0.host + "$", options: [.regularExpression, .caseInsensitive])
+                != nil
+        }
+    }
+
+    /// Incoming-webhook endpoints, as `https?://` URL patterns: `notifyWebhookHosts` and Discord.
+    /// Shared with `DiagnosticRedactor`; a host added there reaches both, so the two cannot drift.
+    static let webhookURLPatterns: [String] = (
+        notifyWebhookHosts.map { $0.host + #"(?::\d+)?"# + $0.path }
+            + [#"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#]
+    ).map { #"https?://"# + $0 + #"[^\s"',}]*"# }
 
     /// A `sig=` query value: the signature a Workflows trigger or an Azure SAS URL is signed with.
     static let signatureQueryPattern = #"([?&]sig=)[^\s&"',}]+"#
@@ -189,11 +203,12 @@ enum LogRedactor {
         _ text: String,
         profile: String?,
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         redactedForSharing(
             text, profiles: profile.map { [$0] } ?? [],
-            scopeIDs: scopeIDs, serverHosts: serverHosts)
+            scopeIDs: scopeIDs, serverHosts: serverHosts, localWorkspaces: localWorkspaces)
     }
 
     /// As above for a log that mixes several profiles' lines (the in-app buffer): every
@@ -202,17 +217,66 @@ enum LogRedactor {
         _ text: String,
         profiles: [String],
         scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) },
-        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) }
+        serverHosts: (String) -> [String] = { DiagnosticBundleService.serverHosts(profile: $0) },
+        localWorkspaces: () -> [String] = { localWorkspaceNameForms() }
     ) -> String {
         let redactor = DiagnosticRedactor()
         // Each seed call replaces the last, so hand over every profile's values at once.
         redactor.seedScopeIDs(profiles.flatMap(scopeIDs))
         redactor.seedServerHosts(profiles.flatMap(serverHosts))
         // The profile is often the organisation's name; the bundle seeds the same forms.
-        redactor.seedWorkspaceNames(profiles.flatMap { profile in
-            [profile] + [ProfileName.pathComponent, ProfileName.labelComponent].map { $0(profile) }
-        })
+        // Config Doctor names another local workspace in a run log, so every one is seeded.
+        redactor.seedWorkspaceNames(profiles.flatMap { profileNameForms(of: $0) }
+            + (profiles.isEmpty ? [] : localWorkspaces()))
         return redactor.redactText(redact(text))
+    }
+
+    /// Words run logs and their markers are made of; a workspace or host named one is not masked.
+    static let commonLogWords: Set<String> = [
+        "test", "demo", "dummy", "prod", "partial", "warn", "error", "info", "skip", "plan",
+        "fail", "ok",
+    ]
+
+    /// Every workspace folder under the workspaces root, as typed and in its path and label forms.
+    static func localWorkspaceNameForms() -> [String] {
+        let folders = (try? FileManager.default.contentsOfDirectory(
+            at: ProfileService.workspacesRoot(), includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        // Only a folder with a config.yaml is a workspace; a data folder is not a name to hide.
+        // Other workspaces' names are hidden only from 4 characters, and never a word the logs
+        // use themselves (`test`, `partial`, `warn`, ...), so such a workspace name does not mask
+        // that word or a `[partial]` marker in every shared log; the run's own name keeps the
+        // bundle's two-character rule. The scan is capped like the other folder listings.
+        return folders
+            .filter { FileManager.default.fileExists(
+                atPath: $0.appendingPathComponent("config.yaml").path) }
+            .prefix(200)
+            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
+            .filter { $0.count >= 4 && !commonLogWords.contains($0.lowercased()) }
+            .flatMap { [$0, ProfileName.pathComponent($0), ProfileName.labelComponent($0)] }
+    }
+
+    /// A profile's name and the logins its workspace names (`Acme-Protect`), each as typed and in
+    /// its folder and label forms: run logs and config.yaml carry all of them. A login name comes
+    /// from a peer-writable file, so it gets the other-workspace rule: 4 characters, no log word.
+    static func profileNameForms(
+        of profile: String,
+        environment: EnvironmentProfiles? = nil
+    ) -> [String] {
+        let environment = environment ?? EnvironmentProfiles.read(workspace: profile)
+        // The MDM slot is the workspace's own name wherever anything runs, so it adds no seed;
+        // `isValid` caps a login's length.
+        let logins = environment.connectedProfiles.filter {
+            $0.count >= 4 && !commonLogWords.contains($0.lowercased()) && ProfileService.isValid($0)
+        }
+        // `output.file_prefix` is usually the organisation's name and starts every report name.
+        let prefix = ExportNaming.filePrefix(profile: profile)
+        let prefixSeed = prefix.count >= 4 && !commonLogWords.contains(prefix.lowercased())
+            && prefix != ExportNaming.defaultFilePrefix ? [prefix] : []
+        return ([profile] + logins)
+            .flatMap { name in
+                [name, ProfileName.pathComponent(name), ProfileName.labelComponent(name)]
+            } + prefixSeed
     }
 
     /// Apply all credential patterns to a single line of text. Returns the

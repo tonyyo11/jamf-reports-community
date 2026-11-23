@@ -79,6 +79,27 @@ final class ServerHostRedactionTests: XCTestCase {
         XCTAssertFalse(shared.contains("jss.example.org"), "got: \(shared)")
     }
 
+    /// The Jamf Pro a platform profile reaches can be a custom domain the jamfcloud pattern
+    /// misses; the host-check warning names it, so shared logs must mask it.
+    func testServerHostsIncludeAConnectionMembersJamfProURL() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-conn-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let store = ConnectionStore(url: url)
+        try store.recordMember(profile: "api", scopeID: "e1", product: .pro,
+                               region: .us, level: .environment)
+        try store.recordJamfProURL(profile: "api", url: "https://jss.example-district.org")
+        let hosts = DiagnosticBundleService.serverHosts(
+            profile: "api", configURL: url.appendingPathExtension("none"),
+            proxy: .none, connections: store)
+        XCTAssertTrue(hosts.contains("jss.example-district.org"), "\(hosts)")
+        let shared = LogRedactor.redactedForSharing(
+            "[warn] Platform API not collected: profiles.platform reaches "
+                + "jss.example-district.org, not other.example.org",
+            profile: "api", scopeIDs: { _ in [] }, serverHosts: { _ in hosts })
+        XCTAssertFalse(shared.contains("jss.example-district.org"), shared)
+    }
+
     func testHostFormsOfAConfiguredURL() {
         let forms = DiagnosticBundleService.hostForms(ofURL:)
         let both = ["jss.example.org:8443", "jss.example.org"]
@@ -111,14 +132,54 @@ final class ServerHostRedactionTests: XCTestCase {
         """)
         let expected = ["jss.example.org:8443", "jss.example.org",
                         "acme-label.protect.example.com", "other.example.net"]
-        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "onprem", configURL: file),
-                       expected)
-        XCTAssertEqual(DiagnosticBundleService.serverHosts(profile: "missing", configURL: file),
-                       expected)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .none), expected)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "missing", configURL: file, proxy: .none), expected)
         XCTAssertEqual(DiagnosticBundleService.serverHosts(
             profile: "onprem",
-            configURL: file.deletingLastPathComponent().appendingPathComponent("absent.yaml")),
+            configURL: file.deletingLastPathComponent().appendingPathComponent("absent.yaml"),
+            proxy: .none),
             [])
+    }
+
+    /// A scheduled run hands jamf-cli the system proxy, and a failing proxy is named in
+    /// jamf-cli's errors, so a shared log loses its host too; a skipped proxy never reached it.
+    func testSystemProxyHostIsSeeded() throws {
+        let file = try writeConfig("")
+        let proxy = SystemProxy.Proxy(
+            host: "proxy.corp.example", port: 3128, noProxy: nil, untranslated: 0)
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .use(proxy)),
+            ["proxy.corp.example:3128", "proxy.corp.example"])
+        XCTAssertEqual(DiagnosticBundleService.serverHosts(
+            profile: "onprem", configURL: file, proxy: .skipped(reason: "names a user")), [])
+        let line = "Get https://x: proxyconnect tcp: dial tcp: lookup proxy.corp.example: no such host"
+        let shared = LogRedactor.redactedForSharing(
+            line, profile: "onprem", scopeIDs: { _ in [] },
+            serverHosts: { DiagnosticBundleService.serverHosts(
+                profile: $0, configURL: file, proxy: .use(proxy)) })
+        XCTAssertFalse(shared.contains("proxy.corp.example"), shared)
+    }
+
+    /// A Platform profile on a custom gateway host (Other in the region picker) is seeded like any
+    /// other profile URL, so a bundle or shared log loses the host.
+    func testServerHostsSeedsACustomGatewayHost() throws {
+        let file = try writeConfig("""
+        profiles:
+            gw:
+                url: https://gateway.corp-example.org:8443
+                auth-method: platform
+                environment-id: 11111111-2222-3333-4444-555555555555
+        """)
+        let hosts = DiagnosticBundleService.serverHosts(
+            profile: "gw", configURL: file, proxy: .none)
+        XCTAssertEqual(hosts, ["gateway.corp-example.org:8443", "gateway.corp-example.org"])
+        let text = "POST https://gateway.corp-example.org:8443/devices failed"
+        let redactor = DiagnosticRedactor()
+        redactor.seedServerHosts(hosts)
+        let redacted = redactor.redactText(text)
+        XCTAssertFalse(redacted.contains("corp-example"))
     }
 
     func testSharedLogRedactsAnotherProfilesHost() throws {
@@ -132,7 +193,8 @@ final class ServerHostRedactionTests: XCTestCase {
         let shared = LogRedactor.redactedForSharing(
             "[error] protect alerts failed at acme-label.protect.example.com", profile: "prod",
             scopeIDs: { _ in [] },
-            serverHosts: { DiagnosticBundleService.serverHosts(profile: $0, configURL: file) })
+            serverHosts: { DiagnosticBundleService.serverHosts(
+                profile: $0, configURL: file, proxy: .none) })
         XCTAssertFalse(shared.contains("acme-label"), "got: \(shared)")
     }
 
@@ -160,5 +222,43 @@ final class ServerHostRedactionTests: XCTestCase {
             plain, profile: "Contoso", scopeIDs: { _ in [] }, serverHosts: { _ in [] }), plain)
         XCTAssertEqual(LogRedactor.redactedForSharing(
             text, profile: nil, scopeIDs: { _ in [] }, serverHosts: { _ in [] }), text)
+    }
+
+    /// The workspace rule runs last, so a peer-chosen word cannot split a seeded name or address.
+    func testAWorkspaceNameCannotSplitASeededNameOrAnAddress() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ws-seed-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"[{"general": {"name": "Jane Smith"}}]"#.write(
+            to: dir.appendingPathComponent("computers.json"), atomically: true, encoding: .utf8)
+        let r = DiagnosticRedactor()
+        r.seedFromWorkspace(dir)
+        r.seedWorkspaceNames(["Jane", "10"])
+        let out = r.redactText("Jane Smith checked in from 10.0.0.1")
+        XCTAssertFalse(out.contains("Smith"), "got: \(out)")
+        XCTAssertFalse(out.contains(".0.0.1"), "got: \(out)")
+        XCTAssertFalse(out.contains("10.0"), "got: \(out)")
+    }
+
+    /// config.yaml's timestamp authority is peer-writable: a bare word there ("partial") must
+    /// not mask that word, and the `[partial]` marker, in every shared log.
+    func testAPeerWrittenTimestampHostSeedsOnlyADottedHost() {
+        XCTAssertEqual(DiagnosticBundleService.seedableHostForms(ofURL: "https://partial"), [])
+        XCTAssertEqual(DiagnosticBundleService.seedableHostForms(ofURL: "https://warn:8443/x"), [])
+        XCTAssertEqual(
+            Set(DiagnosticBundleService.seedableHostForms(ofURL: "https://tsa.example.org:8443/tsr")),
+            ["tsa.example.org:8443", "tsa.example.org"])
+        XCTAssertFalse(DiagnosticBundleService.seedableHostForms(ofURL: "https://[2001:db8::1]/")
+            .isEmpty)
+    }
+
+    /// No host seed, whatever its source, is a word run logs are made of.
+    func testAHostSeedThatIsALogWordIsNotMasked() {
+        let r = DiagnosticRedactor()
+        r.seedServerHosts(["partial", "Error", "jss.example.org"])
+        let out = r.redactText("[partial] Error reaching jss.example.org")
+        XCTAssertTrue(out.hasPrefix("[partial] Error reaching "), "got: \(out)")
+        XCTAssertFalse(out.contains("jss.example.org"), "got: \(out)")
     }
 }

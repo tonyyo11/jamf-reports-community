@@ -82,6 +82,7 @@ final class CollectHonestyTests: XCTestCase {
 
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 tiers: [.scan],
@@ -111,6 +112,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeUnlaunchableStub()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -154,6 +156,7 @@ final class CollectHonestyTests: XCTestCase {
 
         do {
             try await ReportEngine.collect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
                 force: true, locateJamfCLI: { stub }, onLine: { _ in })
             XCTFail("a run that saved nothing must not succeed")
@@ -226,28 +229,24 @@ final class CollectHonestyTests: XCTestCase {
         let line = ReportEngine.standDownLine(reason: "[info] peer collected recently")
         let logURL = root.appendingPathComponent("no-such-workspace/automation/logs/x.log")
         XCTAssertTrue(
-            RunHistoryService.isPartialRun(logURL: logURL, logTailText: line + "\nexit 0 after 2s")
+            RunHistoryService.isPartialRun(logTailText: line + "\nexit 0 after 2s")
         )
     }
 
     /// End to end: a peer that collected minutes ago makes this Mac stand down,
-    /// and the run says so on the stream. `locateJamfCLI` returns nil to prove
-    /// the decision is made before the binary check — a peer already working is
-    /// a reason to defer whether or not this Mac could have collected.
+    /// and the run says so on the stream. The gate runs before any jamf-cli work, so a peer already
+    /// working is a reason to defer whether or not this Mac could have collected.
     func testCollectStandsDownForARecentPeerAndSaysSo() async throws {
         try writeConfig("shared_workspace:\n  enabled: true\n")
         try writePeerCollect(at: Date())
         let collector = LogTextCollector()
 
-        let disposition = try await ReportEngine.collect(
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            force: false,
-            locateJamfCLI: { nil },
-            onLine: collector.append
-        )
+        let disposition = try ReportEngine.environmentGate(
+            workspace: WorkspaceID(validating: profile), workspacePaths: WorkspacePaths.self,
+            tiers: Set(CollectionTier.allCases), force: false, now: Date(),
+            onLine: collector.append)
 
-        XCTAssertEqual(disposition, .stoodDown,
+        XCTAssertEqual(disposition, .stop(.stoodDown),
                        "CollectRouter keys Protect on this; a stand-down is not a collect")
         let standDown = collector.texts.filter { $0.hasPrefix(ReportEngine.standDownMarker) }
         XCTAssertEqual(standDown.count, 1, "got: \(collector.texts)")
@@ -361,9 +360,10 @@ final class CollectHonestyTests: XCTestCase {
 
     // MARK: - Same-day retry and failures a retry repeats (#207)
 
-    private func noSourceLandedLine() -> String {
-        "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason) "
-            + "— Trends did not advance"
+    private func noSourceLandedLine(
+        _ reason: String = ReportEngine.noSourceLandedReason
+    ) -> String {
+        "\(ReportEngine.summaryNotWrittenMarker) \(reason) — Trends did not advance"
     }
 
     /// The field case: a freshness run attempted only update-status, which failed because
@@ -380,6 +380,18 @@ final class CollectHonestyTests: XCTestCase {
         watcher.observe(noSourceLandedLine())
         XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
         XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// The Jamf Pro wording (Platform kinds landed, Jamf Pro did not) is read the same way.
+    func testTheJamfProWordingIsClassifiedLikeTheFirst() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(.failed(exitCode: CLIBridge.exitCodeUsage), report: "computers", at: Date())
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["computers"], attempted: 1))
+        watcher.observe(noSourceLandedLine(ReportEngine.noJamfProSourceLandedReason))
+        XCTAssertTrue(watcher.incomplete)
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile),
+                       "an unexplained [partial] would make the retry worthwhile")
     }
 
     /// Exit 2 and 8 repeat on a retry too: the self-remediation rule.
@@ -476,6 +488,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeStub(exitCode: 2, stdout: "")
         let collector = LogTextCollector()
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append)
 
@@ -524,7 +537,6 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertEqual(marker.count, 1, "got: \(collector.texts)")
         XCTAssertTrue(
             RunHistoryService.isPartialRun(
-                logURL: root.appendingPathComponent("nope/automation/logs/x.log"),
                 logTailText: try XCTUnwrap(marker.first)
             ),
             "a run that lost its summary must not read as a clean success"
@@ -588,6 +600,7 @@ final class CollectHonestyTests: XCTestCase {
         // Must NOT throw: exit 2 says nothing about server reachability, which
         // is exactly why this run reaches the summary step at all.
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -614,6 +627,40 @@ final class CollectHonestyTests: XCTestCase {
                        "the scheduled caller must not claim Trends updated for this run")
     }
 
+    /// The seam `collect(now:)` adds, through the whole collect and a stub jamf-cli that answers
+    /// the security report: a run started 30 s before local midnight dates its summary by that
+    /// start, whatever the wall clock says when the summary is written.
+    func testCollectDatesItsSummaryByTheStartTimeItIsGiven() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let report = binDir.appendingPathComponent("security.json")
+        try JSONSerialization.data(withJSONObject: GoldenFleetWorkspace.securitySummaryPayload(
+            total: 10, filevault: 10, sip: 10, firewall: 10, gatekeeper: 10)).write(to: report)
+        let stub = binDir.appendingPathComponent("stub-cli")
+        try """
+        #!/bin/sh
+        case "$*" in
+          *"config list"*) printf '%s' '[{"name":"\(profile)"}]' ;;
+          *--version*) echo "jamf-cli version 1.31.1" ;;
+          *"report security"*) cat "\(report.path)" ;;
+          *) printf '[]' ;;
+        esac
+        exit 0
+        """.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let lateEvening = try XCTUnwrap(Calendar.current.date(
+            from: DateComponents(year: 2026, month: 6, day: 15, hour: 23, minute: 59, second: 30)))
+        let collector = LogTextCollector()
+
+        try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+            force: true, locateJamfCLI: { stub }, now: lateEvening, onLine: collector.append)
+
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: summaries.path),
+                       ["summary_2026-06-15.json"], "\(collector.texts)")
+    }
+
     /// A snapshot from yesterday sits on disk and every attempted source fails: writing a
     /// summary would chart yesterday's numbers as today's trend point.
     func testNothingLandedDoesNotStampCachedDataAsToday() async throws {
@@ -624,7 +671,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,
@@ -635,6 +682,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append
         )
@@ -658,7 +706,7 @@ final class CollectHonestyTests: XCTestCase {
         let stampFormatter = DateFormatter()
         stampFormatter.locale = Locale(identifier: "en_US_POSIX")
         stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let stamp = stampFormatter.string(from: Date().calendarDays(ago: 1))
         let payload: [[String: Any]] = [["section": "summary", "data": [
             "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
             "sip_enabled": 249, "firewall_enabled": 245,
@@ -676,6 +724,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
             force: true, locateJamfCLI: { stub }, onLine: collector.append
         )
@@ -697,6 +746,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         try await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -745,7 +795,7 @@ final class CollectHonestyTests: XCTestCase {
 
     /// `ReportEngine.generate` emits the summary marker too — it writes the
     /// day's summary after the workbook. The workbook is still real, and the
-    /// scheduled twin posts its card regardless (`main.swift:547`), so the CLI
+    /// scheduled twin posts its card regardless (`HeadlessRun.swift`), so the CLI
     /// must not suppress a generate digest over a summary write it never
     /// promised. Gating `generate` on `producedFreshSnapshot` is the mistake
     /// this pins against.
@@ -824,6 +874,7 @@ final class CollectHonestyTests: XCTestCase {
         let collector = LogTextCollector()
 
         _ = try? await ReportEngine.collect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.inventory],

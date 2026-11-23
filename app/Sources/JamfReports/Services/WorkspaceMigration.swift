@@ -22,7 +22,6 @@ import Foundation
 /// the sentinel matches the current `CFBundleShortVersionString`. New
 /// profiles created after the migration runs are still picked up by the
 /// going-forward hooks in `OnboardingFlow.createWorkspace`.
-@MainActor
 enum WorkspaceMigration {
 
     /// `UserDefaults` key — value is the app version string the migration last completed under.
@@ -51,7 +50,7 @@ enum WorkspaceMigration {
         } else {
             let failed = result.failedProfiles.joined(separator: ", ")
             AppLogger.collect.error(
-                "WorkspaceMigration: sentinel NOT stamped — failures: \(failed, privacy: .public)"
+                "WorkspaceMigration: sentinel NOT stamped — failures: \(failed, privacy: .private)"
             )
         }
         return true
@@ -139,7 +138,7 @@ enum WorkspaceMigration {
                 )
                 if vals?.isSymbolicLink == true {
                     AppLogger.collect.warning(
-                        "WorkspaceMigration: skipping symlink entry \(url.lastPathComponent, privacy: .public)"
+                        "WorkspaceMigration: skipping symlink entry \(url.lastPathComponent, privacy: .private)"
                     )
                     return false
                 }
@@ -158,18 +157,14 @@ enum WorkspaceMigration {
         let marker = workspace.appendingPathComponent(".metadata_never_index")
         if fm.fileExists(atPath: marker.path) { return true }
         do {
-            try Data().write(to: marker, options: .atomic)
-            try? fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: marker.path
-            )
+            try AtomicInstall.write(Data(), to: marker, mode: 0o600)
             AppLogger.collect.info(
                 "WorkspaceMigration: dropped .metadata_never_index in \(workspace.lastPathComponent, privacy: .private)"
             )
             return true
         } catch {
             AppLogger.collect.warning(
-                "WorkspaceMigration: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                "WorkspaceMigration: failed to write .metadata_never_index: \(error.englishDescription, privacy: .private)"
             )
             return false
         }
@@ -191,27 +186,23 @@ enum WorkspaceMigration {
             // treat this as a successful migration step rather than a failure.
             return true
         }
-        let process = Process()
-        process.executableURL = mdutil
-        process.arguments = ["-i", "off", workspace.path]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus != 0 {
-                // Common: a workspace that was never indexed returns non-zero with
-                // "Indexing and searching disabled." — informational, not a failure.
-                AppLogger.collect.info(
-                    "WorkspaceMigration: mdutil -i off exited \(process.terminationStatus, privacy: .public) (best-effort)"
-                )
-            }
-            return true
-        } catch {
+        let result = JamfCLIInstaller.runProcessSync(
+            executable: mdutil, arguments: ["-i", "off", workspace.path],
+            environment: CLIBridge.environmentForJamfCLI(), timeout: 30)
+        // runProcessSync reports a launch failure as exit -1 with the reason in stderr.
+        if result.timedOut || result.exitCode == -1 {
+            let reason = result.timedOut ? "timed out" : result.stderr
             AppLogger.collect.warning(
-                "WorkspaceMigration: mdutil invocation failed: \(error.localizedDescription, privacy: .private)"
-            )
+                "WorkspaceMigration: mdutil invocation failed: \(reason, privacy: .private)")
             return false
         }
+        if result.exitCode != 0 {
+            // Common: a workspace that was never indexed returns non-zero with
+            // "Indexing and searching disabled." — informational, not a failure.
+            AppLogger.collect.info(
+                "WorkspaceMigration: mdutil -i off exited \(result.exitCode, privacy: .public) (best-effort)"
+            )
+        }
+        return true
     }
 }

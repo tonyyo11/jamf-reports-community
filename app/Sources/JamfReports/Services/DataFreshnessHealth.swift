@@ -37,13 +37,13 @@ struct DataFreshnessIssue: Identifiable, Sendable, Equatable {
         switch kind {
         case .failing:
             let attempts = consecutiveFailures == 1 ? "attempt" : "attempts"
-            return "\(snapshotKind) has failed \(consecutiveFailures) collect \(attempts) in a row"
+            return L("\(snapshotKind) has failed \(consecutiveFailures) collect \(attempts) in a row")
         case .stale:
             guard let lastSuccess else {
-                return "\(snapshotKind) has never been collected successfully"
+                return L("\(snapshotKind) has never been collected successfully")
             }
             let days = max(0, Int(Date().timeIntervalSince(lastSuccess) / 86_400))
-            return "\(snapshotKind) last landed \(days)d ago (expected every \(tier.cadenceLabel))"
+            return L("\(snapshotKind) last landed \(days)d ago (expected every \(tier.cadenceLabel))")
         }
     }
 }
@@ -79,9 +79,21 @@ enum DataFreshnessHealth {
     /// refresh tier here: `CollectRouter` runs Protect after a Pro refresh collect.
     static let protectKinds: [String] = ReportEngine.protectCommandMatrix(profile: "").map(\.kind)
 
+    /// The Jamf Security Cloud kinds `securityCollect` writes; judged on the refresh tier's
+    /// cadence like Protect's, since `CollectRouter` runs it after a refresh collect.
+    static let securityCloudKinds: [String] = ReportEngine.securityCommandMatrix(profile: "")
+        .map(\.kind)
+
+    /// The Jamf School kinds `schoolCollect` records, less `school-blueprints` (it needs Platform
+    /// fields, so a School profile without them is not failing). `planSchoolCollect` runs them
+    /// at the refresh cadence.
+    static let schoolKinds: [String] = ReportEngine.schoolCommandMatrix(profile: "").map(\.kind)
+        .filter { $0 != ReportEngine.schoolBlueprintsKind }
+
     /// The tier whose cadence judges `kind` and whose collect remediates it.
     static func tier(forKind kind: String) -> CollectionTier? {
-        CollectionTier.tier(forReport: kind) ?? (protectKinds.contains(kind) ? .refresh : nil)
+        CollectionTier.tier(forReport: kind)
+            ?? ((protectKinds + securityCloudKinds + schoolKinds).contains(kind) ? .refresh : nil)
     }
 
     /// Evaluate one pass. `now` is injected for deterministic tests.
@@ -151,7 +163,7 @@ extension CollectionTier {
         let hours = intervalSeconds / 3_600
         if hours >= 24 {
             let days = hours / 24
-            return days == 1 ? "1 day" : "\(days) days"
+            return days == 1 ? L("1 day") : L("\(days) days")
         }
         return "\(hours)h"
     }

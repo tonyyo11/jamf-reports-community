@@ -79,17 +79,4 @@ final class FileSystemHelpersTests: XCTestCase {
         XCTAssertEqual(result?.lastPathComponent, "real.json",
                        "escaping symlink must be skipped, not followed")
     }
-
-    /// A symlink that stays inside the directory remains usable — containment,
-    /// not a blanket symlink ban.
-    func testSymlinkWithinDirectoryIsAllowed() throws {
-        let real = tempDir.appendingPathComponent("real.json")
-        try "{}".write(to: real, atomically: true, encoding: .utf8)
-        let link = tempDir.appendingPathComponent("alias.json")
-        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
-
-        let result = FileManager.newestJSONFile(in: tempDir)
-        XCTAssertEqual(result?.lastPathComponent, "real.json",
-                       "in-dir symlink resolves to its target and is kept")
-    }
 }

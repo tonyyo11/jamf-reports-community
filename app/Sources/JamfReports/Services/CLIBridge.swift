@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Resolve CLI binaries from GUI launches, where `Process` does not inherit a
 /// login-shell PATH. `jamf-cli` may be installed by Homebrew or directly from a
@@ -121,24 +122,19 @@ final class CLIBridge {
             guard ProfileService.isValid(profile),
                   let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
                 AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private)"
                 )
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
-            let entries: [URL]
-            do {
-                entries = try FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                )
-            } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
-                return []  // Expected on first run before any snapshots exist
-            } catch {
-                AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
+            guard let entries = FileManager.snapshotFolderEntries(in: dir) else {
+                // Missing is expected on first run before any snapshots exist; a folder that is
+                // there but refused (a link) or unreadable is named.
+                if FileManager.default.fileExists(atPath: dir.path) {
+                    AppLogger.cli.warning(
+                        "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .private): not a readable snapshot folder"
+                    )
+                }
                 return []
             }
 
@@ -156,12 +152,13 @@ final class CLIBridge {
                     let data: Data
                     do {
                         data = try BoundedFile.read(
-                            item.url, limit: BoundedFile.snapshotLimit, followSymlinks: false)
+                            item.url, limit: BoundedFile.snapshotLimit, followSymlinks: false,
+                            inside: dataDir)
                     } catch {
                         let name = item.url.lastPathComponent
                         let reason = String(describing: error)
                         AppLogger.cli.warning(
-                            "snapshot skipped \(name, privacy: .public): \(reason, privacy: .public)"
+                            "snapshot skipped \(name, privacy: .private): \(reason, privacy: .private)"
                         )
                         return nil
                     }
@@ -176,7 +173,7 @@ final class CLIBridge {
                     // or object, so a fragment is by definition truncated.
                     guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
                         AppLogger.cli.warning(
-                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
+                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .private)"
                         )
                         return nil
                     }
@@ -213,59 +210,7 @@ final class CLIBridge {
         // to process termination. Resuming in terminationHandler alone races the final
         // readabilityHandler deliveries — they run on different GCD queues, so under
         // load the last stdout/stderr chunk can drop from the live Runs feed (same race
-        // fixed in runAndCapture via CaptureCompletion).
-        final class RunCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means pipes never deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: a grandchild may hold the pipes after the child is gone,
-            /// so stop waiting for their EOF. Shares the single-resume flag with `finish`.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (RunCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
+        // fixed in runAndCapture via the same ProcessCompletion).
 
         // Lock-protected box so the task-cancellation handler's terminate() call
         // never races against the continuation body's set() call. onCancel fires
@@ -279,7 +224,7 @@ final class CLIBridge {
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = RunCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 box.set(process)
                 process.executableURL = executable
@@ -333,6 +278,7 @@ final class CLIBridge {
 
                 do {
                     try process.run()
+                    box.stopIfClosing()
                     // Belt-and-suspenders: if cancellation arrived before run()
                     // (onCancel fired first, read nil, returned without terminating),
                     // terminate the now-running process ourselves.
@@ -342,9 +288,9 @@ final class CLIBridge {
                     // C-11: mirror to OSLog so post-mortem forensics see launch
                     // failures even when the in-app stream is gone.
                     AppLogger.cli.error(
-                        "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
+                        "CLIBridge.run: process launch failed: \(error.englishDescription, privacy: .private)"
                     )
-                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.englishDescription)"))
                     stdout.fileHandleForReading.readabilityHandler = nil
                     stderr.fileHandleForReading.readabilityHandler = nil
                     completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
@@ -370,21 +316,6 @@ final class CLIBridge {
         timeout: TimeInterval? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
-        final class DataBox: @unchecked Sendable {
-            private var data = Data()
-            private let lock = NSLock()
-            func append(_ newData: Data) {
-                lock.lock()
-                data.append(newData)
-                lock.unlock()
-            }
-            /// A timed-out call resumes without waiting for EOF, so a readability block can
-            /// still be appending while the result is copied.
-            func snapshot() -> Data {
-                lock.lock(); defer { lock.unlock() }
-                return data
-            }
-        }
         let box = DataBox()
 
         // M-01: same gate as `run` — verify before spawn.
@@ -400,68 +331,12 @@ final class CLIBridge {
         // is appended, truncating the captured payload to empty (Epic #102). The
         // same race on stderr dropped the lines collect's `StderrSignalWatcher`
         // classifies a command that exits 0 without data from (#207 G24).
-        final class CaptureCompletion: @unchecked Sendable {
-            private let lock = NSLock()
-            private var stdoutAtEOF = false
-            private var stderrAtEOF = false
-            private var exitCode: Int32?
-            private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Error>
-
-            init(_ continuation: CheckedContinuation<Int32, Error>) {
-                self.continuation = continuation
-            }
-
-            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
-
-            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
-
-            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
-
-            /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means the pipes will never
-            /// deliver EOF).
-            func failWithLaunchError(_ error: CLIBridgeError) {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(throwing: error) }
-            }
-
-            /// Timeout path only: the child has exited but a grandchild may still hold the
-            /// pipes, so do not wait for their EOF. Shares the single-resume flag with
-            /// `finish`, so whichever arrives first is the only resume.
-            @discardableResult
-            func forceResume(_ code: Int32) -> Bool {
-                let shouldResume: Bool
-                lock.lock()
-                shouldResume = !resumed
-                if shouldResume { resumed = true }
-                lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
-                return shouldResume
-            }
-
-            private func finish(_ mutate: (CaptureCompletion) -> Void) {
-                var pending: Int32?
-                lock.lock()
-                mutate(self)
-                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
-                    resumed = true
-                    pending = exitCode
-                }
-                lock.unlock()
-                if let pending { continuation.resume(returning: pending) }
-            }
-        }
 
         let processBox = TimedProcessBox()
 
         let code = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-                let completion = CaptureCompletion(continuation)
+                let completion = ProcessCompletion(continuation)
                 let process = Process()
                 processBox.set(process)
                 process.executableURL = executable
@@ -537,14 +412,15 @@ final class CLIBridge {
 
                 do {
                     try process.run()
+                    processBox.stopIfClosing()
                     if Task.isCancelled { process.terminate() }
                     if let timeout { processBox.armTimeout(timeout) }
                 } catch {
                     // C-11: mirror to OSLog — see `run()` above.
                     AppLogger.cli.error(
-                        "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
+                        "CLIBridge.runAndCapture: process launch failed: \(error.englishDescription, privacy: .private)"
                     )
-                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.englishDescription)"))
                     stdout.fileHandleForReading.readabilityHandler = nil
                     stderr.fileHandleForReading.readabilityHandler = nil
                     completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
@@ -574,12 +450,16 @@ final class CLIBridge {
         outputDir: URL? = nil,
         aiNarrative: String? = nil,
         htmlWithWorkbook: Bool = true,
+        csvFolder: Bool = false,
+        now: Date = Date(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await AttentionLog.recording(profile: profile) {
             try await generateRecording(
                 profile: profile, template: template, outputDir: outputDir,
-                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook, onLine: onLine)
+                aiNarrative: aiNarrative, htmlWithWorkbook: htmlWithWorkbook,
+                csvFolder: csvFolder, now: now, written: written, onLine: onLine)
         }
     }
 
@@ -589,8 +469,12 @@ final class CLIBridge {
         outputDir: URL?,
         aiNarrative: String?,
         htmlWithWorkbook: Bool,
+        csvFolder: Bool,
+        now: Date,
+        written: RunArtifacts?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try Self.refuseSensitiveDestination(outputDir, writing: "the workbook", onLine: onLine)
         try await ensureWorkspace(profile: profile, onLine: onLine)
         // A Generate with no collect before it (the Overview, onboarding) still names a drift.
         SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
@@ -607,9 +491,10 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir, profile: profile)
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
         let defaultURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false), profile: profile,
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false, prefix: config.filePrefix),
             onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
@@ -625,15 +510,18 @@ final class CLIBridge {
                     "generate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
-            let failures = try await engine.generate(
+            let generated = try await Localization.english {
+try await engine.generateReport(
                 outputURL: outputURL, template: template,
-                aiNarrative: aiNarrative, onLine: onLine
+                aiNarrative: aiNarrative, csvFolder: csvFolder, now: now, onLine: onLine
             )
+}
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] report written: \(outputURL.lastPathComponent)"))
@@ -646,18 +534,24 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
+            var htmlURL: URL?
             if htmlWithWorkbook {
-                await engine.writeHTMLWithWorkbook(
+                htmlURL = await Localization.english {
+await engine.writeHTMLWithWorkbook(
                     besideWorkbook: outputURL, template: template,
                     aiNarrative: aiNarrative, onLine: onLine)
+}
             }
-            tightenOnSuccess(0, profile: profile)
+            await RunArtifacts.record(
+                [outputURL, htmlURL, generated.csvFolder].compactMap { $0 }, in: written,
+                config: config, profile: profile, onLine: onLine)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] generate failed: \(error.localizedDescription)"))
+                         text: "[error] generate failed: \(error.englishDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -687,7 +581,7 @@ final class CLIBridge {
         do {
             return try ConfigLoader.load(from: url)
         } catch {
-            let msg = "[error] config.yaml parse failed — aborting: \(error.localizedDescription)"
+            let msg = "[error] config.yaml parse failed — aborting: \(error.englishDescription)"
             AppLogger.cli.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw CLIBridgeError.configLoadFailed(
@@ -709,11 +603,11 @@ final class CLIBridge {
     /// of a tree walk on a failed run is negligible compared to the security
     /// gain. The caller's `exitCode` parameter is retained for the log entry
     /// so forensic review can correlate the sweep with the underlying run.
-    func tightenOnSuccess(_ exitCode: Int32, profile: String) {
-        let result = WorkspacePermissionHardener.tighten(profile: profile)
+    func tightenOnSuccess(_ exitCode: Int32, profile: String) async {
+        let result = await WorkspacePermissionHardener.tightenOffMain(profile: profile)
         AppLogger.cli.info(
             """
-            tightenOnSuccess profile=\(profile, privacy: .public) \
+            tightenOnSuccess profile=\(profile, privacy: .private) \
             exit=\(exitCode) touched=\(result.touched) \
             failed=\(result.failed) enumerated=\(result.enumerated)
             """
@@ -723,8 +617,13 @@ final class CLIBridge {
     /// Run school-generate for Jamf School tenants via the Swift engine.
     func schoolGenerate(
         profile: String,
+        outputDir: URL? = nil,
+        csvFolder: Bool = false,
+        now: Date = Date(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try Self.refuseSensitiveDestination(outputDir, writing: "the workbook", onLine: onLine)
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
@@ -742,10 +641,15 @@ final class CLIBridge {
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        let engine = ReportEngine(config: config, dataDir: dataDir)
-        let outputURL = try engine.resolveOutputURL(
-            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true), profile: profile,
-            onLine: onLine)
+        let engine = ReportEngine(
+            config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
+        // A folder chosen on the Generate sheet takes the School workbook too, as it does the
+        // Jamf Pro one, so the run's files share one folder and one manifest.
+        let defaultURL = try engine.resolveOutputURL(
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true, prefix: config.filePrefix),
+            onLine: outputDir == nil ? onLine : nil)
+        let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) }
+            ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -759,18 +663,23 @@ final class CLIBridge {
                     "schoolGenerate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
-            let failures = try await ReportEngine.schoolGenerate(
+            let generated = try await Localization.english {
+try await ReportEngine.schoolGenerateReport(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
+                csvFolder: csvFolder,
+                now: now,
                 onLine: onLine
             )
+}
+            let failures = generated.failures
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] school report written: \(outputURL.lastPathComponent)"))
@@ -783,13 +692,16 @@ final class CLIBridge {
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
             }
-            tightenOnSuccess(0, profile: profile)
+            await RunArtifacts.record(
+                [outputURL, generated.csvFolder].compactMap { $0 }, in: written,
+                config: config, profile: profile, onLine: onLine)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] school-generate failed: \(error.localizedDescription)"))
+                         text: "[error] school-generate failed: \(error.englishDescription)"))
             // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -806,7 +718,7 @@ final class CLIBridge {
     /// For a narrower set — e.g. `RefreshCoordinator`'s `[.refresh]` — that
     /// guard never applies regardless; what `force: true` bypasses there is
     /// the per-kind cadence filter, so ad-hoc Refresh calls still always
-    /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
+    /// fetch fresh data. Scheduled collects (via `--scheduled-run`)
     /// pass `force: false` (the default).
     ///
     /// Holds the tick lock throughout (`holdingTickLock`), and throws
@@ -817,11 +729,12 @@ final class CLIBridge {
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         force: Bool = false,
+        now: Date = Date(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await Self.holdingTickLock {
             try await self.collectHoldingTickLock(
-                profile: profile, tiers: tiers, force: force, onLine: onLine)
+                profile: profile, tiers: tiers, force: force, now: now, onLine: onLine)
         }
     }
 
@@ -829,6 +742,7 @@ final class CLIBridge {
         profile: String,
         tiers: Set<CollectionTier>,
         force: Bool,
+        now: Date,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -837,7 +751,7 @@ final class CLIBridge {
         try await ensureWorkspace(profile: profile, onLine: onLine)
         // Honor the Settings "Skip expensive collections" toggle. UserDefaults
         // backs the @AppStorage in SettingsView, so this is a direct read.
-        // Scheduled collects run from main.swift and pass skipExpensive=false
+        // Scheduled collects run from HeadlessRun.swift and pass skipExpensive=false
         // unconditionally — the toggle only affects manual GUI refreshes.
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         // Load config for product-type routing. Failure degrades to Jamf Pro
@@ -848,21 +762,22 @@ final class CLIBridge {
             let loaded = try? ConfigLoader.load(from: url)
             if loaded == nil {
                 AppLogger.cli.warning(
-                    "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+                    "[routing] could not load config for \(profile, privacy: .private) — defaulting to Jamf Pro"
                 )
             }
             return loaded
         }()
         do {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 tiers: tiers,
                 skipExpensive: skipExpensive,
                 force: force,
                 config: config,
+                now: now,
                 onLine: onLine
             )
-            tightenOnSuccess(0, profile: profile)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch ReportEngineError.jamfCLINotFound {
             onLine(.init(timestamp: Date(), level: .fail,
@@ -870,9 +785,9 @@ final class CLIBridge {
             throw CLIBridgeError.executableNotFound
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] collect failed: \(error.localizedDescription)"))
+                         text: "[error] collect failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -889,16 +804,27 @@ final class CLIBridge {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
+        // One clock for the run, so a collect that crosses midnight and the report that follows
+        // it date the day's summary the same.
+        let runStart = Date()
         return try await Self.runCollectThenGenerate(
             // force: true — collectThenGenerate is always a GUI "Run now" action; the
             // once-per-day guard must not silently skip a user-triggered collect+generate.
-            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
+            collect: {
+                try await WorkspaceStore.recordingCollect(
+                    profile: profile, honesty: CollectHonestyWatcher()
+                ) { recorded in
+                    try await self.collect(
+                        profile: profile, force: true, now: runStart,
+                        onLine: { onLine($0); recorded($0) })
+                }.exit
+            },
             narrative: narrative,
             generate: { aiNarrative in
                 onLine(.init(timestamp: Date(), level: .info,
                              text: "[info] generating report from cached snapshots"))
-                return try await self.generate(profile: profile,
-                                               aiNarrative: aiNarrative, onLine: onLine)
+                return try await self.generate(profile: profile, aiNarrative: aiNarrative,
+                                               now: runStart, onLine: onLine)
             }
         )
     }
@@ -943,6 +869,16 @@ final class CLIBridge {
     nonisolated static let backupTimeout: TimeInterval = 2 * 60 * 60
     /// Seconds a child gets to act on the timeout's SIGTERM before `runAndCapture` sends SIGKILL.
     nonisolated static let timeoutKillGrace: TimeInterval = 3
+    /// Stops every jamf-cli (or other) child this process started through `CLIBridge`, then
+    /// returns how many it signalled. The tick's six-hour give-up calls it before exiting, since
+    /// ending the tick leaves a call that never answered running; it blocks up to `grace`.
+    @discardableResult
+    nonisolated static func terminateRunningChildren(
+        grace: TimeInterval = timeoutKillGrace
+    ) -> Int {
+        TimedProcessBox.terminateAllRunning(grace: grace)
+    }
+
     /// Seconds `runAndCapture` waits for pipe EOF after the child exits normally, before it
     /// stops reading: a process the child left running can hold the pipes open indefinitely.
     nonisolated static let eofGraceAfterExit: TimeInterval = timeoutKillGrace
@@ -964,52 +900,41 @@ final class CLIBridge {
         code == 0 || code == exitCodePartialFailure
     }
 
-    nonisolated static func explainExit(_ code: Int32, operation: String) -> String {
+    /// The sentence for a locked login keychain, shared by `explainExit` and the auth probe.
+    nonisolated static var keychainLockedDetail: String {
+        L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials. \(FailureCause.keychainLockedHint).")
+    }
+
+    /// `cause` (from `FailureCause.classify`) names a failure the exit code alone cannot: a
+    /// locked keychain exits 1, like a network error.
+    nonisolated static func explainExit(
+        _ code: Int32, operation: String, cause: FailureCause? = nil
+    ) -> String {
+        if cause?.kind == .keychainLocked { return L("\(operation) failed: \(keychainLockedDetail)") }
         let detail: String
         switch code {
         case exitCodeUnauthorized:
-            detail = "authentication failed (401) — this profile's credentials are invalid or "
-                + "expired. Re-authenticate it from Data Sources. A Jamf Platform API "
-                + "integration is valid for six months; an expired one needs a replacement in "
-                + "Jamf Account. A gateway URL in a different region (US, EU, APAC) from the "
-                + "integration fails the same way."
+            detail = L("authentication failed (401) — this profile's credentials are invalid or expired. Re-authenticate it from Data Sources. A Jamf Platform API integration is valid for six months; an expired one needs a replacement in Jamf Account. A gateway URL in a different region (US, EU, APAC) from the integration fails the same way.")
         case exitCodePermissionDenied:
-            detail = "permission denied (403) — this profile lacks a required permission. For a "
-                + "Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a "
-                + "Jamf Platform API integration, grant the permission to the integration in "
-                + "Jamf Account."
+            detail = L("permission denied (403) — this profile lacks a required permission. For a Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a Jamf Platform API integration, grant the permission to the integration in Jamf Account.")
         case exitCodeNotFound:
-            detail = "not found (404) — the server didn't have the requested resource."
+            detail = L("not found (404) — the server didn't have the requested resource.")
         case exitCodeRateLimited:
-            detail = "rate limited (429) — Jamf Pro is throttling requests. Wait a minute, "
-                + "then try again."
+            detail = L("rate limited (429) — Jamf Pro is throttling requests. Wait a minute, then try again.")
         case exitCodePartialFailure:
-            detail = "partial failure (exit 7) — some sub-operations failed but partial data "
-                + "was returned and saved. Review this run's log output for the specific "
-                + "failures."
+            detail = L("partial failure (exit 7) — some sub-operations failed but partial data was returned and saved. Review this run's log output for the specific failures.")
         case exitCodeTimedOut:
-            detail = "timed out: jamf-cli did not answer within its time limit and was "
-                + "stopped. The server may be overloaded or unreachable; the next run tries "
-                + "again."
+            detail = L("timed out: jamf-cli did not answer within its time limit and was stopped. The server may be overloaded or unreachable; the next run tries again.")
         case exitCodeUsage:
-            detail = "internal argument error (exit 2) — please report this along with this "
-                + "run's log output. On a Platform API profile, exit 2 is also the retired "
-                + "`apigw.jamf.com` host or an environment/tenant scope conflict — run "
-                + "`jamf-cli config validate`."
+            detail = L("internal argument error (exit 2) — please report this along with this run's log output. On a Platform API profile, exit 2 is also the retired `apigw.jamf.com` host or an environment/tenant scope conflict — run `jamf-cli config validate`.")
         case exitCodeRefusedByPolicy:
-            detail = "refused by policy (exit 8) — the command is outside what this "
-                + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "
-                + "Classic command the Platform API does not serve; on an instance "
-                + "profile, a Platform-only command. Use an oauth2 profile against the "
-                + "Jamf Pro instance for this command. `jamf-cli commands -o json` lists "
-                + "the refusals for the binary in hand (gateway == \"unserved\")."
+            detail = L("refused by policy (exit 8) — the command is outside what this profile's API publishes: on a Platform gateway profile, a Jamf Pro or Classic command the Platform API does not serve; on an instance profile, a Platform-only command. Use an oauth2 profile against the Jamf Pro instance for this command. `jamf-cli commands -o json` lists the refusals for the binary in hand (gateway == \"unserved\").")
         case 1:
-            detail = "exit 1 — usually a network error or a per-command failure. Review this "
-                + "run's log output for the failing command."
+            detail = L("exit 1 — usually a network error or a per-command failure. Review this run's log output for the failing command.")
         default:
-            detail = "exit \(code) — review this run's log output for details."
+            detail = L("exit \(code) — review this run's log output for details.")
         }
-        return "\(operation) failed: \(detail)"
+        return L("\(operation) failed: \(detail)")
     }
 
     /// Maps a thrown operation error to a user-facing cause+remediation string,
@@ -1035,13 +960,17 @@ final class CLIBridge {
                 return explainExit(1, operation: operation)                   // all kinds failed
             case .noPermission:
                 return explainExit(exitCodePermissionDenied, operation: operation)
+            case .keychainLocked:
+                return L("\(operation) failed: \(keychainLockedDetail)")
             case .rejectedID:
-                return "\(operation) failed: the Jamf Platform gateway rejected this profile's "
-                    + "environment or tenant ID. Correct it with Update credentials in Data "
-                    + "Sources; the environment ID is in the integration's details in Jamf Account."
+                return L("\(operation) failed: the Jamf Platform gateway rejected this profile's environment or tenant ID. Correct it with Update credentials in Data Sources; the environment ID is in the integration's details in Jamf Account.")
             }
         }
-        return "\(operation) failed — \(error.localizedDescription)"
+        // An error that carries jamf-cli's own text (a launch or decode failure quoting it).
+        if FailureCause.mentionsLockedKeychain(error.localizedDescription) {
+            return L("\(operation) failed: \(keychainLockedDetail)")
+        }
+        return L("\(operation) failed — \(error.localizedDescription)")
     }
 
     /// Guards a live-API operation by probing `pro auth token` first.
@@ -1064,7 +993,7 @@ final class CLIBridge {
         _testExecutable: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Bool {
-        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
+        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .private)")
         guard !ProfileAuthMethod.skipsProAuthProbe(profile: profile) else { return true }
         let probe = await probeToken(
             for: profile, executable: _testExecutable, timeout: probeTimeout
@@ -1075,9 +1004,15 @@ final class CLIBridge {
             let msg = "[warn] auth check timed out after \(Int(probeTimeout.rounded(.up))) s for "
                 + "profile '\(profile)'; could not confirm the credentials. Continuing; the "
                 + "command reports a rejected credential itself."
-            AppLogger.auth.warning("\(msg, privacy: .public)")
+            AppLogger.auth.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return true
+        case .keychainLocked:
+            let msg = "[error] auth check failed for profile '\(profile)': "
+                + Localization.english { Self.keychainLockedDetail }
+            AppLogger.auth.error("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            return false
         case .status(let result):
             status = result
         }
@@ -1086,6 +1021,11 @@ final class CLIBridge {
             onLine(.init(
                 timestamp: Date(), level: .fail,
                 text: "[error] jamf-cli not found — install via Homebrew: brew install jamf-cli"
+            ))
+        } else if ProfileAuthMethod.isAbsent(profile: profile) {
+            onLine(.init(
+                timestamp: Date(), level: .fail,
+                text: "[error] " + ReportEngineError.profileNotFound(profile).englishDescription
             ))
         } else {
             onLine(.init(
@@ -1097,23 +1037,39 @@ final class CLIBridge {
         return false
     }
 
-    /// The refusal, after one `[error]` line, when `profile` is known to belong to another
-    /// product (Jamf School, Protect, Security Cloud) or is an organization-level integration:
-    /// no `pro` command may run against it. Nil for a Jamf Pro profile and for one that cannot
-    /// be resolved. The lookup can run `jamf-cli config list`, so it runs detached: most
-    /// callers are on the main actor. `resolved` is the test seam.
+    /// The refusal, after one `[error]` line, when the workspace's `profiles:` block cannot run
+    /// (`EnvironmentProfiles.refusal`), or when `profile` is known to belong to another product
+    /// (Jamf School, Protect, Security Cloud) or is an organization-level integration: no `pro`
+    /// command may run against it. Nil for a Jamf Pro profile and for one that cannot be
+    /// resolved. `profile` names the workspace; the product check probes the profile the command
+    /// runs as, the environment's Jamf Pro slot. A caller that already resolved the environment
+    /// (`CollectRouter`) passes it; otherwise config.yaml is read. Reading config.yaml and the
+    /// lookup (which can run `jamf-cli config list`) run detached: most callers are on the main
+    /// actor. `resolved` is the test seam.
     nonisolated static func refusesProCommand(
         profile: String, operation: String, onLine: (@Sendable (LogLine) -> Void)?,
+        environment known: EnvironmentProfiles? = nil,
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
             ProfileAuthMethod.resolve(profile: $0)
         }
     ) async -> String? {
-        let refusal = await Task.detached {
-            resolved(profile)?.proRefusal(profile: profile, operation: operation)
+        let refusal = await Task.detached { () -> String? in
+            let environment = known ?? EnvironmentProfiles.read(workspace: profile)
+            if let refusal = environment.proCommandRefusal(
+                workspace: profile, operation: operation) { return refusal }
+            let jamfPro = environment.jamfPro ?? profile
+            return resolved(jamfPro)?.proRefusal(profile: jamfPro, operation: operation)
         }.value
         guard let refusal else { return nil }
         onLine?(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
         return refusal
+    }
+
+    /// The `[error]` line for a name that failed `ProfileService.isValid`, filtered like
+    /// `ProfileName.invalidMessage`.
+    nonisolated static func invalidProfileLine(_ profile: String) -> LogLine {
+        .init(timestamp: Date(), level: .fail,
+              text: "[error] invalid profile name: \(ConfigSchema.displayText(profile))")
     }
 
     nonisolated func validateConnection(
@@ -1121,7 +1077,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -1137,7 +1093,7 @@ final class CLIBridge {
         // because another profile may be the one that failed.
         let (code, stdout) = try await runAndCapture(
             executable: bin,
-            arguments: ["-p", profile, "config", "validate", "--output", "json"],
+            arguments: Self.configValidateArguments(profile: profile),
             environment: Self.environmentForJamfCLI(),
             onLine: { line in
                 if line.text.contains("config validation failed") { return }
@@ -1191,6 +1147,8 @@ final class CLIBridge {
     enum TokenProbe: Sendable {
         case status(TokenStatus?)
         case timedOut
+        /// jamf-cli could not read the profile's credentials from a locked keychain.
+        case keychainLocked
     }
 
     /// Fetch the token status for `profile` using `jamf-cli pro auth token --output json`.
@@ -1210,6 +1168,7 @@ final class CLIBridge {
         switch await probeToken(for: profile, executable: nil, timeout: Self.tokenProbeTimeout) {
         case .status(let status): return status
         case .timedOut: return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
+        case .keychainLocked: return TokenStatus.keychainLocked(profile: profile)
         }
     }
 
@@ -1229,23 +1188,30 @@ final class CLIBridge {
         let args = CLICommand.proAuthToken(profile: profile).argv
         let exitCode: Int32
         let data: Data
+        // A keychain error may be printed on stderr, which `runAndCapture` keeps out of `data`.
+        let stderrWatcher = StderrSignalWatcher()
         do {
             (exitCode, data) = try await runAndCapture(
                 executable: bin,
                 arguments: args,
                 environment: Self.environmentForJamfCLI(),
-                timeout: timeout
-            ) { _ in }
+                timeout: timeout,
+                onLine: stderrWatcher.forwarding(to: { _ in })
+            )
         } catch {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
             AppLogger.auth.warning(
-                "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "tokenStatus: runAndCapture threw for \(profile, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
         if exitCode == Self.exitCodeTimedOut { return .timedOut }
         guard exitCode == 0, !data.isEmpty else {
+            let cause = FailureCause.classify(
+                exitCode: exitCode, stdout: data,
+                sawKeychainLockedOnStderr: stderrWatcher.sawKeychainLocked)
+            if cause.kind == .keychainLocked { return .keychainLocked }
             return .status(TokenStatus.make(profile: profile, token: nil, expiresAt: nil))
         }
         return .status(parseTokenStatus(profile: profile, data: data))
@@ -1263,9 +1229,7 @@ final class CLIBridge {
         }
         let expiresAt: Date?
         if let rawDate = payload.expires_at {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            expiresAt = formatter.date(from: rawDate)
+            expiresAt = ISO8601Time.parse(rawDate)
         } else {
             expiresAt = nil
         }
@@ -1302,7 +1266,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "devices",
-            jamfCLIArgs: { id in ["pro", "device", id] },
+            jamfCLIArgs: Self.computerDetailArguments,
             onLine: onLine
         )
     }
@@ -1325,7 +1289,7 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "mobile-devices",
-            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] },
+            jamfCLIArgs: Self.mobileDetailArguments,
             onLine: onLine
         )
     }
@@ -1346,7 +1310,16 @@ final class CLIBridge {
         return !trimmed.isEmpty && !trimmed.hasPrefix("-")
     }
 
+    nonisolated static func computerDetailArguments(_ id: String) -> [String] {
+        ["pro", "device", id]
+    }
+
+    nonisolated static func mobileDetailArguments(_ id: String) -> [String] {
+        ["pro", "mobile-devices", "get", id]
+    }
+
     /// `locateJamfCLI` is a test seam: the default locator finds no jamf-cli under XCTest.
+    /// Callers run `refusesProCommand` first, before `authGuard` probes the profile.
     nonisolated func singleDeviceDetail(
         profile: String,
         deviceID: String,
@@ -1359,11 +1332,6 @@ final class CLIBridge {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isSafeDeviceIdentifier(trimmedID) else {
             AppLogger.cli.warning("device detail: rejecting leading-dash identifier")
-            return nil
-        }
-        if await Self.refusesProCommand(
-            profile: profile, operation: "Device lookup", onLine: onLine
-        ) != nil {
             return nil
         }
         guard ProfileService.isValid(profile),
@@ -1404,7 +1372,17 @@ final class CLIBridge {
                             at: cache.appendingPathExtension("meta")
                         )
                         // Atomic, so it replaces whatever sits at `cache` instead of following it.
-                        let cached = Self.writeDeviceDetailCache(data, to: cache)
+                        // The cache can sit in a shared folder: it gets the snapshot reduction,
+                        // the view gets the live data.
+                        let reduced = ReportEngine.reducingDeviceDetail(
+                            data, mobile: cacheSubdir == "mobile-devices",
+                            keepAccountNames: Self.keepsAccountNames(profile: profile))
+                        if reduced == nil {
+                            AppLogger.cli.warning(
+                                "deviceDetail: account names could not be removed; not cached")
+                        }
+                        let cached = reduced.map { Self.writeDeviceDetailCache($0, to: cache) }
+                            ?? false
                         if cached { CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache) }
                         return DeviceDetailResult(
                             data: data, fromCache: false, cacheURL: cached ? cache : nil
@@ -1462,13 +1440,19 @@ final class CLIBridge {
         return folder.appendingPathComponent(file)
     }
 
+    /// `jamf_cli.keep_account_names` as this Mac may use it; false when config.yaml cannot be read.
+    nonisolated private static func keepsAccountNames(profile: String) -> Bool {
+        let configured = ProfileService.workspaceURL(for: profile)
+            .flatMap { try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml")) }?
+            .jamfCli?.keepsAccountNames ?? false
+        return SharedConfigPin.keepAccountNames(configured, profile: profile)
+    }
+
     /// Writes `data` to `cache` through a temp file and rename, then restricts it to the owner.
     /// False (and a warning) when the write failed; the caller still has the live data.
     nonisolated private static func writeDeviceDetailCache(_ data: Data, to cache: URL) -> Bool {
         do {
-            try data.write(to: cache, options: .atomic)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: cache.path)
+            try AtomicInstall.write(data, to: cache, mode: 0o600)
             return true
         } catch {
             let reason = error.localizedDescription
@@ -1489,9 +1473,7 @@ final class CLIBridge {
     ///   (done in `singleDeviceDetail` alongside `removeItem(at: cache)`).
     nonisolated static func writeDeviceDetailFreshnessSidecar(for cache: URL) {
         let sidecar = cache.appendingPathExtension("meta")
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let isoString = formatter.string(from: Date())
+        let isoString = ISO8601Time.string(Date())
         guard let data = try? JSONSerialization.data(
             withJSONObject: ["generated_at": isoString]
         ) else {
@@ -1504,7 +1486,7 @@ final class CLIBridge {
             try data.write(to: sidecar, options: .atomic)
         } catch {
             AppLogger.cli.warning(
-                "freshnessSidecar: write failed for \(sidecar.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "freshnessSidecar: write failed for \(sidecar.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
     }
@@ -1516,7 +1498,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (exitCode: Int32, payload: Data) {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -1524,13 +1506,13 @@ final class CLIBridge {
         ) {
             throw CLIBridgeError.wrongProduct(refusal)
         }
-        // A backup whose Jamf Pro part failed holds only Protect objects, which `pro diff`
-        // cannot read.
+        // A backup whose Jamf Pro part failed or was skipped holds only Protect objects, which
+        // `pro diff` cannot read.
         for backup in [left, right]
-        where BackupProductResult.pro(inBackup: backup)?.state == .failed {
+        where BackupProductResult.pro(inBackup: backup)?.leavesNoJamfProBackup == true {
             let error = CLIBridgeError.backupWithoutPro(backup.lastPathComponent)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(error.localizedDescription)"))
+                         text: "[error] \(error.englishDescription)"))
             throw error
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -1546,18 +1528,28 @@ final class CLIBridge {
         // hands back the payload.
         let (exitCode, data) = try await runAndCapture(
             executable: bin,
-            arguments: [
-                "-p", profile,
-                "pro", "diff",
-                "--source", left.path,
-                "--target", right.path,
-                "--output", "json",
-                "--no-input",
-            ],
+            arguments: Self.diffArguments(profile: profile, source: left.path, target: right.path),
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
         return (exitCode, data)
+    }
+
+    /// Refuses a system or credentials folder (`WorkspacePaths.isSensitiveAbsolutePath`) as the
+    /// place a person chose for a report, before any folder is created there: one rule for the
+    /// workbook, HTML, PDF and CSV. A deny-list, not a workspace allow-list, because the callers
+    /// are save panels and the Generate sheet's folder, where any user folder is allowed. A path
+    /// inside the workspaces root passes: `WorkspaceRootStore` already validated that root, and
+    /// the default report folder (`WorkspacePaths.reportsDir`) is there.
+    static func refuseSensitiveDestination(
+        _ url: URL?, writing what: String, onLine: @Sendable (LogLine) -> Void
+    ) throws {
+        guard let url, WorkspacePaths.isSensitiveAbsolutePath(url) else { return }
+        let root = ProfileService.workspacesRoot().resolvingSymlinksInPath().path + "/"
+        if url.resolvingSymlinksInPath().path.hasPrefix(root) { return }
+        onLine(.init(timestamp: Date(), level: .fail,
+            text: "[error] refusing to write \(what) into a sensitive path: \(url.path)"))
+        throw CLIBridgeError.directoryOperationFailed(path: url.path)
     }
 
     func generateHTML(
@@ -1565,10 +1557,13 @@ final class CLIBridge {
         outFile: String?,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
+        try Self.refuseSensitiveDestination(
+            outFile.map { URL(fileURLWithPath: $0) }, writing: "HTML", onLine: onLine)
         try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
@@ -1587,8 +1582,11 @@ final class CLIBridge {
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
         } else {
-            let engine = ReportEngine(config: config, dataDir: dataDir)
-            outputURL = try engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
+            let engine = ReportEngine(
+                config: config, dataDir: dataDir, workspace: try WorkspaceID(validating: profile))
+            outputURL = try engine.resolveOutputURL(
+                stem: ExportNaming.reportKind(
+                    for: .html, schoolMode: false, prefix: config.filePrefix), onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1604,29 +1602,33 @@ final class CLIBridge {
                     "generateHTML: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
-            try await ReportEngine.generateHTML(
+            try await Localization.english {
+try await ReportEngine.generateHTML(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profile: profile,
+                workspace: try WorkspaceID(validating: profile),
                 template: template,
                 aiNarrative: aiNarrative,
                 onLine: onLine
             )
+}
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
-            tightenOnSuccess(0, profile: profile)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] html generation failed: \(error.localizedDescription)"))
+                         text: "[error] html generation failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1635,6 +1637,7 @@ final class CLIBridge {
         profile: String,
         outFile: String,
         template: any ReportTemplate = FullInstanceTemplate(),
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // PDF generation reads only cached jamf-cli JSON snapshots; no live API calls.
@@ -1659,11 +1662,7 @@ final class CLIBridge {
         // allow-list on purpose: the sole UI caller is an NSSavePanel, and a
         // strict allow-list would silently re-break user-chosen export
         // destinations (the B-04 regression PR #161 removed).
-        guard !WorkspacePaths.isSensitiveAbsolutePath(outputURL) else {
-            onLine(.init(timestamp: Date(), level: .fail,
-                text: "[error] refusing to write PDF into a sensitive path: \(outputURL.path)"))
-            throw CLIBridgeError.directoryOperationFailed(path: outputURL.path)
-        }
+        try Self.refuseSensitiveDestination(outputURL, writing: "PDF", onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1677,27 +1676,31 @@ final class CLIBridge {
                     "generatePDF: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                    text: "[error] could not create output directory: \(error.englishDescription)"))
                 throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
-            try await ReportEngine.generatePDF(
+            try await Localization.english {
+try await ReportEngine.generatePDF(
                 config: config,
                 dataDir: dataDir,
                 outputURL: outputURL,
-                profileName: profile,
+                workspace: try WorkspaceID(validating: profile),
                 template: template,
                 onLine: onLine
             )
+}
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
-            tightenOnSuccess(0, profile: profile)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] pdf generation failed: \(error.localizedDescription)"))
-            tightenOnSuccess(1, profile: profile)
+                         text: "[error] pdf generation failed: \(error.englishDescription)"))
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1705,18 +1708,13 @@ final class CLIBridge {
     func exportInventoryCSV(
         profile: String,
         outFile: String?,
+        written: RunArtifacts? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // Epic #103 parity with generatePDF: the engine createDirectory()s at
         // this path, so refuse sensitive destinations before doing anything.
-        if let path = outFile {
-            let candidate = URL(fileURLWithPath: path)
-            guard !WorkspacePaths.isSensitiveAbsolutePath(candidate) else {
-                onLine(.init(timestamp: Date(), level: .fail,
-                    text: "[error] refusing to write CSV into a sensitive path: \(candidate.path)"))
-                throw CLIBridgeError.directoryOperationFailed(path: candidate.path)
-            }
-        }
+        try Self.refuseSensitiveDestination(
+            outFile.map { URL(fileURLWithPath: $0) }, writing: "CSV", onLine: onLine)
         // No authGuard: this reads cached snapshots only, so a 401 must not block it.
         try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -1731,30 +1729,36 @@ final class CLIBridge {
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
         } else {
-            let engine = ReportEngine(config: config, dataDir: workspace)
+            let engine = ReportEngine(
+                config: config, dataDir: workspace, workspace: try WorkspaceID(validating: profile))
             outputURL = try engine.resolveOutputURL(
-                stem: ExportNaming.reportKind(for: .csv, schoolMode: false), profile: profile,
+                stem: ExportNaming.reportKind(
+                    for: .csv, schoolMode: false, prefix: config.filePrefix),
                 onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
         do {
-            try await ReportEngine.inventoryCSV(
+            try await Localization.english {
+try await ReportEngine.inventoryCSV(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
                 outputURL: outputURL
             )
-            // No sidecar or manifest for a CSV; the hash line is what lists it as a file the
-            // run wrote.
+}
+            // No sidecar for a CSV; the hash line is what lists it as a file the run wrote, and
+            // a Generate run's manifest lists it.
             if let line = ReportEngine.sha256LogLine(for: outputURL) { onLine(line) }
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
-            tightenOnSuccess(0, profile: profile)
+            await RunArtifacts.record(
+                [outputURL], in: written, config: config, profile: profile, onLine: onLine)
+            await tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] inventory-csv failed: \(error.localizedDescription)"))
+                         text: "[error] inventory-csv failed: \(error.englishDescription)"))
             // Engine-layer failure: return 1 (real non-zero exit).
-            tightenOnSuccess(1, profile: profile)
+            await tightenOnSuccess(1, profile: profile)
             return 1
         }
     }
@@ -1787,7 +1791,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation. Mirrors validateConnection.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("audit: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash category. Checked before auth so that the
@@ -1822,7 +1826,7 @@ final class CLIBridge {
         if code == 0, !data.isEmpty {
             saveJSONSnapshot(data: data, profile: profile, type: "audit", onLine: onLine)
         }
-        tightenOnSuccess(code, profile: profile)
+        await tightenOnSuccess(code, profile: profile)
         return code
     }
 
@@ -1833,7 +1837,7 @@ final class CLIBridge {
         // B-02: defense-in-depth profile validation.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("groupHygiene: rejecting invalid profile name")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         if let refusal = await Self.refusesProCommand(
@@ -1848,7 +1852,7 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json", "--no-input"]
+        let args = Self.groupAnalyzeArguments(profile: profile)
         let (code, data) = try await runAndCapture(
             executable: bin,
             arguments: args,
@@ -1858,7 +1862,7 @@ final class CLIBridge {
         if code == 0, !data.isEmpty {
             saveJSONSnapshot(data: data, profile: profile, type: "group-tools-analyze", onLine: onLine)
         }
-        tightenOnSuccess(code, profile: profile)
+        await tightenOnSuccess(code, profile: profile)
         return code
     }
 
@@ -1901,43 +1905,68 @@ final class CLIBridge {
             // mid-write leaves no truncated <type>_<ts>.json poisoning
             // the cached-fallback path. Mirrors the .atomic discipline
             // of every other JSON write in this file.
-            try data.write(to: file, options: .atomic)
-            // MFS-1: ensure the freshly-written snapshot is owner-only readable.
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: file.path
-            )
+            // MFS-1: owner-only, set on the staged file before it is installed.
+            try AtomicInstall.write(data, to: file, mode: 0o600)
         } catch {
             // C-07/MFS-4: route to unified logging instead of stdout.
             // %{public} for type (taxonomy), %{private} for the error chain.
             AppLogger.cli.warning(
-                "saveJSONSnapshot failed for \(type, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "saveJSONSnapshot failed for \(type, privacy: .public): \(error.englishDescription, privacy: .private)"
             )
             // C-12: also surface to the in-app log feed so the user can see
             // their refresh just used stale data.
             onLine?(.init(
                 timestamp: Date(),
                 level: .warn,
-                text: "[warn] snapshot write failed (\(type)) — refresh will use stale data: \(error.localizedDescription)"
+                text: "[warn] snapshot write failed (\(type)) — refresh will use stale data: \(error.englishDescription)"
             ))
         }
     }
 
     /// `timeout` ends a stalled `pro backup` and `protectTimeout` a stalled `protect backup`,
-    /// each on its own clock; `_testExecutable` is a test seam. When the workspace has Protect
-    /// connected the backup also holds `protect/` (see `ProtectBackup`).
+    /// each on its own clock; `_testExecutable` and `resolved` (the product check's lookup) are
+    /// test seams. When the workspace has Protect connected the backup also holds `protect/`
+    /// (see `ProtectBackup`).
     func backup(
         profile: String,
         label: String?,
         timeout: TimeInterval = CLIBridge.backupTimeout,
         protectTimeout: TimeInterval = ProtectBackup.timeout,
         _testExecutable: URL? = nil,
+        resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        try await backupRun(
+            profile: profile, label: label, timeout: timeout, protectTimeout: protectTimeout,
+            _testExecutable: _testExecutable, resolved: resolved, onLine: onLine).exit
+    }
+
+    /// What one backup run left: jamf-cli's exit and the folder it finished, nil when it wrote
+    /// none (a failure with nothing to keep, or Jamf Pro skipped with no Jamf Protect objects).
+    struct BackupRun: Sendable {
+        let exit: Int32
+        let folder: URL?
+    }
+
+    /// `backup`, with the folder it finished, for a caller that stamps and prunes it.
+    func backupRun(
+        profile: String,
+        label: String?,
+        timeout: TimeInterval = CLIBridge.backupTimeout,
+        protectTimeout: TimeInterval = ProtectBackup.timeout,
+        _testExecutable: URL? = nil,
+        resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async throws -> BackupRun {
         try await AttentionLog.recording(profile: profile) {
             try await backupRecording(
                 profile: profile, label: label, timeout: timeout,
-                protectTimeout: protectTimeout, _testExecutable: _testExecutable, onLine: onLine)
+                protectTimeout: protectTimeout, _testExecutable: _testExecutable,
+                resolved: resolved, onLine: onLine)
         }
     }
 
@@ -1947,10 +1976,11 @@ final class CLIBridge {
         timeout: TimeInterval,
         protectTimeout: TimeInterval,
         _testExecutable: URL?,
+        resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
+    ) async throws -> BackupRun {
         guard ProfileService.isValid(profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash labels — would be re-interpreted as a flag by jamf-cli.
@@ -1960,8 +1990,15 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup label may not start with '-'"))
             throw CLIBridgeError.invalidArgument("backup label may not start with '-'")
         }
-        if let refusal = await Self.refusesProCommand(
-            profile: profile, operation: "Backup", onLine: onLine
+        // One read of config.yaml for the product check and the launch: a peer that rewrites
+        // the file while the check asks jamf-cli cannot change the `-p` the backup runs as.
+        let environment = await Task.detached { EnvironmentProfiles.read(workspace: profile) }
+            .value
+        // A School environment is refused with backup's own sentence in `backupProfile`, or,
+        // with Protect, backs up Protect alone.
+        if !environment.isSchool, let refusal = await Self.refusesProCommand(
+            profile: profile, operation: "Backup", onLine: onLine, environment: environment,
+            resolved: resolved
         ) {
             throw CLIBridgeError.wrongProduct(refusal)
         }
@@ -1988,12 +2025,12 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
-        // `-p` is the workspace's own profile, as for collect, generate and audit. A shared
-        // (synced) workspace's config.yaml can be edited from another Mac, so honouring
-        // `jamf_cli.profile` here would export a different tenant's config objects into
-        // this folder from an unattended job. Checked before anything is created, so a
-        // refusal leaves no staging directory behind.
-        try Self.checkBackupConfigProfile(profile, onLine: onLine)
+        // `-p` is the environment's Jamf Pro profile, never `jamf_cli.profile`: a shared (synced)
+        // workspace's config.yaml can be edited from another Mac, and honouring that key would
+        // export a different tenant's config objects into this folder from an unattended job.
+        // Checked before anything is created, so a refusal leaves no staging directory behind.
+        let jamfProProfile = try Self.backupProfile(
+            for: profile, environment: environment, onLine: onLine)
         let backupsRoot = workspace.appendingPathComponent("backups", isDirectory: true)
         // Checked from the resolved root; the unresolved paths below stay as they are (see above).
         guard WorkspacePaths.confinedFolderOrWarn(["backups"], under: workspace, onLine: onLine)
@@ -2009,7 +2046,7 @@ final class CLIBridge {
                 "backup: could not create backups dir: \(backupsRoot.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not create backups directory: \(error.localizedDescription)"))
+                         text: "[error] could not create backups directory: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: backupsRoot.path)
         }
 
@@ -2027,22 +2064,43 @@ final class CLIBridge {
                 "backup: could not create temp dir: \(validatedTemp.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not create backup temp dir: \(error.localizedDescription)"))
+                         text: "[error] could not create backup temp dir: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
-        let args = Self.backupArguments(profile: profile, outputDirectory: validatedTemp.path)
-        let exit = try await run(
-            executable: bin,
-            arguments: args,
-            environment: Self.environmentForJamfCLI(),
-            timeout: timeout,
-            onLine: onLine
-        )
-        if exit == Self.exitCodeTimedOut {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] backup stopped after the \(Int(timeout.rounded(.up))) s "
-                             + "limit; the unfinished backup was discarded"))
+        // On storage other Macs reach, the operator decides whether Jamf Pro is backed up here.
+        // A Jamf School workspace has no Jamf Pro part to decide about.
+        let noJamfPro = jamfProProfile == nil
+        let proSkip = noJamfPro
+            ? ProSkip(reason: BackupProductResult.noJamfProReason, isPartial: false)
+            : await decideProBackup(
+                profile: profile, workspace: workspace, backupsRoot: backupsRoot,
+                isScheduled: trimmedLabel?.hasPrefix("scheduled-") == true, onLine: onLine)
+        let proSkipped = proSkip != nil
+        var exit: Int32
+        if proSkip == nil, let jamfProProfile {
+            do {
+                exit = try await run(
+                    executable: bin,
+                    arguments: Self.backupArguments(
+                        profile: jamfProProfile, outputDirectory: validatedTemp.path),
+                    environment: Self.environmentForJamfCLI(),
+                    timeout: timeout,
+                    onLine: onLine
+                )
+            } catch {
+                // Partial configuration must not stay: shared storage never sweeps staging.
+                discardStaging(validatedTemp, onLine: onLine)
+                throw error
+            }
+            if exit == Self.exitCodeTimedOut {
+                onLine(.init(timestamp: Date(), level: .fail,
+                             text: "[error] backup stopped after the "
+                                 + "\(Int(timeout.rounded(.up))) s limit; the unfinished backup "
+                                 + "was discarded"))
+            }
+        } else {
+            exit = 0
         }
 
         // Exit 7 is jamf-cli's documented partial failure: some config-object types
@@ -2050,12 +2108,13 @@ final class CLIBridge {
         // data was returned for the rest. Keeping that staging dir is the whole
         // point of the code — deleting it here would destroy the partial export.
         let isPartial = exit == Self.exitCodePartialFailure
-        let proFailed = exit != 0 && !isPartial
+        let proFailed = !proSkipped && exit != 0 && !isPartial
         if proFailed {
             // Every other failure branch names its cause; this one used to return a
             // bare exit code with no log line at all.
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] " + Self.explainExit(exit, operation: "Backup")))
+                         text: "[error] " + Localization.english {
+                             Self.explainExit(exit, operation: "Backup") }))
             // The unfinished Jamf Pro files are never kept; an empty staging folder lets
             // Protect still back up below. Not intermediate, so a name planted after the
             // removal fails the create and goes to the discard below.
@@ -2064,8 +2123,8 @@ final class CLIBridge {
                                             attributes: [.posixPermissions: 0o700])) != nil
             guard cleared else {
                 discardStaging(validatedTemp, onLine: onLine)
-                tightenOnSuccess(exit, profile: profile)
-                return exit
+                await tightenOnSuccess(exit, profile: profile)
+                return BackupRun(exit: exit, folder: nil)
             }
         }
 
@@ -2082,21 +2141,43 @@ final class CLIBridge {
         let protectResult = await backupProtect(
             profile: profile, workspace: workspace, staging: validatedTemp, executable: bin,
             timeout: protectTimeout,
-            proState: proFailed ? .failed : (isPartial ? .partial : .ok),
+            proState: proSkipped ? .skipped : proFailed ? .failed : (isPartial ? .partial : .ok),
             sharedStorage: {
                 BackupMaintenance.sharedStorageDescription(
-                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume)
+                    backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+                    pinnedIsShared: true)
             },
             onLine: onLine)
+        // With no Jamf Pro, Protect is the whole backup, so its outcome is the run's. A partial
+        // part keeps its folder, so it reads as jamf-cli's partial exit, which is stamped and
+        // pruned like a partial Jamf Pro backup.
+        if noJamfPro, let protectResult {
+            if protectResult.state == .failed {
+                exit = protectResult.exitCode ?? ReportEngine.launchFailureExitCode
+            } else if protectResult.state == .partial, protectResult.exitCode != 0 {
+                exit = Self.exitCodePartialFailure
+            }
+        }
         // With Jamf Pro failed, the folder is kept only for Protect objects to restore from.
         if proFailed, (protectResult?.objectTotal ?? 0) == 0 {
-            discardStaging(validatedTemp, onLine: onLine)
-            tightenOnSuccess(exit, profile: profile)
-            return exit
+            discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
+            await tightenOnSuccess(exit, profile: profile)
+            return BackupRun(exit: exit, folder: nil)
+        }
+        // A skipped Jamf Pro part with no Jamf Protect objects leaves nothing to restore from,
+        // so no folder is written; the skip line, the Partial line and the attention item above
+        // already say so. Not a failure.
+        if proSkipped, (protectResult?.objectTotal ?? 0) == 0 {
+            discardStaging(validatedTemp, protect: protectResult, onLine: onLine)
+            onLine(Self.nothingKeptLine(
+                noJamfPro: noJamfPro, proSkipIsPartial: proSkip?.isPartial == true,
+                protectSkipped: protectResult?.state == .skipped))
+            await tightenOnSuccess(exit, profile: profile)
+            return BackupRun(exit: exit, folder: nil)
         }
 
         // Rename temp dir to a timestamped final name.
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = ISO8601Time.string(Date())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15)
@@ -2128,39 +2209,47 @@ final class CLIBridge {
                 "backup: move failed \(validatedTemp.path, privacy: .private) → \(validatedFinal.path, privacy: .private) — \(error, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
+                         text: "[error] could not finalize backup directory: \(error.englishDescription)"))
             throw CLIBridgeError.directoryOperationFailed(path: validatedFinal.path)
         }
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
-        let stats = directoryStats(validatedFinal)
+        // A backup is thousands of files: walk and count them off the main actor.
+        let (stats, proCounts) = await Task.detached(priority: .userInitiated) {
+            (Self.directoryStats(validatedFinal),
+             proFailed ? [:] : ProtectBackup.objectCounts(in: validatedFinal))
+        }.value
         let effectiveLabel = trimmedLabel ?? ""
         var manifest: [String: Any] = [
             "label": effectiveLabel,
-            "created_at": ISO8601DateFormatter().string(from: Date()),
+            "created_at": ISO8601Time.string(Date()),
             "file_count": stats.fileCount,
             "size_bytes": stats.sizeBytes,
         ]
-        // Only a workspace with Protect connected records per-product results; any other
-        // manifest is as it always was, and older ones read the same.
-        if let protectResult {
-            manifest["products"] = [
-                "pro": ["exit_code": Int(exit),
-                        "state": proFailed ? "failed" : isPartial ? "partial" : "ok"],
-                "protect": protectResult.manifestValue,
-            ] as [String: Any]
+        // Only a workspace with Protect connected, or a skipped Jamf Pro part, records
+        // per-product results; any other manifest is as it always was, and older ones read the
+        // same.
+        if protectResult != nil || proSkipped {
+            var products: [String: Any] = [
+                "pro": proSkip.map {
+                    BackupProductResult(state: .skipped, reason: $0.reason).manifestValue
+                } ?? BackupProductResult(
+                    state: proFailed ? .failed : isPartial ? .partial : .ok, exitCode: exit,
+                    // Counted as Protect's are, before manifest.json exists; a failed part's
+                    // files are already gone.
+                    objectCounts: proCounts.filter { $0.key != ProtectBackup.folderName }
+                ).manifestValue,
+            ]
+            products["protect"] = protectResult?.manifestValue
+            manifest["products"] = products
         }
         do {
             let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted])
             let manifestURL = validatedFinal.appendingPathComponent("manifest.json")
-            try manifestData.write(to: manifestURL, options: .atomic)
-            try? fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: manifestURL.path
-            )
+            try AtomicInstall.write(manifestData, to: manifestURL, mode: 0o600)
         } catch {
             AppLogger.cli.warning(
-                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
@@ -2173,22 +2262,167 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] Jamf Pro backup failed; kept the Jamf Protect part in "
                              + validatedFinal.lastPathComponent))
-            tightenOnSuccess(exit, profile: profile)
-            return exit
+            await tightenOnSuccess(exit, profile: profile)
+            return BackupRun(exit: exit, folder: validatedFinal)
         }
         let protectIncomplete = protectResult?.isIncomplete == true
         onLine(.init(
             timestamp: Date(),
-            level: isPartial || protectIncomplete ? .warn : .ok,
+            level: proSkip?.isPartial == true || isPartial || protectIncomplete ? .warn
+                : proSkipped && !noJamfPro ? .info : .ok,
             text: isPartial
                 ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
                 : protectIncomplete
                 ? "[warn] backup written without a complete Jamf Protect part: "
                     + validatedFinal.lastPathComponent
+                : noJamfPro
+                ? "[ok] Jamf Protect backup written: \(validatedFinal.lastPathComponent)"
+                : proSkipped
+                ? (proSkip?.isPartial == true ? "[warn]" : "[info]")
+                    + " backup written without a Jamf Pro part: "
+                    + validatedFinal.lastPathComponent
                 : "[ok] backup written: \(validatedFinal.lastPathComponent)"
         ))
-        tightenOnSuccess(exit, profile: profile)
-        return exit
+        await tightenOnSuccess(exit, profile: profile)
+        return BackupRun(exit: exit, folder: validatedFinal)
+    }
+
+    /// The line for a run that keeps no folder because Jamf Pro was left out and Protect left
+    /// nothing. On a Jamf School workspace a skipped Protect part means nothing was backed up,
+    /// so the run reads as Partial.
+    nonisolated static func nothingKeptLine(
+        noJamfPro: Bool, proSkipIsPartial: Bool, protectSkipped: Bool
+    ) -> LogLine {
+        if noJamfPro {
+            return protectSkipped
+                ? .init(timestamp: Date(), level: .warn,
+                        text: "[partial] no backup written: Jamf Protect was skipped and this "
+                            + "Jamf School workspace has no Jamf Pro to back up")
+                : .init(timestamp: Date(), level: .info,
+                        text: "[info] no backup written: this Jamf School workspace has no "
+                            + "Jamf Pro and Jamf Protect left nothing to keep")
+        }
+        return .init(
+            timestamp: Date(), level: proSkipIsPartial ? .warn : .info,
+            text: (proSkipIsPartial ? "[warn]" : "[info]")
+                + " no backup written: Jamf Pro was skipped and Jamf Protect left nothing "
+                + "to keep")
+    }
+
+    /// A Jamf Pro part this backup leaves out: `reason` goes in the manifest, `isPartial` is
+    /// whether the run reads as Partial.
+    struct ProSkip: Sendable {
+        let reason: String
+        let isPartial: Bool
+    }
+
+    /// Decides whether this backup includes Jamf Pro (`ProBackup.plan`), logs what that means
+    /// and keeps the Needs-attention item in step. Returns the skip when it is skipped. A skip
+    /// is never a failure (no `[error]`); it is Partial only when nobody has decided yet or the
+    /// decision waits for a Confirm.
+    /// The Jamf Pro synced-storage decision and what the caller logs with it: the plan, where
+    /// the workspace is shared, and why config.yaml did not decode.
+    private nonisolated static func proBackupPlan(
+        profile: String, backupsRoot: URL
+    ) -> (ProBackup.Plan, String?, String?) {
+        let read = ProBackup.readConfig(profile: profile)
+        let config = read.config
+        let decodeFailure = read.failure
+        // A config.yaml that does not decode cannot say the folder is shared; the storage and
+        // this Mac's pin can.
+        let place = BackupMaintenance.sharedStorageDescription(
+            backupsRoot, profile: profile, volumeIsLocal: CloudStorage.isOnLocalVolume,
+            unreadableConfigIsShared: false, pinnedIsShared: true)
+        let setting: ProBackup.Setting = place == nil || decodeFailure != nil ? .notChosen
+            : SharedConfigPin.proBackupSetting(
+                config?.backup?.proOnSyncedStorage, profile: profile)
+        // Once this Mac has seen a choice, a peer deleting the key cannot restart the grace.
+        if place != nil, decodeFailure == nil, setting != .notChosen {
+            ProBackupGrace.exhaust(profile: profile)
+        }
+        let plan = ProBackup.plan(
+            setting: setting, place: place, decodeFailure: decodeFailure,
+            hasScheduledHistory: { BackupMaintenance.hasScheduledJamfProBackup(profile: profile) },
+            graceRunsUsed: { ProBackupGrace.used(profile: profile) })
+        return (plan, place, decodeFailure)
+    }
+
+    private func decideProBackup(
+        profile: String, workspace: URL, backupsRoot: URL, isScheduled: Bool,
+        onLine: @Sendable (LogLine) -> Void
+    ) async -> ProSkip? {
+        // config.yaml, the sync-provider walk, the pin and the backup manifests are file work,
+        // so they run off the main actor; the log lines and attention items stay in this task.
+        let (plan, place, decodeFailure) = await Task.detached(priority: .userInitiated) {
+            Self.proBackupPlan(profile: profile, backupsRoot: backupsRoot)
+        }.value
+        func skip(
+            _ reason: String, _ kind: ProBackup.SkipKind, place: String, detail: String? = nil
+        ) -> ProSkip {
+            let full = reason + (detail.map { ": \($0)" } ?? "")
+            onLine(.init(timestamp: Date(), level: .warn, text: ProBackup.skipLine(reason: full)))
+            if kind.makesRunPartial {
+                onLine(.init(timestamp: Date(), level: .warn, text: ProBackup.partialLine))
+            }
+            if kind == .asking {
+                AttentionLog.raise(
+                    .proBackupChoiceNeeded,
+                    ProBackup.choiceNeededMessage(place: place, runsLeft: nil))
+            } else {
+                AttentionLog.clear(.proBackupChoiceNeeded)
+            }
+            return ProSkip(reason: reason, isPartial: kind.makesRunPartial)
+        }
+        switch plan {
+        case .run:
+            AttentionLog.clear(.proBackupChoiceNeeded)
+            return nil
+        case .runOnSyncedStorage(let place):
+            AttentionLog.clear(.proBackupChoiceNeeded)
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] backing up Jamf Pro to synced storage: this workspace is "
+                             + "\(place), and "
+                             + "\(SharedConfigPin.Key.proBackupOnSyncedStorage.rawValue) allows "
+                             + "it on this Mac"))
+            return nil
+        case .skip(let reason, let kind):
+            return skip(reason, kind, place: place ?? "on synced storage", detail: decodeFailure)
+        case .runWhileAsking(let place, let runsLeft):
+            // Only a scheduled run uses up the grace; a manual backup during it is free.
+            var left = runsLeft
+            if isScheduled {
+                do {
+                    try ProBackupGrace.record(profile: profile)
+                    left -= 1
+                } catch {
+                    // Not counting would keep Jamf Pro on shared storage for good. The manifest
+                    // gets a fixed reason; the error text stays in the log line.
+                    return skip(
+                        "the count of scheduled backups that run before this choice is needed "
+                            + "could not be saved on this Mac",
+                        .asking, place: place,
+                        detail: LogRedactor.redact(error.localizedDescription))
+                }
+            }
+            let message = ProBackup.choiceNeededMessage(place: place, runsLeft: left)
+            onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(message)"))
+            AttentionLog.raise(.proBackupChoiceNeeded, message)
+            return nil
+        }
+    }
+
+    /// Removes a staging folder the run keeps nothing from. The Protect part's failure list
+    /// (`protect/_failures.yaml`), which its `[warn]` line points the operator to, goes with it,
+    /// so say so.
+    private func discardStaging(
+        _ staging: URL, protect: BackupProductResult?, onLine: @Sendable (LogLine) -> Void
+    ) {
+        discardStaging(staging, onLine: onLine)
+        guard protect?.hasFailuresFile == true else { return }
+        onLine(.init(timestamp: Date(), level: .warn,
+                     text: "[warn] the Jamf Protect failure list "
+                         + "(\(ProtectBackup.folderName)/\(ProtectBackup.failuresFileName)) was "
+                         + "discarded with the staging folder, since this backup keeps nothing"))
     }
 
     private func discardStaging(_ staging: URL, onLine: @Sendable (LogLine) -> Void) {
@@ -2200,38 +2434,68 @@ final class CLIBridge {
             text: "[warn] backup temp dir could not be removed — delete manually: \(staging.lastPathComponent)"))
     }
 
+    nonisolated static func diffArguments(profile: String, source: String, target: String) -> [String] {
+        ["-p", profile, "pro", "diff", "--source", source, "--target", target,
+         "--output", "json", "--no-input"]
+    }
+
+    nonisolated static func groupAnalyzeArguments(profile: String) -> [String] {
+        ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json",
+         "--no-input"]
+    }
+
+    nonisolated static func configValidateArguments(profile: String) -> [String] {
+        ["-p", profile, "config", "validate", "--output", "json"]
+    }
+
     /// The jamf-cli arguments for a backup of `profile` into `outputDirectory`.
     nonisolated static func backupArguments(profile: String, outputDirectory: String) -> [String] {
         ["-p", profile, "--no-input", "pro", "backup",
          "--format", "json", "--output", outputDirectory]
     }
 
-    /// Compares the workspace's `jamf_cli.profile` with `profile` before a backup. A case
-    /// variant is refused like `CollectRouter.run` refuses it: the two share the folder on a
-    /// case-insensitive volume. Any other name is ignored with one warning, because the
-    /// backup always runs as `profile`. A missing or undecodable config has nothing to compare.
-    nonisolated static func checkBackupConfigProfile(
-        _ profile: String,
+    /// The jamf-cli profile a backup of `workspace` runs as: `environment.jamfPro`, from the one
+    /// read the product check also used. A workspace whose existing folder is spelled
+    /// differently (a case variant sharing it on a case-insensitive volume) is refused like
+    /// `CollectRouter.run` refuses it, judged by the folder's own name, never config.yaml. A
+    /// `profiles:` block that cannot run is refused again here, so the launch never depends on
+    /// a caller having checked; a workspace with no Jamf Pro slot (Jamf School) is refused too,
+    /// each with one `[error]`, unless it has a Protect profile: then nil, and the backup is
+    /// the Protect part alone (2.12). An old-key `jamf_cli.profile` naming another profile is
+    /// ignored with one warning.
+    nonisolated static func backupProfile(
+        for workspace: String,
+        environment: EnvironmentProfiles,
         onLine: @Sendable (LogLine) -> Void
-    ) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile),
-              let config = try? ConfigLoader.load(
-                  from: workspace.appendingPathComponent("config.yaml")
-              ) else { return }
-        let owner = config.jamfCli?.resolvedProfile ?? ""
-        guard !owner.isEmpty, owner != profile else { return }
-        guard !ProfileService.isCaseVariant(owner, of: profile) else {
-            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
+    ) throws -> String? {
+        if let owner = ProfileService.caseVariantWorkspace(of: workspace) {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: workspace, owner: owner)
             onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
+                         text: "[error] \(conflict.englishDescription)"))
             throw conflict
         }
-        onLine(.init(
-            timestamp: Date(), level: .warn,
-            text: "[warn] backup: config.yaml sets jamf_cli.profile to "
-                + "\(ConfigSchema.displayText(owner)); ignored, backing up this workspace's "
-                + "profile \(ConfigSchema.displayText(profile))"
-        ))
+        // A School environment gets the later guard's backup-specific sentence.
+        if let refusal = environment.refusal(workspace: workspace)
+            ?? (environment.isSchool ? nil : environment.proCommandRefusal(
+                workspace: workspace, operation: "Backup")) {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(refusal)"))
+            throw CLIBridgeError.wrongProduct(refusal)
+        }
+        if let owner = environment.namedOwner, owner != workspace {
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] backup: config.yaml sets jamf_cli.profile to "
+                    + "\(ConfigSchema.displayText(owner)); ignored, backing up this workspace's "
+                    + "profile \(ConfigSchema.displayText(workspace))"
+            ))
+        }
+        guard let jamfPro = environment.jamfPro else {
+            if environment.isSchoolWithProtect { return nil }
+            let reason = CollectRouter.schoolBackupReason(profile: workspace)
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(reason)"))
+            throw CLIBridgeError.wrongProduct(reason)
+        }
+        return jamfPro
     }
 
     /// Backup directory name for `base`, appending `-2`, `-3`, … when a directory
@@ -2259,7 +2523,7 @@ final class CLIBridge {
         return candidate
     }
 
-    private func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
+    private nonisolated static func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
         guard let enumerator = FileManager.default.enumerator(
             at: url,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
@@ -2278,9 +2542,10 @@ final class CLIBridge {
 
     func initializeWorkspace(
         profile: String,
+        kind: ProfilesConfigWriter.NewWorkspace? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        try await ensureWorkspace(profile: profile, onLine: onLine)
+        try await ensureWorkspace(profile: profile, kind: kind, onLine: onLine)
         return 0
     }
 
@@ -2294,7 +2559,7 @@ final class CLIBridge {
         // trust those strings without re-validation.
         for profile in target.allProfileNames where !ProfileService.isValid(profile) {
             AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
         }
         // Auth guard: probe credentials before dispatching live API calls.
@@ -2361,7 +2626,7 @@ final class CLIBridge {
             return nil
         case .failure(let error):
             AppLogger.cli.error(
-                "CLIBridge: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                "CLIBridge: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
             )
             onLine(.init(
                 timestamp: Date(),
@@ -2372,17 +2637,44 @@ final class CLIBridge {
         }
     }
 
-    nonisolated static func environmentForJamfCLI() -> [String: String] {
-        let parent = ProcessInfo.processInfo.environment
+    /// This account's own temporary folder (`/var/folders/…/T/`, 0700), for a child started
+    /// with no `TMPDIR`; never the shared `/tmp`, where another account can plant a file.
+    nonisolated static var perUserTemporaryDirectory: String {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let length = confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count)
+        guard length > 0, length <= buffer.count else { return NSTemporaryDirectory() }
+        return String(cString: buffer)
+    }
+
+    /// The one environment every jamf-cli child gets; `parent` is the test seam. Add a variable
+    /// jamf-cli must see to `jamfCLIAllowedEnvKeys` (verbatim) or here (when it needs a check).
+    /// `proxy` and `noProxy` are the system proxy a background run installed (`SystemProxy`); a
+    /// variable already in the parent environment (a shell, the GUI) wins over them.
+    nonisolated static func environmentForJamfCLI(
+        parent: [String: String] = ProcessInfo.processInfo.environment,
+        proxy: String? = SystemProxy.scheduledRun.url,
+        noProxy: String? = SystemProxy.scheduledRun.noProxy
+    ) -> [String: String] {
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
             "LANG": parent["LANG"] ?? "en_US.UTF-8",
-            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+            "TMPDIR": parent["TMPDIR"] ?? perUserTemporaryDirectory,
         ]
         for key in jamfCLIAllowedEnvKeys {
             if let value = parent[key], !value.isEmpty {
                 env[key] = value
+            }
+        }
+        // jamf-cli keeps its profiles under $XDG_CONFIG_HOME when it is set; the app reads the
+        // same folder (`ProfileService.jamfCLIConfigFileURL`), so a relative value is dropped.
+        if let xdg = ProfileService.absoluteXDGConfigHome(in: parent) {
+            env["XDG_CONFIG_HOME"] = xdg
+        }
+        if let proxy, env["HTTPS_PROXY"] == nil, env["https_proxy"] == nil {
+            env["HTTPS_PROXY"] = proxy
+            if let noProxy, env["NO_PROXY"] == nil, env["no_proxy"] == nil {
+                env["NO_PROXY"] = noProxy
             }
         }
         // v1.26.0's daily update notifier can stall PTY-driven onboarding on a
@@ -2396,21 +2688,35 @@ final class CLIBridge {
     /// guess one: a bare "not found" once hid a rejected profile name.
     private func ensureWorkspace(
         profile: String,
+        kind known: ProfilesConfigWriter.NewWorkspace? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            onLine(Self.invalidProfileLine(profile))
             throw CLIBridgeError.invalidProfile(profile)
+        }
+        // The folder's own spelling owns it, never config.yaml: a case variant sharing it on a
+        // case-insensitive volume is refused before anything is created or written.
+        if let owner = ProfileService.caseVariantWorkspace(of: profile) {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.englishDescription)"))
+            throw conflict
         }
         let config = workspace.appendingPathComponent("config.yaml")
         if !FileManager.default.fileExists(atPath: config.path) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] initializing workspace for \(profile)"))
+            // Asking jamf-cli what the profile is runs `config list`, so never on the main actor.
+            let kind: ProfilesConfigWriter.NewWorkspace
+            if let known { kind = known } else {
+                kind = await Task.detached { ProfilesConfigWriter.NewWorkspace.of(profile) }.value
+            }
             do {
                 try ReportEngine.initializeWorkspace(
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
-                    seedConfigURL: Self.bundledSeedConfig(),
+                    kind: kind,
                     onLine: onLine
                 )
             } catch {
@@ -2428,11 +2734,9 @@ final class CLIBridge {
         try reconcileConfigProfile(config: config, profile: profile, onLine: onLine)
     }
 
-    /// Refuses a workspace recorded for a case variant of `profile`: the two
-    /// share the folder on a case-insensitive volume, and rebinding it would
-    /// collect a second tenant into the first one's data. Records `profile` in
-    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which copies the file first when
-    /// the write drops a comment, an unread line or a retired key, and logs what it did.
+    /// Records `profile` in `jamf_cli.profile` through `ConfigService.saveBlock`, which copies
+    /// the file first when the write drops a comment, an unread line or a retired key, and logs
+    /// what it did. A case variant was refused by `ensureWorkspace` from the folder's own name.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
@@ -2440,13 +2744,10 @@ final class CLIBridge {
     ) throws {
         do {
             let document = try YAMLCodec.decode(ConfigLoader.readText(at: config))
-            guard case .mapping(let root) = document.root else { return }
-            let current = root.value(for: "jamf_cli")?.mapping?.value(for: "profile")?
-                .stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard case .mapping = document.root else { return }
+            let current = EnvironmentProfiles.read(configURL: config, workspace: profile)
+                .namedOwner ?? ""
             guard current != profile else { return }
-            guard !ProfileService.isCaseVariant(current, of: profile) else {
-                throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
-            }
 
             let report = try ConfigService.saveBlock(
                 key: "jamf_cli", profile: profile,
@@ -2460,15 +2761,11 @@ final class CLIBridge {
             if let line = report.statusLine {
                 onLine(.init(timestamp: Date(), level: .info, text: "[info] \(line)"))
             }
-        } catch let conflict as CLIBridgeError {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] \(conflict.localizedDescription)"))
-            throw conflict
         } catch {
             onLine(.init(
                 timestamp: Date(),
                 level: .fail,
-                text: "[error] could not update jamf_cli.profile in \(config.path): \(error.localizedDescription)"
+                text: "[error] could not update jamf_cli.profile in \(config.path): \(error.englishDescription)"
             ))
             // The workspace exists; what failed is reading or writing its config.
             if error is YAMLCodec.CodecError {
@@ -2502,37 +2799,6 @@ final class CLIBridge {
         }
         return .configWriteRefused(key: key, fix: fix)
     }
-
-    nonisolated static var isDebugBuild: Bool {
-        #if DEBUG
-        return true
-        #else
-        return false
-        #endif
-    }
-
-    /// The `config.example.yaml` that seeds a new workspace's config.yaml: the app bundle's
-    /// copy. A debug build (`swift run`, no bundle) also reads the working directory and its
-    /// parent, the repo checkout; a release build never does, since a file planted where a
-    /// `jamf-reports` run starts would become the workspace's config.
-    nonisolated static func bundledSeedConfig(
-        workingDirectory: URL = URL(
-            fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
-        resourceURL: URL? = Bundle.main.resourceURL,
-        searchesWorkingDirectory: Bool = CLIBridge.isDebugBuild
-    ) -> URL? {
-        let name = "config.example.yaml"
-        var candidates: [URL?] = []
-        if searchesWorkingDirectory {
-            candidates += [
-                workingDirectory.appendingPathComponent(name),
-                workingDirectory.deletingLastPathComponent().appendingPathComponent(name),
-            ]
-        }
-        candidates.append(resourceURL?.appendingPathComponent(name))
-        return candidates.compactMap { $0 }
-            .first { FileManager.default.fileExists(atPath: $0.path) }
-    }
 }
 
 // Internal (file-scope dropped) so JamfCLIIdentity-gate tests can
@@ -2552,7 +2818,7 @@ func runDeviceDetailProcess(
     timeout: TimeInterval = deviceDetailTimeout,
     onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
-    await Task.detached(priority: .userInitiated) {
+    await Task.detached(priority: .userInitiated) { () async -> Int32 in
         // M-01: this path bypasses CLIBridge.run / runAndCapture (it
         // builds its own Process for high-throughput per-device detail
         // fetches), so it has to invoke the codesign gate directly.
@@ -2562,7 +2828,7 @@ func runDeviceDetailProcess(
                 break
             case .failure(let error):
                 AppLogger.cli.error(
-                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .private): \(String(describing: error), privacy: .private)"
                 )
                 onLine?(.init(
                     timestamp: Date(), level: .fail,
@@ -2583,7 +2849,7 @@ func runDeviceDetailProcess(
             )
             // One lookup may wait on several slow API calls; the limit only backstops a wedged
             // jamf-cli, and the caller falls back to the cached copy on any non-zero exit.
-            switch JamfCLIProbe.runOutcome(
+            switch await JamfCLIProbe.runOutcomeAsync(
                 executable: executable, arguments: arguments, timeout: timeout
             ) {
             case .launchFailed:
@@ -2603,7 +2869,7 @@ func runDeviceDetailProcess(
             }
         } catch {
             AppLogger.cli.error(
-                "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"
+                "runDeviceDetailProcess launch failed: \(error.englishDescription, privacy: .private)"
             )
             onLine?(deviceLaunchFailureLine())
             // Launch failure: -1 is used for the same reason as above (Int32 signature, fire-and-forget).
@@ -2662,4 +2928,67 @@ private func stableDeviceHash(_ value: String) -> String {
         hash &*= 1_099_511_628_211
     }
     return String(format: "%016llx", hash)
+}
+
+/// Captured stdout of `CLIBridge.runAndCapture`. A timed-out call resumes without waiting for
+/// EOF, so a readability block can still be appending while the result is copied.
+private final class DataBox: Sendable {
+    private let data = Mutex(Data())
+    func append(_ newData: Data) { data.withLock { $0.append(newData) } }
+    func snapshot() -> Data { data.withLock { $0 } }
+}
+
+/// Resumes the continuation exactly once: when the child has exited and both pipes have reached
+/// EOF (resuming on termination alone races the last readability deliveries, which run on other
+/// queues and would drop the final lines), or at once on a launch failure or a timeout.
+private final class ProcessCompletion: Sendable {
+    private struct State {
+        var stdoutAtEOF = false
+        var stderrAtEOF = false
+        var exitCode: Int32?
+        var resumed = false
+    }
+    private let state = Mutex(State())
+    private let continuation: CheckedContinuation<Int32, Error>
+
+    init(_ continuation: CheckedContinuation<Int32, Error>) {
+        self.continuation = continuation
+    }
+
+    func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
+    func markStderrEOF() { finish { $0.stderrAtEOF = true } }
+    func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
+
+    /// The process never spawned: throw now, since no pipe will deliver EOF.
+    func failWithLaunchError(_ error: CLIBridgeError) {
+        if claim() { continuation.resume(throwing: error) }
+    }
+
+    /// Timeout path only: the child has exited but a grandchild may still hold the pipes, so do
+    /// not wait for their EOF. Shares the single-resume flag with `finish`.
+    @discardableResult
+    func forceResume(_ code: Int32) -> Bool {
+        guard claim() else { return false }
+        continuation.resume(returning: code)
+        return true
+    }
+
+    private func claim() -> Bool {
+        state.withLock { state in
+            guard !state.resumed else { return false }
+            state.resumed = true
+            return true
+        }
+    }
+
+    private func finish(_ mutate: (inout State) -> Void) {
+        let pending: Int32? = state.withLock { state in
+            mutate(&state)
+            guard !state.resumed, state.stdoutAtEOF, state.stderrAtEOF,
+                  let exitCode = state.exitCode else { return nil }
+            state.resumed = true
+            return exitCode
+        }
+        if let pending { continuation.resume(returning: pending) }
+    }
 }

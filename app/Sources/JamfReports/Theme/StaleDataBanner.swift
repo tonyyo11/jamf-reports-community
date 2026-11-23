@@ -125,10 +125,10 @@ struct StaleDataBanner: View {
                 icon: "clock.badge.exclamationmark",
                 tone: .warn,
                 action: showsCollectButton ? InlineBannerAction(
-                    label: isCollecting ? "Collecting…" : "Collect now",
+                    label: isCollecting ? L("Collecting…") : L("Collect now"),
                     icon: isCollecting ? "hourglass" : "arrow.down.circle",
                     isDisabled: isCollecting,
-                    help: "Fetch live jamf-cli data for this profile now."
+                    help: L("Fetch live jamf-cli data for this profile now.")
                 ) {
                     guard !isCollecting else { return }
                     onCollect?()
@@ -147,6 +147,12 @@ struct StaleDataBanner: View {
         source.shouldDisplayBanner && onCollect != nil
     }
 
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
+
     /// Public for tests — lets us assert the rendered copy without standing
     /// up a SwiftUI snapshot harness.
     var message: String {
@@ -154,12 +160,10 @@ struct StaleDataBanner: View {
         case .fresh:
             return ""
         case .stale(let date):
-            let formatter = RelativeDateTimeFormatter()
-            formatter.dateTimeStyle = .named
-            let relative = formatter.localizedString(for: date, relativeTo: Date())
-            return "Stale data — last fetched \(relative)"
+            let relative = Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+            return L("Stale data — last fetched \(relative)")
         case .neverFetchedLive:
-            return "No live data fetched yet — run Collect to populate"
+            return L("No live data fetched yet — run Collect to populate")
         }
     }
 }

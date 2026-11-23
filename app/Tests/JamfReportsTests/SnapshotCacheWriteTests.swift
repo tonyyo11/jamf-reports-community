@@ -39,7 +39,9 @@ final class SnapshotCacheWriteTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: link, encoding: .utf8).contains("Firefox"))
     }
 
-    func testSOFACacheWriteReplacesAPlantedStagingSymlink() throws {
+    /// The staging name is unique per write, so a link left at the old fixed `.partial` name is
+    /// never touched and nothing is written through it.
+    func testSOFACacheWriteIgnoresALinkAtTheOldStagingName() throws {
         let cache = root.appendingPathComponent("macos.json")
         let victim = root.appendingPathComponent("victim.txt")
         try plantSymlink(at: root.appendingPathComponent(".macos.json.partial"), target: victim)
@@ -48,7 +50,5 @@ final class SnapshotCacheWriteTests: XCTestCase {
 
         XCTAssertEqual(try String(contentsOf: victim, encoding: .utf8), "untouched")
         XCTAssertEqual(try String(contentsOf: cache, encoding: .utf8), "{}")
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: root.appendingPathComponent(".macos.json.partial").path))
     }
 }

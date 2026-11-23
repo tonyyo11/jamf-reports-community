@@ -125,6 +125,30 @@ final class SnapshotFreshnessTests: XCTestCase {
         XCTAssertEqual(result, .noSnapshots)
     }
 
+    // MARK: - What does not count as a snapshot
+
+    /// Generate skips its collect when this reads fresh, so a file a collect did not write must
+    /// not: the manifest, a sync provider's conflict copy, a `.partial` staging file, and a file
+    /// a peer named or touched for a date far ahead.
+    func testFilesThatAreNotSnapshotsDoNotMakeTheFolderFresh() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let recent = now.addingTimeInterval(-60)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = formatter.string(from: now.addingTimeInterval(-3 * 3600))
+        try writeFile(name: "computers_\(stamp).json", at: now.addingTimeInterval(-3 * 3600))
+        try writeFile(name: "manifest.json", at: recent)
+        try writeFile(name: "computers_20270115T100000 2.json", at: recent)
+        try writeFile(name: "computers_20270115T100000.json.partial", at: recent)
+        try writeFile(name: "computers_29991231T000000.json", at: recent)
+        try writeFile(name: "touched.json", at: now.addingTimeInterval(86_400))
+
+        let result = SnapshotFreshness.evaluate(dataDir: tempDir, threshold: 3600, now: now)
+
+        guard case .stale = result else { return XCTFail("Expected .stale, got \(result)") }
+    }
+
     // MARK: - Custom threshold respected
 
     func testCustomThresholdRespected() throws {

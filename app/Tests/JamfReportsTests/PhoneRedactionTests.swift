@@ -13,10 +13,27 @@ final class PhoneRedactionTests: XCTestCase {
         }
     }
 
+    func testSpacedInternationalNumbersAreMasked() {
+        let r = DiagnosticRedactor()
+        let samples = [
+            ("+44 20 7946 0958", "7946"), ("+1 (415) 555 0132", "555"),
+            ("+49 30 123456", "123456"), ("+1-415-555-0132", "555"), ("+44.20.7946.0958", "7946"),
+            ("+4930-123456", "123456"), ("+3531 234 5678", "5678"),
+            ("+44 20 7946 0958x", "0958"),
+        ]
+        for (phone, digits) in samples {
+            let out = r.redactText("[warn] contact \(phone) failed")
+            XCTAssertFalse(withoutPlaceholders(out).contains(digits), "\(phone) -> \(out)")
+            XCTAssertTrue(out.contains("phone-") && out.hasSuffix(" failed"), "\(phone) -> \(out)")
+        }
+    }
+
     func testNonPhoneTextIsUntouched() {
         let r = DiagnosticRedactor()
         let samples = [
             "2026-10-18", "2026-10-18 07:44:00", "10:30:00.123", "v1.31.1", "build 1.2.3.4.5", "A3F1C2D4-1B2C-4D5E-8F90-123456789ABC",
+            "2020-2026", "released +2020-2026", "at 10:30 +0530",
+            "Mac 25 06 2026", "1.29.0 and +1.29.0",
         ]
         for sample in samples {
             XCTAssertEqual(r.redactText(sample), sample, sample)

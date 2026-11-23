@@ -77,10 +77,20 @@ security_agents:
 jamf_cli:
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
-  # Optional jamf-cli profile name, equivalent to passing -p/--profile to
-  # jamf-cli. When you use multiple profiles, point data_dir at a profile-
-  # specific folder so cached snapshots do not mix between tenants.
+  # The jamf-cli profile this workspace was set up for. Every command runs as the
+  # workspace's own profile (its folder name), so leave this blank or equal to it;
+  # Config Doctor warns when it names another. When you use multiple profiles,
+  # point data_dir at a profile-specific folder so cached snapshots do not mix
+  # between tenants. Not read when the profiles block below is set.
   profile: ""
+  # New snapshots leave out names no report reads: account names, FileVault users, real name,
+  # phone, position, room, Shared iPad users, the device usernames in the profile and app
+  # status reports and the enrollment contact fields. The username
+  # and email under user and location stay (Offline Outreach reads them), as do the username
+  # columns of the patch and update failure reports. Set true to keep everything, for example
+  # when you read the snapshots with your own tools. On a shared folder each Mac asks you to
+  # confirm true in Config Doctor first. Snapshots saved earlier keep what they hold.
+  keep_account_names: false
 
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
   # This helps generate/check keep working from cached report data, but
@@ -99,18 +109,60 @@ jamf_cli:
   # (.absent/.omitted) are tolerated. AuditView surfaces verify results
   # regardless of this setting. Threat-model T-11.
   require_manifest: false
-  # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
-  # any of patch-device-failures, profile-status, update-status and
-  # update-device-failures, the per-device-heavy queries known to stall an
-  # on-prem server, and dashboard, jamf-cli's HTML fleet dashboard (1.31.0+),
-  # which reads the whole inventory again for the HTML report's dashboard
-  # section; underscores and hyphens are interchangeable. Anything else is
-  # ignored, so core inventory always runs. A listed source is skipped even by a
-  # manual collect and is left out of the data freshness strip.
-  # sofa stops the fetch from sofafeed.macadmins.io (a Jamf Pro or Jamf School collect);
-  # a cached feed stays in use.
+  # Sources collect never runs. Data Sources has a switch for each one; this is the
+  # list those switches write. Any source can be listed except the core ones the
+  # daily summary is built from (overview, security, inventory-summary,
+  # device-compliance, computers, school-devices; mobile-devices-list on a fleet of
+  # only mobile devices; protect-computers in a Protect-only environment);
+  # underscores and hyphens are interchangeable, and a core name or a typo is
+  # ignored. A listed source is
+  # skipped even by a manual collect and is left out of the data freshness strip.
+  # On a shared workspace each Mac follows the list it confirmed in Config Doctor.
+  # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.
+  # patch-status also stops patch-release-dates and patch-device-failures.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # How long a scheduled run may hold the lock before it leaves the rest of its sources for
+  # its next run (minutes, 10 to 240). Raise it for a slow server.
+  run_budget_minutes: 45
+  # How long one pass of the weekly per-device scan (Jamf Pro or Jamf School) may run before it
+  # leaves the rest of the fleet for the next day's pass (minutes, 5 to 240). Collect now scans
+  # a Jamf Pro fleet whole.
+  scan_budget_minutes: 30
+
+
+# =============================================================================
+# ENVIRONMENT PROFILES (optional)
+# =============================================================================
+# The jamf-cli profile that serves each product in this workspace. Leave the
+# block out and the app reads jamf_cli.profile, protect.enabled/profile and
+# school_cli.enabled/profile as before. When the block is set those keys are not
+# read for profiles, and:
+#   - a blank or absent slot is a product this workspace does not have;
+#   - set jamf_pro or jamf_school, not both (one workspace has one MDM);
+#   - jamf_pro or jamf_school must be this workspace's own profile, or nothing
+#     runs and the run log says why;
+#   - protect is collected after each Jamf Pro or Jamf School collect, as
+#     protect.profile is; platform runs the Platform-only reports (compliance
+#     benchmarks, DDM status, blueprints), leave it blank for none; security_cloud
+#     runs `security risk list` after each Jamf Pro or Jamf School collect and
+#     saves each device's risk category and a few status fields (never a user,
+#     phone number, location or device name); `jamf_cli.collect_skip: [security-risk]` leaves
+#     it out.
+#
+# profiles:
+#   jamf_pro: "Example"           # the Jamf Pro profile (any auth method)
+#   platform: "Example-API"       # a Platform API profile for the same Jamf Pro
+#   jamf_school: ""               # the Jamf School profile; never with jamf_pro
+#   protect: "Example-Protect"    # a `jamf-cli protect setup` profile
+#   security_cloud: ""            # a `jamf-cli security setup` profile; collects the device risk list
+#
+# A Jamf Protect-only environment sets protect and nothing else; it collects
+# Protect alone, and backups, audits and device lookups (Jamf Pro commands)
+# are refused:
+#
+# profiles:
+#   protect: "Example-Protect"
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +267,19 @@ html:
     # Most alerts the Protect Alerts section lists, highest severity first.
     # Range 1-200.
     protect_alerts: 25
-    # Number of recent Protect insight snapshots the Insights Drift section
-    # compares, one column each. Range 1-12.
-    insights_drift_snapshots: 2
+
+
+# =============================================================================
+# DISPLAY
+# =============================================================================
+# percent_decimals: how every screen, workbook, HTML report, period report and
+#   alert card prints a percentage. 1 (default) prints 56.7%, 0 prints 57%.
+#   Standard rounding; a share above 0% or below 100% never prints as 0% or
+#   100%. Stored figures, thresholds and alerts keep full precision. Any other
+#   value reads as 1. The Customize screen's Percentages picker writes it.
+#
+display:
+  percent_decimals: 1
 
 
 # =============================================================================
@@ -227,10 +289,9 @@ html:
 #   - jamf-cli protect overview
 #   - jamf-cli protect alerts list
 #   - jamf-cli protect computers list
-#   - jamf-cli protect insights list
 #   - jamf-cli protect plans list
 # Snapshots live under jamf_cli.data_dir with the rest, and the workbook gets a
-# Protect Overview, Alerts, Computers, Insights and Plans sheet for each one that
+# Protect Overview, Alerts, Computers and Plans sheet for each one that
 # landed.
 #
 # Protect has its own jamf-cli profile and setup flow, which the app runs when
@@ -244,7 +305,8 @@ protect:
   enabled: false
   # jamf-cli protect profile name. Required: a blank name, or one that names a Jamf Pro,
   # Jamf School or Security Cloud login, skips Protect with a warning.
-  # Distinct from jamf_cli.profile (the Pro profile).
+  # Distinct from jamf_cli.profile (the Pro profile). enabled and profile are not
+  # read when the profiles block is set (see ENVIRONMENT PROFILES).
   profile: ""
   # Back up Jamf Protect even when this workspace is on storage other Macs reach
   # (a sync provider, a network volume, a shared workspace). A Protect backup
@@ -253,6 +315,22 @@ protect:
   # decides. On a shared workspace each Mac confirms it once (Backups or
   # Config Doctor) before it applies there.
   backup_on_synced_storage: false
+
+# =============================================================================
+# BACKUPS
+# =============================================================================
+# A Jamf Pro backup contains LDAP, SMTP and API-client configuration and scripts
+# that can hold secrets. On storage other Macs reach (a sync provider, a network
+# volume, a shared workspace) the operator chooses once per workspace whether
+# Jamf Pro is backed up there. Leave the key out to be asked: a workspace that
+# already ran scheduled backups keeps backing up for 3 more runs, then skips Jamf
+# Pro (the run is Partial) until you choose; a new workspace asks before its first
+# backup. Set true to back up Jamf Pro there (each Mac confirms it once, in Backups
+# or Config Doctor, on a shared workspace), or false to keep Jamf Pro out. Local
+# storage needs no key. Uncomment to set it:
+#
+# backup:
+#   pro_on_synced_storage: true
 
 
 # =============================================================================
@@ -294,6 +372,12 @@ notify:
 #   mobile_os_current_pct, mobile_passcode_pct, mobile_supervised_pct,
 #   mobile_data_protection_pct   (0–100, over the devices that report the field)
 #   mobile_stale_count, mobile_jailbroken_count   (whole-number counts)
+#   Jamf Protect (a workspace that collects it):
+#   protect_matched_pct   (0–100, Protect computers found in Jamf Pro inventory)
+#   protect_computer_count, protect_open_alert_count, protect_high_alert_count
+#   security_cloud_matched_pct   (0–100, Security Cloud devices found in the inventory)
+#   security_cloud_device_count, security_cloud_high_risk_count
+#   (whole-number counts)
 # when — one of:
 #   below            fires when the value is below threshold
 #   above            fires when the value is above threshold
@@ -764,6 +848,37 @@ output:
   # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
+  # What every generated report's file name starts with: jamf_report_<profile>_<date>
+  # for workbooks, CSV folders, HTML and PDF, jamf_school_report_ for a Jamf School
+  # workbook and jamf_inventory_ for the inventory CSV. Use your organization's own word:
+  # 1 to 24 letters, digits or hyphens (no underscores). Anything else reads as jamf.
+  # Reports already written under another prefix keep showing in Reports and still move
+  # to archive_dir. Config > Output edits it.
+  file_prefix: "jamf"
+
+  # Also write one CSV per workbook tab into a folder beside every report workbook,
+  # named like the workbook with _csv added (jamf_report_prod_2026-10-04_091500_csv). The
+  # folder is written from the same tabs as the workbook, so sheets.only / skip /
+  # order apply to it, and it moves to archive_dir with its workbook. Off by default.
+  # The Generate sheet's "CSV folder" format and `jamf-reports generate --csv-folder`
+  # write it for one run.
+  csv_folder: false
+
+  # Every workbook or Generate run also writes <name>.manifest.json beside its files,
+  # named after the workbook: the size and SHA-256 of the workbook, its HTML report,
+  # each file of its CSV folder, and the HTML, PDF and CSV formats Generate wrote with
+  # it (chart PNGs and the period and fleet reports are not listed).
+  # `jamf-reports verify <manifest>` recomputes them. Set timestamp_authority to an
+  # RFC 3161 time-stamp authority's https:// address to have each manifest
+  # timestamped: the manifest's SHA-256, a random number and fixed request headers
+  # (User-Agent "JamfReports") are sent there, nothing else, and the signed reply is
+  # saved beside it as <name>.tsr. A failed request is a warning; the reports stand.
+  # Empty (the default) sends nothing. https://freetsa.org/tsr is a free test
+  # service, not a qualified authority; use your organization's or a commercial TSA
+  # for evidence. On a shared workspace the address is not used on a Mac until it is
+  # confirmed there (Config Doctor), including the first time that Mac sees it.
+  timestamp_authority: ""
+
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
   # the workspace.
   #
@@ -856,4 +971,5 @@ school_cli:
   # are stored under jamf_cli.data_dir with the rest.
   enabled: false
   # Profile name configured via: jamf-cli school setup --profile-name <name>
+  # Not read when the profiles block is set (see ENVIRONMENT PROFILES).
   profile: "school"

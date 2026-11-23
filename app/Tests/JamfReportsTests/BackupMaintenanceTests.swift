@@ -158,7 +158,7 @@ final class BackupMaintenanceTests: XCTestCase {
 
     /// `performPostSuccessHousekeeping` must prune scheduled backups beyond
     /// `keep` AND sweep abandoned `.tmp-*` dirs in a single call — the same
-    /// operations `main.swift` and `UtilityCommands` both delegate to this helper.
+    /// operations `HeadlessRun.swift` and `UtilityCommands` both delegate to this helper.
     func testPerformPostSuccessHousekeepingPrunesAndSweeps() throws {
         // Two scheduled backups where keep=1 → oldest pruned.
         try makeBackup(name: "20260501T010101", label: "scheduled-20260501", age: 2 * 86_400)
@@ -171,7 +171,8 @@ final class BackupMaintenanceTests: XCTestCase {
             [.modificationDate: Date(timeIntervalSinceNow: -2 * 86_400)], ofItemAtPath: staleTemp.path
         )
 
-        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, keep: 1)
+        BackupMaintenance.performPostSuccessHousekeeping(
+            profile: profile, justFinished: nil, keep: 1)
 
         let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path).sorted()
         XCTAssertTrue(remaining.contains("20260502T010101"), "newest scheduled backup kept")

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import OSLog
 
 /// Writes the per-run artifacts that Run History and the Schedules screen read.
@@ -19,25 +20,31 @@ import OSLog
 ///   `LaunchAgentService.parse` for the "Last Run" date and status pill.
 ///
 /// Thread safety: log lines arrive from `@Sendable` stream callbacks; an
-/// `NSLock` guards the file handle (same pattern as `LaunchAgentWriter`).
-final class ScheduledRunRecorder: @unchecked Sendable {
+/// a `Mutex` guards the file handle.
+final class ScheduledRunRecorder: Sendable {
 
     /// Per-run log files beyond this count are pruned, oldest first. Only
     /// files matching this recorder's `<label>.<timestamp>.log` pattern are
     /// pruned — legacy `.out.log` / `.err.log` files are never touched.
     static let maxRunLogs = 50
 
+    /// The line a refused run's log ends on, before the exit footer; Run History reads it as a
+    /// warning, not an OK.
+    static let refusedLine = "[warn] run refused by the product guard; nothing ran"
+
     let logURL: URL
     let statusURL: URL
 
-    private let lock = NSLock()
-    private var handle: FileHandle?
+    private struct State {
+        var handle: FileHandle?
+        /// Guards the one-time "dropped line" warning so we emit it only once per
+        /// recorder instance rather than flooding the log on every subsequent line.
+        var hasWarnedHandleGone = false
+        var hasWarnedWriteFailed = false
+    }
+    private let state = Mutex(State())
     private let started: Date
     private let label: String
-    /// Guards the one-time "dropped line" warning so we emit it only once per
-    /// recorder instance rather than flooding the log on every subsequent line.
-    private var hasWarnedHandleGone = false
-    private var hasWarnedWriteFailed = false
 
     /// Returns nil when the label is not a valid LaunchAgent label, when the
     /// automation directories cannot be created, or when the log file cannot
@@ -78,33 +85,34 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         ), let fh = try? FileHandle(forWritingTo: logURL) else {
             return nil
         }
-        self.handle = fh
+        state.withLock { $0.handle = fh }
         Self.markRunInProgress(fh, label: label)
-        record("[info] run started \(ISO8601DateFormatter().string(from: now)) for \(label)")
+        record("[info] run started \(ISO8601Time.string(now)) for \(label)")
     }
 
     /// Append one line to the per-run log. When the log handle is gone (already
     /// closed by `finish`), emits one `AppLogger.schedule.warning` per recorder
     /// instance so the loss is visible in Console.app.
     func record(_ text: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let handle else {
-            if !hasWarnedHandleGone {
-                hasWarnedHandleGone = true
-                AppLogger.schedule.warning(
-                    "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .public) — line dropped"
-                )
-            }
-            return
-        }
         // One record is one line: jamf-cli error text rides in some lines, and a
         // newline inside it would forge a second entry for the reversed tail scan.
         let flat = text.replacingOccurrences(of: #"\p{Cc}"#, with: " ", options: .regularExpression)
         // The log syncs on a shared workspace and may be tailed into a SIEM, so credentials
         // are scrubbed at write time, not only when Run History displays the line.
-        guard let data = (LogRedactor.redact(flat) + "\n").data(using: .utf8) else { return }
-        Self.appendOrDrop(data, to: handle, label: label, warned: &hasWarnedWriteFailed)
+        let data = (LogRedactor.redact(flat) + "\n").data(using: .utf8)
+        state.withLock { state in
+            guard let handle = state.handle else {
+                if !state.hasWarnedHandleGone {
+                    state.hasWarnedHandleGone = true
+                    AppLogger.schedule.warning(
+                        "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .private) — line dropped"
+                    )
+                }
+                return
+            }
+            guard let data else { return }
+            Self.appendOrDrop(data, to: handle, label: label, warned: &state.hasWarnedWriteFailed)
+        }
     }
 
     /// Append to a log handle without letting a write failure kill the process.
@@ -133,8 +141,8 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             warned = true
             AppLogger.schedule.warning(
                 """
-                ScheduledRunRecorder: log write failed for \(label, privacy: .public) \
-                — further lines dropped: \(error.localizedDescription, privacy: .public)
+                ScheduledRunRecorder: log write failed for \(label, privacy: .private) \
+                — further lines dropped: \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -144,39 +152,49 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     ///
     /// `artifacts` are output files the run produced (workbook, HTML, CSV);
     /// they map to the `xlsx_report_path` / `html_report_path` /
-    /// `inventory_csv_path` keys `LaunchAgentService.artifactLabels` reads.
+    /// `inventory_csv_path` keys `LaunchAgentService.artifactLabels` reads; a CSV folder maps to
+    /// `csv_folder_path`.
     ///
     /// `sheetFailures` is written as an additive `sheet_failures` key in the
     /// status JSON (0 when omitted). Existing parsers that do not read this key
     /// are unaffected.
-    func finish(exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = []) {
+    ///
+    /// `refused` marks a run the product guard ended before it began: exit 0 so the tick does
+    /// not retry, but readers of the status file must not take it for a success.
+    func finish(
+        exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = [], refused: Bool = false
+    ) {
         let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
+        if refused { record(Self.refusedLine) }
         record("[info] exit \(exitCode) after \(seconds)s")
 
-        lock.lock()
-        try? handle?.close()
-        handle = nil
-        lock.unlock()
+        closeHandle()
 
-        writeStatusJSON(exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts)
+        writeStatusJSON(
+            exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts,
+            refused: refused)
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
+    }
+
+    private func closeHandle() {
+        state.withLock {
+            try? $0.handle?.close()
+            $0.handle = nil
+        }
     }
 
     /// Close the log and delete it, leaving the previous status file as it was. For a run
     /// that never began, such as a collect that was refused: nothing ran, so Run
     /// History should not list it.
     func discard() {
-        lock.lock()
-        try? handle?.close()
-        handle = nil
-        lock.unlock()
+        closeHandle()
         do {
             try FileManager.default.removeItem(at: logURL)
         } catch {
             AppLogger.schedule.warning(
                 """
-                ScheduledRunRecorder: could not discard \(self.label, privacy: .public): \
-                \(error.localizedDescription, privacy: .public)
+                ScheduledRunRecorder: could not discard \(self.label, privacy: .private): \
+                \(error.englishDescription, privacy: .private)
                 """
             )
         }
@@ -184,16 +202,25 @@ final class ScheduledRunRecorder: @unchecked Sendable {
 
     // MARK: - Status JSON
 
-    private func writeStatusJSON(exitCode: Int32, sheetFailures: Int, artifacts: [URL]) {
+    private func writeStatusJSON(
+        exitCode: Int32, sheetFailures: Int, artifacts: [URL], refused: Bool
+    ) {
         var payload: [String: Any] = [
-            "finished_at": ISO8601DateFormatter().string(from: Date()),
+            "finished_at": ISO8601Time.string(Date()),
             "success": exitCode == 0,
             "exit_code": Int(exitCode),
             "label": label,
             // Additive key — parsers that don't read it are unaffected.
             "sheet_failures": sheetFailures,
         ]
+        if refused { payload["refused"] = true }
         for url in artifacts {
+            // A folder is told by its name: a profile such as `acme.example.com` puts a dot in
+            // the name, so the extension says nothing.
+            if ReportEngine.isCSVFolderName(url.lastPathComponent) {
+                payload["csv_folder_path"] = url.path
+                continue
+            }
             switch url.pathExtension.lowercased() {
             case "xlsx": payload["xlsx_report_path"] = url.path
             case "html": payload["html_report_path"] = url.path
@@ -215,40 +242,20 @@ final class ScheduledRunRecorder: @unchecked Sendable {
                     try fm.removeItem(at: statusURL)
                 } catch let removeError {
                     AppLogger.schedule.error(
-                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .public): \(removeError.localizedDescription, privacy: .public)"
+                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .private): \(removeError.englishDescription, privacy: .private)"
                     )
                 }
             }
             AppLogger.schedule.error(
-                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
     }
 
-    /// Writes `payload` to `statusURL` through a 0600 temp file and an atomic replace.
+    /// Writes `payload` to `statusURL` as a 0600 file, replacing a link at that name.
     static func replaceStatusFile(at statusURL: URL, with payload: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        let fm = FileManager.default
-        let tempURL = statusURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(statusURL.lastPathComponent).\(UUID().uuidString).tmp")
-        do {
-            try data.write(to: tempURL, options: .atomic)
-            try fm.setAttributes(
-                [.posixPermissions: NSNumber(value: Int16(0o600))],
-                ofItemAtPath: tempURL.path
-            )
-            if !fm.fileExists(atPath: statusURL.path) {
-                fm.createFile(
-                    atPath: statusURL.path,
-                    contents: Data(),
-                    attributes: [.posixPermissions: NSNumber(value: Int16(0o600))]
-                )
-            }
-            _ = try fm.replaceItemAt(statusURL, withItemAt: tempURL)
-        } catch {
-            try? fm.removeItem(at: tempURL)
-            throw error
-        }
+        try AtomicInstall.write(data, to: statusURL, mode: 0o600)
     }
 
     // MARK: - In progress
@@ -261,7 +268,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         guard flock(handle.fileDescriptor, LOCK_EX | LOCK_NB) != 0 else { return }
         AppLogger.schedule.info(
             """
-            ScheduledRunRecorder: no run lock for \(label, privacy: .public) \
+            ScheduledRunRecorder: no run lock for \(label, privacy: .private) \
             (errno \(errno, privacy: .public)) — Run History cannot show it as running
             """
         )

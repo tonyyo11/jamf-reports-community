@@ -45,7 +45,7 @@ struct ConnectionCredentialsSheet: View {
     // MARK: - Header
 
     private var title: String {
-        model.mode == .addEnvironments ? "Add environments" : "Update credentials for all"
+        model.mode == .addEnvironments ? L("Add environments") : L("Update credentials for all")
     }
 
     private var header: some View {
@@ -53,6 +53,7 @@ struct ConnectionCredentialsSheet: View {
             Text(title)
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
+                .accessibilityAddTraits(.isHeader)
             Text(subtitle)
                 .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -64,13 +65,9 @@ struct ConnectionCredentialsSheet: View {
     private var subtitle: String {
         switch model.mode {
         case .addEnvironments:
-            "Each environment gets its own jamf-cli profile in the connection "
-                + "\(model.connection.name), all with the client ID and secret below. "
-                + "The app does not keep the secret."
+            L("Each environment gets its own jamf-cli profile in the connection \(model.connection.name), all with the client ID and secret below. The app does not keep the secret.")
         case .updateAll:
-            "Registers the client ID and secret again for all "
-                + "\(model.connection.members.count) profiles in \(model.connection.name), "
-                + "each with its own ID, and checks each one."
+            L("Registers the client ID and secret again for all \(model.connection.members.count) profiles in \(model.connection.name), each with its own ID, and checks each one.")
         }
     }
 
@@ -79,11 +76,7 @@ struct ConnectionCredentialsSheet: View {
     private var inputCard: some View {
         Card(padding: 20) {
             VStack(alignment: .leading, spacing: 14) {
-                if model.gatewayURL == nil {
-                    errorBanner("This connection's region is not one of United States, Europe "
-                        + "or Asia-Pacific, so its gateway host is unknown. Add the profiles "
-                        + "from onboarding instead.")
-                }
+                if let problem = model.gatewayProblem { errorBanner(problem) }
                 if model.mode == .addEnvironments { idsEditor }
                 credentialFields
             }
@@ -93,7 +86,7 @@ struct ConnectionCredentialsSheet: View {
 
     private var idsEditor: some View {
         VStack(alignment: .leading, spacing: 5) {
-            FieldLabel(label: model.scope == .tenant ? "Tenant IDs" : "Environment IDs")
+            FieldLabel(label: model.scope == .tenant ? L("Tenant IDs") : L("Environment IDs"))
             TextEditor(text: $model.idsText)
                 .font(Theme.Fonts.mono(12))
                 .scrollContentBackground(.hidden)
@@ -102,8 +95,7 @@ struct ConnectionCredentialsSheet: View {
                 .background(Color.white.opacity(0.05), in: editorShape)
                 .overlay(editorShape.strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5))
                 .accessibilityLabel("Environment IDs, one per line")
-            Text("One per line: the ID, then an optional label (for example "
-                + "\"<id> Production\"). The label names the profile and the sidebar entry.")
+            Text("One per line: the ID, then an optional label (for example \"<id> Production\"). The label names the profile and the sidebar entry.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -145,14 +137,14 @@ struct ConnectionCredentialsSheet: View {
     private var credentialFields: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                FieldLabel(label: "Client ID")
+                FieldLabel(label: L("Client ID"))
                 PNPTextField(value: $model.clientID, mono: true)
             }
             .frame(maxWidth: .infinity)
             VStack(alignment: .leading, spacing: 5) {
-                FieldLabel(label: "Client Secret")
+                FieldLabel(label: L("Client Secret"))
                 SecureSecretField(
-                    placeholder: "Platform client secret",
+                    placeholder: L("Platform client secret"),
                     onTextChange: { model.secretFieldHasText = $0 },
                     onFinalize: { model.setSecret($0) }
                 )
@@ -180,7 +172,7 @@ struct ConnectionCredentialsSheet: View {
     private func resultRow(_ row: ConnectionCredentialsModel.Row) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Pill(text: row.isSuccess ? "OK" : "NOT DONE",
+                Pill(text: row.isSuccess ? L("OK") : L("NOT DONE"),
                      tone: row.isSuccess ? .teal : .warn,
                      icon: row.isSuccess ? "checkmark" : "exclamationmark")
                 Text(row.label).font(.body.weight(.medium)).foregroundStyle(Theme.Colors.fg)
@@ -193,7 +185,7 @@ struct ConnectionCredentialsSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if row.suggestsJamfSchool {
-                PNPButton(title: "Add a workspace\u{2026}", icon: "graduationcap",
+                PNPButton(title: L("Add a workspace\u{2026}"), icon: "graduationcap",
                           size: .sm, action: schoolAction)
             }
         }
@@ -213,13 +205,13 @@ struct ConnectionCredentialsSheet: View {
 
     private var footer: some View {
         HStack {
-            PNPButton(title: model.hasRun ? "Close" : "Cancel", style: .neutral, size: .md,
+            PNPButton(title: model.hasRun ? L("Close") : L("Cancel"), style: .neutral, size: .md,
                       action: close)
                 .disabled(model.isRunning)
             Spacer()
             if !model.hasRun {
                 PNPButton(
-                    title: model.isRunning ? "Working\u{2026}" : runTitle,
+                    title: model.isRunning ? L("Working\u{2026}") : runTitle,
                     icon: model.isRunning ? "hourglass" : "checkmark.shield",
                     style: .gold, size: .md, action: run
                 )
@@ -231,7 +223,7 @@ struct ConnectionCredentialsSheet: View {
     }
 
     private var runTitle: String {
-        model.mode == .addEnvironments ? "Register & check" : "Update all"
+        model.mode == .addEnvironments ? L("Register & check") : L("Update all")
     }
 
     // MARK: - Actions

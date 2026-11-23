@@ -16,6 +16,9 @@ import Foundation
 /// `observeProfileSwitch` is the entry point for the sidebar profile chip:
 /// switching profiles triggers a debounced `.refresh` check so the Overview
 /// screen loads fresh data promptly without hammering the server.
+///
+/// The collect is the caller's (`WorkspaceStore.runBackgroundRefresh`), so it holds the lock in
+/// the open: the status bar names it and Run History records it.
 @MainActor
 @Observable
 final class RefreshCoordinator {
@@ -38,13 +41,21 @@ final class RefreshCoordinator {
     private var profileSwitchDebounce: Task<Void, Never>?
 
     private let policy: RefreshPolicy
-    private let bridge: CLIBridge
+    private let collect: @MainActor (String, CollectionTier) async throws -> Int32
+    private let isStale: @MainActor (String, CollectionTier) async -> Bool
 
     // MARK: - Init
 
-    init(bridge: CLIBridge, policy: RefreshPolicy = .default) {
-        self.bridge = bridge
+    init(
+        policy: RefreshPolicy = .default,
+        isStale: @escaping @MainActor (String, CollectionTier) async -> Bool = {
+            await RefreshCoordinator.dataIsStale(profile: $0, tier: $1)
+        },
+        collect: @escaping @MainActor (String, CollectionTier) async throws -> Int32
+    ) {
         self.policy = policy
+        self.isStale = isStale
+        self.collect = collect
     }
 
     // MARK: - Public API
@@ -57,24 +68,25 @@ final class RefreshCoordinator {
     /// - A refresh for this profile+tier is already in progress.
     /// - Backoff is active due to consecutive failures.
     /// - Data is fresh (newest snapshot mtime is within the staleness threshold).
-    func refreshIfStale(profile: String, tier: CollectionTier) {
-        guard ProfileService.isValid(profile) else { return }
+    @discardableResult
+    func refreshIfStale(profile: String, tier: CollectionTier) -> Task<Void, Never>? {
+        guard ProfileService.isValid(profile) else { return nil }
         guard tier == .refresh else {
             AppLogger.collect.info(
                 "RefreshCoordinator: tier \(tier.rawValue, privacy: .public) not wired; only .refresh is handled"
             )
-            return
+            return nil
         }
         let key = TierKey(profile: profile, tier: tier)
 
         // Coalesce: don't queue the same tier twice.
-        guard activeTasks[key] == nil else { return }
+        guard activeTasks[key] == nil else { return nil }
 
         // Backoff check.
         let failures = failureCounts[key, default: 0]
         if let last = lastAttempts[key],
            policy.shouldBackOff(tier: tier, failureCount: failures, lastAttempt: last) {
-            return
+            return nil
         }
 
         let task = Task { [weak self] in
@@ -82,6 +94,7 @@ final class RefreshCoordinator {
             await self.performRefresh(profile: profile, tier: tier, key: key)
         }
         activeTasks[key] = task
+        return task
     }
 
     /// Called by the sidebar chip when the active profile changes.
@@ -125,38 +138,42 @@ final class RefreshCoordinator {
 
         // Re-check staleness inside the task: another task may have refreshed
         // while this one was waiting on the actor.
-        guard await isDataStale(profile: profile, tier: tier) else { return }
+        guard await isStale(profile, tier) else { return }
 
         let previousAttempt = lastAttempts[key]
         lastAttempts[key] = Date()
 
         // Backfill only the requested tier — a profile-switch refresh should
         // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
-        // force: true bypasses the per-kind cadence filter (ReportEngine.collect
-        // skips a kind that isn't due yet); the coordinator already gates on
-        // staleness, so the filter is redundant and would silently no-op a
-        // user-triggered profile-switch refresh that ran after a scheduled collect.
+        // The collect is unforced (`WorkspaceStore.backgroundRefreshForces`): this runs only
+        // once the probe snapshot is past its cadence, so the due check skips only fresh
+        // sources, and the timeout hold still applies.
         let exitCode: Int32
         do {
-            exitCode = try await bridge.collect(
-                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
-            )
+            exitCode = try await collect(profile, tier)
         } catch let refusal as CLIBridgeError where refusal.isCollectRefusal {
             // A tick, or another collect in this app, is collecting. Nothing was attempted, so
             // nothing counts toward backoff.
             lastAttempts[key] = previousAttempt
             AppLogger.event(.collect, .info,
-                            "Background refresh deferred: \(refusal.localizedDescription)")
+                            "Background refresh deferred: \(refusal.englishDescription)")
             return
         } catch {
             failureCounts[key, default: 0] += 1
             AppLogger.cli.warning(
-                "Background refresh threw for \(profile)/\(tier.rawValue): \(error.localizedDescription, privacy: .private)"
+                "Background refresh threw for \(profile)/\(tier.rawValue): \(error.englishDescription, privacy: .private)"
             )
             return
         }
 
-        if exitCode == 0 {
+        // Exit 0 says the run finished, not that the probe kind landed. Data still stale counts
+        // as a failure, or every return to the app would start another collect.
+        if exitCode == 0, await isStale(profile, tier) {
+            failureCounts[key, default: 0] += 1
+            AppLogger.cli.warning(
+                "Background refresh left the data stale for \(profile, privacy: .private)"
+            )
+        } else if exitCode == 0 {
             failureCounts[key] = 0
             lastSuccessfulRefresh[profile] = Date()
             // Snapshot retention now lives in ReportEngine.collect
@@ -180,21 +197,19 @@ final class RefreshCoordinator {
     /// The threshold is the tier probe kind's fixed cadence × 1.5. A `.never`
     /// cadence means the report is intentionally not collected — never
     /// "stale", so no backfill; nor is a tier with no probe kind.
-    private func isDataStale(profile: String, tier: CollectionTier) async -> Bool {
+    nonisolated static func dataIsStale(profile: String, tier: CollectionTier) async -> Bool {
         return await Task.detached(priority: .utility) {
             guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return true }
 
-            switch (tier.stalenessProbeKind, Self.resolvedStalenessThreshold(for: tier)) {
+            switch (Self.probeKind(for: tier, profile: profile),
+                    Self.resolvedStalenessThreshold(for: tier)) {
             case (.none, _), (_, .none):
                 // No probe kind, or one resolving to cadence .never — not stale.
                 return false
             case (.some(let probe), .some(let threshold)):
                 let dir = dataDir.appendingPathComponent(probe, isDirectory: true)
-                guard let entries = try? FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                ) else {
+                // A kind folder that is a link lists nothing: stale, the safe side.
+                guard let entries = FileManager.snapshotFolderEntries(in: dir) else {
                     return true
                 }
 
@@ -210,6 +225,24 @@ final class RefreshCoordinator {
                 return Date().timeIntervalSince(newest) >= threshold
             }
         }.value
+    }
+
+    /// The kind whose age says `tier` is stale. A School collect never writes `overview`, so that
+    /// probe would call a School workspace stale after every collect.
+    nonisolated static func probeKind(
+        for tier: CollectionTier, profile: String
+    ) -> String? {
+        guard let probe = tier.stalenessProbeKind else { return nil }
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        // A Protect-only environment lands no Jamf Pro kind, so `overview` would stay stale.
+        if EnvironmentProfiles.resolve(config: config, workspace: profile)
+            .isConfirmedProtectOnly(workspace: profile) {
+            return "protect-overview"
+        }
+        return ProfileProductType.detect(from: config, profile: profile).type == .jamfSchool
+            ? SchoolFleetService.devicesKind : probe
     }
 
     /// Resolve the staleness threshold for `tier`: the fixed collection

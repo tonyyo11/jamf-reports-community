@@ -44,8 +44,8 @@ struct EAParseHealthService {
     ///   - `.boolean` / `.text`: no parse-failure mode — `parseable == nonEmpty`.
     ///   - `.percentage`: numeric after trimming whitespace and an optional trailing
     ///     "%", constrained to `0...100`. This is a STRICTER accuracy lens than the
-    ///     engine sheet, which renders any value via `NSString.doubleValue` (0 on
-    ///     non-numeric) without range-checking.
+    ///     engine sheet, which grades any finite number and lists a non-number with no
+    ///     status, without range-checking.
     ///   - `.version`: `^\d+(\.\d+)*([\w.-]*)$` — dotted-numeric-ish tokens of at most 256
     ///     bytes. The engine buckets any value as a version, so this is a STRICTER accuracy lens.
     ///   - `.date`: parses under the same formats as the engine's date-EA path
@@ -221,9 +221,8 @@ struct EAParseHealthService {
     static func coverageDriftOutcome(dataDir: URL) -> CoverageDriftOutcome {
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(
-            at: resultsDir,
-            includingPropertiesForKeys: nil
+        guard let entries = FileManager.snapshotFolderEntries(
+            in: resultsDir, includingPropertiesForKeys: nil, options: []
         ) else {
             return .insufficientData(reason: "Fewer than two ea-results snapshots")
         }
@@ -237,7 +236,7 @@ struct EAParseHealthService {
                     > MSCPChartDataBuilder.dateFromSnapshotFilename($1, fm: fm)
             }
 
-        switch twoNewestDistinctDays(snapshots, fm: fm) {
+        switch twoNewestDistinctDays(snapshots, fm: fm, inside: dataDir) {
         case .found(let current, let previous):
             return .computed(drift(current: current, previous: previous))
         case .insufficientDays(let sawSalvage):
@@ -280,7 +279,8 @@ struct EAParseHealthService {
     /// neighbor rather than reflecting a real coverage change.
     private static func twoNewestDistinctDays(
         _ snapshotsNewestFirst: [URL],
-        fm: FileManager
+        fm: FileManager,
+        inside root: URL
     ) -> TwoDaysResult {
         let cal = Calendar(identifier: .gregorian)
         var days: [(day: DateComponents, rows: [EAResultRow])] = []
@@ -290,12 +290,12 @@ struct EAParseHealthService {
             let date = MSCPChartDataBuilder.dateFromSnapshotFilename(url, fm: fm)
             let day = cal.dateComponents([.year, .month, .day], from: date)
             if days.contains(where: { $0.day == day }) { continue }  // older file, same day
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = BoundedFile.readLogged(url, inside: root) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
             if EAResultRow.isSalvageReason(decoded.reason) {
                 sawSalvage = true
                 AppLogger.platform.notice(
-                    "EAParseHealthService.coverageDrift: skipping salvaged snapshot \(url.lastPathComponent, privacy: .public) — a truncated day fabricates drift"
+                    "EAParseHealthService.coverageDrift: skipping salvaged snapshot \(url.lastPathComponent, privacy: .private) — a truncated day fabricates drift"
                 )
                 continue
             }

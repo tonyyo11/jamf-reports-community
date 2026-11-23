@@ -115,7 +115,7 @@ extension CoreDashboard {
             throw CoreDashboardError.noCachedData(names: ["computers (two different days)"])
         }
         func read(_ url: URL) throws -> Data {
-            try BoundedFile.read(url, limit: BoundedFile.snapshotLimit, followSymlinks: false)
+            try BoundedFile.read(url, limit: BoundedFile.limit(for: url), followSymlinks: false)
         }
         guard let current = ComputerDates.decodeSnapshot(try read(pair.current.url)),
               let prior = ComputerDates.decodeSnapshot(try read(pair.prior.url)) else {
@@ -128,27 +128,32 @@ extension CoreDashboard {
 
         let ws = workbook.addSheet("Fleet Drift")
         let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
         stamp.dateFormat = "yyyy-MM-dd HH:mm"
         var row = ws.writeSheetHeader(
             title: "Fleet Drift",
             subtitle: "Collected \(stamp.string(from: pair.current.date)) vs "
                 + "\(stamp.string(from: pair.prior.date)) | \(ruleSubtitle(rule)) | "
-                + "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+                + "Generated: \(ISO8601Time.string(Date()))",
             ncols: 6)
         ws.setColumnWidth(0, 0, 34)
         ws.setColumnWidth(1, 5, 22)
         if let percent = drift.largeChangePercent {
             let day = DateFormatter()
+            day.locale = Locale(identifier: "en_US_POSIX")
             day.dateFormat = "yyyy-MM-dd"
             let warning = "Large change: \(drift.joined.count) joined and \(drift.left.count) left "
                 + "since \(day.string(from: pair.prior.date)) (\(percent)% of the fleet). If this "
                 + "was not a planned enrollment or retirement, check that the last collect "
                 + "finished; a partial collect can make Macs look departed."
             // Row 2 is the header's blank row, so the sections keep their rows.
-            ws.write(warning, row: row - 1, col: 0, format: .yellow)
+            ws.writeSiteScopeNote(row: row - 1, extra: warning)
             let line = "[warn] Fleet Drift: \(warning)"
-            print("  " + line)
-            onLine?(.init(timestamp: Date(), level: .warn, text: line))
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: line))
+            } else {
+                print("  " + line)
+            }
             AttentionLog.raise(.fleetDriftLargeChange,
                                "Fleet Drift: \(drift.joined.count) joined and \(drift.left.count) "
                                    + "left (\(percent)% of the fleet)")
@@ -166,7 +171,7 @@ extension CoreDashboard {
         }
         func listing(_ mac: ComputerDates) -> [String] {
             [mac.name ?? "", mac.serial ?? "", mac.osVersion ?? "",
-             mac.checkIn.map(ISO8601DateFormatter().string(from:)) ?? ""]
+             mac.checkIn.map(ISO8601Time.string) ?? ""]
         }
         func days(_ age: StaleAge?) -> String {
             switch age {

@@ -12,12 +12,13 @@ struct OutreachView: View {
     @State private var hasLoaded = false
     @State private var selectedTier: StaleDeviceService.Tier = .offline
     @State private var copyConfirmation: String?
+    @State private var isCollecting = false
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Posture",
-                title: "Offline Outreach",
+                kicker: L("Posture"),
+                title: L("Offline Outreach"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
@@ -46,12 +47,12 @@ struct OutreachView: View {
     private var subtitle: String? {
         guard snapshot.totalDevices > 0 || snapshot.binaryMissingCount > 0 else { return nil }
         let count = snapshot.totalDevices
-        let bucketed = "\(count) computer\(count == 1 ? "" : "s") bucketed by "
-            + "days since \(staleRule.basisPhrase)."
+        let bucketed = (count == 1 ? L("\(count) computer bucketed by days since \(staleRule.basisPhrase).") : L("\(count) computers bucketed by days since \(staleRule.basisPhrase)."))
         let missing = snapshot.binaryMissingCount
         guard missing > 0 else { return bucketed }
-        return bucketed + " \(missing) more \(missing == 1 ? "has" : "have") no Jamf binary "
-            + "and \(missing == 1 ? "is" : "are") listed on Computers under Binary missing."
+        return missing == 1
+            ? L("\(bucketed) \(missing) more has no Jamf binary and is listed on Computers under Binary missing.")
+            : L("\(bucketed) \(missing) more have no Jamf binary and are listed on Computers under Binary missing.")
     }
 
     /// The stale rule the tiers follow: the configured window over the dates `stale_basis` lists.
@@ -69,7 +70,7 @@ struct OutreachView: View {
     /// Configured `thresholds.stale_device_days` (default 30). Tier boundaries
     /// scale from it so this screen agrees with the Overview/Fleet tiles.
     private var configuredStaleDays: Int {
-        Int(workspace.configState.staleDeviceDays) ?? 30
+        workspace.configState.staleRule.days
     }
 
     // MARK: - Data loading
@@ -102,8 +103,12 @@ struct OutreachView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "envelope",
-                title: "No computer inventory yet",
-                message: "Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate."
+                title: L("No computer inventory yet"),
+                message: L("Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate."),
+                primaryAction: workspace.demoMode ? nil : EmptyStateAction(
+                    label: isCollecting ? L("Collecting…") : L("Collect now"),
+                    icon: "arrow.down.circle"
+                ) { collectInventory() }
             )
         }
     }
@@ -115,7 +120,11 @@ struct OutreachView: View {
                 StatTile(
                     label: tier.label,
                     value: "\(snapshot.tierCounts[tier] ?? 0)",
-                    sub: tierSubtitle(for: tier)
+                    sub: tierSubtitle(for: tier),
+                    // The table lists the Offline, Inactive and Dormant tiers; Recent is not
+                    // stale and has no list here.
+                    action: tier == .recent ? nil : { selectedTier = tier },
+                    actionHint: L("Shows the \(tier.label) computers in the table below")
                 )
                 .overlay(
                     // Color accent on left edge for each tier
@@ -136,11 +145,11 @@ struct OutreachView: View {
     private func tierSubtitle(for tier: StaleDeviceService.Tier) -> String {
         let s = configuredStaleDays
         switch tier {
-        case .recent:   return "0-\(s) days"
-        case .offline:  return "\(s + 1)-\(3 * s) days"
-        case .inactive: return "\(3 * s + 1)-\(6 * s) days"
+        case .recent:   return L("0-\(s) days")
+        case .offline:  return L("\(s + 1)-\(3 * s) days")
+        case .inactive: return L("\(3 * s + 1)-\(6 * s) days")
         // Dormant starts the day after Inactive ends (181+ at 30), not on its last day.
-        case .dormant:  return "\(6 * s + 1)+ days"
+        case .dormant:  return L("\(6 * s + 1)+ days")
         }
     }
 
@@ -148,18 +157,18 @@ struct OutreachView: View {
         SegmentedControl(
             selection: $selectedTier,
             options: [
-                (.offline, "Offline", nil),
-                (.inactive, "Inactive", nil),
-                (.dormant, "Dormant", nil)
+                (.offline, L("Offline"), nil),
+                (.inactive, L("Inactive"), nil),
+                (.dormant, L("Dormant"), nil)
             ]
         )
     }
 
     private var actionBar: some View {
         Card(padding: 16) {
-            HStack(spacing: 12) {
+            WrappingRow(spacing: 12) {
                 PNPButton(
-                    title: "Copy email list",
+                    title: L("Copy email list"),
                     icon: "envelope",
                     style: .gold,
                     action: copyEmailList
@@ -167,14 +176,14 @@ struct OutreachView: View {
                 .accessibilityLabel("Copy email list for \(selectedTier.label)")
 
                 PNPButton(
-                    title: "Copy table (CSV)",
+                    title: L("Copy table (CSV)"),
                     icon: "doc.text",
                     style: .neutral,
                     action: copyTableCSV
                 )
 
                 PNPButton(
-                    title: "Export CSV",
+                    title: L("Export CSV"),
                     icon: "square.and.arrow.up",
                     style: .neutral,
                     action: exportOutreachCSV
@@ -183,13 +192,13 @@ struct OutreachView: View {
                 // the demo profile has no workspace of its own.
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
-                      ? "Demo data is fixed. Exporting a CSV needs a live profile."
-                      : "Export all stale devices across every tier to a CSV in the workspace")
+                      ? L("Demo data is fixed. Exporting a CSV needs a live profile.")
+                      : L("Export all stale devices across every tier to a CSV in the workspace"))
 
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)
                         .opacity(reduceMotion ? 1.0 : 0.8)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: copyConfirmation)
+                        .motionSafeAnimation(.easeInOut(duration: 0.3), value: copyConfirmation)
                 }
 
                 Spacer()
@@ -200,7 +209,7 @@ struct OutreachView: View {
     private var devicesTable: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Computers", trailing: "\(selectedTier.label) tier")
+                SectionHeader(title: L("Computers"), trailing: L("\(selectedTier.label) tier"))
                 if let devices = snapshot.devicesByTier[selectedTier], !devices.isEmpty {
                     Table(devices) {
                         TableColumn("Device") { device in
@@ -209,14 +218,14 @@ struct OutreachView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                                 .accessibilityLabel("\(device.displayName), device name")
                         }
-                        .width(min: 140, ideal: 180)
+                        .width(min: 140, ideal: 140)
 
                         TableColumn("Serial") { device in
                             Text(device.displaySerial)
                                 .font(Theme.Fonts.mono(11))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
-                        .width(min: 110, ideal: 130)
+                        .width(min: 110, ideal: 110)
 
                         TableColumn("User/Manager") { device in
                             let displayUser = device.user.isEmpty ? "—" : device.user
@@ -224,16 +233,16 @@ struct OutreachView: View {
                                 .font(.footnote)
                                 .foregroundStyle(displayUser == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
-                        .width(min: 120, ideal: 150)
+                        .width(min: 120, ideal: 120)
 
                         TableColumn("Email") { device in
                             let displayEmail = device.email.isEmpty ? "—" : device.email
                             Text(displayEmail)
                                 .font(Theme.Fonts.mono(11))
                                 .foregroundStyle(displayEmail == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
-                                .accessibilityLabel(displayEmail == "—" ? "No email" : "Email \(displayEmail)")
+                                .accessibilityLabel(displayEmail == "—" ? L("No email") : L("Email \(displayEmail)"))
                         }
-                        .width(min: 140, ideal: 180)
+                        .width(min: 140, ideal: 140)
 
                         TableColumn("Department") { device in
                             let displayDept = device.department.isEmpty ? "—" : device.department
@@ -241,7 +250,7 @@ struct OutreachView: View {
                                 .font(.footnote)
                                 .foregroundStyle(displayDept == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
-                        .width(min: 100, ideal: 120)
+                        .width(min: 100, ideal: 100)
 
                         TableColumn("Days Since") { device in
                             let age = ageText(device)
@@ -250,10 +259,9 @@ struct OutreachView: View {
                                 .foregroundStyle(daysSinceColor(for: Int(age) ?? .max))
                                 .monospacedDigit()
                                 .accessibilityLabel(
-                                    "\(age) day\(age == "1" ? "" : "s") "
-                                    + "since \(staleRule.basisPhrase)")
+                                    age == "1" ? L("\(age) day since \(staleRule.basisPhrase)") : L("\(age) days since \(staleRule.basisPhrase)"))
                         }
-                        .width(min: 80, ideal: 90)
+                        .width(min: 80, ideal: 80)
 
                         TableColumn("Last Contact") { device in
                             let relative = relativeDate(from: device.lastContact)
@@ -262,9 +270,20 @@ struct OutreachView: View {
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityLabel("Last contact \(relative)")
                         }
-                        .width(min: 100, ideal: 120)
+                        .width(min: 100, ideal: 100)
                     }
                     .pageTableHeight(rows: devices.count)
+                    .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { ids in
+                        if let id = ids.first, let device = devices.first(where: { $0.id == id }) {
+                            Button(L("Copy Name")) { copy(text: device.displayName, then: L("Copied name")) }
+                            Button(L("Copy Serial Number")) {
+                                copy(text: device.serial, then: L("Copied serial number"))
+                            }
+                            if !device.email.isEmpty {
+                                Button(L("Copy Email")) { copy(text: device.email, then: L("Copied email")) }
+                            }
+                        }
+                    }
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)
@@ -277,6 +296,17 @@ struct OutreachView: View {
 
     // MARK: - Actions
 
+    /// The empty state's Collect now: the inventory tier, as the banner above runs it.
+    private func collectInventory() {
+        guard !isCollecting else { return }
+        isCollecting = true
+        Task {
+            await workspace.runTierRefresh([.inventory])
+            isCollecting = false
+            reload()
+        }
+    }
+
     private func copyEmailList() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
         let recipients = StaleDeviceService.recipientList(from: devices.map(\.email))
@@ -285,7 +315,9 @@ struct OutreachView: View {
 
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        var csv = "Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n"
+        var csv = Localization.english {
+            "Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n"
+        }
         for device in devices {
             let name = StaleDeviceService.csvField(device.displayName)
             let serial = StaleDeviceService.csvField(device.displaySerial)
@@ -293,7 +325,7 @@ struct OutreachView: View {
             let dept = StaleDeviceService.csvField(device.department)
             csv += "\(name),\(serial),\(email),\(dept),\(ageText(device))\n"
         }
-        copy(text: csv, then: "Copied table data")
+        copy(text: csv, then: L("Copied table data"))
     }
 
     /// Export all stale-device records (every tier) as a CSV into the workspace's
@@ -303,7 +335,7 @@ struct OutreachView: View {
         guard !workspace.demoMode else { return }
         guard let outputDir = try? WorkspacePaths.outputDir(for: workspace.profile) else {
             workspace.toast = Toast(
-                message: "Could not resolve output directory for profile \(workspace.profile).",
+                message: L("Could not resolve output directory for profile \(workspace.profile)."),
                 style: .danger
             )
             return
@@ -316,10 +348,10 @@ struct OutreachView: View {
             try FileManager.default.createDirectory(
                 at: outputDir, withIntermediateDirectories: true
             )
-            let csv = StaleDeviceService.outreachCSV(snapshot)
+            let csv = Localization.english { StaleDeviceService.outreachCSV(snapshot) }
             try csv.write(to: fileURL, atomically: true, encoding: .utf8)
             let n = snapshot.totalDevices
-            let exported = "Exported \(n) computer\(n == 1 ? "" : "s") to \(filename)"
+            let exported = (n == 1 ? L("Exported \(n) computer to \(filename)") : L("Exported \(n) computers to \(filename)"))
             if let note = SharedConfigPin.outputFolderNote(
                 profile: workspace.profile, folder: outputDir) {
                 workspace.toast = Toast(message: exported + ". " + note, style: .warning)
@@ -329,7 +361,7 @@ struct OutreachView: View {
             SystemActions.reveal(fileURL, profile: workspace.profile)
         } catch {
             workspace.toast = Toast(
-                message: "Could not export CSV: \(error.localizedDescription)",
+                message: L("Could not export CSV: \(error.localizedDescription)"),
                 style: .danger
             )
         }
@@ -368,10 +400,15 @@ struct OutreachView: View {
     /// inventory parser reads them, so Last Contact never says "Unknown" for a
     /// Mac whose Days Since has a value.
     static func relativeDate(from dateString: String, now: Date) -> String {
-        guard let date = DeviceInventoryService.parseDate(dateString) else { return "Unknown" }
+        guard let date = DeviceInventoryService.parseDate(dateString) else { return L("Unknown") }
+        return namedRelativeFormatter.localizedString(for: date, relativeTo: now)
+    }
+
+    /// One per process: a row asks for one of these per redraw.
+    nonisolated(unsafe) private static let namedRelativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: now)
-    }
+        return formatter
+    }()
 
 }

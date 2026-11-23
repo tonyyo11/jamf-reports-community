@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot = DeviceInventorySnapshot.empty
     @State private var ddmSnapshot: DDMDeviceStatusService.Snapshot = .empty
@@ -17,7 +18,10 @@ struct DevicesView: View {
     /// on first appear, then stays user-adjustable for the session.
     @State private var didSeedStaleDays = false
     @State private var osFilter: String?
-    @State private var isLoading = false
+    /// True until the first read lands, so the first frame does not say nothing is collected.
+    @State private var isLoading = true
+    /// The `dataSource` `snapshot` was read for.
+    @State private var loadedSource: String?
     @State private var deviceDetail: DeviceDetail?
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
@@ -28,6 +32,10 @@ struct DevicesView: View {
     /// by lowercased device identifiers. Feeds the security-agent risk factor
     /// (v3.5's hardcoded "Nessus" check, now driven by security_agents config).
     @State private var agentStatusLookup: [String: String] = [:]
+    /// Bumped whenever `snapshot` or `agentStatusLookup` is replaced, so the cached list and
+    /// risk ratings rebuild on exactly the changes that can alter them.
+    @State private var dataRevision = 0
+    @State private var listCache = ListCache()
     /// Per-kind newest-file dates for the freshness chip row (Devices merges
     /// several kinds; the snapshot's single generatedDate can't express that).
     @State private var sourceDates: [String: Date] = [:]
@@ -48,18 +56,49 @@ struct DevicesView: View {
     }
 
     enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, contactGap, binaryMissing, patch, security, priorityAction
+        case all, stale, contactGap, binaryMissing, management, patch, security, priorityAction
+        /// One control reading off, opened from the Security Posture tiles; not a segment.
+        case fileVaultOff, sipOff, firewallOff, gatekeeperOff
         var id: String { rawValue }
+
+        /// The filters the segmented bar offers; the per-control ones show as a chip instead.
+        static let segments: [DeviceFilter] = allCases.filter { $0.offControl == nil }
+
+        /// The control a per-control filter keeps the Macs with off.
+        var offControl: SecurityControl? {
+            switch self {
+            case .fileVaultOff: .fileVault
+            case .sipOff: .sip
+            case .firewallOff: .firewall
+            case .gatekeeperOff: .gatekeeper
+            default: nil
+            }
+        }
+
+        /// The filter for Macs with `control` off.
+        static func off(_ control: SecurityControl) -> DeviceFilter {
+            switch control {
+            case .fileVault: .fileVaultOff
+            case .sip: .sipOff
+            case .firewall: .firewallOff
+            case .gatekeeper: .gatekeeperOff
+            }
+        }
 
         var label: String {
             switch self {
-            case .all:            "All"
-            case .stale:          "Stale"
-            case .contactGap:     "Contact gap"
-            case .binaryMissing:  "Binary missing"
-            case .patch:          "Patch"
-            case .security:       "Security"
-            case .priorityAction: "Priority"
+            case .all:            L("All")
+            case .stale:          L("Stale")
+            case .contactGap:     L("Contact gap")
+            case .binaryMissing:  L("Binary missing")
+            case .management:     L("Management")
+            case .patch:          L("Patch")
+            case .security:       L("Security")
+            case .priorityAction: L("Priority")
+            case .fileVaultOff:   L("FileVault off")
+            case .sipOff:         L("SIP off")
+            case .firewallOff:    L("Firewall off")
+            case .gatekeeperOff:  L("Gatekeeper off")
             }
         }
 
@@ -69,9 +108,11 @@ struct DevicesView: View {
             case .stale:          "clock.badge.exclamationmark"
             case .contactGap:     "wifi.exclamationmark"
             case .binaryMissing:  "shippingbox"
+            case .management:     "gearshape.2"
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
+            case .fileVaultOff, .sipOff, .firewallOff, .gatekeeperOff: "lock.open"
             }
         }
 
@@ -113,41 +154,53 @@ struct DevicesView: View {
     /// past the others.
     static let detailLabelWidth: CGFloat = 112
 
-    private var filteredDevices: [DeviceInventoryRecord] { sortedRows.map(\.device) }
-
-    private var sortedRows: [DeviceSortRow] {
-        DeviceSortRow.sorted(
-            matchingDevices, using: sortOrder,
-            securityGaps: { $0.securityGapCount(policy: activeSnapshot.securityPolicy) },
-            riskScore: { priorityRisk(for: $0).score })
+    private var dataKey: DataKey {
+        DataKey(
+            dataRevision: dataRevision, demoMode: workspace.demoMode, staleDays: staleDays,
+            agentConnectedValue: configuredAgent?.connectedValue, warningDays: certWarningDays,
+            hourBucket: Int(Date().timeIntervalSince1970 / 3600))
     }
 
-    private var matchingDevices: [DeviceInventoryRecord] {
-        activeSnapshot.devices.filter { device in
-            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               !device.searchableText.contains(query.lowercased()) {
-                return false
-            }
-            if let osFilter, device.osVersion != osFilter { return false }
-            switch filter {
-            case .all:
-                return true
-            case .stale:
-                return isStale(device)
-            case .contactGap:
-                return contactGap(of: device) != nil
-            case .binaryMissing:
-                return device.isBinaryMissing
-            case .patch:
-                return device.patchFailureCount > 0
-            case .security:
-                return device.securityGapCount(policy: activeSnapshot.securityPolicy) > 0
-            case .priorityAction:
-                // The Critical or High band of the same score the Risk pill shows.
-                return priorityRisk(for: device).level >= .high
-            }
+    /// The filtered, sorted list: rebuilt only when `ListKey`'s inputs change, so a redraw
+    /// that changes none of them (a selection, a resize) reuses it.
+    private var derivedList: DerivedList {
+        let data = dataKey
+        let key = ListKey(
+            data: data, query: query, osFilter: osFilter, filter: filter, sortOrder: sortOrder)
+        return listCache.list(for: key) {
+            Self.buildRows(
+                devices: activeSnapshot.devices, query: query, osFilter: osFilter, filter: filter,
+                sortOrder: sortOrder, policy: activeSnapshot.securityPolicy, staleRule: staleRule,
+                contactGapDays: activeSnapshot.contactGapDays,
+                needsManagementAttention: { figures.management.needsAttention($0) },
+                searchableText: { listCache.searchableText(of: $0, key: data) },
+                risk: { priorityRisk(for: $0, key: data) })
         }
     }
+
+    /// The demo's own "now", so its Macs read the same here as on the Audit card.
+    private var evaluationDate: Date { Self.evaluationDate(demoMode: workspace.demoMode) }
+
+    nonisolated static func evaluationDate(demoMode: Bool) -> Date {
+        demoMode ? DemoData.referenceDate : Date()
+    }
+
+    /// `thresholds.cert_warning_days`, which the MDM profile warning window follows.
+    private var certWarningDays: Int {
+        max(Int(workspace.configState.certWarningDays) ?? ManagementHealth.defaultWarningDays, 1)
+    }
+
+    private var figures: Figures {
+        listCache.figures(for: dataKey) {
+            Figures(
+                snapshot: activeSnapshot, rule: staleRule, warningDays: certWarningDays,
+                now: evaluationDate)
+        }
+    }
+
+    private var filteredDevices: [DeviceInventoryRecord] { derivedList.devices }
+
+    private var sortedRows: [DeviceSortRow] { derivedList.rows }
 
     /// Applies the filter another screen asked for (`DeviceFilter.pending`) once, on appear or
     /// when a post arrives while Devices is already showing.
@@ -158,24 +211,31 @@ struct DevicesView: View {
     }
 
     /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
-    /// the Priority filter and the CSV all read it. Memoizing would help if the filter cost
-    /// showed up in profiling, but the live table re-renders on selection change rather
-    /// than per filter pass.
+    /// the Priority filter and the CSV all read it. Kept in `listCache` until the data, the
+    /// stale window or the agent column changes, so a redraw rates no Mac again.
     private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.risk(
-            for: device, agentCheck: agentCheck(for: device),
-            policy: activeSnapshot.securityPolicy, staleRule: staleRule)
+        priorityRisk(for: device, key: dataKey)
+    }
+
+    private func priorityRisk(for device: DeviceInventoryRecord, key: DataKey) -> DeviceRisk {
+        listCache.risk(of: device, key: key) {
+            RiskScoringService.risk(
+                for: device, agentCheck: agentCheck(for: device),
+                policy: activeSnapshot.securityPolicy, staleRule: staleRule)
+        }
+    }
+
+    /// The first security agent with a column, which the agent risk factor follows.
+    private var configuredAgent: ConfigSecurityAgent? {
+        workspace.configState.securityAgents.first {
+            !$0.column.trimmingCharacters(in: .whitespaces).isEmpty
+        }
     }
 
     /// The device's status against the tenant's configured security agent, or
     /// nil when no agent is configured / no EA value exists for this device.
     private func agentCheck(for device: DeviceInventoryRecord) -> RiskScoringService.SecurityAgentCheck? {
-        guard !agentStatusLookup.isEmpty,
-              let agent = workspace.configState.securityAgents.first(where: {
-                  !$0.column.trimmingCharacters(in: .whitespaces).isEmpty
-              }) else {
-            return nil
-        }
+        guard !agentStatusLookup.isEmpty, let agent = configuredAgent else { return nil }
         let keys = [device.serial, device.jamfID ?? "", device.name]
             .map { $0.lowercased() }
             .filter { !$0.isEmpty }
@@ -184,10 +244,8 @@ struct DevicesView: View {
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
-        if let selectedID, let device = filteredDevices.first(where: { $0.id == selectedID }) {
-            return device
-        }
-        return filteredDevices.first
+        let list = derivedList
+        return list.device(withID: selectedID) ?? list.devices.first
     }
 
     private var deviceDetailTaskID: String {
@@ -222,11 +280,14 @@ struct DevicesView: View {
                     )
                 }
                 if let err = exportError {
-                    Text(err)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.danger)
-                        .padding(.horizontal, 4)
-                        .onTapGesture { exportError = nil }
+                    Button { exportError = nil } label: {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.danger)
+                            .padding(.horizontal, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Dismisses this message")
                 }
                 if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
                     if activeSnapshot.warnings.isEmpty {
@@ -257,11 +318,11 @@ struct DevicesView: View {
         .onAppear {
             guard !didSeedStaleDays else { return }
             didSeedStaleDays = true
-            let configured = Int(workspace.configState.staleDeviceDays) ?? 30
+            let configured = workspace.configState.staleRule.days
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
-        .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
+        .task(id: dataSource) {
             await reload()
         }
         .task(id: deviceDetailTaskID) {
@@ -314,33 +375,32 @@ struct DevicesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: isLoading ? "Loading inventory" : "Detailed Inventory · \(activeSnapshot.generatedAt)",
-            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-            title: "Computers",
-            subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)",
+            kicker: isLoading ? L("Loading inventory") : L("Detailed Inventory · \(activeSnapshot.generatedAt)"),
+            breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigateToOverview() })],
+            title: L("Computers"),
+            subtitle: L("\(activeSnapshot.totalDevices) records · \(workspace.profile)"),
             // The demo dataset is frozen on purpose; an age warning on it is noise.
-            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate
+            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate,
+            wrapsTrailing: true
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    staleDaysPicker
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        Task { await reload() }
-                    }
-                    .help("Reload computer inventory from the cached jamf-cli snapshots.")
-                    PNPButton(
-                        title: isExportingCSV ? "Exporting…" : "Export CSV",
-                        icon: "square.and.arrow.up",
-                        style: .neutral
-                    ) {
-                        Task { await exportFilteredCSV() }
-                    }
-                    .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Export the currently filtered computer list to a CSV file")
+            HStack(spacing: 8) {
+                staleDaysPicker
+                PNPButton(title: L("Refresh"), icon: "arrow.clockwise") {
+                    Task { await reload() }
                 }
-            )
+                .help("Reload computer inventory from the cached jamf-cli snapshots.")
+                PNPButton(
+                    title: isExportingCSV ? L("Exporting…") : L("Export CSV"),
+                    icon: "square.and.arrow.up",
+                    style: .neutral
+                ) {
+                    Task { await exportFilteredCSV() }
+                }
+                .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : L("Export the currently filtered computer list to a CSV file"))
+            }
         }
     }
 
@@ -349,11 +409,10 @@ struct DevicesView: View {
         EditableNumberStepper(
             value: $staleDays,
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
-            prefix: "Stale",
+            prefix: L("Stale"),
             suffix: "d",
-            label: "Stale after days",
-            help: "Computers with no \(staleRule.basisPhrase) for more than this many days are "
-                + "flagged stale."
+            label: L("Stale after days"),
+            help: L("Computers with no \(staleRule.basisPhrase) for more than this many days are flagged stale.")
         )
     }
 
@@ -404,7 +463,7 @@ struct DevicesView: View {
                     isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
                     lineWidth: isSearchFocused ? 1 : 0.5
                 )
-                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+                .motionSafeAnimation(.easeInOut(duration: 0.2), value: isSearchFocused)
         )
     }
 
@@ -412,8 +471,14 @@ struct DevicesView: View {
     private var filterControls: some View {
         SegmentedControl(
             selection: $filter,
-            options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
+            options: DeviceFilter.segments.map { ($0, $0.label, $0.icon) }
         )
+
+        if let control = filter.offControl {
+            filterChip(label: filter.label, hint: L("Show all computers, not only those with \(control.displayName) off")) {
+                filter = .all
+            }
+        }
 
         if let osFilter {
             Button {
@@ -440,46 +505,80 @@ struct DevicesView: View {
                     .foregroundStyle(Theme.Colors.goldBright)
             }
             Pill(
-                text: "\(filteredDevices.count) shown",
+                text: L("\(filteredDevices.count) shown"),
                 tone: isFiltered ? .gold : .muted
             )
         }
     }
 
+    /// A removable chip for a filter the segmented bar does not offer.
+    private func filterChip(label: String, hint: String, clear: @escaping () -> Void) -> some View {
+        Button(action: clear) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                Mono(text: label, color: Theme.Colors.goldBright)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .help(hint)
+        .accessibilityHint(hint)
+    }
+
+    /// Filters the table to what a tile counts: the search and the macOS chip are cleared so
+    /// the rows are exactly the tile's set.
+    private func show(_ requested: DeviceFilter) {
+        filter = requested
+        osFilter = nil
+        query = ""
+    }
+
     private var summary: some View {
-        HStack(spacing: 12) {
-            StatTile(label: "Computers", value: "\(activeSnapshot.totalDevices)",
-                     sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
-                     sub: staleTileSub)
-            StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
-                     sub: "\(activeSnapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault",
-                     value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
-                     sub: fileVaultTileSub)
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: L("Computers"), value: "\(activeSnapshot.totalDevices)",
+                     sub: activeSnapshot.isDemo ? L("Demo inventory") : L("Current workspace"),
+                     fillsHeight: true,
+                     action: { show(.all) },
+                     actionHint: L("Shows every computer in the table below"))
+            StatTile(label: L("Stale"), value: "\(figures.staleCount)",
+                     sub: staleTileSub,
+                     fillsHeight: true,
+                     action: { show(.stale) },
+                     actionHint: L("Filters the table below to stale Macs"))
+            StatTile(label: L("Patch Issues"), value: "\(figures.patchIssueCount)",
+                     sub: L("\(activeSnapshot.patchTitles.count) patch titles"),
+                     fillsHeight: true,
+                     action: { show(.patch) },
+                     actionHint: L("Filters the table below to Macs with patch failures"))
+            // Inert: the value is a share of Macs with FileVault on, which no filter lists.
+            StatTile(label: L("FileVault"),
+                     value: Self.fileVaultTileValue(figures.fileVaultPercent),
+                     sub: fileVaultTileSub, fillsHeight: true)
         }
     }
 
     /// The stale rule in words, plus the Macs it leaves out because their Jamf binary is
     /// missing (`BinaryMissing`).
     private var staleTileSub: String {
-        let rule = ">\(staleDays) days since \(staleRule.basisPhrase)"
-        let missing = activeSnapshot.binaryMissingCount
-        return missing == 0 ? rule : rule + " · \(missing) without the Jamf binary not counted"
+        let rule = L(">\(staleDays) days since \(staleRule.basisPhrase)")
+        let missing = figures.binaryMissingCount
+        return missing == 0 ? rule : L("\(rule) · \(missing) without the Jamf binary not counted")
     }
 
     /// "—" when no Mac's FileVault value reads as on or off.
     nonisolated static func fileVaultTileValue(_ percent: Double?) -> String {
-        percent.map { "\(Int($0.rounded()))%" } ?? "—"
+        PercentFormat.whole.text(percent)
     }
 
     /// Macs the hardware rule took out of the gaps are named, so the share and the gap
     /// count do not look as if they disagree.
     private var fileVaultTileSub: String {
-        let gaps = activeSnapshot.securityGapCount
-        let moved = activeSnapshot.fileVaultOffHardwareEncryptedCount
-        guard moved > 0 else { return "\(gaps) security gaps" }
-        return "\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off"
+        let gaps = figures.securityGapCount
+        let moved = figures.fileVaultOffHardwareEncryptedCount
+        guard moved > 0 else { return L("\(gaps) security gaps") }
+        return L("\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off")
     }
 
     private var inventoryTable: some View {
@@ -490,12 +589,12 @@ struct DevicesView: View {
                 // instead of hyphenating its words.
                 ViewThatFits(in: .horizontal) {
                     HStack {
-                        SectionHeader(title: "Computer Inventory")
+                        SectionHeader(title: L("Computer Inventory"))
                         Spacer()
                         riskLegend
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "Computer Inventory")
+                        SectionHeader(title: L("Computer Inventory"))
                         riskLegend
                     }
                 }
@@ -524,27 +623,27 @@ struct DevicesView: View {
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                                    .foregroundStyle(.cellSecondary)
                                     .lineLimit(1)
                             }
                         }
                     }
-                    .width(min: 140, ideal: 200)
+                    .width(min: 140, ideal: 140)
                     TableColumn("Serial", value: \.device.serial) { row in
                         Mono(text: row.device.displaySerial)
                             .textSelection(.enabled)
                     }
-                    .width(min: 100, ideal: 112, max: 140)
+                    .width(min: 100, ideal: 100, max: 140)
                     TableColumn("macOS", value: \.device.osVersion) { row in
-                        Mono(text: row.device.osVersion.isEmpty ? "Unknown" : row.device.osVersion)
+                        Mono(text: row.device.osVersion.isEmpty ? L("Unknown") : row.device.osVersion)
                     }
-                    .width(min: 64, ideal: 72, max: 96)
+                    .width(min: 64, ideal: 64, max: 96)
                     // Empty when compact, so it keeps a sliver rather than a share of the row.
                     TableColumn(isCompact ? "" : "User", value: \.device.user) { row in
                         if !isCompact {
                             Text(row.device.user.isEmpty ? "Unassigned" : row.device.user)
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .foregroundStyle(.cellSecondary)
                                 .lineLimit(1)
                         }
                     }
@@ -564,18 +663,18 @@ struct DevicesView: View {
                                  color: isStale(device) ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                         }
                     }
-                    .width(min: 90, ideal: 110, max: 160)
+                    .width(min: 90, ideal: 90, max: 160)
                     TableColumn("Patch", value: \.patchFailures) { row in patchPill(row.device) }
-                        .width(min: 60, ideal: 66, max: 90)
+                        .width(min: 60, ideal: 60, max: 90)
                     TableColumn("Security", value: \.securityGaps) { row in
                         securityIndicators(for: row.device)
                     }
-                        .width(min: 70, ideal: 78, max: 90)
+                        .width(min: 70, ideal: 70, max: 90)
                     // Wide enough for the longest band, Critical.
                     TableColumn("Risk", value: \.riskScore) { row in
                         riskPill(priorityRisk(for: row.device).level)
                     }
-                    .width(min: 84, ideal: 92, max: 110)
+                    .width(min: 84, ideal: 84, max: 110)
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
@@ -585,25 +684,28 @@ struct DevicesView: View {
                     if filteredDevices.isEmpty && !activeSnapshot.devices.isEmpty {
                         EmptyStateView(
                             systemImage: "line.3.horizontal.decrease.circle",
-                            title: "No matching computers",
-                            message: "No inventory rows match the current filters."
+                            title: L("No matching computers"),
+                            message: L("No inventory rows match the current filters.")
                         )
                         .padding(24)
                     }
                 }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
-                        Button("Copy Serial Number") {
+                        Button(L("Copy Name")) {
+                            SystemActions.copyToClipboard(device.displayName)
+                        }
+                        Button(L("Copy Serial Number")) {
                             SystemActions.copyToClipboard(device.serial)
                         }
-                        Button("Copy User Email") {
+                        Button(L("Copy User Email")) {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
-                        if let jamfID = device.numericJamfID,
-                           let url = workspace.consoleURL(forComputerID: jamfID) {
-                            Button("Open in Jamf Pro") {
+                        if let url = consoleURL(for: device) {
+                            Button(L("Open in Jamf Pro")) {
                                 SystemActions.open(url)
                             }
+                            .disabled(workspace.demoMode)
                         }
                     }
                 }
@@ -611,15 +713,19 @@ struct DevicesView: View {
         }
     }
 
+    /// The Jamf Pro console page of a computer, or nil without a Jamf ID or a server URL.
+    private func consoleURL(for device: DeviceInventoryRecord) -> URL? {
+        device.numericJamfID.flatMap { workspace.consoleURL(forComputerID: $0) }
+    }
+
     private var riskLegend: some View {
-        HStack(spacing: 8) {
+        WrappingRow(spacing: 8) {
             legendDot(color: Theme.Colors.danger, label: DeviceRisk.Level.critical.displayLabel)
             legendDot(color: Theme.Colors.warn, label: DeviceRisk.Level.high.displayLabel)
             legendDot(color: Theme.Colors.gold, label: DeviceRisk.Level.medium.displayLabel)
             legendDot(color: Theme.Colors.fgMuted, label: DeviceRisk.Level.low.displayLabel)
             legendDot(color: Theme.Colors.ok, label: DeviceRisk.Level.clean.displayLabel)
         }
-        .fixedSize()
     }
 
     private func detailPanel(_ device: DeviceInventoryRecord?) -> some View {
@@ -628,28 +734,38 @@ struct DevicesView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
-                            SectionHeader(title: device.displayName)
-                            Mono(text: device.displaySerial, color: Theme.Colors.goldBright)
-                                .textSelection(.enabled)
+                            HStack(spacing: 6) {
+                                SectionHeader(title: device.displayName)
+                                CopyButton(text: device.displayName, what: L("computer name"))
+                            }
+                            HStack(spacing: 6) {
+                                Mono(text: device.displaySerial, color: Theme.Colors.goldBright)
+                                    .textSelection(.enabled)
+                                if !device.serial.isEmpty {
+                                    CopyButton(text: device.serial, what: L("serial number"))
+                                }
+                            }
                         }
                         Spacer()
                         riskPill(priorityRisk(for: device).level)
                     }
 
-                    detailSection("Inventory", rows: [
-                        ("Model", device.model),
+                    detailSection(L("Inventory"), rows: [
+                        (L("Model"), device.model),
                         ("macOS", device.osVersion),
-                        ("Managed", device.managedState),
-                        ("Last check-in", device.lastContact),
-                        ("Last inventory", device.lastInventory),
-                        ("Last contact", Self.contactText(device)),
-                        ("Contact gap", contactGap(of: device)?.label ?? ""),
-                        ("User", userLabel(device)),
-                        ("Department", device.department),
-                        ("Site", device.site),
+                        (L("Managed"), device.managedState),
+                        (L("Last check-in"), Self.timestampText(device.lastContact)),
+                        (L("Last inventory"), Self.timestampText(device.lastInventory)),
+                        (L("Last contact"), Self.contactText(device)),
+                        (L("Contact gap"), contactGap(of: device)?.label ?? ""),
+                        (L("User"), userLabel(device)),
+                        (L("Department"), device.department),
+                        (L("Site"), device.site),
                     ])
 
                     binaryMissingSection(for: device)
+
+                    managementSection(for: device)
 
                     securitySection(for: device)
 
@@ -658,7 +774,7 @@ struct DevicesView: View {
                     scanSections(for: device)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "Patch")
+                        SectionHeader(title: L("Patch"))
                         if device.patchFailures.isEmpty {
                             PatchClearPill()
                                 .id("patch-clear-\(device.id)")
@@ -692,16 +808,24 @@ struct DevicesView: View {
                             .truncationMode(.middle)
                             .help(device.source)
                         Spacer()
-                        PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
-                            SystemActions.copyToClipboard(device.serial)
+                        if let url = consoleURL(for: device) {
+                            PNPButton(
+                                title: L("Open in Jamf Pro"), icon: "arrow.up.right.square",
+                                size: .sm
+                            ) {
+                                SystemActions.open(url)
+                            }
+                            .disabled(workspace.demoMode)
+                            .help(workspace.demoMode
+                                  ? DemoData.liveOnlyHelp
+                                  : L("Open this computer's record in the Jamf Pro console."))
                         }
-                        .help("Copy this computer's serial number to the clipboard.")
                     }
                 }
                 .textSelection(.enabled)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "No Computer Selected")
+                    SectionHeader(title: L("No Computer Selected"))
                     Text("No inventory rows match the current filters.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -714,21 +838,21 @@ struct DevicesView: View {
     private func liveDeviceDetailSection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                SectionHeader(title: "jamf-cli Detail")
+                SectionHeader(title: L("jamf-cli Detail"))
                 Spacer()
                 if workspace.demoMode {
-                    Pill(text: "Live mode only", tone: .muted)
+                    Pill(text: L("Live mode only"), tone: .muted)
                 } else if case .loading = deviceDetailState {
-                    Pill(text: "Loading", tone: .gold)
+                    Pill(text: L("Loading"), tone: .gold)
                 } else if case .loaded = deviceDetailState {
-                    Pill(text: "Loaded", tone: .teal, icon: "checkmark")
+                    Pill(text: L("Loaded"), tone: .teal, icon: "checkmark")
                 } else if case .unavailable = deviceDetailState {
-                    Pill(text: "Unavailable", tone: .warn)
+                    Pill(text: L("Unavailable"), tone: .warn)
                 }
             }
 
             if workspace.demoMode {
-                Text(DemoData.liveOnlyHelp + ".")
+                Text(L("Available with a live profile."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             } else {
@@ -740,6 +864,7 @@ struct DevicesView: View {
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Loading computer detail")
                         Text("Loading computer detail...")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -785,7 +910,7 @@ struct DevicesView: View {
                         .padding(.vertical, 2)
                     }
                     if section.items.count > 8 {
-                        Mono(text: "+ \(section.items.count - 8) more", size: 10.5)
+                        Mono(text: L("+ \(section.items.count - 8) more"), size: 10.5)
                     }
                 }
             }
@@ -801,17 +926,17 @@ struct DevicesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "macOS Versions")
+                    SectionHeader(title: L("macOS Versions"))
                     Spacer()
-                    Pill(text: "\(activeSnapshot.osDistribution.count)", tone: .muted)
+                    Pill(text: "\(figures.osDistribution.count)", tone: .muted)
                 }
 
-                if activeSnapshot.osDistribution.isEmpty {
+                if figures.osDistribution.isEmpty {
                     Text("No OS data available.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
-                    Chart(activeSnapshot.osDistribution.prefix(6)) { item in
+                    Chart(figures.osDistribution.prefix(6)) { item in
                         BarMark(
                             x: .value("Computers", item.count),
                             y: .value("Version", item.version)
@@ -828,15 +953,15 @@ struct DevicesView: View {
                     }
                     .frame(height: 150)
                     .accessibilityChartDescriptor(BarDistributionChartDescriptor(
-                        title: "macOS Version Distribution",
-                        unit: " computers",
-                        bars: activeSnapshot.osDistribution.prefix(6).map {
+                        title: L("macOS Version Distribution"),
+                        unit: L(" computers"),
+                        bars: figures.osDistribution.prefix(6).map {
                             .init(label: $0.version, value: Double($0.count))
                         }
                     ))
 
                     VStack(spacing: 0) {
-                        ForEach(activeSnapshot.osDistribution.prefix(5)) { item in
+                        ForEach(figures.osDistribution.prefix(5)) { item in
                             Button {
                                 osFilter = osFilter == item.version ? nil : item.version
                             } label: {
@@ -849,7 +974,7 @@ struct DevicesView: View {
                                         .foregroundStyle(osFilter == item.version ? Theme.Colors.goldBright : Theme.Colors.fg2)
                                     Spacer()
                                     Mono(text: "\(item.count)")
-                                    Text("\(String(format: "%.1f", item.pct))%")
+                                    Text(percentFormat.text(item.pct))
                                         .font(Theme.Fonts.mono(10.5))
                                         .foregroundStyle(Theme.Text.tertiary(contrast))
                                 }
@@ -867,9 +992,9 @@ struct DevicesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    SectionHeader(title: "Sources")
+                    SectionHeader(title: L("Sources"))
                     Spacer()
-                    Pill(text: activeSnapshot.isDemo ? "Demo" : "Workspace",
+                    Pill(text: activeSnapshot.isDemo ? L("Demo") : L("Workspace"),
                          tone: activeSnapshot.isDemo ? .gold : .teal)
                 }
 
@@ -914,8 +1039,8 @@ struct DevicesView: View {
         Card(padding: 32) {
             EmptyStateView(
                 systemImage: "desktopcomputer.and.arrow.down",
-                title: "No computer inventory yet",
-                message: "run Generate Report to populate"
+                title: L("No computer inventory yet"),
+                message: L("run Generate Report to populate")
             )
             .frame(maxWidth: .infinity)
         }
@@ -927,9 +1052,9 @@ struct DevicesView: View {
     private var deviceErrorState: some View {
         Card(padding: 32) {
             ErrorStateView(
-                title: "Couldn't read computer inventory",
+                title: L("Couldn't read computer inventory"),
                 message: activeSnapshot.warnings.joined(separator: "\n"),
-                commands: ["Re-run collection from Data Sources, then Refresh."],
+                commands: [L("Re-run collection from Data Sources, then Refresh.")],
                 retry: { Task { await reload() } }
             )
             .frame(maxWidth: .infinity)
@@ -948,7 +1073,7 @@ struct DevicesView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(width: Self.detailLabelWidth, alignment: .leading)
                         Text(row.1)
-                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
+                            .font(row.0 == L("Serial") ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .lineLimit(2)
                         Spacer(minLength: 0)
@@ -965,8 +1090,7 @@ struct DevicesView: View {
         if device.isBinaryMissing {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: BinaryMissing.title)
-                Text("Jamf Pro lists this Mac as not managed and it has never checked in. "
-                    + "It needs manual intervention. Any one of these gets the binary on:")
+                Text("Jamf Pro lists this Mac as not managed or as never inventoried, and it has never checked in. It needs manual intervention. Any one of these gets the binary on:")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(Array(BinaryMissing.remediation.enumerated()), id: \.offset) { step in
@@ -978,19 +1102,39 @@ struct DevicesView: View {
         }
     }
 
+    /// Every management field the Mac reported, and what to do about a gap; absent without facts.
+    @ViewBuilder
+    private func managementSection(for device: DeviceInventoryRecord) -> some View {
+        if let facts = device.management {
+            let now = evaluationDate
+            let rows = ManagementDetail.rows(facts, now: now)
+            let steps = ManagementDetail.remediation(facts, warningDays: certWarningDays, now: now)
+            if !rows.isEmpty || !steps.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    detailSection(L("Management"), rows: rows)
+                    ForEach(steps, id: \.self) { step in
+                        Text(step)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                }
+            }
+        }
+    }
+
     private func securitySection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Security State")
+            SectionHeader(title: L("Security State"))
             VStack(spacing: 0) {
-                securityRow("FileVault", value: fileVaultText(device, short: true),
+                securityRow(L("FileVault"), value: fileVaultText(device, short: true),
                             tone: securityTone(.fileVault, of: device))
-                securityRow("SIP", value: device.sip, tone: securityTone(.sip, of: device))
-                securityRow("Firewall", value: device.firewall,
+                securityRow(L("SIP"), value: device.sip, tone: securityTone(.sip, of: device))
+                securityRow(L("Firewall"), value: device.firewall,
                             tone: securityTone(.firewall, of: device))
-                securityRow("Gatekeeper", value: device.gatekeeper,
+                securityRow(L("Gatekeeper"), value: device.gatekeeper,
                             tone: securityTone(.gatekeeper, of: device))
                 if !device.bootstrapToken.isEmpty {
-                    securityRow("Bootstrap", value: device.bootstrapToken,
+                    securityRow(L("Bootstrap"), value: device.bootstrapToken,
                                 tone: bootstrapTone(device.bootstrapToken))
                 }
             }
@@ -1011,7 +1155,7 @@ struct DevicesView: View {
         if !risk.triggered.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    SectionHeader(title: "Priority Risk")
+                    SectionHeader(title: L("Priority Risk"))
                     Spacer()
                     Pill(
                         text: Self.priorityRiskBadgeText(risk),
@@ -1038,8 +1182,7 @@ struct DevicesView: View {
                         .padding(.vertical, 3)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
-                            "\(entry.factor.displayLabel(agentName: agentName)), \(entry.points) points. " +
-                            "Remediation: \(entry.factor.remediation(agentName: agentName))"
+                            "\(entry.factor.displayLabel(agentName: agentName)), \(entry.points) points. Remediation: \(entry.factor.remediation(agentName: agentName))"
                         )
                     }
                 }
@@ -1062,27 +1205,27 @@ struct DevicesView: View {
         guard let jamfID, !jamfID.isEmpty else { return ScanSectionModel() }
         var m = ScanSectionModel(ddmDate: ddm.snapshotDate, mdmDate: health.snapshotDate)
         if let r = ddm.record(forDeviceId: jamfID) {
-            m.ddmLines.append(("Reported", r.ddmReported ? "Yes" : "Not yet"))
+            m.ddmLines.append((L("Reported"), r.ddmReported ? L("Yes") : L("Not yet")))
             let inactive = r.declarations.filter { $0.active == false }.count
             let invalid = r.declarations.filter { $0.valid == false }.count
             var decl = "\(r.declarations.count)"
             var notes: [String] = []
-            if inactive > 0 { notes.append("\(inactive) inactive") }
-            if invalid > 0 { notes.append("\(invalid) invalid") }
+            if inactive > 0 { notes.append(L("\(inactive) inactive")) }
+            if invalid > 0 { notes.append(L("\(invalid) invalid")) }
             if !notes.isEmpty { decl += " (" + notes.joined(separator: ", ") + ")" }
-            m.ddmLines.append(("Declarations", decl))
+            m.ddmLines.append((L("Declarations"), decl))
             if let v = r.softwareUpdate.pendingOSVersion {
                 let state = r.softwareUpdate.installState.map { " (\($0))" } ?? ""
-                m.ddmLines.append(("Pending update", v + state))
+                m.ddmLines.append((L("Pending update"), v + state))
             }
-            if let f = r.softwareUpdate.failureReason { m.ddmLines.append(("Update failure", f)) }
+            if let f = r.softwareUpdate.failureReason { m.ddmLines.append((L("Update failure"), f)) }
         }
         if let h = health.record(forDeviceId: jamfID) {
             let names = h.failedCommands.isEmpty
                 ? "" : " — " + h.failedCommands.joined(separator: ", ")
-            m.mdmLines.append(("Failed", "\(h.failedCount)\(names)"))
-            let oldest = h.oldestPendingDays.map { ", oldest \($0)d" } ?? ""
-            m.mdmLines.append(("Pending", "\(h.pendingCount)\(oldest)"))
+            m.mdmLines.append((L("Failed"), "\(h.failedCount)\(names)"))
+            let oldest = h.oldestPendingDays.map { L(", oldest \($0)d") } ?? ""
+            m.mdmLines.append((L("Pending"), "\(h.pendingCount)\(oldest)"))
         }
         return m
     }
@@ -1092,10 +1235,10 @@ struct DevicesView: View {
         let m = Self.scanSectionModel(
             ddm: ddmSnapshot, health: healthSnapshot, jamfID: device.jamfID)
         if !m.ddmLines.isEmpty {
-            scanSection(title: "DDM", lines: m.ddmLines, date: m.ddmDate)
+            scanSection(title: L("DDM"), lines: m.ddmLines, date: m.ddmDate)
         }
         if !m.mdmLines.isEmpty {
-            scanSection(title: "MDM commands", lines: m.mdmLines, date: m.mdmDate)
+            scanSection(title: L("MDM commands"), lines: m.mdmLines, date: m.mdmDate)
         }
     }
 
@@ -1103,7 +1246,7 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let date {
                 let caption = Mono(
-                    text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
+                    text: L("snapshot \(date.formatted(date: .abbreviated, time: .shortened))"),
                     size: 10.5)
                     .fixedSize()
                 // The detail panel is too narrow at the minimum width for both on one
@@ -1210,11 +1353,11 @@ struct DevicesView: View {
     @ViewBuilder
     private func securityIndicators(for device: DeviceInventoryRecord) -> some View {
         let controls: [(String, String, Pill.Tone)] = [
-            ("FV", fileVaultText(device), securityTone(.fileVault, of: device)),
-            ("SIP", device.sip, securityTone(.sip, of: device)),
-            ("FW", device.firewall, securityTone(.firewall, of: device)),
-            ("GK", device.gatekeeper, securityTone(.gatekeeper, of: device)),
-            ("BT", device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
+            (L("FV"), fileVaultText(device), securityTone(.fileVault, of: device)),
+            (L("SIP"), device.sip, securityTone(.sip, of: device)),
+            (L("FW"), device.firewall, securityTone(.firewall, of: device)),
+            (L("GK"), device.gatekeeper, securityTone(.gatekeeper, of: device)),
+            (L("BT"), device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
         ]
         HStack(spacing: 3) {
             ForEach(controls, id: \.0) { (label, value, tone) in
@@ -1240,7 +1383,7 @@ struct DevicesView: View {
             symbol = "minus.circle"
             color = Theme.Colors.fgMuted
         }
-        let display = value.isEmpty ? "Not collected" : value
+        let display = value.isEmpty ? L("Not collected") : value
         return Image(systemName: symbol)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(color)
@@ -1254,7 +1397,7 @@ struct DevicesView: View {
 
     private func patchPill(_ device: DeviceInventoryRecord) -> Pill {
         if device.patchFailureCount == 0 {
-            return Pill(text: "Clear", tone: .teal)
+            return Pill(text: L("Clear"), tone: .teal)
         }
         return Pill(text: "\(device.patchFailureCount)", tone: device.patchFailureCount > 2 ? .danger : .warn)
     }
@@ -1286,16 +1429,21 @@ struct DevicesView: View {
     /// Jamf Pro's Last Contact, which counts MDM and declarative device management, written as
     /// the check-in and inventory dates are: an ISO 8601 timestamp.
     nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
-        device.contactDate.map { ISO8601DateFormatter().string(from: $0) } ?? ""
+        device.contactDate.map(ISO8601Time.string) ?? ""
+    }
+
+    /// A device timestamp in the form the Last contact row uses; text that is not a date as given.
+    nonisolated static func timestampText(_ raw: String) -> String {
+        DeviceInventoryService.parseDate(raw).map(ISO8601Time.string) ?? raw
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {
         if let days = device.daysSinceContact {
-            if days == 0 { return "Today" }
-            if days == 1 { return "1 day" }
-            return "\(days) days"
+            if days == 0 { return L("Today") }
+            if days == 1 { return L("1 day") }
+            return L("\(days) days")
         }
-        return device.lastContact.isEmpty ? "Unknown" : device.lastContact
+        return device.lastContact.isEmpty ? L("Unknown") : device.lastContact
     }
 
     private func userLabel(_ device: DeviceInventoryRecord) -> String {
@@ -1303,25 +1451,32 @@ struct DevicesView: View {
         return device.user
     }
 
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.profile)-\(workspace.demoMode)" }
+
+    /// Each phase goes through `ScreenLoad.paint` and paints only while `source` is still the
+    /// screen's: the key task is cancelled on a switch, but a refresh task is not, so a read
+    /// for another profile would otherwise land on this one.
     private func reload() async {
+        let source = dataSource
         let profile = workspace.profile
         let demoMode = workspace.demoMode
+        if loadedSource != source { clearForNewSource() }
         isLoading = true
-        let loaded = await Task.detached(priority: .userInitiated) {
-            DeviceInventoryService.load(profile: profile, demoMode: demoMode)
-        }.value
-        snapshot = loaded
-        sourceDates = await Task.detached(priority: .userInitiated) {
-            DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
-        }.value
-        if demoMode {
-            ddmSnapshot = .empty; healthSnapshot = .empty
-        } else {
-            ddmSnapshot = await Task.detached(priority: .userInitiated) {
-                DDMDeviceStatusService.load(profile: profile) }.value
-            healthSnapshot = await Task.detached(priority: .userInitiated) {
-                MDMCommandHealthService.load(profile: profile) }.value
-        }
+        let current: @MainActor () -> Bool = { source == dataSource }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: current,
+            read: { DeviceInventoryService.load(profile: profile, demoMode: demoMode) }
+        ) else { return }
+        applyLoaded(snapshot: loaded)
+        loadedSource = source
+        guard let dates = await ScreenLoad.paint(
+            stillCurrent: current,
+            read: { DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode) }
+        ) else { return }
+        sourceDates = dates
+        guard await loadDeviceHealth(stillCurrent: current, profile: profile, demoMode: demoMode)
+        else { return }
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
         }
@@ -1332,14 +1487,49 @@ struct DevicesView: View {
         let agentColumn = workspace.configState.securityAgents
             .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
             .column ?? ""
-        if !demoMode, !agentColumn.isEmpty {
-            agentStatusLookup = await Task.detached(priority: .userInitiated) {
-                RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
-            }.value
-        } else {
-            agentStatusLookup = [:]
-        }
+        guard let lookup = await ScreenLoad.paint(stillCurrent: current, read: {
+            demoMode || agentColumn.isEmpty
+                ? [:]
+                : RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
+        }) else { return }
+        applyLoaded(agentStatusLookup: lookup)
         isLoading = false
+    }
+
+    /// Nothing of the previous profile stays on screen while the new one loads.
+    private func clearForNewSource() {
+        loadedSource = nil
+        applyLoaded(snapshot: .empty, agentStatusLookup: [:])
+        sourceDates = [:]
+        ddmSnapshot = .empty
+        healthSnapshot = .empty
+        osFilter = nil
+    }
+
+    /// The DDM and MDM command-health snapshots; false when the source changed while they read.
+    private func loadDeviceHealth(
+        stillCurrent: @MainActor () -> Bool, profile: String, demoMode: Bool
+    ) async -> Bool {
+        guard let read = await ScreenLoad.paint(stillCurrent: stillCurrent, read: {
+            demoMode
+                ? (DDMDeviceStatusService.Snapshot.empty, MDMCommandHealthService.Snapshot.empty)
+                : (DDMDeviceStatusService.load(profile: profile),
+                   MDMCommandHealthService.load(profile: profile))
+        }) else { return false }
+        ddmSnapshot = read.0
+        healthSnapshot = read.1
+        return true
+    }
+
+    /// The one writer of `snapshot` and `agentStatusLookup`: the cached list and ratings are
+    /// keyed on `dataRevision`, so a write that skipped the bump would serve stale rows.
+    private func applyLoaded(
+        snapshot newSnapshot: DeviceInventorySnapshot? = nil,
+        agentStatusLookup newLookup: [String: String]? = nil
+    ) {
+        if let newSnapshot { snapshot = newSnapshot }
+        if let newLookup { agentStatusLookup = newLookup }
+        dataRevision += 1
     }
 
     private func loadSelectedDeviceDetail() async {
@@ -1356,7 +1546,7 @@ struct DevicesView: View {
         guard let lookup = detailLookupID(for: device) else {
             deviceDetail = nil
             deviceDetailState = .unavailable(
-                "Computer detail needs a serial number or computer name.")
+                L("Computer detail needs a serial number or computer name."))
             return
         }
 
@@ -1368,7 +1558,7 @@ struct DevicesView: View {
 
         guard let data = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: lookup)?.data else {
             if deviceDetailRequestKey == requestKey {
-                deviceDetailState = .unavailable("Computer detail unavailable for \(lookup).")
+                deviceDetailState = .unavailable(L("Computer detail unavailable for \(lookup)."))
             }
             return
         }
@@ -1381,7 +1571,7 @@ struct DevicesView: View {
             }
         } catch {
             if deviceDetailRequestKey == requestKey {
-                deviceDetailState = .unavailable("Could not decode computer detail for \(lookup).")
+                deviceDetailState = .unavailable(L("Could not decode computer detail for \(lookup)."))
             }
         }
     }
@@ -1407,9 +1597,11 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let text = Self.exportCSV(
-            devices: filteredDevices, policy: activeSnapshot.securityPolicy,
-            riskLevel: { priorityRisk(for: $0).level })
+        let text = Localization.english {
+            Self.exportCSV(
+                devices: filteredDevices, policy: activeSnapshot.securityPolicy,
+                riskLevel: { priorityRisk(for: $0).level })
+        }
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
@@ -1454,11 +1646,11 @@ private struct PatchClearPill: View {
     @State private var pulsed = false
 
     var body: some View {
-        Pill(text: "No patch failures", tone: .teal, icon: "checkmark")
+        Pill(text: L("No patch failures"), tone: .teal, icon: "checkmark")
             .scaleEffect(pulsed ? 1.0 : 1.05)
             .opacity(pulsed ? 1.0 : 0.6)
             .onAppear {
-                withAnimation(.easeOut(duration: 0.45)) { pulsed = true }
+                withMotionSafeAnimation(.easeOut(duration: 0.45)) { pulsed = true }
             }
             .transition(.scale.combined(with: .opacity))
     }

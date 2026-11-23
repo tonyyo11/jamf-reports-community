@@ -32,7 +32,6 @@ extension SectionID {
         case .agentHealth: "Security agent health"
         case .exceptionList: "Exception list"
         case .protectAlerts: "Protect alerts"
-        case .insightsDrift: "Protect insights drift"
         case .auditEvidence: "Audit findings"
         case .patchBar: "Patch compliance chart"
         case .patchQueue: "Patch titles behind"
@@ -78,7 +77,7 @@ enum HtmlDetailGroup: String, CaseIterable {
         switch self {
         case .security:
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
-             .insightsDrift, .auditEvidence]
+             .auditEvidence]
         case .patching: [.patchBar, .patchQueue, .osAdoptionChart, .osCurrency]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
@@ -162,7 +161,7 @@ extension HtmlReport {
         let mainBody = parts.filter { !$0.isEmpty }.joined(separator: "\n")
         return buildDocument(
             outputURL: outputURL, mainBody: mainBody, inputs: inputs,
-            profile: profileName.isEmpty ? config.jamfCli?.resolvedProfile ?? "" : profileName,
+            profile: profileName,
             glance: glance)
     }
 
@@ -177,6 +176,11 @@ extension HtmlReport {
             if let reason {
                 omissions.append(.init(title: SectionID.jamfDashboard.title, reason: reason))
             }
+            return ""
+        case .unreadable(let why):
+            let reason = "dashboard page could not be read: \(why)"
+            warn("[warn] \(reason)")
+            omissions.append(.init(title: SectionID.jamfDashboard.title, reason: reason))
             return ""
         }
     }
@@ -239,7 +243,6 @@ extension HtmlReport {
             return buildAgentHealth(eaRows: inputs.eaRows, fleet: inputs.totalDevices)
         case .exceptionList: return buildExceptionList()
         case .protectAlerts: return buildProtectAlerts(protectDataDir: protectDir)
-        case .insightsDrift: return buildInsightsDrift(protectDataDir: protectDir)
         case .auditEvidence: return buildAuditEvidence(auditFindings: inputs.auditFindings)
         case .patchBar:
             return buildPatchChart(patchStatus: inputs.patchStatus)
@@ -249,7 +252,9 @@ extension HtmlReport {
                 $0["section"] as? String == "os_version"
             })
         case .osCurrency: return buildOSCurrencySection()
-        case .interventionList: return buildInterventionList(computersInventory: inputs.computers)
+        case .interventionList:
+            return buildInterventionList(
+                computersInventory: inputs.computers, management: inputs.management)
         case .policyTable: return buildPolicyHealthSection(inputs.policyStatus)
         case .profileTable:
             return buildProfileStatusSection(
@@ -277,7 +282,7 @@ extension HtmlReport {
     }
 
     /// Protect's kind directories sit beside every other snapshot; nil when Protect is off.
-    private var protectDir: URL? { config.protect?.isEnabled == true ? dataDir : nil }
+    private var protectDir: URL? { EnvironmentProfiles.runsProtect(config) ? dataDir : nil }
 
     // MARK: Group summary lines
 
@@ -297,7 +302,7 @@ extension HtmlReport {
                 parts.append(f.plural(inputs.auditFindings.count, "audit finding"))
             }
             if shown.contains(.agentHealth), let low = lowestAgentCoverage(inputs) {
-                parts.append("\(low.name) on \(String(format: "%.0f%%", low.pct))")
+                parts.append("\(low.name) on \(PercentFormat.whole.text(low.pct))")
             }
             if shown.contains(.exceptionList) {
                 parts.append(f.plural(config.exceptions?.count ?? 0, "exception"))

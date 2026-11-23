@@ -3,7 +3,7 @@ import XCTest
 @testable import JamfReports
 
 /// `check` and `school-check` run through the real `runCheck` / `runSchoolCheck` from
-/// `main.swift`, in a workspaces root of their own.
+/// `HeadlessRun.swift`, in a workspaces root of their own.
 final class CLISubcommandTests: XCTestCase {
     nonisolated(unsafe) private var root: URL!
 
@@ -51,6 +51,21 @@ final class CLISubcommandTests: XCTestCase {
     func testSchoolCheckRefusesAWorkspaceThatIsNotJamfSchool() throws {
         try workspace("pro-ws", config: "jamf_cli:\n  profile: pro-ws\n")
         XCTAssertEqual(runSchoolCheck(profile: "pro-ws"), 1)
+    }
+
+    /// school-check listed blueprints as missing on a profile without Platform fields, which
+    /// collect skips on purpose.
+    func testSchoolSnapshotLinesSkipBlueprintsWithoutPlatformFields() {
+        let blueprints = ReportEngine.schoolBlueprintsKind
+        let without = schoolSnapshotLines(
+            profile: "school-ws", platformFieldsMissing: true) { $0 != blueprints }
+        XCTAssertEqual(without.filter { !$0.hasPrefix("[ok]") }, [
+            "[skip] snapshot \(blueprints): the School profile has no Platform API fields"])
+        let with = schoolSnapshotLines(
+            profile: "school-ws", platformFieldsMissing: false) { $0 != blueprints }
+        XCTAssertEqual(with.filter { !$0.hasPrefix("[ok]") }, [
+            "[miss] snapshot \(blueprints): missing"])
+        XCTAssertEqual(with.count, ReportEngine.schoolCommandMatrix(profile: "school-ws").count)
     }
 
     func testSchoolCheckPassesAJamfSchoolWorkspace() throws {

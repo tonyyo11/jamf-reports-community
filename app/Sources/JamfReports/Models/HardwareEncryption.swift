@@ -93,11 +93,11 @@ enum HardwareEncryption {
                 """)
             return [:]
         }
-        guard let data = try? Data(contentsOf: url),
+        guard let data = BoundedFile.readLogged(url, inside: dataDir),
               let items = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
         else {
             AppLogger.report.warning("""
-                Hardware encryption: could not read \(url.lastPathComponent, privacy: .public) \
+                Hardware encryption: could not read \(url.lastPathComponent, privacy: .private) \
                 as a list of computers, so the FileVault hardware rule is not applied
                 """)
             return [:]

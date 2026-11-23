@@ -108,7 +108,11 @@ struct GroupInventoryService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         func newest(_ kind: String) -> URL? {
             FileManager.newestJSONFile(in: dir.appendingPathComponent(kind, isDirectory: true))
         }
@@ -197,19 +201,13 @@ struct GroupInventoryService: Sendable {
         from url: URL?, success: inout Bool
     ) -> [AdvancedMobileSearchRow] {
         guard let url else { return [] }
-        guard let data = try? BoundedFile.read(
-            url, limit: BoundedFile.snapshotLimit, followSymlinks: false) else {
-            AppLogger.collect.warning(
-                "GroupInventoryService: could not read advanced-mobile-device-searches file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let envelope = try? JSONDecoder().decode(AdvancedMobileSearchEnvelope.self, from: data) {
             success = true
             return envelope.results
         }
         AppLogger.collect.warning(
-            "GroupInventoryService: failed to decode advanced-mobile-device-searches at \(url.lastPathComponent, privacy: .public)"
+            "GroupInventoryService: failed to decode advanced-mobile-device-searches at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }
@@ -218,19 +216,13 @@ struct GroupInventoryService: Sendable {
         from url: URL?, kind: String, success: inout Bool
     ) -> [ClassicGroupRow] {
         guard let url else { return [] }
-        guard let data = try? BoundedFile.read(
-            url, limit: BoundedFile.snapshotLimit, followSymlinks: false) else {
-            AppLogger.collect.warning(
-                "GroupInventoryService: could not read \(kind, privacy: .public) file \(url.lastPathComponent, privacy: .public)"
-            )
-            return []
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return [] }
         if let groups = try? JSONDecoder().decode([ClassicGroupRow].self, from: data) {
             success = true
             return groups
         }
         AppLogger.collect.warning(
-            "GroupInventoryService: failed to decode \(kind, privacy: .public) at \(url.lastPathComponent, privacy: .public)"
+            "GroupInventoryService: failed to decode \(kind, privacy: .public) at \(url.lastPathComponent, privacy: .private)"
         )
         return []
     }
@@ -282,7 +274,7 @@ struct GroupInventoryService: Sendable {
 // MARK: - Search criteria text
 
 extension AdvancedMobileSearchRow {
-    static let noCriteriaText = "No criteria (matches every device)"
+    static var noCriteriaText: String { L("No criteria (matches every device)") }
 
     /// The search as a sentence: `(Model like iPad OR Model like iPhone) AND Last Inventory
     /// Update more than x days ago 7`. A criterion's connector joins it to the one before.
@@ -298,7 +290,7 @@ extension AdvancedMobileSearchRow {
         for (index, criterion) in ordered.enumerated() {
             if index > 0 {
                 let joiner = criterion.andOr?.trimmingCharacters(in: .whitespaces).uppercased()
-                text += " \(joiner.flatMap { $0.isEmpty ? nil : $0 } ?? "AND") "
+                text += " \(joiner.flatMap { $0.isEmpty ? nil : $0 } ?? L("AND")) "
             }
             text += criterion.sentence
         }
@@ -311,7 +303,7 @@ private extension AdvancedMobileSearchCriterion {
         let parts = [name, searchType, value]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let body = parts.isEmpty ? "Unnamed criterion" : parts.joined(separator: " ")
+        let body = parts.isEmpty ? L("Unnamed criterion") : parts.joined(separator: " ")
         return (openingParen == true ? "(" : "") + body + (closingParen == true ? ")" : "")
     }
 }

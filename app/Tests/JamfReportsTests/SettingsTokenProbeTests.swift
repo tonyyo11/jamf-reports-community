@@ -112,4 +112,20 @@ final class SettingsTokenProbeTests: XCTestCase {
         XCTAssertEqual(log.checking, ["a"])
         XCTAssertEqual(log.recorded, [])
     }
+
+    func testKeychainLockedStatusIsInvalidAndFlagged() throws {
+        let status = TokenStatus.keychainLocked(profile: "a")
+        XCTAssertFalse(status.isValid)
+        XCTAssertTrue(status.keychainLocked)
+        let decoded = try JSONDecoder().decode(
+            TokenStatus.self, from: JSONEncoder().encode(status))
+        XCTAssertTrue(decoded.keychainLocked)
+        XCTAssertFalse(Self.status("a").keychainLocked)
+    }
+
+    /// A status saved before the flag existed still decodes, as not locked.
+    func testStatusWithoutTheFlagDecodesAsNotLocked() throws {
+        let json = Data(#"{"profile":"a","isValid":false}"#.utf8)
+        XCTAssertFalse(try JSONDecoder().decode(TokenStatus.self, from: json).keychainLocked)
+    }
 }

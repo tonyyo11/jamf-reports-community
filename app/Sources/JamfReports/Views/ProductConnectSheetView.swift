@@ -31,6 +31,7 @@ struct ProductConnectSheetView: View {
                     Text("Connect Jamf Protect")
                         .font(Theme.Fonts.serif(22, weight: .bold))
                         .foregroundStyle(Theme.Colors.fg)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button {
                         flow.clearAllSecrets()
@@ -101,7 +102,7 @@ struct ProductConnectSheetView: View {
             Card(padding: 20) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Protect URL")
+                        FieldLabel(label: L("Protect URL"))
                         PNPTextField(
                             value: protectURLBinding,
                             placeholder: "https://yourorg.protect.jamfcloud.com"
@@ -109,22 +110,22 @@ struct ProductConnectSheetView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Profile name")
+                        FieldLabel(label: L("Profile name"))
                         PNPTextField(value: protectProfileNameBinding, placeholder: "protect", mono: true)
-                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
+                        FieldHelp(text: L("Any name without line breaks or spaces at either end."))
                     }
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client ID")
+                            FieldLabel(label: L("Client ID"))
                             PNPTextField(value: protectClientIDBinding, mono: true)
                         }
                         .frame(maxWidth: .infinity)
 
                         VStack(alignment: .leading, spacing: 5) {
-                            FieldLabel(label: "Client Secret")
+                            FieldLabel(label: L("Client Secret"))
                             SecureSecretField(
-                                placeholder: "Protect client secret",
+                                placeholder: L("Protect client secret"),
                                 onTextChange: { flow.protectSecretFieldHasText = $0 }
                             ) { data in
                                 flow.setProtectClientSecret(data)
@@ -143,7 +144,7 @@ struct ProductConnectSheetView: View {
 
                     HStack(spacing: 10) {
                         PNPButton(
-                            title: flow.isConnectingProtect ? "Connecting…" : "Connect",
+                            title: flow.isConnectingProtect ? L("Connecting…") : L("Connect"),
                             icon: "shield.lefthalf.filled",
                             style: .gold,
                             size: .md
@@ -160,7 +161,7 @@ struct ProductConnectSheetView: View {
                         .disabled(!protectCanConnect)
 
                         PNPButton(
-                            title: flow.protectConnected ? "Done" : "Cancel",
+                            title: flow.protectConnected ? L("Done") : L("Cancel"),
                             style: .neutral, size: .md
                         ) {
                             flow.clearAllSecrets()
@@ -181,7 +182,7 @@ struct ProductConnectSheetView: View {
     @ViewBuilder
     private func connectedStatus(_ connected: Bool, note: String?) -> some View {
         if connected {
-            Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+            Pill(text: L("CONNECTED"), tone: .teal, icon: "checkmark")
         }
         if let note {
             Text(note)

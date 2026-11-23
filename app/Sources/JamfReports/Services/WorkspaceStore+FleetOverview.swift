@@ -10,8 +10,10 @@ struct FleetWorkspaceOverview: Sendable {
     /// A Jamf School workspace writes no daily summary, so none of the summary issues applies.
     var isSchool = false
 
-    var issues: [FleetProfileIssue] { isSchool ? [] : fleetProfileIssues(summary) }
-    var hasIssue: Bool { !issues.isEmpty }
+    /// Taken when shown, so a Customize change reads without reloading the summaries.
+    func issues(format: PercentFormat, staleDays: Int) -> [FleetProfileIssue] {
+        isSchool ? [] : fleetProfileIssues(summary, format: format, staleDays: staleDays)
+    }
 
     /// This overview when it was loaded for `profile`, else nil: a load that finished after
     /// the sidebar moved to another workspace must not show under that workspace's name.
@@ -38,25 +40,12 @@ extension WorkspaceStore {
             profile: name, summary: summaries.last, summaries: summaries, isSchool: isSchool)
     }
 
-    /// The first demo profile reads the Overview's own demo fleet; each later one is a
-    /// smaller variation of it.
+    /// The demo workspace's own summaries (`DemoData.fleetSummaries(for:)`); every demo trend
+    /// date is a summary, so the stability trend has the Overview's history, not one point.
     private func demoFleetOverview() -> FleetWorkspaceOverview {
-        func latest(_ metric: TrendSeries.Metric) -> Double {
-            DemoData.trends[metric]?.last ?? 0
-        }
-        let idx = profiles.firstIndex { $0.name == profile } ?? 0
-        let offset = Double(idx * 4)
-        let dateIndex = max(DemoData.trendDates.count - 1 - idx, 0)
-        let summary = DailySummary(
-            date: DemoData.trendDates[safe: dateIndex] ?? "2026-04-20",
-            totalDevices: DemoData.deviceCount(forProfileAt: idx),
-            fileVaultPct: latest(.fileVault) - offset,
-            compliancePct: max(latest(.compliance) - offset, 0),
-            staleCount: Int(latest(.stale).rounded()) + idx * 4,
-            osCurrentPct: latest(.osCurrent) - offset,
-            crowdstrikePct: latest(.edrAgent) - offset,
-            patchPct: latest(.patch) - offset
-        )
-        return FleetWorkspaceOverview(profile: profile, summary: summary, summaries: [summary])
+        let summaries = DemoData.fleetSummaries(for: profile)
+        return FleetWorkspaceOverview(
+            profile: profile, summary: summaries.last, summaries: summaries,
+            isSchool: DemoData.environmentProducts(for: profile).isSchool)
     }
 }

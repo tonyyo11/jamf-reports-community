@@ -19,6 +19,10 @@ enum DeviceInventoryService {
 
     static func load(profile: String, demoMode: Bool) -> DeviceInventorySnapshot {
         if demoMode { return DemoData.deviceSnapshot }
+        return AppLogger.signpost("Device inventory load") { loadFromDisk(profile: profile) }
+    }
+
+    private static func loadFromDisk(profile: String) -> DeviceInventorySnapshot {
         guard let root = validatedWorkspaceRoot(profile: profile) else {
             return emptySnapshot(
                 warning: "Workspace is missing or not contained in "
@@ -447,6 +451,7 @@ extension DeviceInventoryService {
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
         record.model = first(flat, ["hardware.modelIdentifier", "hardware.model", "modelIdentifier", "general.model"])
+        record.marketingModel = first(flat, ["hardware.model"])
         record.user = first(flat, ["userAndLocation.username", "location.username", "username"])
         record.email = first(flat, ["userAndLocation.email", "userAndLocation.emailAddress", "location.emailAddress"])
         // Tenants that keep the address in "Username" and leave "Email" blank
@@ -467,6 +472,7 @@ extension DeviceInventoryService {
         record.inventoryDate = dates.inventory
         record.contactDate = dates.contact
         record.carriesDates = true
+        record.neverInventoried = NeverInventoried.isNeverInventoried(computer: item)
         record.daysSinceContact = daysSince(label: record.lastContact)
         record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
@@ -477,7 +483,16 @@ extension DeviceInventoryService {
         // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
         record.bootstrapToken = first(
             flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
+        // Jamf fills these with false and blanks before the first inventory; none is a reading.
+        if NeverInventoried.isNeverInventoried(computer: item) {
+            record.fileVault = ""
+            record.sip = ""
+            record.firewall = ""
+            record.gatekeeper = ""
+            record.bootstrapToken = ""
+        }
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
+        record.management = ManagementFacts(item: item)
         return record
     }
 
@@ -578,7 +593,7 @@ private extension DeviceInventoryService {
         warnings: inout [String]
     ) -> [[String: Any]] {
         guard let file = validatedFile(url, root: root),
-              let data = readData(file, root: root, maxBytes: 60 * 1024 * 1024, warnings: &warnings) else {
+              let data = readData(file, root: root, maxBytes: BoundedFile.limit(for: file), warnings: &warnings) else {
             return []
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) else {
@@ -638,27 +653,16 @@ extension DeviceInventoryService {
     /// with or without a fraction of any length, then the CSV export forms.
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
-        if let date = isoFormatter.date(from: text) { return date }
         // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
-        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
-        // Mac had no contact age unless device-compliance supplied a day count.
-        if let date = isoFractionalFormatter.date(from: text) { return date }
+        // "2015-02-17T21:33:23.712Z"); a Mac that failed here had no contact age.
+        if let date = ISO8601Time.parse(text) { return date }
         for formatter in exportDateFormatters {
             if let date = formatter.date(from: text) { return date }
         }
         return nil
     }
 
-    // Built once: this runs several times per computer. As for
-    // `StateFileStore.formatter`, a configured formatter's `date(from:)` is safe to share.
-    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
-
-    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
+    // Built once: this runs several times per computer.
     private static let exportDateFormatters: [DateFormatter] = [
         "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy",
     ].map { format in
@@ -765,10 +769,11 @@ private extension DeviceInventoryService {
     }
 
     static func managedLabel(_ value: String) -> String {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["true", "yes", "1", "managed"].contains(text) { return "Managed" }
-        if ["false", "no", "0", "unmanaged"].contains(text) { return "Unmanaged" }
-        return value
+        switch BinaryMissing.managed(value) {
+        case true?: "Managed"
+        case false?: "Unmanaged"
+        case nil: value
+        }
     }
 
 }
@@ -821,11 +826,15 @@ fileprivate extension DeviceInventoryService {
 
     static func formattedDate(_ date: Date?) -> String {
         guard let date else { return "No current device data" }
+        return mediumShortFormatter.string(from: date)
+    }
+
+    private static let mediumShortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 }
 
 // MARK: - Device identity

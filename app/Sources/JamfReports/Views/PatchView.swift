@@ -7,126 +7,122 @@ import Charts
 /// snapshots. Lifts the v3.5 "Patch Management Report" Excel sheet into a live,
 /// on-screen dashboard.
 struct PatchView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PatchStatusService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     /// title_id → release_date from the patch-release-dates snapshot.
     /// Empty when the snapshot hasn't been collected yet — table column shows "—".
     @State private var releaseLookup: [String: String] = [:]
     /// Per-title adoption velocity, computed off-main from dated patch-status
     /// history. Empty until a few days of collected history exist.
     @State private var velocity: [TitleVelocity] = []
-
-    /// Distinct colors for up to 5 slowest-title chart series, following the
-    /// TrendsView `.chartForegroundStyleScale` idiom.
-    private static let velocitySeriesColors: [Color] = [
-        Theme.Colors.gold, Theme.Colors.teal, Theme.Colors.purple,
-        Theme.Colors.info, Theme.Colors.danger
-    ]
+    /// Band the titles table is filtered to; a tile sets it and its chip clears it.
+    @State private var titleFilter: TitleFilter?
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "Patch Compliance",
+                kicker: L("Operations"),
+                title: L("Patch Compliance"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .scan])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["patch-status", "patch-device-failures"]
-                )
-            }
-            if snapshot.totalTitles == 0 {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("patch compliance"))
             } else {
-                kpiGrid
-                patchTitlesCard
-                // Velocity needs dated patch history, which the demo does not
-                // have; the card would only show its placeholder.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
                 if !workspace.demoMode {
-                    patchVelocityCard
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .scan])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["patch-status", "patch-device-failures"]
+                    )
                 }
-                if !snapshot.failures.isEmpty {
-                    recentFailuresCard
+                if snapshot.totalTitles == 0 {
+                    emptyState
+                } else {
+                    kpiGrid
+                    patchTitlesCard
+                    // Velocity needs dated patch history, which the demo does not
+                    // have; the card would only show its placeholder.
+                    if !workspace.demoMode {
+                        patchVelocityCard
+                    }
+                    if !snapshot.failures.isEmpty {
+                        recentFailuresCard
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
-        .task(id: reloadToken) { await loadVelocity() }
-    }
-
-    /// Recomputes whenever the profile changes or a manual reload fires —
-    /// mirrors `.onChange(of: workspace.profile)`/`.refreshActiveTab` above
-    /// without duplicating those triggers into a second state variable.
-    private var reloadToken: String {
-        "\(workspace.profile)|\(snapshot.snapshotDate?.timeIntervalSince1970 ?? 0)"
     }
 
     private var subtitle: String? {
         guard snapshot.totalTitles > 0 else { return nil }
-        return "\(snapshot.totalTitles) patch title\(snapshot.totalTitles == 1 ? "" : "s") tracked across the fleet."
+        return (snapshot.totalTitles == 1 ? L("\(snapshot.totalTitles) patch title tracked across the fleet.") : L("\(snapshot.totalTitles) patch titles tracked across the fleet."))
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            releaseLookup = [:]
+            velocity = []
+            titleFilter = nil
+        }
+        // Demo mode shows no velocity card: the static demo dataset has no dated
+        // history to derive a trend from.
         guard !workspace.demoMode else {
             snapshot = DemoData.patchStatus
             releaseLookup = DemoData.patchReleaseLookup
+            velocity = []
+            loadedSource = source
             return
         }
-        snapshot = PatchStatusService.load(profile: workspace.profile)
-        let rows = PatchReleaseDateService.load(profile: workspace.profile)
-        releaseLookup = PatchReleaseDateService.releaseDateLookup(from: rows)
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { (PatchStatusService.load(profile: profile),
+                     PatchReleaseDateService.load(profile: profile)) }
+        ) else { return }
+        snapshot = loaded.0
+        releaseLookup = PatchReleaseDateService.releaseDateLookup(from: loaded.1)
+        loadedSource = source
+        // The slow part: it walks every dated patch-status snapshot, so the table paints first.
+        let releaseRows = loaded.1
+        guard let computed = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> [TitleVelocity] in
+                guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return [] }
+                return PatchVelocityBuilder.compute(dataDir: dir, releaseRows: releaseRows)
+            }
+        ) else { return }
+        velocity = computed
     }
 
     /// The date Days Behind counts to: the demo's own "now", or today.
     private var daysBehindReferenceDate: Date {
         workspace.demoMode ? DemoData.referenceDate : Date()
-    }
-
-    /// Computes patch adoption velocity off-main. Demo mode shows no
-    /// velocity card (the static demo dataset has no dated history to derive
-    /// a trend from). `PatchVelocityBuilder.compute` walks the workspace's
-    /// dated patch-status history — the same `dataDir` other services here
-    /// resolve via `WorkspacePaths.dataDir(for:)`.
-    private func loadVelocity() async {
-        guard !workspace.demoMode else {
-            velocity = []
-            return
-        }
-        let profile = workspace.profile
-        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-            velocity = []
-            return
-        }
-        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
-        let computed = await Task.detached(priority: .utility) {
-            PatchVelocityBuilder.compute(dataDir: dataDir, releaseRows: releaseRows)
-        }.value
-        guard workspace.profile == profile else { return }
-        velocity = computed
     }
 
     // MARK: - Sections
@@ -135,11 +131,11 @@ struct PatchView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "shippingbox",
-                title: "No patch data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No patch data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["patch-status"])]
+                    profile: workspace.profile, kinds: ["patch-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }
@@ -148,52 +144,79 @@ struct PatchView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total Titles",
+                label: L("Total Titles"),
                 value: "\(snapshot.totalTitles)",
-                sub: "Patch policies tracked"
+                sub: L("Patch titles tracked")
             )
             StatTile(
-                label: "Fleet Compliance",
-                value: snapshot.fleetCompliancePct.map { String(format: "%.1f%%", $0) }
-                    ?? "\u{2014}",
-                sub: "Weighted across all devices"
+                label: L("Fleet Compliance"),
+                value: percentFormat.text(snapshot.fleetCompliancePct),
+                sub: L("Weighted across all devices")
             )
             StatTile(
-                label: "Compliant Titles",
+                label: L("Compliant Titles"),
                 value: "\(snapshot.compliantTitleCount)",
-                sub: "≥90% compliance rate"
+                sub: L("≥90% compliance rate"),
+                action: titleFilterAction(.compliant, count: snapshot.compliantTitleCount),
+                actionHint: L("Filters the patch titles table to compliant titles")
             )
             StatTile(
-                label: "Failing Titles",
+                label: L("Failing Titles"),
                 value: "\(snapshot.failingTitleCount)",
-                sub: "<50% compliance rate"
+                sub: L("<50% compliance rate"),
+                action: titleFilterAction(.failing, count: snapshot.failingTitleCount),
+                actionHint: L("Filters the patch titles table to failing titles")
             )
             StatTile(
-                label: "Devices With Failures",
+                label: L("Devices With Failures"),
                 value: "\(snapshot.devicesWithFailures)",
-                sub: "Requiring attention"
+                sub: L("Requiring attention")
             )
         }
     }
 
-    /// Cap shown rows so the table stays responsive in tenants with hundreds
-    /// of patch titles. SwiftUI Tables are virtualized at the row-render
-    /// level but data-source construction is eager, so this cap also bounds
-    /// the SwiftUI diff cost on every state change.
-    private static let titlesDisplayCap = 50
+    /// Rows in the PNG export, which draws every row it is given into a fixed-height image.
+    nonisolated static let pngExportRowCap = 12
+
+    /// The two title bands the KPI tiles count.
+    enum TitleFilter {
+        case compliant, failing
+
+        var label: String {
+            switch self {
+            case .compliant: L("Compliant titles")
+            case .failing: L("Failing titles")
+            }
+        }
+    }
+
+    /// The titles a tile counts: the same ratios `PatchStatusService.Snapshot` counts with.
+    nonisolated static func titles(_ titles: [PatchStatusRow], in filter: TitleFilter?) -> [PatchStatusRow] {
+        guard let filter else { return titles }
+        return titles.filter { title in
+            guard title.total > 0 else { return false }
+            let pct = Double(title.onLatest) / Double(title.total) * 100.0
+            return filter == .compliant ? pct >= 90.0 : pct < 50.0
+        }
+    }
+
+    private func titleFilterAction(_ filter: TitleFilter, count: Int) -> (() -> Void)? {
+        count > 0 ? { titleFilter = filter } : nil
+    }
 
     private var patchTitlesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionHeader(
-                        title: "Patch Titles",
-                        trailing: sortedTitles.count > Self.titlesDisplayCap
-                            ? "\(Self.titlesDisplayCap) of \(sortedTitles.count) shown"
-                            : nil
-                    )
+                        title: L("Patch Titles"),
+                        trailing: titleFilter == nil
+                            ? nil : L("\(sortedTitles.count) of \(snapshot.titles.count) shown"))
+                    if let titleFilter {
+                        FilterChip(label: titleFilter.label) { self.titleFilter = nil }
+                    }
                     PNPButton(
-                        title: "Export CSV",
+                        title: L("Export CSV"),
                         icon: "tablecells",
                         style: .neutral,
                         size: .sm,
@@ -202,7 +225,7 @@ struct PatchView: View {
                     .accessibilityLabel("Export patch compliance report as CSV")
                     .help("Save the full patch compliance report as a CSV file")
                     PNPButton(
-                        title: "Export PNG",
+                        title: L("Export PNG"),
                         icon: "square.and.arrow.down",
                         style: .neutral,
                         size: .sm,
@@ -211,30 +234,31 @@ struct PatchView: View {
                     .accessibilityLabel("Export patch titles table as PNG")
                     .help("Save the patch titles table as a PNG image")
                 }
-                Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
+                let failingDevices = snapshot.failingDevicesByTitle
+                Table(sortedTitles) {
                     TableColumn("Title") { title in
                         Text(title.title)
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                             .accessibilityLabel("\(title.title), patch title")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Latest Version") { title in
                         Text(title.latest)
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 120, ideal: 150)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Released") { title in
                         let dateStr = releaseLookup[title.id] ?? ""
                         Text(dateStr.isEmpty ? "—" : String(dateStr.prefix(10)))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .accessibilityLabel(dateStr.isEmpty ? "No release date" : "Released \(dateStr)")
+                            .accessibilityLabel(dateStr.isEmpty ? L("No release date") : L("Released \(dateStr)"))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Days Behind") { title in
                         let dateStr = releaseLookup[title.id] ?? ""
@@ -246,9 +270,9 @@ struct PatchView: View {
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle((days ?? 0) > 30 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel(days.map { "\($0) days behind the latest release" } ?? "Days behind unavailable")
+                            .accessibilityLabel(days.map { L("\($0) days behind the latest release") } ?? L("Days behind unavailable"))
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Compliance") { title in
                         let pct = PatchStatusService.parseCompliancePct(title.compliancePct)
@@ -256,14 +280,15 @@ struct PatchView: View {
                             Image(systemName: complianceIcon(for: pct))
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(complianceColor(for: pct))
-                            Text(title.compliancePct)
+                            Text(pct == nil ? "—" : title.compliancePct)
                                 .font(Theme.Fonts.mono(11, weight: .semibold))
                                 .foregroundStyle(complianceColor(for: pct))
                                 .monospacedDigit()
                         }
-                        .accessibilityLabel("\(title.compliancePct) compliance rate")
+                        .accessibilityLabel(pct == nil ? L("No data yet")
+                                            : L("\(title.compliancePct) compliance rate"))
                     }
-                    .width(min: 80, ideal: 90)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("On Latest / Total") { title in
                         Text("\(title.onLatest) / \(title.total)")
@@ -272,34 +297,29 @@ struct PatchView: View {
                             .monospacedDigit()
                             .accessibilityLabel("\(title.onLatest) devices on latest version, \(title.total) total devices")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Failures") { title in
-                        let failureCount = snapshot.failuresByTitle[title.title] ?? 0
-                        Text("\(failureCount)")
+                        // No failure scan read: a dash, not 0 failing devices.
+                        let failureCount = failingDevices.map { $0[title.title] ?? 0 }
+                        Text(failureCount.map { "\($0)" } ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
+                            .foregroundStyle((failureCount ?? 0) > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel("\(failureCount) device\(failureCount == 1 ? "" : "s") with patch failures")
+                            .accessibilityLabel(failureCount.map {
+                                $0 == 1 ? L("\($0) device with patch failures")
+                                    : L("\($0) devices with patch failures")
+                            } ?? L("No failure scan collected"))
                     }
-                    .width(min: 80, ideal: 90)
+                    .width(min: 80, ideal: 80)
                 }
-                .pageTableHeight(rows: min(sortedTitles.count, Self.titlesDisplayCap))
-                if sortedTitles.count > Self.titlesDisplayCap {
-                    Text("Generated reports include every patch title.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                .pageTableHeight(rows: sortedTitles.count)
             }
         }
     }
 
     private var sortedTitles: [PatchStatusRow] {
-        snapshot.titles.sorted { lhs, rhs in
-            let lhsPct = PatchStatusService.parseCompliancePct(lhs.compliancePct)
-            let rhsPct = PatchStatusService.parseCompliancePct(rhs.compliancePct)
-            return lhsPct < rhsPct
-        }
+        Self.titles(snapshot.titles, in: titleFilter).sorted(by: PatchStatusService.sortsBefore)
     }
 
     // MARK: - Patch Velocity
@@ -319,7 +339,7 @@ struct PatchView: View {
     private var patchVelocityCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Patch Velocity")
+                SectionHeader(title: L("Patch Velocity"))
                 if slowestVelocityTitles.isEmpty {
                     Text("Velocity appears after a few days of collected patch history.")
                         .font(.caption)
@@ -344,8 +364,7 @@ struct PatchView: View {
     }
 
     private var releaseDatesUnavailableCaption: some View {
-        Text("Release dates unavailable — days behind and adoption speed need "
-            + "the patch-release-dates snapshot.")
+        Text("Release dates unavailable — days behind and adoption speed need the patch-release-dates snapshot.")
             .font(.caption2)
             .foregroundStyle(Theme.Colors.warn)
     }
@@ -359,8 +378,8 @@ struct PatchView: View {
     }
 
     private func velocityRow(for title: TitleVelocity) -> some View {
-        let pctText = title.adoptionPct.map { String(format: "%.1f%%", $0) } ?? "—"
-        let daysBehindText = title.daysBehind.map { "\($0)d behind" } ?? "—"
+        let pctText = percentFormat.text(title.adoptionPct)
+        let daysBehindText = title.daysBehind.map { L("\($0)d behind") } ?? "—"
         let milestoneText = velocityMilestoneText(for: title)
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -388,13 +407,13 @@ struct PatchView: View {
     private func velocityMilestoneText(for title: TitleVelocity) -> String {
         switch (title.daysTo50, title.daysTo90) {
         case let (d50?, d90?):
-            return "50% in \(d50)d · 90% in \(d90)d"
+            return L("50% in \(d50)d · 90% in \(d90)d")
         case let (d50?, nil):
-            return "50% in \(d50)d"
+            return L("50% in \(d50)d")
         case let (nil, d90?):
-            return "90% in \(d90)d"
+            return L("90% in \(d90)d")
         default:
-            return "Adoption pace not yet available"
+            return L("Adoption pace not yet available")
         }
     }
 
@@ -407,7 +426,7 @@ struct PatchView: View {
     private var velocityChart: some View {
         let titles = slowestVelocityTitles
         let labels: [String] = titles.map(\.title)
-        let colors: [Color] = Array(Self.velocitySeriesColors.prefix(titles.count))
+        let colors: [Color] = Theme.ChartColors.colors(forTitles: labels)
         return Chart {
             ForEach(titles) { title in
                 ForEach(Array(title.series.enumerated()), id: \.offset) { _, point in
@@ -418,7 +437,7 @@ struct PatchView: View {
                     )
                     .foregroundStyle(by: .value("Title", title.title))
                     .interpolationMethod(.monotone)
-                    .accessibilityLabel("\(title.title): \(Int(pct))% adopted")
+                    .accessibilityLabel("\(title.title): \(PercentFormat.whole.text(pct)) adopted")
                 }
             }
         }
@@ -442,7 +461,8 @@ struct PatchView: View {
         .accessibilityLabel("Adoption velocity for the \(titles.count) slowest-adopting patch titles")
     }
 
-    private func complianceColor(for pct: Double) -> Color {
+    private func complianceColor(for pct: Double?) -> Color {
+        guard let pct else { return Theme.Colors.fgMuted }
         switch pct {
         case ..<50:  return Theme.Colors.danger
         case ..<80:  return Theme.Colors.warn
@@ -451,7 +471,8 @@ struct PatchView: View {
         }
     }
 
-    private func complianceIcon(for pct: Double) -> String {
+    private func complianceIcon(for pct: Double?) -> String {
+        guard let pct else { return "minus.circle" }
         switch pct {
         case ..<80:  return "exclamationmark.triangle"
         case ..<90:  return "exclamationmark.circle"
@@ -463,7 +484,7 @@ struct PatchView: View {
     private var recentFailuresCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Recent Failures")
+                SectionHeader(title: L("Recent Failures"))
                 if snapshot.failures.isEmpty {
                     Text("No recent patch failures recorded.")
                         .font(.footnote)
@@ -532,9 +553,12 @@ struct PatchView: View {
         let result = DashboardChartExport.run(
             title: "Patch Titles",
             subtitle: "Fleet patch compliance summary",
-            suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
-            PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+            PatchTitlesTableExport(
+                titles: Array(sortedTitles.prefix(Self.pngExportRowCap)),
+                omitted: max(0, sortedTitles.count - Self.pngExportRowCap))
         }
         if case .failure(let error) = result {
             workspace.toast = Toast(message: error.userMessage, style: .danger)
@@ -551,18 +575,18 @@ struct PatchView: View {
         panel.nameFieldStringValue = ExportNaming.filename(
             kind: "patch-compliance", profile: workspace.profile, ext: "csv"
         )
-        panel.title = "Export Patch Compliance CSV"
+        panel.title = L("Export Patch Compliance CSV")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try PatchStatusService.complianceCSV(snapshot.titles)
+            try Localization.english { PatchStatusService.complianceCSV(snapshot.titles) }
                 .write(to: url, atomically: true, encoding: .utf8)
             workspace.toast = Toast(
-                message: "Exported \(snapshot.totalTitles) patch titles to \(url.lastPathComponent)",
+                message: L("Exported \(snapshot.totalTitles) patch titles to \(url.lastPathComponent)"),
                 style: .success
             )
         } catch {
             workspace.toast = Toast(
-                message: "Could not export CSV: \(error.localizedDescription)",
+                message: L("Could not export CSV: \(error.localizedDescription)"),
                 style: .danger
             )
         }
@@ -573,6 +597,8 @@ struct PatchView: View {
 
 struct PatchTitlesTableExport: View {
     let titles: [PatchStatusRow]
+    /// Titles past the export's row cap, named under the table.
+    var omitted = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -653,6 +679,11 @@ struct PatchTitlesTableExport: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(.gray.opacity(0.3), lineWidth: 1)
             )
+            if omitted > 0 {
+                Text(L("+ \(omitted) more titles not shown"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.gray)
+            }
         }
         .padding(24)
         .frame(width: 848, height: 448)

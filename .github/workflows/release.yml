@@ -60,7 +60,9 @@ jobs:
           files: |
             ${{ env.ASSET_PATH }}
             ${{ env.SUMS_PATH }}
-          generate_release_notes: true
-          # Tags carrying a prerelease suffix (-rc1, -beta2, …) publish as a
-          # GitHub prerelease; a bare vX.Y.Z tag publishes as a full release.
+          # A draft with no generated notes: nothing is public until the written
+          # notes and the signed .pkg/.dmg are on it and the draft is published by hand.
+          draft: true
+          # Tags carrying a prerelease suffix (-rc1, -beta2, …) are marked as a
+          # GitHub prerelease; a bare vX.Y.Z tag as a full release.
           prerelease: ${{ contains(github.ref_name, '-') }}

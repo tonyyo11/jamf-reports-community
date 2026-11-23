@@ -37,6 +37,14 @@ final class CLIDoctorServiceTests: XCTestCase {
         XCTAssertNil(CLIDoctorService.parse(Data("[]".utf8)), "doctor is an object, not an array")
     }
 
+    func testSecurityLoginWithNoProbeAndNoURLIsNotChecked() throws {
+        let json = #"{"version":"9.9.9","configPath":"/x","profile":{"name":"sec","product":"security","url":"","authMethod":"security"}}"#
+        let report = try XCTUnwrap(CLIDoctorService.parse(Data(json.utf8)))
+        XCTAssertEqual(report.health, .notChecked)
+        let withURL = #"{"profile":{"name":"p","url":"https://a.example.com"}}"#
+        XCTAssertEqual(CLIDoctorService.parse(Data(withURL.utf8))?.health, .unreachable)
+    }
+
     // MARK: - health derivation
 
     func testHealthHealthyWhenReachableAndCredentialsResolved() throws {
@@ -82,6 +90,36 @@ final class CLIDoctorServiceTests: XCTestCase {
         let report = try XCTUnwrap(CLIDoctorService.parse(Data(json.utf8)))
         XCTAssertFalse(report.credentialsAllResolved, "no resolvable credentials cannot authenticate")
         XCTAssertEqual(report.health, .credentialsUnresolved)
+    }
+
+    func testEnvironmentReferenceCredentialIsItsOwnVerdict() throws {
+        // Shape of a real doctor report; only the reference scheme differs (env: is assumed
+        // from jamf-cli's reference syntax, the keychain: form was captured live).
+        let json = """
+        {"profile":{"name":"prod","credentials":[
+        {"field":"client-id","reference":"keychain:jamf-cli/prod/client-id","resolved":true},
+        {"field":"client-secret","reference":"env:JAMF_CLIENT_SECRET","resolved":false}]},
+        "connectivity":{"statusCode":401,"latencyMs":50}}
+        """
+        let report = try XCTUnwrap(CLIDoctorService.parse(Data(json.utf8)))
+        XCTAssertTrue(report.usesEnvironmentReference)
+        XCTAssertEqual(report.health, .environmentReference,
+                       "named ahead of the 401 it causes")
+    }
+
+    func testOnlyAnEnvSchemeCountsAsAnEnvironmentReference() throws {
+        for reference in ["keychain:jamf-cli/prod/x", "file:/tmp/x", "environment-thing", ""] {
+            let json = """
+            {"profile":{"name":"prod","credentials":[
+            {"field":"client-id","reference":"\(reference)","resolved":true}]},
+            "connectivity":{"statusCode":200}}
+            """
+            let report = try XCTUnwrap(CLIDoctorService.parse(Data(json.utf8)))
+            XCTAssertFalse(report.usesEnvironmentReference, reference)
+            XCTAssertEqual(report.health, .healthy, reference)
+        }
+        let absent = try XCTUnwrap(CLIDoctorService.parse(Data(Self.unauthorizedJSON.utf8)))
+        XCTAssertFalse(absent.usesEnvironmentReference, "no reference key is unknown, not env")
     }
 
     // MARK: - run() outcome mapping

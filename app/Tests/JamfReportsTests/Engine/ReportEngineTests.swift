@@ -363,9 +363,9 @@ final class ReportEngineTests: XCTestCase {
 
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: summaryFile.path),
                       "Summary JSON must be written")
@@ -422,9 +422,9 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
-        engine.emitSummaryJSON(summariesDir: summariesDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         let obj = try XCTUnwrap(
             try JSONSerialization.jsonObject(
@@ -464,9 +464,9 @@ final class ReportEngineTests: XCTestCase {
         let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
         try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         ReportEngine(config: ReportConfig(), dataDir: dataDir)
-            .emitSummaryJSON(summariesDir: summariesDir)
+            .emitSummaryJSON(summariesDir: summariesDir, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let obj = try XCTUnwrap(
             try JSONSerialization.jsonObject(
                 with: Data(contentsOf: summariesDir.appendingPathComponent("summary_\(today).json"))
@@ -533,7 +533,7 @@ final class ReportEngineTests: XCTestCase {
         let snapFile = kindDir.appendingPathComponent("update-status_20260101T000000.json")
         try Data("[]".utf8).write(to: snapFile)
         // Set mtime 2 days back so it is definitely not today.
-        let twoDaysAgo = Date().addingTimeInterval(-2 * 86_400)
+        let twoDaysAgo = Date().calendarDays(ago: 2)
         try FileManager.default.setAttributes(
             [.modificationDate: twoDaysAgo], ofItemAtPath: snapFile.path)
 
@@ -602,7 +602,7 @@ final class ReportEngineTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dataDir) }
 
         // Seed today's summary so emit will short-circuit.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let existing = summariesDir.appendingPathComponent("summary_\(today).json")
         let payload: [String: Any] = [
             "date": today, "totalDevices": 42, "source": "jamf-cli",
@@ -611,7 +611,7 @@ final class ReportEngineTests: XCTestCase {
 
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let captured = LogCapture()
-        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon) { line in
             captured.append(line)
         }
 
@@ -637,7 +637,7 @@ final class ReportEngineTests: XCTestCase {
         // will return nil because every kind comes back empty.
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
         let captured = LogCapture()
-        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+        engine.emitSummaryJSON(summariesDir: summariesDir, day: .testNoon) { line in
             captured.append(line)
         }
 
@@ -648,7 +648,7 @@ final class ReportEngineTests: XCTestCase {
         )
 
         // No file should have been written.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: summaryFile.path),
@@ -689,6 +689,47 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertEqual(lines.first, "a,b,c,d")
         XCTAssertEqual(lines.dropFirst().first,
                        "\t\t=cmd|calc,\t=1+1,\"\t=HYPERLINK(\"\"http://x\"\")\",MacBook Pro")
+    }
+
+    /// Sectioned `computers` rows (2.8.0 on) must fill `section.key` columns, with EA columns
+    /// last and the EA matched through `general.name`.
+    func testInventoryCSVFlattensSectionsAndMergesEAByGeneralName() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-inventory-flat-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testonly-inventory-flat"
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        let computers = dataDir.appendingPathComponent("computers", isDirectory: true)
+        let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        for dir in [computers, eaDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let rows: [[String: Any]] = [[
+            "id": "7", "udid": "U-1",
+            "general": ["name": "Lab Mac", "remoteManagement": ["managed": true]],
+            "hardware": ["totalRamMegabytes": 16384, "apps": ["a", "b"], "empty": [String: String]()],
+        ]]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: computers.appendingPathComponent("computers_20260101T000000.json"))
+        let eas: [[String: Any]] = [["device": "Lab Mac", "ea_name": "Dept", "value": "IT"]]
+        try JSONSerialization.data(withJSONObject: eas)
+            .write(to: eaDir.appendingPathComponent("ea-results_20260101T000000.json"))
+        let output = root.appendingPathComponent("inventory.csv")
+
+        try await ReportEngine.inventoryCSV(
+            profile: profile, workspacePaths: WorkspacePaths.self, outputURL: output)
+
+        let lines = try String(contentsOf: output, encoding: .utf8)
+            .components(separatedBy: "\n")
+        XCTAssertEqual(lines.first,
+                       "general.name,general.remoteManagement.managed,hardware.totalRamMegabytes,id,udid,Dept")
+        XCTAssertEqual(lines.dropFirst().first, "Lab Mac,true,16384,7,U-1,IT")
     }
 
     // MARK: - S2: collectPatchReleaseDates rejects an unsafe title id
@@ -826,9 +867,9 @@ final class ReportEngineTests: XCTestCase {
         let liveKinds: Set<String> = ["security"]
 
         let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
-        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: liveKinds)
+        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: liveKinds, day: .testNoon)
 
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         let summaryURL = summariesDir.appendingPathComponent("summary_\(today).json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
 
@@ -854,11 +895,18 @@ final class ReportEngineTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         try ReportEngine.initializeWorkspace(
-            profile: "init-default", workspacesRoot: root, seedConfigURL: nil, onLine: { _ in })
+            profile: "init-default", workspacesRoot: root, onLine: { _ in })
 
         let configURL = root.appendingPathComponent("init-default/config.yaml")
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertFalse(text.contains("columns:"), "columns is retired")
-        XCTAssertNoThrow(try ConfigLoader.load(from: configURL))
+        // No jamf-cli in a test, so the profile's auth is unknown: Jamf Pro plus the Platform
+        // slot, as the block seed writes it.
+        XCTAssertEqual(text, ScaffoldService.minimalConfigYAML(
+            profile: "init-default", eas: [], workspace: .init(platform: true)))
+        let config = try ConfigLoader.load(from: configURL)
+        XCTAssertEqual(config.securityAgents?.count ?? 0, 0, "no example agents")
+        XCTAssertEqual(config.customEas?.count ?? 0, 0, "no example EAs")
+        XCTAssertFalse(text.contains("compliance:"), "no example compliance columns")
     }
 }

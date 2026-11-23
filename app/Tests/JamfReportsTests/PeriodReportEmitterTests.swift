@@ -42,6 +42,25 @@ final class PeriodReportEmitterTests: XCTestCase {
             profile: "acme-prod", generatedAt: d("2026-07-15"))
     }
 
+    func testAboutCarriesTheScopeLineOnlyForALimitedLogin() throws {
+        func about(_ scope: SiteScope) throws -> [String] {
+            let sheet = try XCTUnwrap(
+                PeriodReportEmitter.workbook(for: makeModel(), siteScope: scope)
+                    .sheet(named: "About"))
+            return sheet.cells.compactMap { cell -> String? in
+                if case .string(let text) = cell.value { return text }
+                return nil
+            }
+        }
+        let limited = SiteScope.limited(computers: .init(seen: 1, total: 2), mobileDevices: nil)
+        XCTAssertTrue(try about(limited).contains {
+            $0.contains("limited to some sites") && $0.contains("1 of 2 managed computers")
+        })
+        for scope in [SiteScope.whole, .unknown, .notApplicable] {
+            XCTAssertFalse(try about(scope).contains { $0.contains("limited to some sites") })
+        }
+    }
+
     func testWorkbookHasSummaryDailyAndAboutSheets() {
         let wb = PeriodReportEmitter.workbook(for: makeModel())
         XCTAssertNotNil(wb.sheet(named: "Summary"))

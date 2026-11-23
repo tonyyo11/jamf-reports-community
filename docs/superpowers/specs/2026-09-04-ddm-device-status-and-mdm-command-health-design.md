@@ -1,7 +1,7 @@
 # DDM device status and MDM command health (2.8.0) — design
 
-Status: approved in brainstorming 2026-09-04; shapes verified against a production
-Jamf Pro instance the same day, including a failed-command capture. Shipped in 2.8.0.
+Status: shipped in 2.8.0. Approved in brainstorming 2026-09-04; shapes verified against a
+production Jamf Pro instance the same day, including a failed-command capture.
 Inspiration: ScottEKendall/JAMF-Pro-Scripts (JAMFGetDDMInfo, JAMFClearFailedMDM).
 Read side only. The app's mutating jamf-cli surface stays at zero.
 

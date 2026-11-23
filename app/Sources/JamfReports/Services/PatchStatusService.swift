@@ -48,9 +48,26 @@ struct PatchStatusService: Sendable {
             PatchStatusService.fleetCompliancePct(titles)
         }
 
-        /// Number of devices with patch failures, grouped by policy name.
-        var failuresByTitle: [String: Int] {
-            Dictionary(failures.map { ($0.policy, 1) }, uniquingKeysWith: +)
+        /// True when a failure scan was read, so a title with none shows 0, not a dash.
+        var failuresScanned = false
+
+        /// Distinct failing devices per patch title; nil when no failure scan was read. A
+        /// failure row names its patch policy, not the title, and no snapshot links the two by
+        /// ID, so a policy counts for the title it is named after: exactly, or "<title> …"
+        /// with the longest such title winning ("Firefox 130.0" is Firefox's).
+        // shortcut: a policy named unlike its title counts for none; join on the policy's
+        // softwareTitleConfigurationId once a collect kind carries patch policies.
+        var failingDevicesByTitle: [String: Int]? {
+            guard failuresScanned else { return nil }
+            let names = Set(titles.map(\.title)).sorted { $0.count > $1.count }
+            var devices: [String: Set<String>] = [:]
+            for row in failures {
+                guard let title = names.first(where: {
+                    row.policy == $0 || row.policy.hasPrefix($0 + " ")
+                }) else { continue }
+                devices[title, default: []].insert(row.deviceId.isEmpty ? row.device : row.deviceId)
+            }
+            return devices.mapValues(\.count)
         }
 
         /// Total unique devices that have at least one patch failure.
@@ -76,7 +93,8 @@ struct PatchStatusService: Sendable {
             lhs.failures == rhs.failures &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
-            lhs.sourceDates == rhs.sourceDates
+            lhs.sourceDates == rhs.sourceDates &&
+            lhs.failuresScanned == rhs.failuresScanned
         }
     }
 
@@ -87,7 +105,11 @@ struct PatchStatusService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let patchDir = dir.appendingPathComponent("patch-status", isDirectory: true)
         let failuresDir = dir.appendingPathComponent("patch-device-failures", isDirectory: true)
 
@@ -105,36 +127,29 @@ struct PatchStatusService: Sendable {
             return nil
         }
 
-        guard let titlesData = try? Data(contentsOf: titlesURL) else {
-            AppLogger.collect.info(
-                "PatchStatusService: could not read patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+        guard let titlesData = BoundedFile.readSnapshotLogged(titlesURL) else { return nil }
 
         guard let titles = (try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData)) else {
             AppLogger.collect.info(
-                "PatchStatusService: failed to decode patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
+                "PatchStatusService: failed to decode patch-status file \(titlesURL.lastPathComponent, privacy: .private)"
             )
             return nil
         }
 
         var failures: [PatchFailureRow] = []
+        var failuresScanned = false
         if let failuresURL, FileManager.default.fileExists(atPath: failuresURL.path) {
-            if let failuresData = try? Data(contentsOf: failuresURL) {
+            if let failuresData = BoundedFile.readSnapshotLogged(failuresURL) {
                 if let decodedFailures = try? JSONDecoder().decode(
                     [PatchFailureRow].self, from: failuresData
                 ) {
                     failures = decodedFailures
+                    failuresScanned = true
                 } else {
                     AppLogger.collect.warning(
-                        "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
+                        "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .private)"
                     )
                 }
-            } else {
-                AppLogger.collect.warning(
-                    "PatchStatusService: could not read patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
-                )
             }
         }
 
@@ -151,13 +166,15 @@ struct PatchStatusService: Sendable {
             sourceDates["patch-device-failures"] = fmtime
         }
 
-        return Snapshot(
+        var snapshot = Snapshot(
             titles: titles,
             failures: failures,
             sourceFile: titlesURL,
             snapshotDate: mtime,
             sourceDates: sourceDates
         )
+        snapshot.failuresScanned = failuresScanned
+        return snapshot
     }
 
     // MARK: - Fleet compliance
@@ -196,11 +213,18 @@ struct PatchStatusService: Sendable {
     // MARK: - Internals
 
     /// Parse "83%" into 83.0, "100%" into 100.0, etc.
-    /// Returns 0 on any parse failure since compliance percentage is decorative
-    /// (the actual device counts are the source of truth).
-    static func parseCompliancePct(_ raw: String) -> Double {
+    /// Nil for "N/A", blank or any other text: Jamf did not measure it, which is not 0%.
+    static func parseCompliancePct(_ raw: String) -> Double? {
         let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: "% "))
-        return Double(stripped) ?? 0
+        guard let value = Double(stripped), value.isFinite else { return nil }
+        return value
+    }
+
+    /// Lowest share first; a title with no measured share sorts last.
+    static func sortsBefore(_ lhs: PatchStatusRow, _ rhs: PatchStatusRow) -> Bool {
+        guard let lhsPct = parseCompliancePct(lhs.compliancePct) else { return false }
+        guard let rhsPct = parseCompliancePct(rhs.compliancePct) else { return true }
+        return lhsPct < rhsPct
     }
 
     // MARK: - CSV export

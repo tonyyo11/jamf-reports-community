@@ -55,6 +55,15 @@ struct FleetInsightInput: Sendable, Equatable {
     let focus: String
     let facts: [Fact]
     let notes: [String]
+    /// The workspace's `display.percent_decimals`, so the model's figures match the screen's.
+    var percentFormat: PercentFormat = .standard
+
+    /// This input with the figures printed as `format` prints them.
+    func formatted(_ format: PercentFormat) -> FleetInsightInput {
+        var copy = self
+        copy.percentFormat = format
+        return copy
+    }
 
     enum Value: Sendable, Equatable {
         case percent(Double)
@@ -86,15 +95,18 @@ struct FleetInsightInput: Sendable, Equatable {
     /// "down" with its size, in percentage points for shares, whole numbers for counts and
     /// one decimal for numbers, then "better" or "worse" when it has a good direction.
     ///
-    /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
-    /// token (the widely-used rough heuristic; the generator additionally caps
-    /// the budget at the live model's `contextSize / 4`). If the rendered
-    /// context exceeds the budget it is truncated on a line boundary so a
-    /// partial fact is never emitted.
+    /// `maxApproxTokens` bounds the size at `charsPerToken` characters per token;
+    /// the generator sizes it from the live model's room and tokenizer. An over-budget
+    /// context is cut on a line boundary so a partial fact is never emitted.
     func promptContext(maxApproxTokens: Int = 1_500) -> String {
-        let lines = [clean(title), "Focus: \(clean(focus))"] + facts.map(\.line) + notes.map(clean)
+        let lines = [clean(title), "Focus: \(clean(focus))"]
+            + facts.map { $0.line(format: percentFormat) } + notes.map(clean)
         return Self.budget(lines, maxApproxTokens: maxApproxTokens)
     }
+
+    /// Latin text runs three to four characters per token; the low end keeps the
+    /// heuristic from undercounting hex placeholders, paths and exit codes.
+    static let charsPerToken = 3
 
     /// The most characters any one field (title, focus, label, text value, note) sends.
     static let fieldLimit = 200
@@ -144,10 +156,10 @@ struct FleetInsightInput: Sendable, Equatable {
         return SummaryJSONParser.dateFormatter.string(from: parsed)
     }
 
-    /// Truncate the context to `maxApproxTokens` on a line boundary. ~4 chars
-    /// per token; drops whole trailing lines so no partial fact is emitted.
+    /// Truncate the context to `maxApproxTokens` on a line boundary, dropping whole
+    /// trailing lines so no partial fact is emitted.
     static func budget(_ lines: [String], maxApproxTokens: Int) -> String {
-        let maxChars = max(0, maxApproxTokens) * 4
+        let maxChars = max(0, maxApproxTokens) * charsPerToken
         var kept: [String] = []
         var used = 0
         for line in lines {
@@ -183,11 +195,11 @@ extension FleetInsightInput {
         let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
         let candidates: [Fact?] = [
             // The Mac count only: a fleet with no Macs has no Mac fact, and its mobile count
-            // stands in so the digest is never empty.
+            // stands in so the digest is never empty (the `mobile` facts below, when it has them).
             current.totalDevices > 0
                 ? Fact(label: "Managed Macs", value: .count(current.totalDevices),
                        prior: nil, polarity: .neutral)
-                : current.mobileDeviceCount.map {
+                : current.mobile != nil ? nil : current.mobileDeviceCount.map {
                     Fact(label: "Managed mobile devices (no Macs in this fleet)",
                          value: .count($0), prior: previous?.mobileDeviceCount.map(Value.count),
                          polarity: .neutral)
@@ -203,10 +215,14 @@ extension FleetInsightInput {
             share("System Integrity Protection (SIP) enabled", \.sipPct, "not enabled"),
             share("Firewall enabled", \.firewallPct, "not enabled"),
             share("Gatekeeper enabled", \.gatekeeperPct, "not enabled"),
-            share("Compliance" + proxy, \.compliancePct),
+            // The proxy and a benchmark's result, or two score definitions, do not compare.
+            share("Compliance" + proxy, \.compliancePct,
+                  comparable: previous?.complianceIsProxy == current.complianceIsProxy),
             current.securityScore.map {
                 Fact(label: "Security score", value: .number($0),
-                     prior: previous?.securityScore.map(Value.number), polarity: .higherIsBetter)
+                     prior: previous?.securityScoreBasis == current.securityScoreBasis
+                        ? previous?.securityScore.map(Value.number) : nil,
+                     polarity: .higherIsBetter)
             },
             count("Stale devices (no recent check-in)", \.staleCount),
             count("P0 action items", \.actionItemsP0),
@@ -214,7 +230,9 @@ extension FleetInsightInput {
             count("P2 action items", \.actionItemsP2),
         ]
         let facts = candidates.compactMap { $0 }
+            + mobileFacts(current: current, previous: previous)
         var notes = previous.map { ["Prior period for deltas: \(safeDate($0.date))."] } ?? []
+        if let note = current.mobile.flatMap(mobileNote) { notes.append(note) }
         if !facts.contains(where: { $0.prior != nil }) { notes.append(noEarlierDataNote) }
         return FleetInsightInput(
             title: "Fleet snapshot for \(safeDate(current.date))",
@@ -226,21 +244,74 @@ extension FleetInsightInput {
     }
 }
 
+// MARK: - Mobile digest
+
+extension FleetInsightInput {
+    /// The mobile devices' facts (mobile spec 3.1): the figures the Overview's Mobile Devices
+    /// section shows, from `DailySummary.mobile`, so a fleet with no mobile devices gets none.
+    /// A figure no device reports is left out, never sent as 0, and `mobileNote` says how many
+    /// devices each share counts.
+    fileprivate static func mobileFacts(current: DailySummary, previous: DailySummary?) -> [Fact] {
+        guard let mobile = current.mobile else { return [] }
+        let before = previous?.mobile
+        func share(
+            _ label: String, _ key: KeyPath<MobileSummary, MobileSummary.Share?>, _ rest: String
+        ) -> Fact? {
+            guard let now = mobile[keyPath: key], let pct = now.pct else { return nil }
+            return Fact(label: label, value: .percent(pct),
+                        prior: before?[keyPath: key]?.pct.map(Value.percent),
+                        polarity: .higherIsBetter, complement: rest)
+        }
+        func count(_ label: String, _ key: KeyPath<MobileSummary, Int?>) -> Fact? {
+            mobile[keyPath: key].map {
+                Fact(label: label, value: .count($0),
+                     prior: before?[keyPath: key].map(Value.count), polarity: .lowerIsBetter)
+            }
+        }
+        let managedLabel = current.totalDevices > 0
+            ? "Managed mobile devices" : "Managed mobile devices (no Macs in this fleet)"
+        return [
+            Fact(label: managedLabel, value: .count(mobile.managed),
+                 prior: before.map { Value.count($0.managed) }, polarity: .neutral),
+            share("Mobile supervised (of managed)", \.supervised, "not supervised"),
+            share("Mobile passcode compliant", \.passcode, "not passcode compliant"),
+            share("Mobile OS current", \.osCurrent,
+                  "behind the newest release of their iOS or iPadOS version"),
+            count("Stale mobile devices (no recent inventory update)", \.stale),
+            count("Jailbroken mobile devices", \.jailbroken),
+            Fact(label: "Unmanaged mobile devices", value: .count(mobile.unmanaged),
+                 prior: before.map { Value.count($0.unmanaged) }, polarity: .lowerIsBetter),
+            count("Mobile devices with software update errors", \.updateErrors),
+        ].compactMap { $0 }
+    }
+
+    /// What each mobile share is over: it counts the devices that report the field, so "of N"
+    /// keeps a small denominator from reading as the fleet.
+    fileprivate static func mobileNote(_ mobile: MobileSummary) -> String? {
+        let counted = [
+            ("supervised, over managed devices", mobile.supervised),
+            ("passcode", mobile.passcode), ("OS current", mobile.osCurrent),
+        ].compactMap { name, share in share.map { "\(name) \($0.of)" } }
+        return counted.isEmpty ? nil
+            : "Mobile shares count only the mobile devices that report each field: "
+                + counted.joined(separator: ", ") + "."
+    }
+}
+
 // MARK: - Rendering
 
 extension FleetInsightInput.Value {
-    var text: String {
+    func text(format: PercentFormat) -> String {
         switch self {
-        case .percent(let value): return String(format: "%.1f%%", tenths(value))
+        case .percent(let value): return format.text(value)
         case .count(let value): return "\(value)"
-        case .number(let value): return String(format: "%.1f", tenths(value))
+        // Every `.number` fact is a 0-100 score, printed as its percentage figure is.
+        case .number(let value): return format.numberText(value)
         case .text(let value): return value
         }
     }
 }
 
-/// Rounded once, so a share and its remainder always add up to 100.0%.
-private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 
 /// One line of at most `fieldLimit` characters, so a field can neither start a
 /// prompt line of its own nor crowd out the facts.
@@ -252,31 +323,33 @@ private func clean(_ field: String) -> String {
 extension FleetInsightInput.Fact {
     /// A share with a complement states both sides, so the model never has to
     /// invert "SIP enabled: 1.0%" itself. A neutral fact prints its value only.
-    var line: String {
-        let label = clean(self.label), shown = clean(value.text)
+    func line(format: PercentFormat) -> String {
+        let label = clean(self.label), shown = clean(value.text(format: format))
         var line = "- \(label): \(shown)"
         guard polarity != .neutral else { return line }
         if case .percent(let share) = value, let complement = complement.map(clean) {
-            let rest = FleetInsightInput.Value.percent(max(0, 100 - tenths(share))).text
+            // Rounded once, so a share and its remainder always add up to 100%.
+            let rest = FleetInsightInput.Value.percent(max(0, 100 - format.rounded(share)))
+                .text(format: format)
             // A complement with its own comma would otherwise run into "on".
             let on = complement.contains(",") ? ", on" : " on"
             line = "- \(label) on \(shown) of devices; \(complement)\(on) \(rest)"
         }
-        return change.map { line + " (\($0))" } ?? line
+        return change(format: format).map { line + " (\($0))" } ?? line
     }
 
     /// The change from `prior` as the model reads it: its direction in words, its size, then
     /// the verdict when the fact has a good direction. It is taken between the rounded
     /// figures the line prints, so "91.2% (up 0.1 pp)" can never occur.
-    private var change: String? {
+    private func change(format: PercentFormat) -> String? {
         let delta: Double, size: String
         switch (value, prior) {
         case (.percent(let now), .percent(let then)?):
-            delta = tenths(tenths(now) - tenths(then))
-            size = String(format: "%.1f pp", abs(delta))
+            delta = format.roundedChange(format.rounded(now) - format.rounded(then))
+            size = format.points(abs(delta))
         case (.number(let now), .number(let then)?):
-            delta = tenths(tenths(now) - tenths(then))
-            size = String(format: "%.1f", abs(delta))
+            delta = format.roundedChange(format.rounded(now) - format.rounded(then))
+            size = format.changeNumberText(abs(delta))
         case (.count(let now), .count(let then)?):
             delta = Double(now - then)
             size = "\(abs(now - then))"
@@ -291,21 +364,21 @@ extension FleetInsightInput.Fact {
     }
 }
 
-// MARK: - Gated @Generable companion (macOS 27 only)
+// MARK: - Gated @Generable companion
 
 #if canImport(FoundationModels) && compiler(>=6.4)   // 6.4 ships with Xcode 27 only
 import FoundationModels
 
 @available(macOS 27, *)
 extension FleetIntelligence {
-    /// Structured-output companion for guided generation. Lives INSIDE the gate
-    /// because `@Generable`/`@Guide` are macOS-27-only macros. Maps 1:1 to the
-    /// portable `FleetInsight`; never referenced outside this gate.
+    /// Structured-output companion for guided generation. `@Generable`/`@Guide` are
+    /// macOS 26+; they sit inside the macOS 27 gate with the rest of the layer. Maps 1:1 to
+    /// the portable `FleetInsight`; never referenced outside this gate.
     @Generable
     struct GeneratedFleetInsight {
         @Guide(description: "One sentence, plain-language summary of overall fleet health.")
         var headline: String
-        @Guide(description: "3 to 6 prioritized findings, each with a severity.")
+        @Guide(description: "Prioritized findings, each with a severity.", .count(3...6))
         var bullets: [GeneratedBullet]
     }
 
@@ -314,8 +387,21 @@ extension FleetIntelligence {
         @Guide(description: "A single concrete, actionable finding in plain language: one or two "
                + "short sentences under 40 words, ending in a full stop.")
         var text: String
-        @Guide(description: "One of: info, warning, critical.")
-        var severity: String
+        var severity: GeneratedSeverity
+    }
+
+    /// An enum, so the model can only emit one of the three; there is no text to parse.
+    @Generable
+    enum GeneratedSeverity {
+        case info, warning, critical
+
+        var portable: InsightBullet.Severity {
+            switch self {
+            case .info: return .info
+            case .warning: return .warning
+            case .critical: return .critical
+            }
+        }
     }
 
     /// Map the guided-generation value into the portable seam model.
@@ -323,10 +409,7 @@ extension FleetIntelligence {
         FleetInsight(
             headline: generated.headline,
             bullets: generated.bullets.map {
-                InsightBullet(
-                    text: $0.text,
-                    severity: InsightBullet.Severity(rawValue: $0.severity.lowercased()) ?? .info
-                )
+                InsightBullet(text: $0.text, severity: $0.severity.portable)
             }
         )
     }

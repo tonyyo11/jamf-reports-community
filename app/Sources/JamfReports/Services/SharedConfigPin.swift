@@ -48,6 +48,23 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var notifyHeartbeat: Bool = false
     /// `protect.backup_on_synced_storage`: whether a backup on shared storage includes Protect.
     var protectBackupOnSyncedStorage: Bool = false
+    /// `backup.pro_on_synced_storage`: whether a backup on shared storage includes Jamf Pro.
+    /// An absent key pins as false; whether it was absent is read from config.yaml, not the pin.
+    var proBackupOnSyncedStorage: Bool = false
+    /// `jamf_cli.keep_account_names`: whether saved snapshots keep account names. Pinned like the
+    /// backup opt-ins: only a confirmed true keeps them.
+    var keepAccountNames: Bool = false
+    /// `output.timestamp_authority`, pinned as the webhook is: `host[:port]` and the SHA-256 of
+    /// the URL, which can carry a token.
+    var timestampAuthorityHost: String = ""
+    var timestampAuthorityHash: String = ""
+    /// `profiles.platform` as the decoder reads it; "" without a `profiles:` block.
+    var platformProfile: String = ""
+    /// `profiles.security_cloud` as the decoder reads it; "" without a `profiles:` block.
+    var securityCloudProfile: String = ""
+    /// `jamf_cli.collect_skip` as every typed name, normalized, sorted and comma-joined; narrowed
+    /// to the optional kinds only when read, so a change to the kinds or the core set is no drift.
+    var collectSkip: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -61,16 +78,27 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case sharedEnabled = "shared_workspace.enabled"
         case historicalDir = "charts.historical_csv_dir"
         case protectProfile = "protect.profile"
+        case platformProfile = "profiles.platform"
+        case securityCloudProfile = "profiles.security_cloud"
         case notifyDetail = "notify.detail"
         case notifyURL = "notify.url"
         case notifyHeartbeat = "notify.heartbeat"
         case htmlHistoryFile = "html.history_file"
         case brandingLogoPath = "branding.logo_path"
         case protectBackupOnSyncedStorage = "protect.backup_on_synced_storage"
+        case proBackupOnSyncedStorage = "backup.pro_on_synced_storage"
+        case keepAccountNames = "jamf_cli.keep_account_names"
+        case timestampAuthority = "output.timestamp_authority"
+        case collectSkip = "jamf_cli.collect_skip"
 
-        /// `text(of:)` with everything a comparison needs: the webhook's full URL hash.
+        /// `text(of:)` with everything a comparison needs: a URL's full hash.
         fileprivate func token(of pin: SharedConfigPin) -> String {
-            self == .notifyURL ? "\(pin.notifyURLHost) \(pin.notifyURLHash)" : text(of: pin)
+            switch self {
+            case .notifyURL: "\(pin.notifyURLHost) \(pin.notifyURLHash)"
+            case .timestampAuthority:
+                "\(pin.timestampAuthorityHost) \(pin.timestampAuthorityHash)"
+            default: text(of: pin)
+            }
         }
 
         /// The keys that name a folder or file the app reads or writes.
@@ -97,16 +125,24 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .sharedEnabled: pin.sharedEnabled
             case .historicalDir: pin.historicalDir
             case .protectProfile: pin.protectProfile
+            case .platformProfile: pin.platformProfile
+            case .securityCloudProfile: pin.securityCloudProfile
             case .notifyDetail: pin.notifyDetail
             case .notifyHeartbeat: String(pin.notifyHeartbeat)
             case .htmlHistoryFile: pin.htmlHistoryFile
             case .brandingLogoPath: pin.brandingLogoPath
             case .protectBackupOnSyncedStorage: String(pin.protectBackupOnSyncedStorage)
-            case .notifyURL:
-                pin.notifyURLHash.isEmpty
-                    ? pin.notifyURLHost
-                    : "\(pin.notifyURLHost) (URL fingerprint \(pin.notifyURLHash.prefix(8)))"
+            case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
+            case .keepAccountNames: String(pin.keepAccountNames)
+            case .collectSkip: pin.collectSkip
+            case .notifyURL: Self.urlText(pin.notifyURLHost, pin.notifyURLHash)
+            case .timestampAuthority:
+                Self.urlText(pin.timestampAuthorityHost, pin.timestampAuthorityHash)
             }
+        }
+
+        private static func urlText(_ host: String, _ hash: String) -> String {
+            hash.isEmpty ? host : "\(host) (URL fingerprint \(hash.prefix(8)))"
         }
 
         fileprivate func copy(from source: SharedConfigPin, into pin: inout SharedConfigPin) {
@@ -121,15 +157,25 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .sharedEnabled: pin.sharedEnabled = source.sharedEnabled
             case .historicalDir: pin.historicalDir = source.historicalDir
             case .protectProfile: pin.protectProfile = source.protectProfile
+            case .platformProfile: pin.platformProfile = source.platformProfile
+            case .securityCloudProfile:
+                pin.securityCloudProfile = source.securityCloudProfile
             case .notifyDetail: pin.notifyDetail = source.notifyDetail
             case .notifyHeartbeat: pin.notifyHeartbeat = source.notifyHeartbeat
             case .htmlHistoryFile: pin.htmlHistoryFile = source.htmlHistoryFile
             case .brandingLogoPath: pin.brandingLogoPath = source.brandingLogoPath
             case .protectBackupOnSyncedStorage:
                 pin.protectBackupOnSyncedStorage = source.protectBackupOnSyncedStorage
+            case .proBackupOnSyncedStorage:
+                pin.proBackupOnSyncedStorage = source.proBackupOnSyncedStorage
+            case .keepAccountNames: pin.keepAccountNames = source.keepAccountNames
+            case .collectSkip: pin.collectSkip = source.collectSkip
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
+            case .timestampAuthority:
+                pin.timestampAuthorityHost = source.timestampAuthorityHost
+                pin.timestampAuthorityHash = source.timestampAuthorityHash
             }
         }
     }
@@ -170,23 +216,27 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     static let firstSightNote = "(first seen, not confirmed)"
     static let unreadableNote = "(pin unreadable)"
+    static let configUnreadableNote = "(config.yaml unreadable)"
 
     /// The pin for a workspace seen for the first time. What is already in the shared file may
-    /// have been written by a peer, so a folder outside the workspace, a `delete` retention and
-    /// Protect backups on synced storage turned on are pinned as unconfirmed: every run uses
-    /// the safe value for them until one Confirm. The webhook host and the other keys are
-    /// trust-on-first-use.
-    static func firstPin(current: SharedConfigPin, workspace: URL) -> SharedConfigPin {
+    /// have been written by a peer, so a folder outside the workspace, a `delete` retention,
+    /// Protect backups on synced storage turned on, a timestamp authority and a Platform profile
+    /// other than the workspace's own are pinned as unconfirmed: every run uses the safe value
+    /// for them until one Confirm. The webhook host and the other keys are trust-on-first-use.
+    static func firstPin(
+        current: SharedConfigPin, workspace: URL, profile: String
+    ) -> SharedConfigPin {
         var pin = current
         pin.pinnedKeys = Key.allCases.map(\.rawValue)
         pin.unconfirmed = unconfirmedKeys(
-            current: current, workspace: workspace, among: Set(Key.allCases)).map(\.rawValue)
+            current: current, workspace: workspace, profile: profile,
+            among: Set(Key.allCases)).map(\.rawValue)
         return pin
     }
 
     /// Of `keys`, those whose value in `current` must wait for a Confirm.
     private static func unconfirmedKeys(
-        current: SharedConfigPin, workspace: URL, among keys: Set<Key>
+        current: SharedConfigPin, workspace: URL, profile: String, among keys: Set<Key>
     ) -> [Key] {
         let root = workspace.resolvingSymlinksInPath().standardizedFileURL.path
         func outside(_ value: String) -> Bool {
@@ -206,13 +256,29 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             waiting.append(.retentionMode)
         }
         if current.protectBackupOnSyncedStorage { waiting.append(.protectBackupOnSyncedStorage) }
+        if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
+        if current.keepAccountNames { waiting.append(.keepAccountNames) }
+        // An address this Mac would send to is never taken on first sight.
+        if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
+        // D18: a Platform profile other than the workspace's own is held until confirmed.
+        // Compared exactly: a case variant of the workspace's name is held, which fails closed.
+        if !current.platformProfile.isEmpty, current.platformProfile != profile {
+            waiting.append(.platformProfile)
+        }
+        // D18: the Security Cloud login is held the same way, whatever it names.
+        if !current.securityCloudProfile.isEmpty { waiting.append(.securityCloudProfile) }
+        // A Protect login naming the workspace itself is a Protect-only environment, which a peer
+        // can plant as a folder; it runs only after this Mac confirms it.
+        if !current.protectProfile.isEmpty, current.protectProfile == profile {
+            waiting.append(.protectProfile)
+        }
         return waiting.filter(keys.contains)
     }
 
     /// `pin` with a first-sight pin for each key it holds no value for, nil when it holds them
     /// all. The same unconfirmed rule applies to those keys as at a workspace's first sight.
     static func adoptingMissingKeys(
-        _ pin: SharedConfigPin, current: SharedConfigPin, workspace: URL
+        _ pin: SharedConfigPin, current: SharedConfigPin, workspace: URL, profile: String
     ) -> SharedConfigPin? {
         let missing = Set(Key.allCases.filter { !pin.pinnedKeys.contains($0.rawValue) })
         guard !missing.isEmpty else { return nil }
@@ -221,8 +287,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             key.copy(from: current, into: &upgraded)
             upgraded.pinnedKeys.append(key.rawValue)
         }
+        if missing.contains(.collectSkip) {
+            upgraded.collectSkip = collectSkipText(
+                collectSkipNames(current.collectSkip).filter(legacyCollectSkipKinds.contains))
+        }
         upgraded.unconfirmed += unconfirmedKeys(
-            current: current, workspace: workspace, among: missing).map(\.rawValue)
+            current: current, workspace: workspace, profile: profile, among: missing
+        ).map(\.rawValue)
         return upgraded
     }
 
@@ -232,8 +303,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `RetentionConfig` and `NotifyConfig` read them. Nil when the file is missing or unreadable.
     static func current(workspace: URL) -> SharedConfigPin? {
         let url = workspace.appendingPathComponent("config.yaml")
-        guard let text = try? ConfigLoader.readText(at: url),
-              let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return nil }
+        guard let text = try? ConfigLoader.readText(at: url) else { return nil }
+        return current(fromYAML: text)
+    }
+
+    /// The pinned values `text` holds, read as `current(workspace:)` reads the file.
+    static func current(fromYAML text: String) -> SharedConfigPin? {
+        guard let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return nil }
         func raw(_ section: String, _ key: String) -> Any? {
             ConfigLoader.rawValue(at: [section, key], in: root)
         }
@@ -248,6 +324,18 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let notifyDetail = detail.isEmpty ? "full" : detail
         let typedURL = ((raw("notify", "url") as? String) ?? "")
             .trimmingCharacters(in: .whitespaces)
+        let authority = ((raw("output", "timestamp_authority") as? String) ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        // The Protect login is `profiles.protect` once that block exists, as `EnvironmentProfiles`
+        // reads it, so the one pin key covers both forms and a peer cannot add the block unseen.
+        // Read as the decoder reads it, so the pinned name is the one jamf-cli receives.
+        let protectProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
+            ? raw("profiles", "protect") : raw("protect", "profile")
+        let platformProfile = ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
+            ? raw("profiles", "platform") : nil
+        let securityCloudProfile =
+            ConfigLoader.rawValue(at: ["profiles"], in: root) is [String: Any]
+            ? raw("profiles", "security_cloud") : nil
         return SharedConfigPin(
             allowAbsolutePaths: WorkspacePaths.optIn(raw("output", "allow_absolute_paths")) == true,
             outputDir: path("output", "output_dir"),
@@ -258,7 +346,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             retentionArchiveDir: path("retention", "archive_dir"),
             sharedEnabled: (raw("shared_workspace", "enabled") as? Bool).map { String($0) } ?? "",
             historicalDir: path("charts", "historical_csv_dir"),
-            protectProfile: ((raw("protect", "profile") as? String) ?? "")
+            protectProfile: (ConfigLoader.textValue(protectProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces),
             notifyDetail: notifyDetail,
             notifyURLHost: webhookHost(typedURL),
@@ -267,9 +355,38 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             brandingLogoPath: path("branding", "logo_path"),
             notifyHeartbeat: (raw("notify", "heartbeat") as? Bool) ?? false,
             protectBackupOnSyncedStorage:
-                (raw("protect", "backup_on_synced_storage") as? Bool) ?? false
+                (raw("protect", "backup_on_synced_storage") as? Bool) ?? false,
+            proBackupOnSyncedStorage:
+                (raw("backup", "pro_on_synced_storage") as? Bool) ?? false,
+            keepAccountNames: (raw("jamf_cli", "keep_account_names") as? Bool) ?? false,
+            timestampAuthorityHost: webhookHost(authority),
+            timestampAuthorityHash: authority.isEmpty ? "" : SharedConfigPin.sha256Hex(authority),
+            platformProfile: (ConfigLoader.textValue(platformProfile) ?? "")
+                .trimmingCharacters(in: .whitespaces),
+            securityCloudProfile: (ConfigLoader.textValue(securityCloudProfile) ?? "")
+                .trimmingCharacters(in: .whitespaces),
+            collectSkip: collectSkipText(raw("jamf_cli", "collect_skip"))
         )
     }
+
+    /// The pinned form of a `collect_skip` value: every typed name normalized, sorted, joined.
+    static func collectSkipText(_ raw: Any?) -> String {
+        let names = (raw as? [Any])?.compactMap { $0 as? String } ?? []
+        return Set(names.map(ReportEngine.normalizedKind).filter { !$0.isEmpty })
+            .sorted().joined(separator: ", ")
+    }
+
+    static func collectSkipNames(_ text: String) -> [String] {
+        text.isEmpty ? [] : text.components(separatedBy: ", ")
+    }
+
+    /// What builds before 2.12 honoured in `collect_skip`. A pin learning the key takes only
+    /// these at first sight: any other entry was ignored then, so it must not come alive unseen.
+    static let legacyCollectSkipKinds: Set<String> = [
+        "patch-status", "patch-device-failures", "profile-status", "update-status",
+        "update-device-failures", "sofa", "security-risk", "school-device-detail",
+        ReportEngine.dashboardKind,
+    ]
 
     private static func webhookHost(_ url: String) -> String {
         guard let parsed = URL(string: url), let host = parsed.host?.lowercased() else { return "" }
@@ -282,10 +399,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
 
     // MARK: - Store
 
-    /// `<AppSupport>/shared-config-pin-<profile>.json`, 0600.
-    static func storeURL(profile: String, appSupport: URL) -> URL {
-        appSupport.appendingPathComponent(
-            "shared-config-pin-\(ProfileName.pathComponent(profile)).json")
+    /// `<AppSupport>/shared-config-pin-<WorkspaceID.pathComponent>.json`, 0600: the name a pin
+    /// had before 2.12, when the workspace ID was its profile. Nil for a name that is no
+    /// workspace ID, which has no pin.
+    static func storeURL(workspace: String, appSupport: URL) -> URL? {
+        WorkspaceID(workspace).map {
+            appSupport.appendingPathComponent("shared-config-pin-\($0.pathComponent).json")
+        }
     }
 
     /// What the store holds. Only a missing file is a first sight: a pin that exists but
@@ -302,8 +422,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     static func read(profile: String, appSupport: URL) -> Stored {
-        let url = storeURL(profile: profile, appSupport: appSupport)
-        guard FileManager.default.fileExists(atPath: url.path) else { return .absent }
+        guard let url = storeURL(workspace: profile, appSupport: appSupport),
+              FileManager.default.fileExists(atPath: url.path) else { return .absent }
         guard let data = try? Data(contentsOf: url),
               let pin = try? JSONDecoder().decode(SharedConfigPin.self, from: data)
         else { return .unreadable }
@@ -315,7 +435,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     static func save(_ pin: SharedConfigPin, profile: String, appSupport: URL) throws {
-        let url = storeURL(profile: profile, appSupport: appSupport)
+        guard let url = storeURL(workspace: profile, appSupport: appSupport) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(pin).write(to: url, options: .atomic)
@@ -331,9 +453,16 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let drifts: [Drift]
         /// Lines for the run log about the check itself, such as a pin that could not be saved.
         var notes: [String] = []
+        /// No pin applies: the workspace is not shared and this Mac holds no pin for it (or the
+        /// profile has no workspace). Only then is a nil `pinned` with no drifts a clean answer.
+        var isLocal = false
 
         func isDrifted(_ key: Key) -> Bool { drifts.contains { $0.key == key } }
     }
+
+    /// The token an unreadable config.yaml's drifts carry: no real value has it, so a Confirm shown
+    /// while the file could not be read never matches an unset key once it can.
+    static let unreadableToken = "\u{0}unreadable"
 
     /// Compares config.yaml with this Mac's pin. A shared workspace with no pin yet pins what it
     /// holds now (the values the operator set up with) and reports no drift. `persist: false`
@@ -343,22 +472,32 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         syncProbe: CloudStorage.SyncProbe = .live
     ) -> Check {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            return Check(workspace: nil, pinned: nil, drifts: [])
+            return Check(workspace: nil, pinned: nil, drifts: [], isLocal: true)
         }
-        guard let current = sharedCurrent(
-            profile: profile, workspace: workspace, appSupport: appSupport, syncProbe: syncProbe)
-        else {
-            return Check(workspace: workspace, pinned: nil, drifts: [])
+        let current: SharedConfigPin
+        switch sharedCurrent(
+            profile: profile, workspace: workspace, appSupport: appSupport, syncProbe: syncProbe) {
+        case .local:
+            return Check(workspace: workspace, pinned: nil, drifts: [], isLocal: true)
+        case .unreadable:
+            // Fail closed: a pinned or shared workspace whose config.yaml cannot be read now (gone,
+            // oversized, not a file) has no value to compare, so every key reads as changed.
+            let drifts = Key.allCases.map {
+                Drift(key: $0, pinned: configUnreadableNote, current: configUnreadableNote,
+                      currentToken: unreadableToken, pinnedIsNote: true)
+            }
+            return Check(workspace: workspace, pinned: nil, drifts: drifts)
+        case .readable(let read): current = read
         }
         switch read(profile: profile, appSupport: appSupport) {
         case .absent:
             var notes: [String] = []
-            let first = firstPin(current: current, workspace: workspace)
+            let first = firstPin(current: current, workspace: workspace, profile: profile)
             do {
                 if persist { try save(first, profile: profile, appSupport: appSupport) }
             } catch {
                 notes.append("[warn] shared config could not be pinned on this Mac: "
-                    + error.localizedDescription)
+                    + error.englishDescription)
             }
             return Check(workspace: workspace, pinned: first,
                          drifts: unconfirmedDrifts(pin: first, current: current, among: []),
@@ -373,15 +512,16 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case .pin(let stored):
             var notes: [String] = []
             var pinned = stored
-            let upgraded = adoptingMissingKeys(stored, current: current, workspace: workspace)
+            let upgraded = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile)
             if let upgraded { pinned = upgraded }
-            let optedOut = repinningProtectOptOut(&pinned, current: current)
+            let optedOut = repinningBackupOptOuts(&pinned, current: current)
             if upgraded != nil || optedOut {
                 do {
                     if persist { try save(pinned, profile: profile, appSupport: appSupport) }
                 } catch {
                     notes.append("[warn] shared config could not be pinned on this Mac: "
-                        + error.localizedDescription)
+                        + error.englishDescription)
                 }
             }
             let changed = diff(pinned: pinned, current: current)
@@ -391,18 +531,26 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         }
     }
 
-    /// Re-pins `protect.backup_on_synced_storage` to false when config.yaml no longer says true:
-    /// moving to the safe value needs no Confirm, and a later true is then drift again.
-    private static func repinningProtectOptOut(
+    /// Re-pins the opt-ins (`protect.backup_on_synced_storage`, `backup.pro_on_synced_storage`,
+    /// `jamf_cli.keep_account_names`) to false when config.yaml no longer says true: moving to
+    /// the safe value needs no Confirm, and a later true is then drift again.
+    private static func repinningBackupOptOuts(
         _ pin: inout SharedConfigPin, current: SharedConfigPin
     ) -> Bool {
-        let key = Key.protectBackupOnSyncedStorage
-        guard !current.protectBackupOnSyncedStorage,
-              pin.protectBackupOnSyncedStorage || pin.unconfirmed.contains(key.rawValue)
-        else { return false }
-        pin.protectBackupOnSyncedStorage = false
-        pin.unconfirmed.removeAll { $0 == key.rawValue }
-        return true
+        let optIns: [(Key, WritableKeyPath<SharedConfigPin, Bool>)] = [
+            (.protectBackupOnSyncedStorage, \.protectBackupOnSyncedStorage),
+            (.proBackupOnSyncedStorage, \.proBackupOnSyncedStorage),
+            (.keepAccountNames, \.keepAccountNames),
+        ]
+        var changed = false
+        for (key, field) in optIns {
+            guard !current[keyPath: field],
+                  pin[keyPath: field] || pin.unconfirmed.contains(key.rawValue) else { continue }
+            pin[keyPath: field] = false
+            pin.unconfirmed.removeAll { $0 == key.rawValue }
+            changed = true
+        }
+        return changed
     }
 
     /// `changed` plus the first-sight keys still awaiting a Confirm, in `Key.allCases` order.
@@ -425,19 +573,29 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         sharedEnabled == true || onSharedStorage || pinExists
     }
 
-    /// `current(workspace:)` for a workspace that is pinned; nil for a local one.
+    private enum SharedRead {
+        case local, unreadable
+        case readable(SharedConfigPin)
+
+        var readable: SharedConfigPin? {
+            if case .readable(let pin) = self { return pin }
+            return nil
+        }
+    }
+
+    /// `current(workspace:)` for a workspace that is pinned; `.local` for a local one, and
+    /// `.unreadable` for a pinned or shared one whose config.yaml cannot be read.
     private static func sharedCurrent(
         profile: String, workspace: URL, appSupport: URL, syncProbe: CloudStorage.SyncProbe = .live
-    ) -> SharedConfigPin? {
+    ) -> SharedRead {
         let sharedConfig = (try? ConfigLoader.load(
             from: workspace.appendingPathComponent("config.yaml")))?.sharedWorkspace
         guard appliesTo(
             sharedEnabled: sharedConfig?.enabled,
             onSharedStorage: CloudStorage.isSharedStorage(workspace, syncProbe: syncProbe),
-            pinExists: FileManager.default.fileExists(
-                atPath: storeURL(profile: profile, appSupport: appSupport).path))
-        else { return nil }
-        return current(workspace: workspace)
+            pinExists: hasPin(profile: profile, appSupport: appSupport))
+        else { return .local }
+        return current(workspace: workspace).map(SharedRead.readable) ?? .unreadable
     }
 
     enum ConfirmError: Error, LocalizedError {
@@ -454,17 +612,21 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     static func confirm(
         profile: String, drifts: [Drift], appSupport: URL = AppSupport.directory()
     ) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile),
-              let current = sharedCurrent(
-                profile: profile, workspace: workspace, appSupport: appSupport)
-        else { return }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return }
+        let shared = sharedCurrent(profile: profile, workspace: workspace, appSupport: appSupport)
+        // No value to compare with what the row showed, so nothing is confirmed.
+        if case .unreadable = shared, !drifts.isEmpty { throw ConfirmError.changedSinceShown }
+        guard let current = shared.readable else { return }
         var pin: SharedConfigPin
         var unreadable = false
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = firstPin(current: current, workspace: workspace)
+        case .absent: pin = firstPin(current: current, workspace: workspace, profile: profile)
         case .pin(let stored):
-            pin = adoptingMissingKeys(stored, current: current, workspace: workspace) ?? stored
-        case .unreadable: pin = firstPin(current: current, workspace: workspace); unreadable = true
+            pin = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile) ?? stored
+        case .unreadable:
+            pin = firstPin(current: current, workspace: workspace, profile: profile)
+            unreadable = true
         }
         var confirmed = 0
         for drift in drifts where drift.key.token(of: current) == drift.currentToken {
@@ -479,20 +641,54 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         invalidateOverrides(for: workspace)
     }
 
-    /// Re-pins `keys` to what config.yaml holds now, for a save on this Mac that changed them.
-    /// Other keys stay as they are, drifted or not, and a pin that cannot be read stays so.
+    /// Re-pins each key in `written` to the text a save on this Mac just wrote for it (`typed`,
+    /// as typed on the screen), only while config.yaml still holds that value: a peer's copy
+    /// landing between the write and this call stays drifted. Best effort; a failure is logged.
+    static func confirmWritten(
+        _ written: [Key: String], profile: String, appSupport: URL = AppSupport.directory()
+    ) {
+        let drifts = written.map { key, typed in
+            Drift(key: key, pinned: "", current: "", currentToken: writtenToken(key, typed))
+        }
+        guard !drifts.isEmpty else { return }
+        do {
+            try confirm(profile: profile, drifts: drifts, appSupport: appSupport)
+        } catch {
+            let reason = error.englishDescription
+            AppLogger.collect.warning(
+                "SharedConfigPin: did not confirm the saved values: \(reason, privacy: .private)")
+        }
+    }
+
+    /// `Key.token(of:)` for a value typed as `typed`, read as `current(fromYAML:)` reads it.
+    static func writtenToken(_ key: Key, _ typed: String) -> String {
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch key {
+        case .notifyURL:
+            return "\(webhookHost(trimmed)) \(trimmed.isEmpty ? "" : sha256Hex(trimmed))"
+        case .notifyDetail:
+            return trimmed.isEmpty ? "full" : trimmed.lowercased()
+        case .notifyHeartbeat: return trimmed
+        default: return WorkspacePaths.expandTilde(trimmed)
+        }
+    }
+
+    #if DEBUG
+    /// Re-pins `keys` to what config.yaml holds now. Tests only: a product caller would confirm
+    /// a peer's copy that landed after its write, so saves use `confirmWritten`.
     static func confirm(
         profile: String, keys: Set<Key>, appSupport: URL = AppSupport.directory()
     ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let current = sharedCurrent(
-                profile: profile, workspace: workspace, appSupport: appSupport)
+                profile: profile, workspace: workspace, appSupport: appSupport).readable
         else { return }
         var pin: SharedConfigPin
         switch read(profile: profile, appSupport: appSupport) {
-        case .absent: pin = firstPin(current: current, workspace: workspace)
+        case .absent: pin = firstPin(current: current, workspace: workspace, profile: profile)
         case .pin(let stored):
-            pin = adoptingMissingKeys(stored, current: current, workspace: workspace) ?? stored
+            pin = adoptingMissingKeys(
+                stored, current: current, workspace: workspace, profile: profile) ?? stored
         case .unreadable: return
         }
         for key in keys {
@@ -502,6 +698,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         try save(pin, profile: profile, appSupport: appSupport)
         invalidateOverrides(for: workspace)
     }
+    #endif
 
     // MARK: - Which saves confirm
 
@@ -547,14 +744,6 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return keys
     }
 
-    /// The pinned keys a config.yaml text sets, for a write this Mac made (onboarding, scaffold).
-    static func keysSet(inYAML text: String) -> Set<Key> {
-        guard let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return [] }
-        return Set(Key.allCases.filter {
-            ConfigLoader.rawValue(at: $0.rawValue.components(separatedBy: "."), in: root) != nil
-        })
-    }
-
     /// The profile whose workspace config.yaml `url` is, nil for any other file.
     static func profile(forConfigAt url: URL) -> String? {
         guard url.lastPathComponent == "config.yaml" else { return nil }
@@ -564,21 +753,33 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return ProfileName.name(fromPathComponent: folder.lastPathComponent)
     }
 
-    /// After this Mac wrote `url` (onboarding or `scaffold --out`): confirm exactly the keys
-    /// that write set. Keys it left out stay as they are, so joining a peer's folder never
-    /// accepts the peer's retention, webhook or Protect profile. Best effort; a failure is logged.
+    /// After this Mac wrote `written` to `url` (onboarding or `scaffold --out`): confirm exactly
+    /// the keys that text sets, each only while the file still holds the value written, so a peer
+    /// that replaces the file in between is never confirmed. Keys it left out stay as they are,
+    /// so joining a peer's folder never accepts the peer's retention, webhook or Protect profile.
+    /// Best effort; a failure is logged.
     static func confirmWrittenConfig(
-        at url: URL, profile: String? = nil, appSupport: URL = AppSupport.directory()
+        _ written: String, at url: URL, profile: String? = nil,
+        appSupport: URL = AppSupport.directory()
     ) {
         guard let profile = profile ?? Self.profile(forConfigAt: url),
-              let text = try? ConfigLoader.readText(at: url) else { return }
-        let keys = keysSet(inYAML: text)
-        guard !keys.isEmpty else { return }
-        confirmBestEffort(profile: profile, keys: keys, appSupport: appSupport)
+              let values = current(fromYAML: written) else { return }
+        // Every key, the ones the file leaves unset too: a pin left by an earlier workspace of
+        // this name would otherwise read a key the old file had as changed (beta 2690). Each is
+        // confirmed only while config.yaml still holds what was written.
+        let drifts = Key.allCases.map {
+            Drift(key: $0, pinned: "", current: "", currentToken: $0.token(of: values))
+        }
+        guard !drifts.isEmpty else { return }
+        do {
+            try confirm(profile: profile, drifts: drifts, appSupport: appSupport)
+        } catch {
+            let reason = error.englishDescription
+            AppLogger.collect.warning(
+                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .private)")
+        }
     }
 
-    /// `confirm(profile:keys:)` for a write this Mac just made; a failure is logged, since the
-    /// write itself succeeded and the Doctor row still offers the Confirm.
     /// Re-pins `key` to `written`, the value a save on this Mac just wrote, only while
     /// config.yaml still holds it (a peer's edit landing in between is not confirmed), and
     /// even when it equals the value before (it clears a peer's identical pending drift).
@@ -591,21 +792,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         do {
             try confirm(profile: profile, drifts: [drift], appSupport: appSupport)
         } catch {
-            let reason = error.localizedDescription
+            let reason = error.englishDescription
             AppLogger.collect.warning(
-                "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .public)")
-        }
-    }
-
-    static func confirmBestEffort(
-        profile: String, keys: Set<Key>, appSupport: URL = AppSupport.directory()
-    ) {
-        do {
-            try confirm(profile: profile, keys: keys, appSupport: appSupport)
-        } catch {
-            let reason = error.localizedDescription
-            AppLogger.collect.warning(
-                "SharedConfigPin: could not confirm the written config: \(reason, privacy: .public)")
+                "SharedConfigPin: did not confirm \(key.rawValue): \(reason, privacy: .private)")
         }
     }
 
@@ -640,20 +829,136 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return safe
     }
 
-    /// False when `protect.profile` differs from the pinned one: Protect is not collected and
-    /// the dashboard does not include it.
-    static func protectAllowed(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
-        !check(profile: profile, appSupport: appSupport).isDrifted(.protectProfile)
+    /// Whether this run may send to the authority it loaded, `typed` (`output.timestamp_authority`
+    /// as the run's config holds it): always on a workspace that is not pinned; on a pinned one
+    /// only when `typed` is the confirmed pinned value (same SHA-256), so neither a peer's edit
+    /// nor one made after the run loaded its config is used.
+    static func timestampAuthorityAllowed(
+        _ typed: String, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.isLocal }
+        let value = typed.trimmingCharacters(in: .whitespaces)
+        return !result.isDrifted(.timestampAuthority)
+            && pin.timestampAuthorityHash == (value.isEmpty ? "" : sha256Hex(value))
+    }
+
+    /// Whether `name`, the Protect login the caller is about to send `-p`, may be used: always on
+    /// a workspace that is not pinned; on a pinned one only when the key is not drifted and
+    /// `name` is the pinned value, so a name the run loaded before a peer's edit was reverted
+    /// is still held.
+    static func protectAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.protectProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.protectProfile
+        }
+    }
+
+    /// The same for the Platform login (`profiles.platform`): the Platform-only kinds are not
+    /// collected for a name that is not the confirmed one (`PlatformRoute.unavailable`).
+    static func platformAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.platformProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.platformProfile
+        }
+    }
+
+    /// The same for the Security Cloud login (`profiles.security_cloud`).
+    static func securityCloudAllowed(
+        profile: String, name: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        pinAllows(.securityCloudProfile, name: name, profile: profile, appSupport: appSupport) {
+            $0.securityCloudProfile
+        }
+    }
+
+    private static func pinAllows(
+        _ key: Key, name: String, profile: String, appSupport: URL,
+        pinnedValue: (SharedConfigPin) -> String
+    ) -> Bool {
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.isLocal && !result.isDrifted(key) }
+        // Trimmed as `current` trims the file value, so the two compare like for like.
+        return !result.isDrifted(key)
+            && pinnedValue(pin) == name.trimmingCharacters(in: .whitespaces)
     }
 
     /// `protect.backup_on_synced_storage` as this Mac may use it: on only while config.yaml
     /// says true and that matches a confirmed pin. A change to false applies at once and is
     /// pinned (`check`); a change to true, or a true first seen, waits for a Confirm here.
+    /// Asks the pin for a confirmed true, never only "no drift": a peer could flip the file
+    /// back between the caller's read and `check`'s.
     static func protectBackupOnSyncedStorage(
         _ configured: Bool, profile: String, appSupport: URL = AppSupport.directory()
     ) -> Bool {
-        configured && !check(profile: profile, appSupport: appSupport)
-            .isDrifted(.protectBackupOnSyncedStorage)
+        configured && confirmedTrue(.protectBackupOnSyncedStorage, profile: profile,
+                                    appSupport: appSupport) { $0.protectBackupOnSyncedStorage }
+    }
+
+    /// `backup.pro_on_synced_storage` as this Mac may use it, by the same rule. An absent key is
+    /// `notChosen`, which is not a no; a true that waits for a Confirm is its own state.
+    static func proBackupSetting(
+        _ configured: Bool?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> ProBackup.Setting {
+        guard let configured else { return .notChosen }
+        guard configured else { return .declined }
+        return confirmedTrue(.proBackupOnSyncedStorage, profile: profile, appSupport: appSupport) {
+            $0.proBackupOnSyncedStorage
+        } ? .allowed : .awaitingConfirmation
+    }
+
+    /// `jamf_cli.keep_account_names` as this Mac may use it, by the same rule: names are kept only
+    /// while config.yaml says true and a confirmed pin agrees; otherwise they are removed.
+    static func keepAccountNames(
+        _ configured: Bool, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Bool {
+        configured && confirmedTrue(.keepAccountNames, profile: profile,
+                                    appSupport: appSupport) { $0.keepAccountNames }
+    }
+
+    /// `jamf_cli.collect_skip` as this Mac may use it, the one way any code reads it: on a
+    /// pinned workspace the pinned list (also while config.yaml cannot be read), so a peer's
+    /// edit turns nothing off or on here until Confirm; on a local one `configured`. Only a
+    /// pin file that cannot be read turns nothing off. `pinnedText` is nil when not pinned.
+    static func collectSkipList(
+        configured: [String]?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> (effective: [String], drifted: Bool, pinnedText: String?) {
+        let result = check(profile: profile, appSupport: appSupport)
+        if result.isLocal { return (configured ?? [], false, nil) }
+        guard let pin = result.pinned ?? read(profile: profile, appSupport: appSupport).pin else {
+            return ([], true, "")
+        }
+        return (collectSkipNames(pin.collectSkip), result.isDrifted(.collectSkip),
+                pin.collectSkip)
+    }
+
+    /// The kinds `collect_skip` turns off on this Mac (`collectSkipList`, then the dependents).
+    static func collectSkip(
+        configured: [String]?, profile: String, protectOnly: Bool = false,
+        fleet: FleetState = .unknown, appSupport: URL = AppSupport.directory()
+    ) -> Set<String> {
+        ReportEngine.collectSkipKinds(
+            collectSkipList(configured: configured, profile: profile, appSupport: appSupport)
+                .effective, protectOnly: protectOnly, fleet: fleet)
+    }
+
+    /// The `pinAllows` shape for a boolean: the pin holds a confirmed true and the key has not
+    /// drifted; with no pin, only a local workspace.
+    private static func confirmedTrue(
+        _ key: Key, profile: String, appSupport: URL, pinned: (SharedConfigPin) -> Bool
+    ) -> Bool {
+        let result = check(profile: profile, appSupport: appSupport)
+        guard let pin = result.pinned else { return result.isLocal }
+        return !result.isDrifted(key) && pinned(pin)
+    }
+
+    /// Whether this Mac holds a pin for `profile`, which only a shared workspace ever gets: the
+    /// workspace was shared once, whatever config.yaml says now.
+    static func hasPin(profile: String, appSupport: URL = AppSupport.directory()) -> Bool {
+        storeURL(workspace: profile, appSupport: appSupport)
+            .map { FileManager.default.fileExists(atPath: $0.path) } ?? false
     }
 
     // MARK: - Folder overrides
@@ -743,7 +1048,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         guard let workspace = result.workspace else { return result }
         invalidateOverrides(for: workspace)
         for note in result.notes {
-            AppLogger.collect.warning("\(note, privacy: .public)")
+            AppLogger.collect.warning("\(note, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: note))
         }
         let id = overrideID(workspace)
@@ -755,7 +1060,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         for drift in fresh {
             let text = "[warn] shared config changed \(drift.key.rawValue): "
                 + "confirm on this Mac (Config Doctor)"
-            AppLogger.collect.warning("\(text, privacy: .public)")
+            AppLogger.collect.warning("\(text, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .warn, text: text))
         }
         return result
@@ -770,7 +1075,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let support = AppSupport.resolved(home: FileManager.default.homeDirectoryForCurrentUser)
         let digest = contentDigest(of: workspace.appendingPathComponent("config.yaml"))
         let pinStamps = { (names: [String]) in
-            names.map { FileStamp(of: storeURL(profile: $0, appSupport: support)) }
+            names.compactMap {
+                storeURL(workspace: $0, appSupport: support).map(FileStamp.init(of:))
+            }
         }
         if let cached = overridesCache.withLock({ $0[id] }), cached.config == digest,
            cached.pins == pinStamps(cached.profiles) {
@@ -779,9 +1086,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let candidates = profiles(forWorkspace: workspace)
         // A candidate with a pin is this Mac's profile for the folder; first-sight judgement
         // applies only when none has one (another folder name resolving here is not a profile).
-        let pinned = candidates.filter {
-            FileManager.default.fileExists(atPath: storeURL(profile: $0, appSupport: support).path)
-        }
+        let pinned = candidates.filter { hasPin(profile: $0, appSupport: support) }
         let profiles = pinned.isEmpty ? candidates : pinned
         guard !profiles.isEmpty else { return PathOverrides() }
         let stamps = pinStamps(profiles)
@@ -885,6 +1190,9 @@ extension SharedConfigPin {
         sharedEnabled = try c.decodeIfPresent(String.self, forKey: .sharedEnabled) ?? ""
         historicalDir = try c.decodeIfPresent(String.self, forKey: .historicalDir) ?? ""
         protectProfile = try c.decodeIfPresent(String.self, forKey: .protectProfile) ?? ""
+        platformProfile = try c.decodeIfPresent(String.self, forKey: .platformProfile) ?? ""
+        securityCloudProfile = try c.decodeIfPresent(
+            String.self, forKey: .securityCloudProfile) ?? ""
         notifyDetail = try c.decodeIfPresent(String.self, forKey: .notifyDetail) ?? "full"
         unconfirmed = try c.decodeIfPresent([String].self, forKey: .unconfirmed) ?? []
         // A pin from before `pinnedKeys` held the keys whose fields it has.
@@ -906,5 +1214,13 @@ extension SharedConfigPin {
         notifyHeartbeat = try c.decodeIfPresent(Bool.self, forKey: .notifyHeartbeat) ?? false
         protectBackupOnSyncedStorage = try c.decodeIfPresent(
             Bool.self, forKey: .protectBackupOnSyncedStorage) ?? false
+        proBackupOnSyncedStorage = try c.decodeIfPresent(
+            Bool.self, forKey: .proBackupOnSyncedStorage) ?? false
+        keepAccountNames = try c.decodeIfPresent(Bool.self, forKey: .keepAccountNames) ?? false
+        timestampAuthorityHost = try c.decodeIfPresent(
+            String.self, forKey: .timestampAuthorityHost) ?? ""
+        timestampAuthorityHash = try c.decodeIfPresent(
+            String.self, forKey: .timestampAuthorityHash) ?? ""
+        collectSkip = try c.decodeIfPresent(String.self, forKey: .collectSkip) ?? ""
     }
 }

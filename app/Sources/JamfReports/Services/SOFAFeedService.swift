@@ -78,8 +78,7 @@ struct SOFAFeedService: Sendable {
         for platform in allPlatforms {
             let cacheURL = sofaDir.appendingPathComponent("\(platform)_data_feed.json")
             guard FileManager.default.fileExists(atPath: cacheURL.path) else { continue }
-            guard let data = BoundedFile.readLogged(
-                cacheURL, limit: BoundedFile.snapshotLimit, category: .collect),
+            guard let data = BoundedFile.readLogged(cacheURL),
                   let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data)
             else {
                 warnings.append("Could not decode SOFA cache for \(platform)")
@@ -93,8 +92,7 @@ struct SOFAFeedService: Sendable {
 
     /// Load from a single fixture file for tests.
     static func load(from url: URL, platform: String, referenceDate: Date = Date()) -> [OSFamilyRow] {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .collect),
+        guard let data = BoundedFile.readLogged(url),
               let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data)
         else { return [] }
         return normalizeFeed(platform: platform, feed: feed, referenceDate: referenceDate)
@@ -111,6 +109,10 @@ struct SOFAFeedService: Sendable {
     ///   - timeout: Per-feed download timeout. Defaults to 30 seconds.
     ///   - referenceDate: "Today" for daysSinceRelease.
     /// - Returns: A `Snapshot` from the post-refresh state (mix of fresh and cached).
+    /// Most bytes one feed may be; the macOS feed was about 340 KB on 2026-11-12. A bigger
+    /// answer is a failed fetch and the cached feed stays in use.
+    static let maxFeedBytes = 8 * 1_048_576
+
     static func refresh(
         dataDir: URL,
         timeout: TimeInterval = 30,
@@ -123,17 +125,15 @@ struct SOFAFeedService: Sendable {
             try FileManager.default.createDirectory(
                 at: sofaDir, withIntermediateDirectories: true)
         } catch {
-            let msg = "SOFA: could not create cache dir — \(error.localizedDescription)"
+            let msg = "SOFA: could not create cache dir — \(error.englishDescription)"
             return (.empty, [msg])
         }
 
         var rows: [OSFamilyRow] = []
         var warnings: [String] = []
 
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = timeout
-        config.timeoutIntervalForResource = timeout + 5
-        let session = URLSession(configuration: config)
+        let session = HTTPSession.make(request: timeout, resource: timeout + 5)
+        defer { session.finishTasksAndInvalidate() }
 
         for platform in allPlatforms {
             let urlString = "\(feedBaseURL)/\(platform)_data_feed.json"
@@ -142,10 +142,13 @@ struct SOFAFeedService: Sendable {
                 continue
             }
             do {
-                let (data, response) = try await session.data(from: url)
+                let (bytes, response) = try await session.bytes(
+                    for: URLRequest(url: url),
+                    delegate: HTTPSession.RedirectRule.sameHost(as: url))
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                     throw URLError(.badServerResponse)
                 }
+                let data = try await AppUpdateCheck.collect(bytes, limit: maxFeedBytes)
                 // Validate the shape before caching.
                 let feed = try JSONDecoder().decode(SOFAFeed.self, from: data)
                 writeCacheAtomic(data: data, to: sofaDir
@@ -153,12 +156,11 @@ struct SOFAFeedService: Sendable {
                 rows.append(contentsOf: normalizeFeed(platform: platform, feed: feed,
                                                       referenceDate: referenceDate))
             } catch {
-                let msg = "SOFA \(platform): fetch failed (\(error.localizedDescription)); using cached feed"
+                let msg = "SOFA \(platform): fetch failed (\(error.englishDescription)); using cached feed"
                 warnings.append(msg)
                 // Fall back to existing cache.
                 let cacheURL = sofaDir.appendingPathComponent("\(platform)_data_feed.json")
-                if let data = BoundedFile.readLogged(
-                    cacheURL, limit: BoundedFile.snapshotLimit, category: .collect),
+                if let data = BoundedFile.readLogged(cacheURL),
                    let feed = try? JSONDecoder().decode(SOFAFeed.self, from: data) {
                     rows.append(contentsOf: normalizeFeed(platform: platform, feed: feed,
                                                           referenceDate: referenceDate))
@@ -177,21 +179,18 @@ struct SOFAFeedService: Sendable {
     static func parseSOFADate(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        // Try full ISO 8601 first.
-        let isoFull = ISO8601DateFormatter()
-        isoFull.formatOptions = [.withInternetDateTime]
-        if let d = isoFull.date(from: trimmed) { return d }
-        // Alternate: no fractional seconds.
-        let isoAlt = ISO8601DateFormatter()
-        isoAlt.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withTimeZone]
-        if let d = isoAlt.date(from: trimmed) { return d }
+        if let d = ISO8601Time.parse(trimmed) { return d }
         // Date-only ("2026-05-11").
+        return utcDayFormatter.date(from: String(trimmed.prefix(10)))
+    }
+
+    private static let utcDayFormatter: DateFormatter = {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd"
         df.timeZone = TimeZone(identifier: "UTC")
-        return df.date(from: String(trimmed.prefix(10)))
-    }
+        return df
+    }()
 
     /// Parse a dotted version string into an array of Int components for comparison.
     /// "15.7.10" → [15, 7, 10]. Non-numeric leading chars become 0.
@@ -242,6 +241,12 @@ struct SOFAFeedService: Sendable {
             latest[major] = row.productVersion
         }
         return latest
+    }
+
+    /// `latestByMajor` over the iOS / iPadOS rows of `rows`, the feed every mobile figure is
+    /// judged against (`MobileSummary`, the Mobile Devices filters, the Health Audit).
+    static func iOSLatestByMajor(_ rows: [OSFamilyRow]) -> [Int: String] {
+        latestByMajor(rows.filter { $0.platform == platformLabels["ios"] })
     }
 
     /// Whether `version` is at or past the newest release of its own major.
@@ -324,19 +329,9 @@ struct SOFAFeedService: Sendable {
     }
 
     static func writeCacheAtomic(data: Data, to url: URL) {
-        let tmp = url.deletingLastPathComponent()
-            .appendingPathComponent(".\(url.lastPathComponent).partial")
         do {
-            // Atomic, so a symlink planted at the staging name is replaced, not followed.
-            try data.write(to: tmp, options: .atomic)
-            // replaceItem requires the destination to exist; use move when it doesn't.
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
-            } else {
-                try FileManager.default.moveItem(at: tmp, to: url)
-            }
+            try AtomicInstall.write(data, to: url)
         } catch {
-            try? FileManager.default.removeItem(at: tmp)
             let msg = "SOFAFeedService: could not write cache \(url.lastPathComponent): " +
                       error.localizedDescription
             AppLogger.collect.warning("\(msg, privacy: .private)")

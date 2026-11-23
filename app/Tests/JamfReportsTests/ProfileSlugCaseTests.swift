@@ -56,43 +56,60 @@ final class ProfileSlugCaseTests: XCTestCase {
         // With no workspace folder yet, the lowercase spelling keeps it even when
         // listed second: it is the only one older builds could have created.
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in nil }),
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in [] }),
             ["Prod": .sharesFolder(with: "prod")]
         )
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["PROD", "Prod"], recordedOwner: { _ in nil }),
+            ProfileService.unusableProfiles(in: ["PROD", "Prod"], folderNames: { _ in [] }),
             ["Prod": .sharesFolder(with: "PROD")],
             "without a lowercase spelling, the first listed keeps the folder"
         )
     }
 
-    /// Discovery must agree with the bind and collect guards, which follow the
-    /// profile a workspace folder records: that spelling keeps the folder.
-    func testTheSpellingAnExistingWorkspaceRecordsKeepsTheFolder() {
+    /// Discovery follows the bind, collect and backup rule (`caseVariantWorkspace`): where a
+    /// folder exists, a spelling other than the folder's own is unusable.
+    func testTheFoldersOwnSpellingKeepsTheFolder() {
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in "Prod" }),
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in ["Prod"] }),
             ["prod": .sharesFolder(with: "Prod")]
         )
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Prod", "prod"], recordedOwner: { _ in "PROD" }),
-            ["Prod": .sharesFolder(with: "prod")],
-            "a recorded profile no longer configured falls back to the lowercase spelling"
+            ProfileService.unusableProfiles(in: ["Prod", "prod"], folderNames: { _ in ["PROD"] }),
+            ["Prod": .sharesFolder(with: "PROD"), "prod": .sharesFolder(with: "PROD")],
+            "a folder of a spelling no longer configured: every listed spelling would share it"
+        )
+        XCTAssertEqual(
+            ProfileService.unusableProfiles(in: ["prod"], folderNames: { _ in ["Prod"] }),
+            ["prod": .sharesFolder(with: "Prod")],
+            "one spelling alone is unusable when the folder is another's"
+        )
+        XCTAssertEqual(
+            ProfileService.unusableProfiles(
+                in: ["prod", "Prod"], folderNames: { _ in ["prod", "Prod"] }),
+            ["prod": .sharesFolder(with: "Prod"), "Prod": .sharesFolder(with: "prod")],
+            "a case-sensitive volume with both folders: collect refuses both, so does discovery"
         )
     }
 
     func testInitialProfileSkipsProfilesTheAppCannotUse() {
         let unusable = JamfCLIProfile(name: "Old Tenant ", url: "", schedules: 0, status: .error)
         let usable = JamfCLIProfile(name: "Acme", url: "", schedules: 0, status: .idle)
-        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable, usable])?.name, "Acme")
-        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable])?.name, "Old Tenant ")
-        XCTAssertNil(WorkspaceStore.initialProfile(in: []))
+        let none: (String) -> Bool = { _ in false }
+        XCTAssertEqual(
+            WorkspaceStore.initialProfile(in: [unusable, usable], hasWorkspace: none)?.name, "Acme")
+        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable], hasWorkspace: none)?.name,
+                       "Old Tenant ")
+        XCTAssertNil(WorkspaceStore.initialProfile(in: [], hasWorkspace: none))
 
         let both = [unusable, usable]
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Acme", in: both), "Acme")
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Old Tenant ", in: both), "Acme",
+        func active(_ current: String) -> String? {
+            WorkspaceStore.activeProfile(keeping: current, in: both, hasWorkspace: none)
+        }
+        XCTAssertEqual(active("Acme"), "Acme")
+        XCTAssertEqual(active("Old Tenant "), "Acme",
                        "a reload moves off a profile that became unusable")
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "gone", in: both), "Acme")
-        XCTAssertNil(WorkspaceStore.activeProfile(keeping: "Acme", in: []))
+        XCTAssertEqual(active("gone"), "Acme")
+        XCTAssertNil(WorkspaceStore.activeProfile(keeping: "Acme", in: [], hasWorkspace: none))
     }
 
     func testIsCaseVariantOnlyMatchesAnotherSpellingOfTheSameName() {
@@ -192,7 +209,9 @@ final class ProfileSlugCaseTests: XCTestCase {
             JamfCLIProfile(name: "prod", url: "", schedules: 0, status: .idle),
         ]
         XCTAssertEqual(
-            ProfileService.runnableProfiles(profiles, excluding: ["prod"]).map(\.name), ["Acme"]
+            ProfileService.runnableWorkspaces(
+                profiles, excluding: ["prod"], hasWorkspace: { _ in true }).map(\.name),
+            ["Acme"]
         )
     }
 
@@ -208,8 +227,8 @@ final class ProfileSlugCaseTests: XCTestCase {
 
         XCTAssertEqual(flow.statuses["Acme-Dev"], .done)
         let config = tempRoot.appendingPathComponent("Acme-Dev/config.yaml")
-        XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, "Acme-Dev",
-                       "jamf-cli is called with -p exactly as the profile is spelled")
+        XCTAssertEqual(EnvironmentProfiles.read(configURL: config, workspace: "Acme-Dev").jamfPro,
+                       "Acme-Dev", "jamf-cli is called with -p exactly as the profile is spelled")
     }
     #endif
 
@@ -222,7 +241,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         flow.selected.insert("Old Tenant ")
         var initialized: [String] = []
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, _ in initialized.append(name); return 0 },
             collect: { _, _ in 0 }
         )
         XCTAssertEqual(initialized, ["Acme"])
@@ -318,18 +337,9 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: config), typed)
     }
 
-    /// A workspace seeded from the shipped example is written with the profile recorded, so
-    /// binding it writes nothing and no backup of a file the app just made is kept.
-    func testBindingASeededWorkspaceKeepsNoBackupOfTheSeed() async throws {
-        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        while !FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("config.example.yaml").path) {
-            guard dir.pathComponents.count > 1 else { throw XCTSkip("no config.example.yaml") }
-            dir = dir.deletingLastPathComponent()
-        }
-        try ReportEngine.initializeWorkspace(
-            profile: "Seeded", workspacesRoot: tempRoot,
-            seedConfigURL: dir.appendingPathComponent("config.example.yaml"), onLine: { _ in })
+    /// A new workspace is written with the profile recorded, so binding it writes nothing and
+    /// no backup of a file the app just made is kept.
+    func testBindingANewWorkspaceKeepsNoBackupOfIt() async throws {
         let lines = CaseTestBox<[String]>([])
 
         _ = try await CLIBridge().initializeWorkspace(profile: "Seeded") { line in
@@ -340,9 +350,9 @@ final class ProfileSlugCaseTests: XCTestCase {
         let text = try String(
             contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8)
         let loaded = try ConfigService.load(profile: "Seeded", workspaceRoot: tempRoot)
-        XCTAssertEqual(loaded.document.root.mapping?.value(for: "jamf_cli")?.mapping?
-            .value(for: "profile")?.stringValue, "Seeded")
-        XCTAssertTrue(text.contains("# jamf-reports community edition — example configuration"))
+        XCTAssertEqual(loaded.document.root.mapping?.value(for: "profiles")?.mapping?
+            .value(for: "jamf_pro")?.stringValue, "Seeded")
+        XCTAssertFalse(text.contains("example configuration"), "never the shipped example")
         let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
             .filter { $0.hasPrefix("config.yaml.bak-") }
         XCTAssertEqual(copies, [])
@@ -363,8 +373,10 @@ final class ProfileSlugCaseTests: XCTestCase {
         return config
     }
 
-    func testBindingRefusesAWorkspaceRecordedForACaseVariant() async throws {
-        let config = try writeWorkspace(folder: "Acme", recordedProfile: "acme")
+    /// The binding judges the folder by its own name: `Acme` is refused from `acme`'s folder
+    /// and nothing in it is rewritten.
+    func testBindingRefusesAProfileWhoseFolderIsSpelledDifferently() async throws {
+        let config = try writeWorkspace(folder: "acme", recordedProfile: "acme")
         do {
             _ = try await CLIBridge().initializeWorkspace(
                 profile: "Acme", onLine: CLIBridge.noOpOnLine
@@ -377,6 +389,19 @@ final class ProfileSlugCaseTests: XCTestCase {
                        "the owner's jamf_cli.profile must not be rewritten")
     }
 
+    /// A `jamf_cli.profile: Prod` planted in `prod`'s folder does not block `prod`: the
+    /// binding runs and records the folder's own name.
+    func testAPlantedCaseVariantDoesNotBlockTheFoldersOwnProfile() async throws {
+        let config = try writeWorkspace(folder: "prod", recordedProfile: "Prod")
+        let lines = CaseTestBox<[String]>([])
+        let code = try await CLIBridge().initializeWorkspace(profile: "prod") { line in
+            lines.value.append(line.text)
+        }
+        XCTAssertEqual(code, 0)
+        XCTAssertFalse(lines.value.contains { $0.hasPrefix("[error]") }, "\(lines.value)")
+        XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, "prod")
+    }
+
     func testCaseVariantWorkspaceFindsADifferentlySpelledFolder() throws {
         _ = try writeWorkspace(folder: "acme", recordedProfile: "acme")
         try FileManager.default.createDirectory(
@@ -387,22 +412,22 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertNil(ProfileService.caseVariantWorkspace(of: "Prod"), "no config.yaml")
     }
 
-    func testRecordedWorkspaceOwnerReadsTheFolderConfig() throws {
+    func testWorkspaceFolderNamesAreTheFoldersOwnNames() throws {
         _ = try writeWorkspace(folder: "Prod", recordedProfile: "Prod")
         _ = try writeWorkspace(folder: "blank", recordedProfile: "")
-        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "prod"), "Prod")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "prod"), ["Prod"])
         XCTAssertEqual(
             ProfileService.unusableProfiles(in: ["prod", "Prod"]),
             ["prod": .sharesFolder(with: "Prod")]
         )
-        XCTAssertEqual(ProfileService.recordedWorkspaceOwner(matching: "blank"), "blank",
-                       "a blank jamf_cli.profile falls back to the folder name")
-        XCTAssertNil(ProfileService.recordedWorkspaceOwner(matching: "absent"))
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "blank"), ["blank"],
+                       "the folder's own name")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "absent"), [])
         try FileManager.default.createDirectory(
             at: tempRoot.appendingPathComponent("Bare"), withIntermediateDirectories: true
         )
-        XCTAssertNil(ProfileService.recordedWorkspaceOwner(matching: "bare"),
-                     "a folder without config.yaml is not a workspace")
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "bare"), [],
+                       "a folder without config.yaml is not a workspace")
     }
 
     /// Audit and Refresh write for the active profile without binding its
@@ -453,28 +478,61 @@ final class ProfileSlugCaseTests: XCTestCase {
     }
     #endif
 
-    func testCollectRouterRefusesAWorkspaceRecordedForACaseVariant() async throws {
-        let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: \"acme\"\n")
+    /// The folder's own spelling owns it, whatever config.yaml says. Two case-variant profiles
+    /// and a `jamf_cli.profile: Prod` a peer wrote into `prod`'s folder: `Prod` is unusable,
+    /// refused by collect and backup, and `prod` still collects.
+    func testAPeerWrittenCaseVariantNeverTakesTheFolder() async throws {
+        let folder = tempRoot.appendingPathComponent("prod", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let configURL = folder.appendingPathComponent("config.yaml")
+        try Data("jamf_cli:\n  profile: \"Prod\"\n".utf8).write(to: configURL)
+        let config = try ConfigLoader.load(from: configURL)
+
+        XCTAssertEqual(ProfileService.workspaceFolderNames(matching: "prod"), ["prod"])
+        XCTAssertEqual(ProfileService.unusableProfiles(in: ["prod", "Prod"]),
+                       ["Prod": .sharesFolder(with: "prod")])
+        XCTAssertThrowsError(try readingBackupProfile("Prod") { _ in }) { error in
+            XCTAssertEqual(
+                error as? CLIBridgeError, .profileCaseConflict(profile: "Prod", owner: "prod"))
+        }
+
         let collected = CaseTestBox(false)
-        let proCollect: CollectRouter.ProCollect = { _, _, _, _, _, _ in
+        let proCollect: CollectRouter.ProCollect = { _, _, _, _, _, _, _ in
             collected.value = true
             return .collected
         }
-
         do {
             try await CollectRouter.run(
-                profile: "Acme", config: config, proCollect: proCollect, onLine: { _ in }
+                workspace: WorkspaceID(validating: "Prod"),
+                config: config, proCollect: proCollect, onLine: { _ in }
             )
             XCTFail("collect must not write into a case variant's workspace")
         } catch let error as CLIBridgeError {
-            XCTAssertEqual(error, .profileCaseConflict(profile: "Acme", owner: "acme"))
+            XCTAssertEqual(error, .profileCaseConflict(profile: "Prod", owner: "prod"))
         }
         XCTAssertFalse(collected.value)
 
         try await CollectRouter.run(
-            profile: "acme", config: config, proCollect: proCollect, onLine: { _ in }
+            workspace: WorkspaceID(validating: "prod"),
+            config: config, proCollect: proCollect, onLine: { _ in }
         )
-        XCTAssertTrue(collected.value, "the owning profile still collects")
+        XCTAssertTrue(collected.value, "the folder's own profile still collects")
+    }
+
+    /// On disk, discovery and the run guard agree: with only `Prod/`, neither `prod` nor
+    /// `PROD` is offered, and both are refused.
+    func testDiscoveryAndTheRunGuardAgreeOnAFolderOfAThirdSpelling() throws {
+        try FileManager.default.createDirectory(
+            at: tempRoot.appendingPathComponent("Prod"), withIntermediateDirectories: true)
+        try Data("jamf_cli: {}\n".utf8)
+            .write(to: tempRoot.appendingPathComponent("Prod/config.yaml"))
+        let unusable = ProfileService.unusableProfiles(in: ["prod", "PROD"])
+        for name in ["prod", "PROD"] {
+            XCTAssertEqual(unusable[name], .sharesFolder(with: "Prod"), name)
+            XCTAssertEqual(ProfileService.caseVariantWorkspace(of: name), "Prod", name)
+        }
+        XCTAssertNil(ProfileService.unusableProfiles(in: ["Prod"])["Prod"])
+        XCTAssertNil(ProfileService.caseVariantWorkspace(of: "Prod"))
     }
 
     /// Only a case variant is refused: a workspace recording some other name, or
@@ -484,8 +542,8 @@ final class ProfileSlugCaseTests: XCTestCase {
             let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: \"\(recorded)\"\n")
             let collected = CaseTestBox(false)
             try await CollectRouter.run(
-                profile: "Acme", config: config,
-                proCollect: { _, _, _, _, _, _ in collected.value = true; return .collected },
+                workspace: WorkspaceID(validating: "Acme"), config: config,
+                proCollect: { _, _, _, _, _, _, _ in collected.value = true; return .collected },
                 onLine: { _ in }
             )
             XCTAssertTrue(collected.value, "recorded '\(recorded)' is not another spelling of Acme")

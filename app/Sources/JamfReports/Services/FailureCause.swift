@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// jamf-cli's JSON error envelope. With `--output json` a failing command writes it to stdout
 /// (`formatErrorTo`); `--no-hints` does not remove `hint`.
@@ -42,6 +43,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// The profile's URL is the retired `apigw.jamf.com` gateway, which jamf-cli refuses by
         /// name (exit 2) before sending a request.
         case retiredGateway
+        /// The login keychain is locked (or unreachable in this session, such as over SSH or
+        /// before login), so jamf-cli could not read the profile's `keychain:` credentials.
+        case keychainLocked
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
@@ -54,8 +58,33 @@ struct FailureCause: Codable, Equatable, Sendable {
     let exitCode: Int32
     /// When the failure was recorded; set by `StateFileStore`.
     var recordedAt: Date? = nil
+    /// True when jamf-cli gave up because the server never answered (`serverTimeoutMarker`).
+    /// Optional so a record written by an earlier build still decodes.
+    var serverTimedOut: Bool? = nil
+
+    /// The call ended on a timeout: the app's own limit, or jamf-cli's wait for the server.
+    var isTimeout: Bool { exitCode == CLIBridge.exitCodeTimedOut || serverTimedOut == true }
 
     static let hintByteLimit = 4_096
+    /// jamf-cli's wording (1.32+) when a request got no response headers within its own limit,
+    /// after it had shrunk the page size as far as it goes. It exits 1.
+    static let serverTimeoutMarker = "the server did not answer in time"
+    static var serverTimeoutHint: String {
+        L("The server did not answer in time. Collect now tries again at once; after two timeouts in a row, automatic runs leave this source to the next day, and to the next week if it keeps timing out. To stop collecting it, turn it off in Data Sources.")
+    }
+
+    /// True for a failed call whose error envelope says the server never answered. Another try
+    /// in the same run waits out the same limit, so `invokeWithRetry` skips it.
+    /// `exit`, or the app's timeout code when jamf-cli gave up on a server that never answered:
+    /// jamf-cli's own limit ends first, with exit 1, so a walk that counts only the app's
+    /// timeout would wait out every item on a hung server.
+    static func exitCountingServerTimeout(_ exit: Int32, stdout: Data) -> Int32 {
+        exit != 0 && isServerTimeout(stdout: stdout) ? CLIBridge.exitCodeTimedOut : exit
+    }
+
+    static func isServerTimeout(stdout: Data) -> Bool {
+        JamfCLIErrorEnvelope.parse(stdout)?.message?.contains(serverTimeoutMarker) == true
+    }
     /// What jamf-cli prints on stderr when a command swallows a 403 and exits 0.
     static let forbiddenStderrMarker = "permission denied (HTTP 403)"
     /// `pro report blueprint-status` prints this and exits 0 when the environment has none.
@@ -73,14 +102,35 @@ struct FailureCause: Codable, Equatable, Sendable {
     /// jamf-cli's refusal of `apigw.jamf.com` (`refuseRetiredGatewayURL`, exit 2), which it makes
     /// before any request: "<url> is the retired Jamf Platform gateway and does not serve ...".
     static let retiredGatewayMarker = "is the retired Jamf Platform gateway"
-    static let retiredGatewayHint = "Re-run setup with the us, eu or apac api.jamfcloud.com host "
-        + "(jamf-cli platform setup --profile-name <profile>), or set url: in the profile."
+    static var retiredGatewayHint: String {
+        L("Re-run setup with the us, eu or apac api.jamfcloud.com host (jamf-cli platform setup --profile-name <profile>), or set url: in the profile.")
+    }
     /// The gateway's 400 when a command is sent at a scope level it does not accept; its message
     /// names both levels.
     static let invalidContextTypeMarker = "INVALID_REQUEST_CONTEXT_TYPE"
-    static let invalidContextTypeHint = "This command accepts a different scope level than this "
-        + "profile's integration; the error names both. An environment-level integration is the "
-        + "level Jamf recommends, and a tenant-level one cannot reach every command."
+    static var invalidContextTypeHint: String {
+        L("This command accepts a different scope level than this profile's integration; the error names both. An environment-level integration is the level Jamf recommends, and a tenant-level one cannot reach every command.")
+    }
+
+    /// jamf-cli reports an unreadable `keychain:` credential as
+    /// "reading keychain item <service>/<account>: <error>".
+    /// errSecInteractionNotAllowed, which a locked keychain gives when nothing can prompt: the
+    /// Security framework's text, or the `security` exit status go-keyring reports (jamf-cli
+    /// 1.31 and earlier).
+    static let keychainInteractionMarkers = ["User interaction is not allowed", "exit status 36"]
+    /// jamf-cli's own wording when the login keychain refuses a write.
+    static let keychainRejectedWriteMarker = "login keychain rejected"
+    static var keychainLockedHint: String {
+        L("Unlock the login keychain (open Keychain Access, or run `security unlock-keychain`), then try again")
+    }
+
+    /// True for jamf-cli text that says it could not read credentials because the login
+    /// keychain is locked. A missing item ("keychain item not found") is not a lock.
+    static func mentionsLockedKeychain(_ text: String) -> Bool {
+        if text.contains(keychainRejectedWriteMarker) { return true }
+        guard text.contains("keychain") else { return false }
+        return keychainInteractionMarkers.contains { text.contains($0) }
+    }
 
     /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
     /// permissions, the environment's data or the config has to change first. Edge blocks stay
@@ -90,42 +140,43 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
              .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
              .retiredGateway: true
-        case .edgeBlocked, .other: false
+        case .edgeBlocked, .keychainLocked, .other: false
         }
     }
 
     /// Plain-language cause for log lines and the health banner.
     var label: String {
         switch kind {
-        case .scopeRejected: "the gateway rejected the integration's scope level or ID"
-        case .unknownEnvironment: "the gateway does not recognise the environment ID"
-        case .edgeBlocked: "blocked at the Jamf gateway edge"
-        case .retiredGateway: "the profile uses the retired apigw.jamf.com gateway host"
-        case .notServed: "not served through this connection"
+        case .scopeRejected: L("the gateway rejected the integration's scope level or ID")
+        case .unknownEnvironment: L("the gateway does not recognise the environment ID")
+        case .edgeBlocked: L("blocked at the Jamf gateway edge")
+        case .retiredGateway: L("the profile uses the retired apigw.jamf.com gateway host")
+        case .notServed: L("not served through this connection")
+        case .keychainLocked:
+            L("the login keychain is locked, so jamf-cli could not read this profile's stored credentials")
         case .missingPermission:
             names.isEmpty
-                ? "missing permission"
-                : "missing permission: " + names.joined(separator: "; ")
+                ? L("missing permission")
+                : L("missing permission: ") + names.joined(separator: "; ")
         case .noDeclarationData:
-            "no DDM declaration data: the environment has none, or each device's report was "
-                + "refused (Deployment > Declarations reporting)"
+            L("no DDM declaration data: the environment has none, or each device's report was refused (Deployment > Declarations reporting)")
         case .softwareUpdatePlansOff:
-            "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this "
-                + "source to jamf_cli.collect_skip"
+            L("Managed Software Update Plans is turned off in Jamf Pro; turn it on, or turn this source off in Data Sources")
         case .noConfiguredBenchmark:
             names.isEmpty
-                ? "no benchmark in platform.compliance_benchmarks can be collected"
-                : "no benchmark in platform.compliance_benchmarks can be collected: "
+                ? L("no benchmark in platform.compliance_benchmarks can be collected")
+                : L("no benchmark in platform.compliance_benchmarks can be collected: ")
                     + names.joined(separator: "; ")
         case .other:
             exitCode == CLIBridge.exitCodeTimedOut
-                ? "timed out and was stopped" : "exit \(exitCode)"
+                ? L("timed out and was stopped") : L("exit \(exitCode)")
         }
     }
 
     static func classify(
         exitCode: Int32, stdout: Data, sawForbiddenOnStderr: Bool = false,
-        sawNoDeclarationDataOnStderr: Bool = false, sawSoftwareUpdatePlansOffOnStderr: Bool = false
+        sawNoDeclarationDataOnStderr: Bool = false, sawSoftwareUpdatePlansOffOnStderr: Bool = false,
+        sawKeychainLockedOnStderr: Bool = false
     ) -> FailureCause {
         let envelope = JamfCLIErrorEnvelope.parse(stdout)
         let message = envelope?.message ?? ""
@@ -138,6 +189,13 @@ struct FailureCause: Codable, Equatable, Sendable {
         ) -> FailureCause {
             FailureCause(
                 kind: kind, names: names, hint: cappedHint ?? hintOverride, exitCode: exitCode)
+        }
+        // First: this failure comes before any request, so its text carries no HTTP code for the
+        // rules below; checked last it would fall through to `.other`.
+        if sawKeychainLockedOnStderr || mentionsLockedKeychain(message + "\n" + hint) {
+            // Our hint, not jamf-cli's: the fix is the same whatever it suggested.
+            return FailureCause(kind: .keychainLocked, names: [], hint: keychainLockedHint,
+                                exitCode: exitCode)
         }
         if message.contains(retiredGatewayMarker) {
             return cause(.retiredGateway, hintOverride: retiredGatewayHint)
@@ -168,7 +226,14 @@ struct FailureCause: Codable, Equatable, Sendable {
             }
             return cause(.missingPermission)
         }
-        guard exitCode == 0 else { return cause(.other) }
+        guard exitCode == 0 else {
+            guard message.contains(serverTimeoutMarker) else { return cause(.other) }
+            // Our hint, not jamf-cli's: its advice names flags, and the app chooses the flags.
+            var other = FailureCause(
+                kind: .other, names: [], hint: serverTimeoutHint, exitCode: exitCode)
+            other.serverTimedOut = true
+            return other
+        }
         if sawForbiddenOnStderr { return cause(.missingPermission) }
         if sawSoftwareUpdatePlansOffOnStderr { return cause(.softwareUpdatePlansOff) }
         return cause(sawNoDeclarationDataOnStderr ? .noDeclarationData : .other)
@@ -209,32 +274,29 @@ struct FailureCause: Codable, Equatable, Sendable {
 /// Watches one kind's streamed stderr for the jamf-cli lines that explain an exit 0 without
 /// data (spec §9.1): a swallowed 403, an empty blueprint listing, no declaration data,
 /// Managed Software Update Plans turned off, or no managed software update data.
-final class StderrSignalWatcher: @unchecked Sendable {
-    private let lock = NSLock()
-    private var forbidden = false
-    private var noBlueprints = false
-    private var noDeclarationData = false
-    private var softwareUpdatePlansOff = false
-    private var noUpdateData = false
-    private var updateFetchWarning = false
+final class StderrSignalWatcher: Sendable {
+    private struct Flags {
+        var forbidden = false
+        var noBlueprints = false
+        var noDeclarationData = false
+        var softwareUpdatePlansOff = false
+        var noUpdateData = false
+        var updateFetchWarning = false
+        var keychainLocked = false
+    }
+    private let flags = Mutex(Flags())
 
-    var sawForbidden: Bool { lock.withLock { forbidden } }
-    var sawNoBlueprints: Bool { lock.withLock { noBlueprints } }
-    var sawNoDeclarationData: Bool { lock.withLock { noDeclarationData } }
-    var sawSoftwareUpdatePlansOff: Bool { lock.withLock { softwareUpdatePlansOff } }
+    var sawKeychainLocked: Bool { flags.withLock { $0.keychainLocked } }
+    var sawForbidden: Bool { flags.withLock { $0.forbidden } }
+    var sawNoBlueprints: Bool { flags.withLock { $0.noBlueprints } }
+    var sawNoDeclarationData: Bool { flags.withLock { $0.noDeclarationData } }
+    var sawSoftwareUpdatePlansOff: Bool { flags.withLock { $0.softwareUpdatePlansOff } }
     /// jamf-cli's "no update data" line with no fetch warning before or after it.
-    var sawNoUpdateData: Bool { lock.withLock { noUpdateData && !updateFetchWarning } }
+    var sawNoUpdateData: Bool { flags.withLock { $0.noUpdateData && !$0.updateFetchWarning } }
 
     /// A retried attempt is classified on its own stderr, not the first attempt's.
     func reset() {
-        lock.withLock {
-            forbidden = false
-            noBlueprints = false
-            noDeclarationData = false
-            softwareUpdatePlansOff = false
-            noUpdateData = false
-            updateFetchWarning = false
-        }
+        flags.withLock { $0 = Flags() }
     }
 
     func forwarding(
@@ -242,23 +304,24 @@ final class StderrSignalWatcher: @unchecked Sendable {
     ) -> @Sendable (CLIBridge.LogLine) -> Void {
         { line in
             let text = line.text
-            self.lock.withLock {
-                if text.contains(FailureCause.forbiddenStderrMarker) { self.forbidden = true }
+            self.flags.withLock { flags in
+                if text.contains(FailureCause.forbiddenStderrMarker) { flags.forbidden = true }
                 if text.contains(FailureCause.noBlueprintsStderrMarker) {
-                    self.noBlueprints = true
+                    flags.noBlueprints = true
                 }
                 if text.contains(FailureCause.noDeclarationDataStderrMarker) {
-                    self.noDeclarationData = true
+                    flags.noDeclarationData = true
                 }
                 if text.contains(FailureCause.softwareUpdatePlansOffStderrMarker) {
-                    self.softwareUpdatePlansOff = true
+                    flags.softwareUpdatePlansOff = true
                 }
                 if text.contains(FailureCause.noUpdateDataStderrMarker) {
-                    self.noUpdateData = true
+                    flags.noUpdateData = true
                 }
                 if text.contains(FailureCause.updateFetchWarningStderrMarker) {
-                    self.updateFetchWarning = true
+                    flags.updateFetchWarning = true
                 }
+                if FailureCause.mentionsLockedKeychain(text) { flags.keychainLocked = true }
             }
             onLine(line)
         }

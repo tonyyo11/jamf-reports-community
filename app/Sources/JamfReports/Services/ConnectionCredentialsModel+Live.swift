@@ -24,7 +24,10 @@ extension ConnectionCredentialsModel {
             },
             existingProfiles: { profiles().map(\.name) },
             workspaceConflict: { ProfileService.caseVariantWorkspace(of: $0) },
-            provisionWorkspace: { try OnboardingFlow.createJamfCLIOnlyWorkspace(for: $0) },
+            provisionWorkspace: {
+                // Add environments registers Platform API profiles.
+                try OnboardingFlow.createJamfCLIOnlyWorkspace(for: $0, as: .init(platform: true))
+            },
             store: store,
             canReRegister: { name in
                 guard let profile = profiles().first(where: { $0.name == name }) else {
@@ -35,7 +38,8 @@ extension ConnectionCredentialsModel {
                     workspaceExists: ProfileService.workspaceURL(for: name).map {
                         FileManager.default.fileExists(atPath: $0.path)
                     } ?? true)
-            })
+            },
+            storedURL: { name in profiles().first { $0.name == name }?.url })
     }
 
     /// A Platform profile that an earlier Add environments attempt in this app registered and

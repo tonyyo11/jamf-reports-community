@@ -141,7 +141,7 @@ final class PreviewSnapshotTests: XCTestCase {
     /// with a Collect-now action, matching the banner's default banner-visible
     /// state used across dashboards.
     func testStaleDataBannerVariants() throws {
-        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+        let threeDaysAgo = Date().calendarDays(ago: 3)
         for (width, label) in Self.widths {
             try render(
                 StaleDataBanner(source: .stale(at: threeDaysAgo), onCollect: {}),

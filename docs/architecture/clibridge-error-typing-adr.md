@@ -9,6 +9,13 @@ places; see "Implementation notes" for what changed and why.
 **Update (2.9):** `CLIBridge.runNow` was removed and `CLIBridgeError.csvMissing` was
 replaced by `tickLockHeld`; the names below record the original design.
 
+**Update (2.12):** `CLIBridgeError` has 18 cases and five refusals. Added: `wrongProduct`
+(a Jamf Pro command on another product's profile), `backupWithoutPro` (a backup whose Jamf Pro
+part failed or was skipped, so Diff is refused) and `mergeInProgress` (a workspace merge holds
+the tick lock), the last of which joins `tickLockHeld`, `collectInProgress`,
+`toolUpdateInProgress` and `generateInProgress` in `isCollectRefusal`. The counts in "Fifteen
+cases" and "Four cases are refusals" below are the 2.9 state.
+
 ---
 
 ## Context

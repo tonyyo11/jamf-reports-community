@@ -164,10 +164,18 @@ final class ChartsA11yTests: XCTestCase {
         ]
         let descriptor = MultiLineChartDescriptor(
             title: "Security Posture Compared",
-            seriesList: seriesList
+            seriesList: seriesList,
+            percentFormat: .standard
         )
         let ax = descriptor.makeChartDescriptor()
         XCTAssertEqual(ax.title, "Security Posture Compared")
         XCTAssertEqual(ax.series.count, 3, "Must produce one series per metric")
+    }
+
+    func testBarSummaryNeverTrapsOnANonFiniteValue() {
+        let descriptor = BarDistributionChartDescriptor(
+            title: "Bars", unit: " devices",
+            bars: [.init(label: "a", value: .infinity), .init(label: "b", value: 4)])
+        XCTAssertEqual(descriptor.makeChartDescriptor().summary, "a: — devices; b: 4 devices")
     }
 }

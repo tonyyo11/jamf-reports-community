@@ -96,6 +96,59 @@ extension CLIBridgeAuthGuardTests {
     }
 }
 
+// Fixtures are UNCAPTURED: the stderr line is go-keyring's error shape from jamf-cli's source,
+// not text recorded from a locked keychain.
+extension CLIBridgeAuthGuardTests {
+    private static let keychainLine =
+        "Error: reading keychain item jamf-cli/profile/client-secret: exit status 36"
+
+    private func failingStub(in dir: URL, stdout: String = "", stderr: String) throws -> URL {
+        let url = dir.appendingPathComponent("stub-cli-\(UUID().uuidString)")
+        let script = "#!/bin/sh\nprintf '%s' '\(stdout)'\nprintf '%s\\n' '\(stderr)' >&2\nexit 1\n"
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
+    /// The error on stderr only (no JSON envelope): the guard says the keychain is locked, not
+    /// "re-authenticate".
+    func test_authGuard_lockedKeychainOnStderrBlocksWithTheUnlockHint() async throws {
+        let dir = try SleepingCLIStub.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stub = try failingStub(in: dir, stderr: Self.keychainLine)
+        let collector = GuardLineCollector()
+
+        let proceed = await CLIBridge().authGuard(
+            profile: "locked-probe", probeTimeout: 5, _testExecutable: stub
+        ) { collector.append($0) }
+
+        XCTAssertFalse(proceed)
+        let texts = collector.texts()
+        XCTAssertTrue(texts.contains { $0.contains(FailureCause.keychainLockedHint) }, "\(texts)")
+        XCTAssertFalse(texts.contains { $0.contains("re-authenticate") }, "\(texts)")
+    }
+
+    func test_probeToken_lockedKeychainOnStdoutEnvelopeIsKeychainLocked() async throws {
+        let dir = try SleepingCLIStub.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let envelope = #"{"error":"request failed","message":"reading keychain item a/b: "#
+            + #"exit status 36","exitCode":1}"#
+        let stub = try failingStub(in: dir, stdout: envelope, stderr: "")
+        let probe = await CLIBridge().probeToken(for: "locked-probe", executable: stub, timeout: 5)
+        guard case .keychainLocked = probe else { return XCTFail("got \(probe)") }
+    }
+
+    func test_probeToken_otherFailureStaysAnInvalidToken() async throws {
+        let dir = try SleepingCLIStub.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stub = try failingStub(in: dir, stderr: "Error: boom")
+        let probe = await CLIBridge().probeToken(for: "plain-probe", executable: stub, timeout: 5)
+        guard case .status(let status) = probe else { return XCTFail("got \(probe)") }
+        XCTAssertEqual(status?.isValid, false)
+        XCTAssertEqual(status?.keychainLocked, false)
+    }
+}
+
 private final class GuardLineCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var lines: [String] = []

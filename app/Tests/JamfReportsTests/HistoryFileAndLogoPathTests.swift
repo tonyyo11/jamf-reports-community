@@ -61,7 +61,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         let lines = Lines()
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         report.onLine = { lines.add($0.text) }
         let out = workspace.appendingPathComponent("Generated Reports/report.html")
         for typed in ["/Users/Shared/h.json", "/tmp/h.json", "~/Public/h.json"] {
@@ -81,11 +81,32 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         """)
         var report = HtmlReport(config: try config(),
                                 dataDir: root.appendingPathComponent("elsewhere/data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         _ = report.buildHistorySection(
             security: [], outputURL: workspace.appendingPathComponent("Generated Reports/r.html"))
         XCTAssertTrue(fm.fileExists(atPath: workspace.appendingPathComponent("h.json").path),
                       "history_file is read from the profile's workspace and resolved against it")
+    }
+
+    func testTheHistoryLeavesOutUnknownOSVersions() throws {
+        try writeConfig("""
+        jamf_cli:
+          profile: \(profile)
+        html:
+          track_history: true
+          history_file: h.json
+        """)
+        var report = HtmlReport(config: try config(),
+                                dataDir: workspace.appendingPathComponent("jamf-cli-data"))
+        report.workspace = WorkspaceID(profile)
+        _ = report.buildHistorySection(
+            security: [["section": "os_version", "os_version": "Unknown", "count": 4],
+                       ["section": "os_version", "os_version": "26.7", "count": 6]],
+            outputURL: workspace.appendingPathComponent("Generated Reports/r.html"))
+        let text = try String(contentsOf: workspace.appendingPathComponent("h.json"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("26.7"))
+        XCTAssertFalse(text.contains("Unknown"))
     }
 
     func testAHistoryFileAPeerChangedIsWrittenBesideTheReportUntilConfirmed() throws {
@@ -109,7 +130,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
 
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         _ = report.buildHistorySection(security: [], outputURL: out)
         XCTAssertFalse(fm.fileExists(atPath: workspace.appendingPathComponent("peer.json").path))
         XCTAssertTrue(fm.fileExists(
@@ -261,7 +282,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
 
         var report = HtmlReport(config: decoyConfig,
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         let out = workspace.appendingPathComponent("Generated Reports/r.html")
         try fm.createDirectory(
             at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -302,7 +323,7 @@ final class HistoryFileAndLogoPathTests: XCTestCase {
         let lines = Lines()
         var report = HtmlReport(config: try config(),
                                 dataDir: workspace.appendingPathComponent("jamf-cli-data"))
-        report.profile = profile
+        report.workspace = WorkspaceID(profile)
         report.onLine = { lines.add($0.text) }
         let out = workspace.appendingPathComponent("Generated Reports/r.html")
         try fm.createDirectory(

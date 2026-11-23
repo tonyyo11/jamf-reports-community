@@ -65,6 +65,94 @@ final class DeviceDetailStagingTests: XCTestCase {
             jamfCLIArgs: { ["pro", "device", $0] }, locateJamfCLI: { stub })
     }
 
+    // MARK: - Account names
+
+    private static let flatDetail = #"""
+        [{"section":"Identity","resource":"Name","value":"Mac-A"},
+         {"section":"User & Location","resource":"Username","value":"placeholder"},
+         {"section":"User & Location","resource":"Full Name","value":"Placeholder Name"},
+         {"section":"User & Location","resource":"Phone","value":"555-0100"}]
+        """#
+    private static let keyedDetail = #"""
+        {"general":{"lastLoggedInUsernameMdm":"placeholder"},
+         "userAndLocation":{"username":"placeholder","realname":"Placeholder Name"}}
+        """#
+
+    private func cachedText(_ result: CLIBridge.DeviceDetailResult?) throws -> String {
+        let cache = try XCTUnwrap(try XCTUnwrap(result).cacheURL)
+        return String(decoding: try Data(contentsOf: cache), as: UTF8.self)
+    }
+
+    /// `pro mobile-devices get` nests contact details under `location`, not `userAndLocation`
+    /// (key layout from a real row, 2026-11-15).
+    func testAMobileLookupLosesContactDetailsUnderLocation() throws {
+        let payload = Data(#"""
+            {"name":"iPad-A","managed":true,
+             "location":{"username":"placeholder","emailAddress":"p@example.com",
+                         "realName":"Placeholder Name","phoneNumber":"555-0100",
+                         "position":"Teacher","room":"12"},
+             "ios":{"mdmCapableUsers":["placeholder"],"supervised":true}}
+            """#.utf8)
+        let reduced = try XCTUnwrap(
+            ReportEngine.reducingDeviceDetail(payload, mobile: true, keepAccountNames: false))
+        let text = String(decoding: reduced, as: UTF8.self)
+        for removed in ["Placeholder Name", "555-0100", "Teacher", "room", "mdmCapableUsers"] {
+            XCTAssertFalse(text.contains(removed), removed)
+        }
+        for kept in ["placeholder", "p@example.com", "supervised", "iPad-A"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+        let whole = try XCTUnwrap(
+            ReportEngine.reducingDeviceDetail(payload, mobile: true, keepAccountNames: true))
+        XCTAssertTrue(String(decoding: whole, as: UTF8.self).contains("Placeholder Name"))
+    }
+
+    /// The cache can sit in a shared folder: it is reduced, the live value is not.
+    func testTheCacheDropsAccountNamesAndTheLiveValueIsUnreduced() async throws {
+        for payload in [Self.flatDetail, Self.keyedDetail] {
+            let (profile, _) = try makeWorkspace()
+            let stub = try makeStub("printf '%s' '\(payload)'")
+            let result = await fetch(CLIBridge(), profile: profile, stub: stub)
+            let live = String(decoding: try XCTUnwrap(result).data, as: UTF8.self)
+            XCTAssertTrue(live.contains("Placeholder Name"), "the view gets the live data")
+            let cached = try cachedText(result)
+            for removed in ["Placeholder Name", "555-0100", "lastLoggedInUsernameMdm", "realname"] {
+                XCTAssertFalse(cached.contains(removed), removed)
+            }
+            XCTAssertTrue(cached.contains("placeholder"), "the username stays")
+        }
+    }
+
+    /// On a shared workspace the cache goes through the pin, not the file's value alone.
+    func testAnUnconfirmedTrueOnASharedWorkspaceStillReducesTheCache() async throws {
+        let (profile, _) = try makeWorkspace()
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try """
+        shared_workspace:
+          enabled: true
+        jamf_cli:
+          keep_account_names: true
+        """.write(to: workspace.appendingPathComponent("config.yaml"),
+                  atomically: true, encoding: .utf8)
+        let stub = try makeStub("printf '%s' '\(Self.flatDetail)'")
+        let first = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertFalse(try cachedText(first).contains("Placeholder Name"), "unconfirmed")
+
+        try SharedConfigPin.confirm(profile: profile, keys: [.keepAccountNames])
+        let second = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertTrue(try cachedText(second).contains("Placeholder Name"), "confirmed")
+    }
+
+    func testAConfirmedKeepWritesTheCacheWhole() async throws {
+        let (profile, _) = try makeWorkspace()
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  keep_account_names: true\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let stub = try makeStub("printf '%s' '\(Self.flatDetail)'")
+        let result = await fetch(CLIBridge(), profile: profile, stub: stub)
+        XCTAssertTrue(try cachedText(result).contains("Placeholder Name"))
+    }
+
     // MARK: - Staging
 
     func testOutFileIsStagedOutsideTheWorkspaceAndRemoved() async throws {

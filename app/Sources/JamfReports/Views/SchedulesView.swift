@@ -1,12 +1,12 @@
 import SwiftUI
+import Synchronization
 import Combine
 
 // Thread-safe accumulator for streaming log lines from CLIBridge callbacks.
-private final class LineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _lines: [CLIBridge.LogLine] = []
-    func append(_ line: CLIBridge.LogLine) { lock.withLock { _lines.append(line) } }
-    var lines: [CLIBridge.LogLine] { lock.withLock { _lines } }
+private final class LineBuffer: Sendable {
+    private let stored = Mutex<[CLIBridge.LogLine]>([])
+    func append(_ line: CLIBridge.LogLine) { stored.withLock { $0.append(line) } }
+    var lines: [CLIBridge.LogLine] { stored.withLock { $0 } }
 }
 
 struct SchedulesView: View {
@@ -52,6 +52,16 @@ struct SchedulesView: View {
         Set(workspace.schedules.map(\.profile)).count
     }
 
+    private var scheduleCountPhrase: String {
+        let count = workspace.schedules.count
+        return count == 1 ? L("\(count) schedule") : L("\(count) schedules")
+    }
+
+    private var profileCountPhrase: String {
+        profileCount == 1
+            ? L("across \(profileCount) jamf-cli profile") : L("across \(profileCount) jamf-cli profiles")
+    }
+
     var body: some View {
         PageScaffold(spacing: 14) {
             header
@@ -64,18 +74,16 @@ struct SchedulesView: View {
             ) {
                 InlineBanner(
                     icon: "exclamationmark.triangle", tone: .danger,
-                    action: .init(label: "Open Login Items") {
+                    action: .init(label: L("Open Login Items")) {
                         workspace.tickerRegistrar.openLoginItems()
                     }
                 ) {
-                    Text("Automation is off: JamfReports is not allowed to run in the "
-                        + "background. Turn it on under Login Items › Allow in the Background.")
+                    Text("Automation is off: JamfReports is not allowed to run in the background. Turn it on under Login Items › Allow in the Background.")
                         .font(.callout)
                 }
             } else if !workspace.demoMode && workspace.tickerStatus == .unavailable {
                 InlineBanner(icon: "hammer", tone: .info) {
-                    Text("Ticker unavailable in this build — schedules run only via "
-                        + "`JamfReports --tick` until the app is installed.")
+                    Text("Ticker unavailable in this build — schedules run only via `JamfReports --tick` until the app is installed.")
                         .font(.callout)
                 }
             }
@@ -122,7 +130,7 @@ struct SchedulesView: View {
         .alert("Write Error", isPresented: $showWriteError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(writeError ?? "Unknown error")
+            Text(writeError ?? L("Unknown error"))
         }
         .onReceive(countdownTick) { now = $0 }
     }
@@ -139,8 +147,7 @@ struct SchedulesView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Managed automation").font(.headline)
-                    Text("Off — you manage these schedules yourself. Turn on to let the app keep "
-                        + "every profile fresh and generate reports automatically, on one policy.")
+                    Text("Off — you manage these schedules yourself. Turn on to let the app keep every profile fresh and generate reports automatically, on one policy.")
                         .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                 }
                 Spacer()
@@ -169,32 +176,30 @@ struct SchedulesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Background item · every 5 min",
-            title: "Scheduled Runs",
-            subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
+            kicker: L("Background item · every 5 min"),
+            title: L("Scheduled Runs"),
+            subtitle: L("\(scheduleCountPhrase) · \(workspace.schedules.filter(\.enabled).count) enabled · \(profileCountPhrase)")
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    // A reload re-reads profiles and schedules, and in demo mode
-                    // put a chosen demo profile back to meridian-prod.
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        guard !workspace.demoMode else { return }
-                        workspace.reloadFromDisk()
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Re-read schedules from disk.")
-                    PNPButton(title: "New schedule", icon: "plus", style: .gold) {
-                        newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
-                        showNewSchedule = true
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode
-                          ? DemoData.liveOnlyHelp
-                          : "Add a schedule the background item runs automatically.")
+            HStack(spacing: 8) {
+                // A reload re-reads profiles and schedules, and in demo mode
+                // put a chosen demo profile back to meridian-prod.
+                PNPButton(title: L("Refresh"), icon: "arrow.clockwise") {
+                    guard !workspace.demoMode else { return }
+                    workspace.reloadFromDisk()
                 }
-            )
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : L("Re-read schedules from disk."))
+                PNPButton(title: L("New schedule"), icon: "plus", style: .gold) {
+                    newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
+                    showNewSchedule = true
+                }
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : L("Add a schedule the background item runs automatically."))
+            }
         }
     }
 
@@ -204,14 +209,14 @@ struct SchedulesView: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    Kicker(text: "JAMF-CLI PROFILE").padding(.trailing, 4)
+                    Kicker(text: L("JAMF-CLI PROFILE")).padding(.trailing, 4)
                     Button {
                         profileFilter = "All"
                     } label: {
-                        Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
+                        Pill(text: L("All · \(workspace.schedules.count)"), tone: profileFilter == "All" ? .gold : .muted)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Show all profiles, \(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s")")
+                    .accessibilityLabel(workspace.schedules.count == 1 ? L("Show all profiles, \(workspace.schedules.count) schedule") : L("Show all profiles, \(workspace.schedules.count) schedules"))
                     ForEach(workspace.profiles) { p in
                         let count = workspace.schedules.filter { $0.profile == p.name }.count
                         Button {
@@ -221,12 +226,12 @@ struct SchedulesView: View {
                                 .opacity(count > 0 ? 1 : 0.5)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Filter by \(p.name), \(count) schedule\(count == 1 ? "" : "s")")
+                        .accessibilityLabel(count == 1 ? L("Filter by \(p.name), \(count) schedule") : L("Filter by \(p.name), \(count) schedules"))
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            PNPButton(title: "Add profile", icon: "plus", size: .sm) {
+            PNPButton(title: L("Add profile"), icon: "plus", size: .sm) {
                 NotificationCenter.default.post(
                     name: .navigateToTab,
                     object: nil,
@@ -282,8 +287,8 @@ struct SchedulesView: View {
                 .frame(width: 56, height: 56)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Kicker(text: "Next up", tone: .gold)
-                    Text(next?.name ?? "No schedules enabled")
+                    Kicker(text: L("Next up"), tone: .gold)
+                    Text(next?.name ?? L("No schedules enabled"))
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 4) {
@@ -297,7 +302,7 @@ struct SchedulesView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Kicker(text: nextDate == nil ? "Awaiting schedule" : "Runs in", tone: .gold)
+                    Kicker(text: nextDate == nil ? L("Awaiting schedule") : L("Runs in"), tone: .gold)
                     Text(Self.countdownString(now: now, next: nextDate))
                         .font(Theme.Fonts.mono(28, weight: .bold))
                         .foregroundStyle(Theme.Colors.goldBright)
@@ -307,7 +312,7 @@ struct SchedulesView: View {
 
                 VStack(spacing: 6) {
                     PNPButton(
-                        title: isRunning ? "Running…" : "Run now",
+                        title: isRunning ? L("Running…") : L("Run now"),
                         icon: isRunning ? "hourglass" : "play.fill"
                     ) {
                         guard !isRunning else { return }
@@ -380,21 +385,27 @@ struct SchedulesView: View {
     private var runLogSheet: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Mono(text: "Live output", size: 12, color: Theme.Colors.fg2)
+                Mono(text: L("Live output"), size: 12, color: Theme.Colors.fg2)
                 Spacer()
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
+                        .accessibilityLabel("Schedule running")
                 } else if let msg = lastRunMessage, let exitCode = Self.extractExitCode(from: msg) {
                     Pill(
-                        text: "EXIT \(exitCode)",
+                        text: L("EXIT \(exitCode)"),
                         tone: exitCode == 0 ? .teal : .danger,
                         icon: exitCode == 0 ? "checkmark" : "xmark"
                     )
                 }
                 Button {
                     let joined = runLogLines.map(\.text).joined(separator: "\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(joined, forType: .string)
+                    let profile = workspace.demoMode ? nil : workspace.profile
+                    Task {
+                        let redacted = await Task.detached(priority: .userInitiated) {
+                            LogRedactor.redactedForSharing(joined, profile: profile)
+                        }.value
+                        SystemActions.copyToClipboard(redacted)
+                    }
                 } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -430,7 +441,7 @@ struct SchedulesView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(workspace.demoMode)
-                    .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
+                    .accessibilityLabel(s.enabled ? L("Disable \(s.name)") : L("Enable \(s.name)"))
                 }
                 .width(48)
 
@@ -519,7 +530,7 @@ struct SchedulesView: View {
         ]
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Kicker(text: "RUN MODES")
+                Kicker(text: L("RUN MODES"))
                 Spacer()
                 Menu {
                     ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
@@ -555,7 +566,7 @@ struct SchedulesView: View {
                                     Text(mode.displayTitle)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
-                                    Mono(text: mode.rawValue, size: 9, color: Theme.Text.tertiary(contrast))
+                                    Mono(text: mode.rawValue, size: 10, color: Theme.Text.tertiary(contrast))
                                 }
                             }
                             Divider().background(Theme.Colors.hairline)
@@ -592,15 +603,15 @@ struct SchedulesView: View {
         // A queued run has not happened yet — reporting "exit 75" would read as
         // a failure, and reporting "exit 0" would claim a run that never ran.
         lastRunMessage = exit == TickRunner.queuedExitCode
-            ? "\(schedule.name) · queued — another run is in progress"
-            : "\(schedule.name) · exit \(exit)"
+            ? L("\(schedule.name) · queued — another run is in progress")
+            : L("\(schedule.name) · exit \(exit)")
         workspace.reloadFromDisk()
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
         guard !workspace.demoMode else { return }
         guard var record = ScheduleRecord(schedule: schedule) else {
-            writeError = "This schedule cannot be edited here."; showWriteError = true; return
+            writeError = L("This schedule cannot be edited here."); showWriteError = true; return
         }
         record.enabled.toggle()
         do { try ScheduleStore().upsert(record) } catch {
@@ -613,8 +624,7 @@ struct SchedulesView: View {
         guard !workspace.demoMode,
               let label = LaunchAgentWriter.label(for: schedule) else { return }
         guard !ManagedAutomation.owns(label) else {
-            writeError = "\(schedule.name) is a managed automation agent — "
-                + "turn off Manage automation to remove it."
+            writeError = L("\(schedule.name) is a managed automation agent — turn off Manage automation to remove it.")
             showWriteError = true
             return
         }
@@ -627,12 +637,12 @@ struct SchedulesView: View {
     private func saveSchedule(_ form: ScheduleFormState) async {
         guard !workspace.demoMode else { return }
         guard let record = ScheduleRecord(schedule: form.toSchedule()) else {
-            writeError = "Schedule name or profile produces an invalid label."
+            writeError = L("Schedule name or profile produces an invalid label.")
             showWriteError = true
             return
         }
         do { try ScheduleStore().upsert(record) } catch {
-            writeError = "Could not save schedule · \(error.localizedDescription)"
+            writeError = L("Could not save schedule · \(error.localizedDescription)")
             showWriteError = true
             return
         }
@@ -644,16 +654,16 @@ struct SchedulesView: View {
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         let pill: Pill
         switch s {
-        case .ok:      pill = Pill(text: "OK",      tone: .teal,   icon: "checkmark")
-        case .warn:    pill = Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
-        case .fail:    pill = Pill(text: "FAIL",    tone: .danger, icon: "xmark")
-        case .partial: pill = Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
+        case .ok:      pill = Pill(text: L("OK"),      tone: .teal,   icon: "checkmark")
+        case .warn:    pill = Pill(text: L("WARN"),    tone: .warn,   icon: "exclamationmark")
+        case .fail:    pill = Pill(text: L("FAIL"),    tone: .danger, icon: "xmark")
+        case .partial: pill = Pill(text: L("PARTIAL"), tone: .warn,   icon: "exclamationmark.triangle.fill")
         }
         return pill.accessibilityLabel(s.accessibilityLabel)
     }
 
     private func labelText(for schedule: Schedule) -> String {
-        LaunchAgentWriter.label(for: schedule) ?? "(invalid label)"
+        LaunchAgentWriter.label(for: schedule) ?? L("(invalid label)")
     }
 
     /// Extracts the exit code from a run-completion message. The producer is
@@ -702,7 +712,7 @@ private struct RunLogConsole: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if lines.isEmpty {
                         HStack(spacing: 0) {
-                            Text(isRunning ? "Starting" : "No output")
+                            Text(isRunning ? L("Starting") : L("No output"))
                                 .font(Theme.Fonts.mono(12))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                             cursor
@@ -733,7 +743,7 @@ private struct RunLogConsole: View {
             )
             .onChange(of: lines.count) { _, _ in
                 guard isScrolledToBottom else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
+                withMotionSafeAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
                 }
             }
@@ -807,7 +817,7 @@ struct ScheduleFormState {
     }
 
     // Multi-profile targeting. The native runner only ever honours
-    // `--all-profiles` + exclusions (`ScheduleRecord.allProfiles` is a Bool),
+    // `--all-profiles` + exclusions (`ScheduleRecord.allWorkspaces` is a Bool),
     // so this stays a two-way choice rather than modeling scopes the store
     // cannot persist.
     enum ProfileMode: String, CaseIterable, Identifiable {
@@ -892,7 +902,7 @@ private struct NewScheduleSheet: View {
     @FocusState private var nameFieldFocused: Bool
     @State private var nameWasTouched = false
 
-    private let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    private let weekdayNames = [L("Sunday"), L("Monday"), L("Tuesday"), L("Wednesday"), L("Thursday"), L("Friday"), L("Saturday")]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -917,9 +927,9 @@ private struct NewScheduleSheet: View {
             // Form body
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    formRow(label: "Name") {
+                    formRow(label: L("Name")) {
                         VStack(alignment: .leading, spacing: 4) {
-                            PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
+                            PNPTextField(value: $form.name, placeholder: L("e.g. Daily Snapshot Collection"))
                                 .focused($nameFieldFocused)
                                 .onChange(of: nameFieldFocused) { _, focused in
                                     if !focused { nameWasTouched = true }
@@ -932,10 +942,10 @@ private struct NewScheduleSheet: View {
                         }
                     }
 
-                    formRow(label: "Profile target") {
+                    formRow(label: L("Profile target")) {
                         Picker("", selection: $form.profileMode) {
                             ForEach(ScheduleFormState.ProfileMode.allCases) {
-                                Text($0.rawValue).tag($0)
+                                Text(LShown($0.rawValue)).tag($0)
                             }
                         }
                         .labelsHidden()
@@ -943,7 +953,7 @@ private struct NewScheduleSheet: View {
                     }
 
                     if form.profileMode == .single {
-                        formRow(label: "Profile") {
+                        formRow(label: L("Profile")) {
                             Picker("", selection: $form.profile) {
                                 ForEach(profiles, id: \.self) { Text($0).tag($0) }
                             }
@@ -953,7 +963,7 @@ private struct NewScheduleSheet: View {
                     }
 
                     if form.profileMode != .single {
-                        formRow(label: "Sequential") {
+                        formRow(label: L("Sequential")) {
                             Toggle("Run profiles one at a time", isOn: $form.multiSequential)
                                 .labelsHidden()
                             Text("Run profiles one at a time")
@@ -962,10 +972,10 @@ private struct NewScheduleSheet: View {
                         }
                     }
 
-                    formRow(label: "Cadence") {
+                    formRow(label: L("Cadence")) {
                         Picker("", selection: $form.cadenceType) {
                             ForEach(ScheduleFormState.CadenceType.allCases) {
-                                Text($0.rawValue).tag($0)
+                                Text(LShown($0.rawValue)).tag($0)
                             }
                         }
                         .labelsHidden()
@@ -986,17 +996,17 @@ private struct NewScheduleSheet: View {
                         }
                     }
 
-                    formRow(label: "Time") {
+                    formRow(label: L("Time")) {
                         DatePicker("", selection: $form.scheduledTime,
                                    displayedComponents: [.hourAndMinute])
                             .labelsHidden()
                             .datePickerStyle(.compact)
                     }
 
-                    formRow(label: "Mode") {
+                    formRow(label: L("Mode")) {
                         Picker("", selection: $form.mode) {
                             ForEach(Schedule.RunMode.allCases) {
-                                Text($0.rawValue).tag($0)
+                                Text(LShown($0.rawValue)).tag($0)
                             }
                         }
                         .labelsHidden()
@@ -1010,7 +1020,7 @@ private struct NewScheduleSheet: View {
                     // jamf-cli-only never collects — the tier set is moot,
                     // so the picker is hidden for that mode.
                     if form.mode != .jamfCLIOnly {
-                        formRow(label: "Tiers") {
+                        formRow(label: L("Tiers")) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 14) {
                                     ForEach(CollectionTier.allCases, id: \.self) { tier in
@@ -1025,11 +1035,11 @@ private struct NewScheduleSheet: View {
                         }
                     }
 
-                    formRow(label: "Enabled") {
+                    formRow(label: L("Enabled")) {
                         Toggle("", isOn: $form.enabled).labelsHidden()
                     }
 
-                    FieldHelp(text: "Cadence preview: \(form.scheduleString)")
+                    FieldHelp(text: L("Cadence preview: \(form.scheduleString)"))
                 }
                 .padding(18)
             }
@@ -1037,8 +1047,8 @@ private struct NewScheduleSheet: View {
             Divider()
             HStack {
                 Spacer()
-                PNPButton(title: "Cancel", action: onCancel)
-                PNPButton(title: "Add Schedule", icon: "checkmark", style: .gold) {
+                PNPButton(title: L("Cancel"), action: onCancel)
+                PNPButton(title: L("Add Schedule"), icon: "checkmark", style: .gold) {
                     onSave(form)
                 }
                 .disabled(!form.isValid)

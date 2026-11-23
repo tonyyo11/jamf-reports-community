@@ -4,7 +4,8 @@ import Foundation
 struct Backup: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Back up a Jamf Pro profile's config objects, and Jamf Protect too when "
-            + "connected. Refuses a Jamf School or other-product profile.")
+            + "connected; a Jamf School workspace backs up its Jamf Protect alone. Refuses a "
+            + "Jamf School workspace without Jamf Protect, or another product's profile.")
     @Option(help: "Workspace profile slug.") var profile: String
 
     static func refusal(profile: String) -> String? {
@@ -13,17 +14,18 @@ struct Backup: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         // Before the tick lock and before anything is written, once: the bridge would print
         // the same refusal and ArgumentParser would print it again as an error.
         if let refusal = Self.refusal(profile: profile) { CLIRun.fail(refusal) }
-        let code = try await CLIRun.exclusively { () -> Int32 in
+        let code = try await CLIRun.exclusively(profile: profile) { () -> Int32 in
             let bridge = await MainActor.run { CLIBridge() }
             // Label like the GUI/scheduled path so a cron'd `backup` participates in
             // the same "keep newest 10" retention instead of growing unbounded.
             let label = "scheduled-\(BackupMaintenance.dateStamp())"
-            let code = try await bridge.backup(
+            let run = try await bridge.backupRun(
                 profile: profile, label: label, onLine: CLIRun.printLogLine)
+            let code = run.exit
             // Run housekeeping BEFORE the possible CLIRun.fail below (which exits the
             // process) so an exit-7 partial export is pruned like any other backup —
             // CLIRun.fail never returns, so housekeeping is otherwise unreachable.
@@ -31,7 +33,8 @@ struct Backup: AsyncParsableCommand {
             // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
             if CLIBridge.backupOutputIsPrunable(exit: code) {
                 BackupMaintenance.performPostSuccessHousekeeping(
-                    profile: profile, onLine: CLIRun.printLogLine)
+                    profile: profile, justFinished: run.folder,
+                    onLine: CLIRun.printLogLine)
             }
             return code
         }
@@ -54,20 +57,27 @@ struct Scaffold: AsyncParsableCommand {
             + "once; no column mapping is written or read. Omit to write the minimal config "
             + "alone, the same starting point the GUI's workspace step writes."
     )) var csv: String?
-    @Option(help: "Output config.yaml path.") var out: String
+    @Option(help: "Output config.yaml path. A workspace's own config.yaml gets its profiles: block.") var out: String
 
     func run() async throws {
         CLIRun.requireSafeOutput(out)
         let outURL = URL(fileURLWithPath: out)
         try FileManager.default.createDirectory(
             at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Profile-agnostic: empty slug → `jamf_cli.profile: ""` (the user sets the profile
-        // when they wire it up). Like Python's `scaffold`, this OVERWRITES `--out` if it
+        // A workspace's own config.yaml gets its `profiles:` block (D3). Anywhere else the
+        // file is profile-agnostic (`jamf_cli.profile: ""`), since a block must name the
+        // workspace it serves. Like Python's `scaffold`, this OVERWRITES `--out` if it
         // exists — it's an initial-setup command. The file it replaces is copied aside first.
+        let workspace = SharedConfigPin.profile(forConfigAt: outURL).flatMap {
+            ProfileService.isValid($0) ? $0 : nil
+        }
+        let profile = workspace ?? ""
+        let kind = workspace.map { ProfilesConfigWriter.NewWorkspace.of($0) }
         guard let csv else {
             try keepCopy(of: outURL)
-            try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
-            SharedConfigPin.confirmWrittenConfig(at: outURL)
+            let written = try ScaffoldService.writeMinimalConfig(
+                to: outURL, profile: profile, workspace: kind)
+            SharedConfigPin.confirmWrittenConfig(written, at: outURL)
             print(outURL.path)
             return
         }
@@ -75,18 +85,22 @@ struct Scaffold: AsyncParsableCommand {
         let eas = ScaffoldService.proposeEAs(
             headers: sample.headers, sampleRows: sample.rows, mappedHeaders: [])
         try keepCopy(of: outURL)
-        try ScaffoldService.writeConfig(to: outURL, eas: eas, profile: "")
-        SharedConfigPin.confirmWrittenConfig(at: outURL)
+        let written = try ScaffoldService.writeConfig(
+            to: outURL, eas: eas, profile: profile, workspace: kind)
+        SharedConfigPin.confirmWrittenConfig(written, at: outURL)
         print(outURL.path)
     }
 
     /// On stderr, so stdout stays the one path a script reads.
     private func keepCopy(of url: URL) throws {
         guard let backup = try ConfigService.backUp(url) else { return }
+        let omitted = ConfigService.backupOmissions(backup)
+        let restore = omitted.count > 1 ? "them" : "it"
         FileHandle.standardError.write(
             Data(("note: kept a copy of the existing file at \(backup.path)"
-                + (ConfigService.backupOmitsWebhook(backup)
-                    ? "; its webhook URL is not kept, so enter it again after a restore" : "")
+                + (omitted.isEmpty ? "" : "; its \(omitted.joined(separator: " and ")) "
+                    + "\(omitted.count > 1 ? "are" : "is") not kept, so enter \(restore) again "
+                    + "after a restore")
                 + "\n").utf8))
     }
 }
@@ -100,7 +114,7 @@ struct Check: AsyncParsableCommand {
     @Flag(help: "Emit machine-readable JSON.") var json = false
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         guard json else { Foundation.exit(runCheck(profile: profile)) }
 
         // JSON mode reports the doctor alone. The plain path's extra lines
@@ -127,6 +141,34 @@ struct Check: AsyncParsableCommand {
         )
         print(String(decoding: try encoder.encode(payload), as: UTF8.self))
         Foundation.exit(report.failCount > 0 ? 1 : 0)
+    }
+}
+
+/// `jamf-reports verify <stem>.manifest.json`: read-only, so it takes no lock and no profile.
+struct Verify: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Check a report run's manifest: every artifact's size and SHA-256, and the "
+            + "RFC 3161 timestamp (.tsr) beside it when there is one. Exits 1 when anything "
+            + "differs.")
+    @Argument(help: "The run's <stem>.manifest.json, beside its workbook.") var manifest: String
+    @Option(name: .customLong("signer-sha256"), help: ArgumentHelp(
+        "The SHA-256 of the timestamp authority's signing certificate. With it, a run with no "
+            + "timestamp, or one signed by another certificate, exits 1.",
+        valueName: "hex"))
+    var signerSHA256: String?
+
+    func validate() throws {
+        if let signerSHA256, RunManifest.normalizedSignerSHA256(signerSHA256) == nil {
+            throw ValidationError("--signer-sha256 needs 64 hex digits (colons and spaces allowed)")
+        }
+    }
+
+    func run() async throws {
+        let result = RunManifest.verify(
+            manifestAt: URL(fileURLWithPath: manifest),
+            expectedSigner: signerSHA256.flatMap(RunManifest.normalizedSignerSHA256))
+        CLIRun.write(result.lines.joined(separator: "\n") + "\n", to: .standardOutput)
+        Foundation.exit(result.passed ? 0 : 1)
     }
 }
 
@@ -194,7 +236,7 @@ struct DiagnosticBundleCommand: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         let url = try DiagnosticBundleService.generate(profile: profile)
         print(url.path)
     }
@@ -213,7 +255,7 @@ struct Device: AsyncParsableCommand {
     }
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         if let refusal = await Self.refusal(profile: profile) { CLIRun.fail(refusal) }
         let bridge = await MainActor.run { CLIBridge() }
         guard let result = await bridge.deviceDetailWithProvenance(
@@ -236,7 +278,7 @@ struct SchoolCheck: AsyncParsableCommand {
     @Option(help: "Workspace profile slug.") var profile: String
 
     func run() async throws {
-        guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        CLIRun.requireValidProfile(profile)
         Foundation.exit(runSchoolCheck(profile: profile))
     }
 }

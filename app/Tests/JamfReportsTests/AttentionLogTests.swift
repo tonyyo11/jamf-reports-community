@@ -310,7 +310,7 @@ final class AttentionLogTests: XCTestCase {
         let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
         let summaries = try WorkspacePaths.summariesDir(for: profile)
         try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         try #"{"date":"\#(today)","totalDevices":5,"source":"jamf-cli"}"#.write(
             to: summaries.appendingPathComponent("summary_\(today).json"),
             atomically: true, encoding: .utf8)
@@ -318,7 +318,8 @@ final class AttentionLogTests: XCTestCase {
             await AttentionLog.recording(profile: profile, usesAppRecord: false) {
                 AttentionLog.current?.record(into: status, runLog: "run.log")
                 await ScheduledRunSignals.notifyMetricAlerts(
-                    config: config, profile: profile, workspace: workspace, recorder: nil)
+                    config: config, profile: profile, workspace: workspace, recorder: nil,
+                    now: .testNoon)
             }
         }
         WebhookCapture.respond(with: 429)

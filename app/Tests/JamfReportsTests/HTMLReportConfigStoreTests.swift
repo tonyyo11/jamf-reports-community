@@ -63,18 +63,32 @@ final class HTMLReportConfigStoreTests: XCTestCase {
               history_file: "history/html.json"
               section_limits:
                 protect_alerts: 50
-                insights_drift_snapshots: 4
             """)
         try HTMLReportConfigWriter.save(withWorkbook: true, profile: profile)
 
         let config = try ConfigLoader.load(from: try configURL())
         XCTAssertEqual(config.html?.writesWithWorkbook, true)
         XCTAssertEqual(config.html?.sectionLimits?.protectAlerts, 50)
-        XCTAssertEqual(config.html?.sectionLimits?.insightsDriftSnapshots, 4)
         let text = try readBack()
         XCTAssertTrue(text.contains("track_history: true"))
         XCTAssertTrue(text.contains("history_file: \"history/html.json\"")
                       || text.contains("history_file: history/html.json"), text)
+    }
+
+    func testSavingRemovesTheRetiredInsightsDriftKey() throws {
+        try write("""
+            html:
+              section_limits:
+                protect_alerts: 50
+                insights_drift_snapshots: 4
+            """)
+        let saved = try HTMLReportConfigWriter.save(withWorkbook: true, profile: profile)
+
+        XCTAssertEqual(saved.report.removedRetiredKeys,
+                       ["html.section_limits.insights_drift_snapshots"])
+        let text = try readBack()
+        XCTAssertFalse(text.contains("insights_drift_snapshots"), text)
+        XCTAssertTrue(text.contains("protect_alerts: 50"), text)
     }
 
     func testSavingKeepsEverythingOutsideTheHTMLBlock() throws {

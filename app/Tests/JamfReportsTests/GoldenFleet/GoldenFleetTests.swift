@@ -542,7 +542,8 @@ final class GoldenFleetTests: XCTestCase {
     // MARK: - Case K — DDM per-device status header numbers
 
     /// One DDM-enabled Mac that reported, one that has not, one Mac without
-    /// DDM. Header strip must read enabled 2 of 3, reported 1, failing 1.
+    /// DDM. Header strip must read enabled 2 of 3, reported 1, failing 0 (the one declaration
+    /// is inactive, which is not a failure).
     func testCaseK_DDMDeviceStatusHeaderNumbers() throws {
         let root = makeRoot()
         let dataDir = root.appendingPathComponent("data", isDirectory: true)
@@ -562,14 +563,14 @@ final class GoldenFleetTests: XCTestCase {
         ], to: dataDir.appendingPathComponent("ddm-device-status", isDirectory: true)
             .appendingPathComponent("ddm-device-status_\(stamp).json"))
 
-        let counts = DDMDeviceStatusService.fleetDDMCounts(
-            computersURL: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("computers")))
+        let counts = try XCTUnwrap(DDMDeviceStatusService.fleetDDMCounts(
+            computersURL: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("computers"))))
         XCTAssertEqual(counts.enabled, 2); XCTAssertEqual(counts.total, 3)
 
         let s = DDMDeviceStatusService.load(
             url: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("ddm-device-status")))
         XCTAssertEqual(s.ddmReportedCount, 1)
-        XCTAssertEqual(s.failingDeclarationCount, 1)
+        XCTAssertEqual(s.failingDeclarationCount, 0)
         XCTAssertEqual(
             DDMBlueprintView.decideLockState(
                 isDemoMode: false, platformAvailable: false,

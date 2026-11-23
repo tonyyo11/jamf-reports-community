@@ -5,14 +5,23 @@ import SwiftUI
 /// workspace can be a different Jamf Pro server, so this screen never shows two; the sidebar
 /// profile switcher changes what it shows.
 struct FleetOverviewView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
+    /// `thresholds.stale_device_days`, the cut-off the summary's stale count uses.
+    private var staleDays: Int { workspace.configState.staleRule.days }
     @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var overview: FleetWorkspaceOverview?
     @State private var isLoading = false
+    /// The `fleetOverviewLoadKey` `overview` was read for.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
-    /// The loaded overview, only while it is the sidebar profile's.
-    private var current: FleetWorkspaceOverview? { overview?.shown(for: workspace.profile) }
+    /// The loaded overview, only while it was read for the current profile and demo mode.
+    private var current: FleetWorkspaceOverview? {
+        loadedSource == workspace.fleetOverviewLoadKey
+            ? overview?.shown(for: workspace.profile) : nil
+    }
 
     var body: some View {
         ScrollView {
@@ -26,6 +35,7 @@ struct FleetOverviewView: View {
                     workspaceDetail(overview)
                 } else {
                     ProgressView()
+                        .accessibilityLabel("Loading fleet overview")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 48)
                 }
@@ -36,7 +46,7 @@ struct FleetOverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .background(Theme.Colors.winBG)
-        .task(id: workspace.fleetOverviewLoadKey) {
+        .task(id: "\(workspace.fleetOverviewLoadKey)|\(reloads)") {
             await load()
         }
     }
@@ -44,22 +54,21 @@ struct FleetOverviewView: View {
     private var header: some View {
         PageHeader(
             kicker: workspace.profile,
-            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigate(to: .overview) })],
-            title: "Fleet Overview",
-            subtitle: current?.summary.map { "Latest summary \($0.date)" }
-                ?? "No successful summary found for this workspace"
+            breadcrumbs: [Breadcrumb(label: L("Overview"), action: { navigate(to: .overview) })],
+            title: L("Fleet Overview"),
+            subtitle: current?.summary.map { L("Latest summary \($0.date)") }
+                ?? L("No successful summary found for this workspace")
         ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                    }
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
-                        Task { await load() }
-                    }
-                    .help("Re-read this workspace's latest summary snapshot.")
+            HStack(spacing: 8) {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("Refreshing fleet overview")
                 }
-            )
+                PNPButton(title: L("Refresh"), icon: "arrow.clockwise") {
+                    reloads += 1
+                }
+                .help("Re-read this workspace's latest summary snapshot.")
+            }
         }
     }
 
@@ -67,34 +76,44 @@ struct FleetOverviewView: View {
     private func workspaceDetail(_ row: FleetWorkspaceOverview) -> some View {
         // #184: each flagged condition gets its explanation and a route to the
         // screen where the operator can act on it.
-        if row.hasIssue {
+        if !row.issues(format: percentFormat, staleDays: staleDays).isEmpty {
             profileIssuesCard(for: row)
         }
 
-        HStack(spacing: 12) {
+        // The Overview's grid: a tile whose caption wraps sets the row's height for all four.
+        EqualHeightTileGrid(minTileWidth: 120) {
             StatTile(
-                label: "Macs",
+                label: L("Macs"),
                 value: row.summary.map { "\($0.totalDevices)" } ?? "--",
-                sub: "Latest successful summary"
+                sub: L("Latest successful summary"),
+                fillsHeight: true,
+                action: row.summary == nil ? nil : { openComputers(.all) },
+                actionHint: L("Opens Computers, every Mac in the latest inventory")
             )
             StatTile(
-                label: "Stability",
-                value: stabilityLabel(row.summary?.stabilityIndex),
-                sub: "Composite index"
+                label: L("Stability"),
+                value: stabilityLabel(row.summary?.stabilityIndex, format: percentFormat),
+                sub: L("Composite index"),
+                fillsHeight: true
             )
             StatTile(
-                label: "Stale",
+                label: L("Stale"),
                 value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                sub: ">30d since contact"
+                sub: L("Stale after \(staleDays) days"),
+                // Inert: the summary's count includes Macs without the Jamf binary, which
+                // Computers' Stale filter lists apart.
+                fillsHeight: true
             )
             StatTile(
-                label: "Patch",
-                value: row.summary?.patchPct.map { "\(String(format: "%.1f", $0))%" } ?? "--",
-                sub: "Devices on latest"
+                label: L("Patch"),
+                value: percentFormat.text(row.summary?.patchPct, missing: "--"),
+                sub: L("Devices on latest"),
+                fillsHeight: true
             )
         }
 
         stabilityTrendCard(for: row)
+        FleetDeviceMapsSection(summary: row.summary)
         summaryDetailsCard(for: row)
     }
 
@@ -102,25 +121,26 @@ struct FleetOverviewView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Summary Details")
+                    SectionHeader(title: L("Summary Details"))
                     Spacer()
                     let index = row.summary?.stabilityIndex
                     Pill(
-                        text: row.summary == nil ? "No Data" : stabilityPillText(index),
+                        text: row.summary == nil ? L("No Data") : stabilityPillText(index, format: percentFormat),
                         tone: stabilityTone(index)
                     )
                     .accessibilityLabel(
-                        stabilityAccessibilityLabel(index, hasSummary: row.summary != nil))
+                        stabilityAccessibilityLabel(
+                            index, hasSummary: row.summary != nil, format: percentFormat))
                 }
 
                 if let summary = row.summary {
                     VStack(spacing: 10) {
-                        profileMetricRow("Compliance", value: summary.compliancePct)
-                        profileMetricRow("FileVault", value: summary.fileVaultPct)
-                        profileMetricRow("Current macOS", value: summary.osCurrentPct)
-                        profileMetricRow("EDR Agent", value: summary.crowdstrikePct)
-                        profileMetricRow("Patch", value: summary.patchPct)
-                        profileMetricRow("Stale", value: stalePercent(summary), inverse: true)
+                        profileMetricRow(L("Compliance"), value: summary.compliancePct)
+                        profileMetricRow(L("FileVault"), value: summary.fileVaultPct)
+                        profileMetricRow(L("Current macOS"), value: summary.osCurrentPct)
+                        profileMetricRow(L("EDR Agent"), value: summary.crowdstrikePct)
+                        profileMetricRow(L("Patch"), value: summary.patchPct)
+                        profileMetricRow(L("Stale"), value: stalePercent(summary), inverse: true)
                     }
                 } else {
                     Text("Run a schedule or generate a report for this workspace to create its first summary.")
@@ -136,19 +156,19 @@ struct FleetOverviewView: View {
                         .font(.callout)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                     Spacer()
-                    PNPButton(title: "Overview", icon: Tab.overview.sfSymbol, size: .sm) {
+                    PNPButton(title: L("Overview"), icon: Tab.overview.sfSymbol, size: .sm) {
                         navigate(to: .overview)
                     }
                     .help("Open the Overview tab.")
-                    PNPButton(title: "Computers", icon: Tab.devices.sfSymbol, size: .sm) {
+                    PNPButton(title: L("Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
                         navigate(to: .devices)
                     }
                     .help("Open the Computers tab.")
-                    PNPButton(title: "Runs", icon: Tab.runs.sfSymbol, size: .sm) {
+                    PNPButton(title: L("Runs"), icon: Tab.runs.sfSymbol, size: .sm) {
                         navigate(to: .runs)
                     }
                     .help("Open the Runs tab.")
-                    PNPButton(title: "Schedules", icon: Tab.schedules.sfSymbol, size: .sm) {
+                    PNPButton(title: L("Schedules"), icon: Tab.schedules.sfSymbol, size: .sm) {
                         navigate(to: .schedules)
                     }
                     .help("Open the Schedules tab.")
@@ -171,15 +191,18 @@ struct FleetOverviewView: View {
         return Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Stability Trend")
+                    SectionHeader(title: L("Stability Trend"))
                     Spacer()
                     if !points.isEmpty {
-                        Pill(text: "\(points.count) snapshot\(points.count == 1 ? "" : "s")",
+                        Pill(text: (points.count == 1 ? L("\(points.count) snapshot") : L("\(points.count) snapshots")),
                              tone: .muted)
                     }
                 }
                 if points.isEmpty {
                     stabilityEmptyState
+                } else if points.count == 1 {
+                    // One point draws axes and no line.
+                    stabilityOnePointState
                 } else {
                     stabilityChart(points: points)
                 }
@@ -190,8 +213,19 @@ struct FleetOverviewView: View {
     private var stabilityEmptyState: some View {
         EmptyStateView(
             systemImage: "chart.line.uptrend.xyaxis",
-            title: "No trend summaries yet",
-            message: "Stability history is built from daily summary snapshots written by each collect run."
+            title: L("No trend summaries yet"),
+            message: L("Stability history is built from daily summary snapshots written by each collect run.")
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+        .padding(.horizontal, 4)
+    }
+
+    private var stabilityOnePointState: some View {
+        EmptyStateView(
+            systemImage: "chart.line.uptrend.xyaxis",
+            title: L("One daily summary so far"),
+            message: L("The trend line starts once a second day's summary is written.")
         )
         .frame(maxWidth: .infinity)
         .frame(height: 200)
@@ -199,15 +233,16 @@ struct FleetOverviewView: View {
     }
 
     private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
-        Chart {
+        let stability = Theme.ChartColors.color(forMetric: .stability)
+        return Chart {
             ForEach(points) { point in
                 AreaMark(
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
                 .foregroundStyle(LinearGradient(
-                    colors: [Theme.Colors.tealBright.opacity(0.35),
-                             Theme.Colors.tealBright.opacity(0)],
+                    colors: [stability.opacity(0.35),
+                             stability.opacity(0)],
                     startPoint: .top, endPoint: .bottom
                 ))
                 .interpolationMethod(.catmullRom)
@@ -216,7 +251,7 @@ struct FleetOverviewView: View {
                     x: .value("Date", point.date),
                     y: .value("Stability", point.value)
                 )
-                .foregroundStyle(Theme.Colors.tealBright)
+                .foregroundStyle(stability)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.catmullRom)
             }
@@ -249,17 +284,18 @@ struct FleetOverviewView: View {
         .frame(height: 200)
         .accessibilityLabel(Self.stabilityChartLabel)
         .accessibilityChartDescriptor(TrendLineChartDescriptor(
-            title: "Stability Trend",
-            seriesName: "Stability Index",
+            title: L("Stability Trend"),
+            seriesName: L("Stability Index"),
             dates: points.map(\.date),
             values: points.map(\.value),
-            unit: "%"
+            unit: "%",
+            percentFormat: percentFormat
         ))
     }
 
     /// VoiceOver container label for the fleet stability trend chart.
     /// `nonisolated` so unit tests can assert it without View `@MainActor` isolation.
-    nonisolated static let stabilityChartLabel = "Fleet stability trend over time"
+    nonisolated static var stabilityChartLabel: String { L("Fleet stability trend over time") }
 
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 10) {
@@ -278,12 +314,12 @@ struct FleetOverviewView: View {
             }
             .frame(height: 8)
             .accessibilityHidden(true)
-            Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--",
+            Mono(text: percentFormat.text(value, missing: "--"),
                  color: Theme.Colors.fg)
                 .frame(width: 56, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
+        .accessibilityLabel("\(label): \(percentFormat.text(value, missing: L("no data")))")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double? {
@@ -298,9 +334,9 @@ struct FleetOverviewView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(Theme.Colors.warn)
                         .accessibilityHidden(true)
-                    SectionHeader(title: "Issues on This Workspace")
+                    SectionHeader(title: L("Issues on This Workspace"))
                 }
-                ForEach(row.issues) { issue in
+                ForEach(row.issues(format: percentFormat, staleDays: staleDays)) { issue in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(issue.reason)
                             .font(.callout.weight(.semibold))
@@ -319,6 +355,11 @@ struct FleetOverviewView: View {
         }
     }
 
+    private func openComputers(_ filter: DevicesView.DeviceFilter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: filter.navigationUserInfo())
+    }
+
     private func navigate(to tab: Tab) {
         NotificationCenter.default.post(
             name: .navigateToTab,
@@ -327,14 +368,20 @@ struct FleetOverviewView: View {
         )
     }
 
+    /// The task is cancelled when the profile, demo mode or `reloads` changes, so a result
+    /// that arrives after is dropped, and the spinner is left to the load that replaced it.
     private func load() async {
         // A reload from disk: nothing is collected, so it neither writes the shared status
         // line (a running collect owns it) nor claims the data was refreshed.
+        let source = workspace.fleetOverviewLoadKey
+        if loadedSource != source { loadedSource = nil; overview = nil }
         isLoading = true
-        defer { isLoading = false }
         let loaded = await workspace.loadFleetOverview()
-        guard !Task.isCancelled, let loaded = loaded.shown(for: workspace.profile) else { return }
+        guard !Task.isCancelled, source == workspace.fleetOverviewLoadKey,
+              let loaded = loaded.shown(for: workspace.profile) else { return }
         overview = loaded
+        loadedSource = source
+        isLoading = false
     }
 }
 
@@ -347,26 +394,27 @@ private struct StabilityTrendPoint: Identifiable, Sendable {
 /// The word the tone encodes, on the tone's own thresholds.
 func stabilityWord(_ value: Double?) -> String? {
     guard let value else { return nil }
-    if value >= 85 { return "Healthy" }
-    if value >= 70 { return "Watch" }
-    return "Low"
+    if value >= 85 { return L("Healthy") }
+    if value >= 70 { return L("Watch") }
+    return L("Low")
 }
 
-func stabilityPillText(_ value: Double?) -> String {
-    guard let word = stabilityWord(value) else { return stabilityLabel(value) }
-    return "\(word) · \(stabilityLabel(value))"
+func stabilityPillText(_ value: Double?, format: PercentFormat) -> String {
+    guard let word = stabilityWord(value) else { return stabilityLabel(value, format: format) }
+    return "\(word) · \(stabilityLabel(value, format: format))"
 }
 
-func stabilityAccessibilityLabel(_ value: Double?, hasSummary: Bool) -> String {
+func stabilityAccessibilityLabel(
+    _ value: Double?, hasSummary: Bool, format: PercentFormat
+) -> String {
     guard hasSummary, let value, let word = stabilityWord(value) else {
-        return hasSummary ? "Stability unknown" : "Stability: no data"
+        return hasSummary ? L("Stability unknown") : L("Stability: no data")
     }
-    return "Stability \(word), \(String(format: "%.1f", value)) percent"
+    return L("Stability \(word), \(format.numberText(value)) percent")
 }
 
-private func stabilityLabel(_ value: Double?) -> String {
-    guard let value else { return "--" }
-    return "\(String(format: "%.1f", value))%"
+private func stabilityLabel(_ value: Double?, format: PercentFormat) -> String {
+    format.text(value, missing: "--")
 }
 
 private func stabilityTone(_ value: Double?) -> Pill.Tone {
@@ -386,34 +434,31 @@ struct FleetProfileIssue: Identifiable {
 }
 
 /// Why a workspace is flagged (#184), for Fleet Overview's issues card.
-func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
+func fleetProfileIssues(
+    _ summary: DailySummary?, format: PercentFormat, staleDays: Int
+) -> [FleetProfileIssue] {
     guard let summary else {
         return [FleetProfileIssue(
-            reason: "No summary collected yet",
-            explanation: "No successful collect has produced a daily summary for this "
-                + "profile, so its fleet metrics are unknown.",
-            actionLabel: "Open Overview",
+            reason: L("No summary collected yet"),
+            explanation: L("No successful collect has produced a daily summary for this profile, so its fleet metrics are unknown."),
+            actionLabel: L("Open Overview"),
             tab: .overview
         )]
     }
     var issues: [FleetProfileIssue] = []
     if let stability = summary.stabilityIndex, stability < 70 {
         issues.append(FleetProfileIssue(
-            reason: "Stability \(String(format: "%.0f", stability)) (below 70)",
-            explanation: "Composite of the summary's compliance, patch posture, and "
-                + "stale-device metrics. Components the last collect could not "
-                + "measure are dropped and the rest reweighted, so the score "
-                + "reflects measured data only.",
-            actionLabel: "Open Trends",
+            reason: L("Stability \(PercentFormat.whole.numberText(stability, beside: 70)) (below 70)"),
+            explanation: L("Composite of the summary's compliance, patch posture, and stale-device metrics. Components the last collect could not measure are dropped and the rest reweighted, so the score reflects measured data only."),
+            actionLabel: L("Open Trends"),
             tab: .trends
         ))
     }
     if let staleCount = summary.staleCount, staleCount > 0 {
         issues.append(FleetProfileIssue(
-            reason: "\(staleCount) stale computer\(staleCount == 1 ? "" : "s")",
-            explanation: "Computers that have not checked in for more than 30 days. Offline "
-                + "Outreach buckets them by how long they have been quiet.",
-            actionLabel: "Open Offline Outreach",
+            reason: (staleCount == 1 ? L("\(staleCount) stale computer") : L("\(staleCount) stale computers")),
+            explanation: L("Computers past this workspace's stale setting: more than \(staleDays) days by the dates Config › Thresholds counts. Offline Outreach buckets them by how long they have been quiet."),
+            actionLabel: L("Open Offline Outreach"),
             tab: .outreach
         ))
     }
@@ -421,19 +466,17 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     // than over-flag. A nil here means the snapshot didn't carry the field at all.
     if let fileVaultPct = summary.fileVaultPct, fileVaultPct < 90 {
         issues.append(FleetProfileIssue(
-            reason: "FileVault \(String(format: "%.1f", fileVaultPct))% (below 90%)",
-            explanation: "Share of computers reporting FileVault encryption enabled "
-                + "in the latest security snapshot.",
-            actionLabel: "Open Security Posture",
+            reason: L("FileVault \(format.numberText(fileVaultPct, beside: 90))% (below 90%)"),
+            explanation: L("Share of computers reporting FileVault encryption enabled in the latest security snapshot."),
+            actionLabel: L("Open Security Posture"),
             tab: .securityPosture
         ))
     }
     if let patchPct = summary.patchPct, patchPct < 80 {
         issues.append(FleetProfileIssue(
-            reason: "Patch \(String(format: "%.1f", patchPct))% (below 80%)",
-            explanation: "Share of computers on the latest version of their patch titles, "
-                + "in the latest patch snapshot.",
-            actionLabel: "Open Patch Compliance",
+            reason: L("Patch \(format.numberText(patchPct, beside: 80))% (below 80%)"),
+            explanation: L("Share of computers on the latest version of their patch titles, in the latest patch snapshot."),
+            actionLabel: L("Open Patch Compliance"),
             tab: .patch
         ))
     }

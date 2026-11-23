@@ -8,7 +8,9 @@ struct PolicyProfileView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PolicyHealthService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedTab: Tab = .policies
 
     enum Tab: String, CaseIterable {
@@ -17,8 +19,8 @@ struct PolicyProfileView: View {
 
         var label: String {
             switch self {
-            case .policies: "Policies"
-            case .profiles: "Profiles"
+            case .policies: L("Policies")
+            case .profiles: L("Profiles")
             }
         }
 
@@ -33,8 +35,8 @@ struct PolicyProfileView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "Policy & Profile Health",
+                kicker: L("Operations"),
+                title: L("Policy & Profile Health"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
@@ -45,47 +47,50 @@ struct PolicyProfileView: View {
                 options: Tab.allCases.map { ($0, $0.label, $0.icon) }
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .inventory])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["policy-status", "profile-status"]
-                )
-            }
-
-            switch selectedTab {
-            case .policies:
-                if snapshot.summary == nil && snapshot.findings.isEmpty {
-                    policyEmptyState
-                } else {
-                    policyKpiGrid
-                    if !snapshot.findings.isEmpty {
-                        findingsCard
-                    }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("policies and profiles"))
+            } else {
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .inventory])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["policy-status", "profile-status"]
+                    )
                 }
-            case .profiles:
-                if !snapshot.hasProfileData {
-                    profileEmptyState
-                } else {
-                    profileKpiGrid
-                    if snapshot.profiles.isEmpty {
-                        profileHealthyCard
+
+                switch selectedTab {
+                case .policies:
+                    if snapshot.summary == nil && snapshot.findings.isEmpty {
+                        policyEmptyState
                     } else {
-                        profileStatusCard
+                        policyKpiGrid
+                        if !snapshot.findings.isEmpty {
+                            findingsCard
+                        }
+                    }
+                case .profiles:
+                    if !snapshot.hasProfileData {
+                        profileEmptyState
+                    } else {
+                        profileKpiGrid
+                        if snapshot.profiles.isEmpty {
+                            profileHealthyCard
+                        } else {
+                            profileStatusCard
+                        }
                     }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -94,27 +99,40 @@ struct PolicyProfileView: View {
         case .policies:
             guard let summary = snapshot.summary else { return nil }
             let totalFindings = snapshot.findings.count
-            return "\(summary.totalPolicies) policies tracked, \(totalFindings) finding\(totalFindings == 1 ? "" : "s") identified."
+            return (totalFindings == 1 ? L("\(summary.totalPolicies) policies tracked, \(totalFindings) finding identified.") : L("\(summary.totalPolicies) policies tracked, \(totalFindings) findings identified."))
         case .profiles:
             guard snapshot.hasProfileData else { return nil }
             let count = snapshot.profilesWithFailures
-            let days = snapshot.profileLookbackDays.map { " in the last \($0) days" } ?? ""
-            return "\(count) profile\(count == 1 ? "" : "s") with failures\(days)."
+            guard let days = snapshot.profileLookbackDays else {
+                return count == 1 ? L("\(count) profile with failures.") : L("\(count) profiles with failures.")
+            }
+            return count == 1
+                ? L("\(count) profile with failures in the last \(days) days.")
+                : L("\(count) profiles with failures in the last \(days) days.")
         }
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.policyHealth
-            : PolicyHealthService.load(profile: workspace.profile)
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
+            snapshot = DemoData.policyHealth
+            loadedSource = source
+            return
+        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { PolicyHealthService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Policy Sections
@@ -123,11 +141,11 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "list.bullet.indent",
-                title: "No policy data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No policy data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["policy-status"])]
+                    profile: workspace.profile, kinds: ["policy-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh, .inventory])
             )
         }
     }
@@ -137,34 +155,34 @@ struct PolicyProfileView: View {
         return LazyVGrid(columns: columns, spacing: 12) {
             if let summary = snapshot.summary {
                 StatTile(
-                    label: "Total Policies",
+                    label: L("Total Policies"),
                     value: "\(summary.totalPolicies)",
-                    sub: "Tracked in Jamf Pro"
+                    sub: L("Tracked in Jamf Pro")
                 )
                 StatTile(
-                    label: "Enabled",
+                    label: L("Enabled"),
                     value: "\(summary.enabled)",
-                    sub: "Active policies"
+                    sub: L("Active policies")
                 )
                 StatTile(
-                    label: "Disabled",
+                    label: L("Disabled"),
                     value: "\(summary.disabled)",
-                    sub: "Inactive policies"
+                    sub: L("Inactive policies")
                 )
                 StatTile(
-                    label: "Config Findings",
+                    label: L("Config Findings"),
                     value: "\(summary.configFindings)",
-                    sub: "Requiring attention"
+                    sub: L("Requiring attention")
                 )
                 StatTile(
-                    label: "Warnings",
+                    label: L("Warnings"),
                     value: "\(summary.warnings)",
-                    sub: "Configuration warnings"
+                    sub: L("Configuration warnings")
                 )
                 StatTile(
-                    label: "Info",
+                    label: L("Info"),
                     value: "\(summary.info)",
-                    sub: "Informational notices"
+                    sub: L("Informational notices")
                 )
             }
         }
@@ -173,7 +191,7 @@ struct PolicyProfileView: View {
     private var findingsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Configuration Findings", trailingTag: snapshot.findings.count <= 100 ? nil : "\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)")
+                SectionHeader(title: L("Configuration Findings"), trailingTag: snapshot.findings.count <= 100 ? nil : L("\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)"))
                 Table(sortedFindings) {
                     TableColumn("Severity") { finding in
                         Pill(
@@ -191,36 +209,43 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Colors.fg)
                             .accessibilityLabel("\(finding.policy), policy name")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Check") { finding in
                         Text(finding.check)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 120, ideal: 150)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Detail") { finding in
                         Text(finding.detail)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 150, ideal: 200)
+                    .width(min: 150, ideal: 150)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let finding = sortedFindings.first(where: { $0.id == ids.first }) {
+                        Button(L("Copy Policy Name")) { SystemActions.copyToClipboard(finding.policy) }
+                        OpenInJamfProItem(
+                            url: Int(finding.policyId).flatMap { workspace.consoleURL(forPolicyID: $0) })
+                    }
                 }
                 .pageTableHeight(rows: sortedFindings.count)
             }
         }
     }
 
-    private var sortedFindings: [PolicyFinding] {
-        snapshot.findings
-            .prefix(100) // Limit to 100 rows
-            .sorted { lhs, rhs in
-                let lhsPriority = severityPriority(lhs.severity)
-                let rhsPriority = severityPriority(rhs.severity)
-                return lhsPriority < rhsPriority
-            }
-            .map { $0 }
+    private var sortedFindings: [PolicyFinding] { Self.shownFindings(snapshot.findings) }
+
+    /// The most severe findings: sorted before the cut, so a critical one is never left out.
+    nonisolated static func shownFindings(
+        _ findings: [PolicyFinding], limit: Int = 100
+    ) -> [PolicyFinding] {
+        Array(findings.sorted {
+            severityPriority($0.severity) < severityPriority($1.severity)
+        }.prefix(limit))
     }
 
     private func severityTone(for severity: String) -> Pill.Tone {
@@ -237,7 +262,7 @@ struct PolicyProfileView: View {
         return Theme.Severity.low.systemImage
     }
 
-    private func severityPriority(_ severity: String) -> Int {
+    private nonisolated static func severityPriority(_ severity: String) -> Int {
         let lower = severity.lowercased()
         if lower.contains("critical") { return 0 }
         if lower.contains("warning") { return 1 }
@@ -250,11 +275,11 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "doc.badge.gearshape",
-                title: "No profile data yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No profile data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["profile-status"])]
+                    profile: workspace.profile, kinds: ["profile-status"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh, .inventory])
             )
         }
     }
@@ -263,39 +288,39 @@ struct PolicyProfileView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "checkmark.seal",
-                title: "No profile failures",
+                title: L("No profile failures"),
                 message: lookbackMessage
             )
         }
     }
 
     private var lookbackMessage: String {
-        let days = snapshot.profileLookbackDays.map { "the last \($0) days" } ?? "the lookback window"
-        return "No configuration profile reported installation errors in \(days)."
+        let days = snapshot.profileLookbackDays.map { L("the last \($0) days") } ?? L("the lookback window")
+        return L("No configuration profile reported installation errors in \(days).")
     }
 
     private var profileKpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total Errors",
+                label: L("Total Errors"),
                 value: "\(snapshot.profileTotalErrors)",
-                sub: "Profile installation errors"
+                sub: L("Profile installation errors")
             )
             StatTile(
-                label: "Profiles with Failures",
+                label: L("Profiles with Failures"),
                 value: "\(snapshot.profilesWithFailures)",
-                sub: "Requiring attention"
+                sub: L("Requiring attention")
             )
             StatTile(
-                label: "Devices Affected",
+                label: L("Devices Affected"),
                 value: snapshot.profileDevicesAffected.map { "\($0)" } ?? "—",
-                sub: "Unique devices with errors"
+                sub: L("Unique devices with errors")
             )
             StatTile(
-                label: "Lookback",
+                label: L("Lookback"),
                 value: snapshot.profileLookbackDays.map { "\($0)d" } ?? "—",
-                sub: "Report window"
+                sub: L("Report window")
             )
         }
     }
@@ -303,7 +328,7 @@ struct PolicyProfileView: View {
     private var profileStatusCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Profile Failures")
+                SectionHeader(title: L("Profile Failures"))
                 Table(snapshot.profiles) {
                     TableColumn("Profile") { profile in
                         Text(profile.name)
@@ -311,23 +336,23 @@ struct PolicyProfileView: View {
                             .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Colors.fg)
                             .accessibilityLabel("\(profile.name), profile name")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Device Type") { profile in
                         Text(profile.deviceType)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Errors") { profile in
                         Text("\(profile.errors)")
                             .font(.caption.monospaced())
                             .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
-                            .accessibilityLabel("\(profile.errors) error\(profile.errors == 1 ? "" : "s")")
+                            .accessibilityLabel(profile.errors == 1 ? L("\(profile.errors) error") : L("\(profile.errors) errors"))
                     }
-                    .width(min: 60, ideal: 80)
+                    .width(min: 60, ideal: 60)
 
                     TableColumn("Devices") { profile in
                         Text("\(profile.devices)")
@@ -335,14 +360,14 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .monospacedDigit()
                     }
-                    .width(min: 60, ideal: 80)
+                    .width(min: 60, ideal: 60)
 
                     TableColumn("Last Error") { profile in
                         Text(profile.lastError.isEmpty ? "—" : profile.lastError)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Top Error") { profile in
                         Text(profile.topError.isEmpty ? "—" : profile.topError)
@@ -350,7 +375,12 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .help(profile.topError)
                     }
-                    .width(min: 180, ideal: 260)
+                    .width(min: 180, ideal: 180)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let profile = snapshot.profiles.first(where: { $0.id == ids.first }) {
+                        Button(L("Copy Profile Name")) { SystemActions.copyToClipboard(profile.name) }
+                    }
                 }
                 .frame(minHeight: 200)
             }

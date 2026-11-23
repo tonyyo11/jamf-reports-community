@@ -43,6 +43,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .environmentStats,
             // Device health
             .checkinHealth,
+            .managementHealth,
             .activeDevices,
             .fleetDrift,
             .groupHygiene,
@@ -69,7 +70,6 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectOverview,
             .protectAlerts,
             .protectComputers,
-            .protectInsights,
             .protectPlans,
             .protectThreatOverview,
             // mSCP / STIG compliance
@@ -90,7 +90,6 @@ struct FullInstanceTemplate: ReportTemplate {
             .agentHealth,
             .exceptionList,
             .protectAlerts,
-            .insightsDrift,
             .auditEvidence,
             // Patching
             .patchBar,

@@ -8,7 +8,7 @@ final class TrendChangeTests: XCTestCase {
     private func change(
         _ metric: TrendSeries.Metric, _ first: Double, _ last: Double
     ) -> TrendChange {
-        TrendChange(metric: metric, first: first, last: last)
+        TrendChange(metric: metric, first: first, last: last, format: .standard)
     }
 
     /// Live: the Stability Index moved 2 points and read "↓ 2% (-3.7%)".
@@ -63,8 +63,8 @@ final class TrendChangeTests: XCTestCase {
     }
 
     func testNoPointsHasNoChange() {
-        XCTAssertNil(TrendsView.trendChange(metric: .patch, series: []))
-        XCTAssertEqual(TrendsView.trendChange(metric: .patch, series: [70, 72])?.size, "2.0 pp")
+        XCTAssertNil(TrendsView.trendChange(metric: .patch, series: [], format: .standard))
+        XCTAssertEqual(TrendsView.trendChange(metric: .patch, series: [70, 72], format: .standard)?.size, "2.0 pp")
     }
 
     // MARK: - Legend

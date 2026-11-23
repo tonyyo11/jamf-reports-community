@@ -11,8 +11,45 @@ struct ConfigEntryAsRead: Equatable, Sendable {
     static func == (lhs: Self, rhs: Self) -> Bool { true }
 }
 
+/// Identity of an editor row, so removing a row does not hand the ones below it its per-row
+/// state. Never written to config.yaml and always equal, so it cannot make the form dirty.
+struct ConfigRowID: Equatable, Sendable {
+    let value = UUID()
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+/// Row identities for the benchmark titles, which are plain strings. Filled on the first add or
+/// remove (a loaded list has none yet and falls back to a fixed id per position); always equal.
+struct ConfigRowIDs: Equatable, Sendable {
+    private var values: [UUID] = []
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+
+    func id(at index: Int) -> UUID {
+        if values.indices.contains(index) { return values[index] }
+        return UUID(uuidString: String(format: "00000000-0000-0000-0000-%012x", index)) ?? UUID()
+    }
+
+    /// Called with the row count before the change, since rows may not have ids yet.
+    mutating func append(rowCount: Int) {
+        pad(to: rowCount)
+        values.append(UUID())
+    }
+
+    mutating func remove(at index: Int, rowCount: Int) {
+        pad(to: rowCount)
+        if values.indices.contains(index) { values.remove(at: index) }
+    }
+
+    private mutating func pad(to count: Int) {
+        while values.count < count { values.append(UUID()) }
+    }
+}
+
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
-    var id: String { "\(name)|\(column)|\(connectedValue)" }
+    var rowID = ConfigRowID()
+    var id: UUID { rowID.value }
     var name: String
     var column: String
     var connectedValue: String
@@ -20,7 +57,8 @@ struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
 }
 
 struct ConfigCustomEA: Identifiable, Equatable, Sendable {
-    var id: String { "\(name)|\(column)|\(type)" }
+    var rowID = ConfigRowID()
+    var id: UUID { rowID.value }
     var name: String
     var column: String
     var type: String
@@ -55,11 +93,14 @@ struct ConfigState: Equatable, Sendable {
     var timestampOutputs: Bool
     var archiveEnabled: Bool
     var keepLatestRuns: String
+    /// `output.file_prefix` as typed; blank means the default, `jamf`.
+    var filePrefix: String = ""
     var jamfCLIUseCachedData: Bool
     var jamfCLIRequireManifest: Bool
     var orgName: String
     var logoPath: String
     var accentColor: String
+    var benchmarkRowIDs = ConfigRowIDs()
 
     /// The stale rule the screen's thresholds describe.
     var staleRule: StaleRule {
@@ -136,26 +177,23 @@ struct ConfigSaveReport: Equatable, Sendable {
     /// One sentence for each thing the save left as typed or did not keep.
     var notes: [String] {
         var lines = keptBlocks.map { key in
-            "\(key) in config.yaml is not a list, so it was left as typed and nothing was "
-                + "written to it. Write each entry as a \"- name:\" list item so the app can "
-                + "read and edit it."
+            L("\(key) in config.yaml is not a list, so it was left as typed and nothing was written to it. Write each entry as a \"- name:\" list item so the app can read and edit it.")
         }
         if !removedRetiredKeys.isEmpty {
             let named = removedRetiredKeys.map { key in
-                ConfigSchema.retiredKeys[key].map { "\(key) (since \($0))" } ?? key
+                ConfigSchema.retiredKeys[key].map { L("\(key) (since \($0))") } ?? key
             }
-            lines.append("Settings the app no longer reads were removed from config.yaml: "
-                + named.joined(separator: ", ") + "."
-                + (backupName.map { " A copy of the file as it was is at \($0)." } ?? ""))
+            let list = named.joined(separator: ", ")
+            lines.append(backupName.map {
+                L("Settings the app no longer reads were removed from config.yaml: \(list). A copy of the file as it was is at \($0).")
+            } ?? L("Settings the app no longer reads were removed from config.yaml: \(list)."))
         }
         guard let copy = backupName else { return lines }
         if droppedComments {
-            lines.append("Comments inside the blocks this screen edits are not kept. A copy of "
-                + "the file as it was is at \(copy).")
+            lines.append(L("Comments inside the blocks this screen edits are not kept. A copy of the file as it was is at \(copy)."))
         }
         if droppedUnreadLines {
-            lines.append("Lines this screen could not read inside the blocks it edits are not "
-                + "kept. A copy of the file as it was is at \(copy).")
+            lines.append(L("Lines this screen could not read inside the blocks it edits are not kept. A copy of the file as it was is at \(copy)."))
         }
         return lines
     }
@@ -235,24 +273,25 @@ enum ConfigService {
         case notASettingsBlock(String)
         /// A number field holding text the engine cannot read as a whole number.
         case notAWholeNumber(key: String, value: String)
+        /// An old product key written under a `profiles:` block, which `EnvironmentProfiles`
+        /// would not read; the slot to edit instead.
+        case profilesBlock(slot: String)
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            case .pathTraversal: "Refusing config path with a '..' component."
-            case .symlinkDestination(let url): "Refusing to write symlink: \(url.path)"
-            case .missingConfig(let url): "No config.yaml at \(url.path)"
-            case .credentialKey(let key): "Refusing to load credential-shaped key: \(key)"
-            case .invalidTopLevel: "config.yaml must contain a top-level mapping."
-            case .changedOnDisk: "config.yaml changed on disk since this screen loaded it."
+            case .invalidProfile(let profile): ProfileName.invalidMessage(profile)
+            case .pathTraversal: L("Refusing config path with a '..' component.")
+            case .symlinkDestination(let url): L("Refusing to write symlink: \(url.path)")
+            case .missingConfig(let url): L("No config.yaml at \(url.path)")
+            case .credentialKey(let key): L("Refusing to load credential-shaped key: \(key)")
+            case .invalidTopLevel: L("config.yaml must contain a top-level mapping.")
+            case .changedOnDisk: L("config.yaml changed on disk since this screen loaded it.")
             case .notASettingsBlock(let key):
-                "\(key) in config.yaml is not a set of settings, so it was left as typed and "
-                    + "nothing was written. Write its settings indented under \"\(key):\", "
-                    + "or remove that line."
+                L("\(key) in config.yaml is not a set of settings, so it was left as typed and nothing was written. Write its settings indented under \"\(key):\", or remove that line.")
             case .notAWholeNumber(let key, let value):
-                "\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is "
-                    + "not one, so nothing was saved. Enter a number, or clear the field to "
-                    + "use the default."
+                L("\(key) must be a whole number, and \"\(ConfigSchema.displayText(value))\" is not one, so nothing was saved. Enter a number, or clear the field to use the default.")
+            case .profilesBlock(let slot):
+                L("config.yaml has a profiles block, so nothing was written here; edit profiles.\(slot) in config.yaml instead.")
             }
         }
     }
@@ -281,7 +320,7 @@ enum ConfigService {
         let document = try YAMLCodec.decode(text)
         if !document.repairedKeys.isEmpty {
             AppLogger.collect.warning(
-                "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .public) in config.yaml — saving from the Config screen heals the file"
+                "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .private) in config.yaml — saving from the Config screen heals the file"
             )
         }
         try rejectCredentialKeys(in: document.root)
@@ -344,8 +383,12 @@ enum ConfigService {
     /// Writes nothing when `apply` leaves the block's settings as they were. A block typed as
     /// something other than settings is left as typed: `notASettingsBlock` is thrown. Returns
     /// the file's stamp afterwards, for a screen that loaded the file to adopt the write.
+    /// `profilesSlot` names the `profiles:` slot that replaces the block's old product keys:
+    /// under a `profiles:` mapping the write would change nothing the app reads, so it throws
+    /// `profilesBlock` instead, or writes nothing when that slot already names `slotValue`.
     static func saveBlock(
-        key: String, profile: String, workspaceRoot: URL? = nil,
+        key: String, profile: String, workspaceRoot: URL? = nil, profilesSlot: String? = nil,
+        slotValue: String? = nil,
         apply: (inout YAMLCodec.YAMLMapping) -> Void
     ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
@@ -362,6 +405,14 @@ enum ConfigService {
             try rejectCredentialKeys(in: document.root)
         }
         guard case .mapping(var root) = document.root else { throw ConfigError.invalidTopLevel }
+        if let profilesSlot, let slots = root.value(for: "profiles")?.mapping {
+            let named = slots.value(for: profilesSlot)?.stringValue?
+                .trimmingCharacters(in: .whitespaces)
+            guard let slotValue, named == slotValue.trimmingCharacters(in: .whitespaces) else {
+                throw ConfigError.profilesBlock(slot: profilesSlot)
+            }
+            return (stamp, ConfigSaveReport())
+        }
         let before = root.value(for: key)
         if let before, before.mapping == nil, before != .scalar(.null) {
             throw ConfigError.notASettingsBlock(key)
@@ -427,7 +478,7 @@ enum ConfigService {
         if !removed.isEmpty {
             let named = removed.joined(separator: ", ")
             AppLogger.collect.notice(
-                "ConfigService: removed retired keys \(named, privacy: .public)")
+                "ConfigService: removed retired keys \(named, privacy: .private)")
         }
         return removed
     }
@@ -455,34 +506,19 @@ enum ConfigService {
     /// screen writes, "Customize Apply" for `charts`, nil for a block no app writer rewrites.
     static func retiredKeyRemover(inBlock block: String) -> String? {
         if managedTopLevelKeys.contains(block) || retiredTopLevelKeys.contains(block) {
-            return "Config save"
+            return L("Config save")
         }
         switch block {
-        case "charts": return "Customize Apply"
-        case "security_policy": return "Scoring save"
+        case "charts": return L("Customize Apply")
+        case "security_policy": return L("Scoring save")
         default: return nil
         }
     }
 
-    /// Replaces the file at `url` with `encoded` through a temporary file beside it, and
-    /// returns the stamp of what was written.
+    /// Replaces the file at `url` with `encoded` through a staged file beside it (keeping the
+    /// mode of the file it replaces), and returns the stamp of what was written.
     private static func replace(_ url: URL, with encoded: String) throws -> ConfigFileStamp {
-        let manager = FileManager.default
-        let tempURL = url.deletingLastPathComponent()
-            .appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        do {
-            if !manager.fileExists(atPath: url.path) {
-                manager.createFile(atPath: url.path, contents: Data())
-            }
-            _ = try manager.replaceItemAt(url, withItemAt: tempURL)
-        } catch {
-            // The temp file holds the unscrubbed text, webhook URL included.
-            do { try manager.removeItem(at: tempURL) } catch {
-                AppLogger.collect.warning("ConfigService: could not remove a temporary config copy")
-            }
-            throw error
-        }
+        try AtomicInstall.write(Data(encoded.utf8), to: url)
         var stamp = ConfigFileStamp.of(url)
         stamp.digest = ConfigFileStamp.digest(encoded)
         return stamp
@@ -525,17 +561,17 @@ enum ConfigService {
                 stamp.addTimeInterval(1)
                 backup = directory.appendingPathComponent(prefix + formatter.string(from: stamp))
             }
-            try text.write(to: backup, options: .atomic)
-            if let mode = try manager.attributesOfItem(atPath: url.path)[.posixPermissions] {
-                try manager.setAttributes([.posixPermissions: mode], ofItemAtPath: backup.path)
-            }
+            // nil mode would keep the (absent) copy's; the backup takes config.yaml's own bits.
+            let mode = (try manager.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)
+                .map { mode_t($0.uint16Value) }
+            try AtomicInstall.write(text, to: backup, mode: mode, exclusive: true)
         }
         // Names carry local time, so the copy just made can sort before older ones.
         for old in copies.filter({ $0 != backup.lastPathComponent }).sorted().dropLast(4) {
             do {
                 try manager.removeItem(at: directory.appendingPathComponent(old))
             } catch {
-                let reason = error.localizedDescription
+                let reason = error.englishDescription
                 AppLogger.collect.warning(
                     "ConfigService: kept an old config backup: \(reason, privacy: .private)")
             }
@@ -551,12 +587,16 @@ enum ConfigService {
     static func scrubbedForBackup(_ data: Data) -> Data {
         guard let text = String(data: data, encoding: .utf8) else { return data }
         // Any other webhook URL the file carries (an old one in a comment, a second block).
-        let swept = removingWebhookURLs(text)
-        guard let root = try? ConfigLoader.rawMapping(fromYAML: text),
-              let url = (ConfigLoader.rawValue(at: ["notify", "url"], in: root) as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !url.isEmpty else { return swept == text ? data : Data(swept.utf8) }
-        return Data(removingNotifyURL(url, from: swept).utf8)
+        var swept = removingWebhookURLs(text)
+        // The webhook and the timestamp authority: either URL can carry a token.
+        if let root = try? ConfigLoader.rawMapping(fromYAML: text) {
+            for (section, key) in [("notify", "url"), ("output", "timestamp_authority")] {
+                guard let url = (ConfigLoader.rawValue(at: [section, key], in: root) as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty else { continue }
+                swept = removingURL(url, at: section, key, from: swept)
+            }
+        }
+        return swept == text ? data : Data(swept.utf8)
     }
 
     /// Every incoming-webhook URL `LogRedactor` recognises, replaced with `<removed>`.
@@ -570,35 +610,41 @@ enum ConfigService {
         }
     }
 
-    /// `notify.url`'s line written as `url: ""` with a comment naming only the host, and any
-    /// other copy of that text replaced with `<removed>`.
-    private static func removingNotifyURL(_ url: String, from text: String) -> String {
+    /// `<section>.<key>`'s line written as `<key>: ""` with a comment naming only the host, and
+    /// any other copy of that text replaced with `<removed>`.
+    private static func removingURL(
+        _ url: String, at section: String, _ key: String, from text: String
+    ) -> String {
         let host = URL(string: url)?.host.map { "https://\($0)/…" } ?? "its host"
-        var inNotify = false
+        var inSection = false
         var lines: [String] = []
         for line in text.components(separatedBy: "\n") {
             let first = line.first
             if first != nil, first != " ", first != "\t", first != "#", first != "\r" {
-                inNotify = line.hasPrefix("notify:")
+                inSection = line.hasPrefix(section + ":")
             }
             let body = line.drop { $0 == " " || $0 == "\t" }
-            guard inNotify, body.count < line.count, body.hasPrefix("url"),
-                  body.dropFirst(3).drop(while: { $0 == " " }).first == ":" else {
+            guard inSection, body.count < line.count, body.hasPrefix(key),
+                  body.dropFirst(key.count).drop(while: { $0 == " " }).first == ":" else {
                 lines.append(line.replacingOccurrences(of: url, with: "<removed>"))
                 continue
             }
             let indent = String(line.prefix(line.count - body.count))
             let ending = line.hasSuffix("\r") ? "\r" : ""
-            lines.append("\(indent)url: \"\"\(ending)")
-            lines.append("\(indent)# notify.url removed from this copy (was \(host))\(ending)")
+            lines.append("\(indent)\(key): \"\"\(ending)")
+            lines.append(
+                "\(indent)# \(section).\(key) removed from this copy (was \(host))\(ending)")
         }
         return lines.joined(separator: "\n")
     }
 
-    /// Whether the copy at `backup` had its webhook URL taken out (`scrubbedForBackup`).
-    static func backupOmitsWebhook(_ backup: URL) -> Bool {
-        ((try? ConfigLoader.readText(at: backup)) ?? "")
-            .contains("# notify.url removed from this copy")
+    /// What `scrubbedForBackup` took out of the copy at `backup`, worded for a note: the webhook
+    /// URL and the timestamp authority address. Empty when neither was there.
+    static func backupOmissions(_ backup: URL) -> [String] {
+        let text = (try? ConfigLoader.readText(at: backup)) ?? ""
+        return [("notify.url", L("webhook URL")), ("output.timestamp_authority",
+                                                L("timestamp authority address"))]
+            .filter { text.contains("# \($0.0) removed from this copy") }.map(\.1)
     }
 
     /// `<prefix><yyyyMMdd-HHmmss>` names in `directory`; nothing else that shares the prefix.
@@ -615,16 +661,14 @@ enum ConfigService {
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         // ProfileName.pathComponent is the path-traversal control: it encodes `/`, and the
         // leading `.` of `.` and `..`, so the name is always one folder under the root.
-        guard ProfileService.isValid(profile) else {
+        guard let id = WorkspaceID(profile) else {
             throw ConfigError.invalidProfile(profile)
         }
 
         let root = (workspaceRoot ?? ProfileService.workspacesRoot())
             .resolvingSymlinksInPath()
             .standardizedFileURL
-        let workspace = root
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
-            .standardizedFileURL
+        let workspace = WorkspacePaths.workspaceURL(for: id, under: root).standardizedFileURL
         let config = workspace
             .appendingPathComponent("config.yaml", isDirectory: false)
             .standardizedFileURL
@@ -734,6 +778,7 @@ enum ConfigService {
             state.timestampOutputs = output.value(for: "timestamp_outputs")?.boolValue ?? state.timestampOutputs
             state.archiveEnabled = output.value(for: "archive_enabled")?.boolValue ?? state.archiveEnabled
             state.keepLatestRuns = string(output, "keep_latest_runs", fallback: state.keepLatestRuns)
+            state.filePrefix = string(output, "file_prefix")
         }
 
         if let jamfCLI = root.value(for: "jamf_cli")?.mapping {
@@ -793,6 +838,7 @@ enum ConfigService {
         output.set("timestamp_outputs", value: .scalar(.bool(state.timestampOutputs)))
         output.set("archive_enabled", value: .scalar(.bool(state.archiveEnabled)))
         setWholeNumbers(state, in: "output", to: &output)
+        setFilePrefix(state.filePrefix, in: &output)
         root.set("output", value: .mapping(output))
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
@@ -807,6 +853,18 @@ enum ConfigService {
         root.set("branding", value: .mapping(branding))
 
         document.root = .mapping(root)
+    }
+
+    /// A blank prefix removes `file_prefix` (the default, `jamf`, applies); `jamf` is written
+    /// only where the file already sets the key, so a save adds nothing the user did not type.
+    private static func setFilePrefix(_ value: String, in output: inout YAMLCodec.YAMLMapping) {
+        let typed = value.trimmingCharacters(in: .whitespaces)
+        if typed.isEmpty {
+            output.entries.removeAll { $0.key == "file_prefix" }
+        } else if output.value(for: "file_prefix") != nil
+                    || typed != ExportNaming.defaultFilePrefix {
+            output.set("file_prefix", value: scalar(typed))
+        }
     }
 
     /// Writes a pinned folder key only when the file already sets it or the value is not the

@@ -1,12 +1,13 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 // MARK: - Webhook fact assembly (detail-mode reduction + egress redaction)
 //
 // These three fact builders are top-level (not namespaced) so both the
 // scheduled-run senders below and `WebhookNotifierTests` can call them
 // directly. Moving them changes no behavior — the payloads are byte-identical
-// to the pre-extraction main.swift versions.
+// to the pre-extraction HeadlessRun.swift versions.
 
 /// Facts for a success/partial digest. `full` mode is byte-identical to the
 /// pre-2.6 payload (Profile/Run/Status, plus "Sheets failed" and "Report" when
@@ -18,7 +19,9 @@ func successFacts(
     profile: String,
     mode: Schedule.RunMode,
     artifact: String?,
-    sheetFailures: Int
+    sheetFailures: Int,
+    products: String? = nil,
+    scope: String? = nil
 ) -> [WebhookNotifier.Fact] {
     let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
@@ -31,6 +34,8 @@ func successFacts(
         facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
     }
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
+    if let products { facts.append(.init(label: "Products", value: products)) }
+    if let scope { facts.append(.init(label: "Scope", value: scope)) }
     return facts
 }
 
@@ -63,7 +68,8 @@ func failureFacts(
 func alertFacts(
     detail: NotifyConfig.Detail,
     profile: String,
-    hits: [MetricAlertHit]
+    hits: [MetricAlertHit],
+    scope: String? = nil
 ) -> [WebhookNotifier.Fact] {
     guard detail == .full else {
         let word = hits.count == 1 ? "rule" : "rules"
@@ -74,14 +80,16 @@ func alertFacts(
     }
     var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
     facts.append(contentsOf: hits.map { .init(label: $0.metricLabel, value: $0.message) })
+    if let scope { facts.append(.init(label: "Scope", value: scope)) }
     return facts
 }
 
 /// Facts for the daily heartbeat card. `full` adds the newest daily summary's date, so the
 /// receiver can see data is current as well as the Mac alive; `minimal` is Profile and Status
-/// only. Never a device count or name.
+/// only. Never a device count or name. `products` names products, never profiles.
 func heartbeatFacts(
-    detail: NotifyConfig.Detail, profile: String, newestSummaryDay: String?
+    detail: NotifyConfig.Detail, profile: String, newestSummaryDay: String?,
+    products: String? = nil
 ) -> [WebhookNotifier.Fact] {
     var facts: [WebhookNotifier.Fact] = [
         .init(label: "Profile", value: profile),
@@ -89,6 +97,7 @@ func heartbeatFacts(
     ]
     if detail == .full {
         facts.append(.init(label: "Newest summary", value: newestSummaryDay ?? "none"))
+        if let products { facts.append(.init(label: "Products", value: products)) }
     }
     return facts
 }
@@ -104,15 +113,15 @@ func scheduledRunEcho(_ line: CLIBridge.LogLine, verbose: Bool) -> String? {
 // MARK: - Scheduled-run trust signals (webhook digests + metric alerts)
 
 /// Reusable trust machinery shared by the headless `--scheduled-run` path
-/// (`App/main.swift`) and the included `jamf-reports` CLI (`CLI/ReportCommands`).
+/// (`App/HeadlessRun.swift`) and the included `jamf-reports` CLI (`CLI/ReportCommands`).
 ///
-/// Extracted verbatim from main.swift so a self-scheduled CLI `collect`/
+/// Extracted verbatim from HeadlessRun.swift so a self-scheduled CLI `collect`/
 /// `generate` surfaces the same signals a scheduled run does. Every member is
 /// best-effort: a webhook or summary-load failure logs a warning and never
 /// throws into (or changes the exit code of) the run.
 ///
 /// Scheduled-run-only context — the fleet dead-man overdue digest and its
-/// per-profile notify resolution — deliberately stays in main.swift; it has no
+/// per-profile notify resolution — deliberately stays in HeadlessRun.swift; it has no
 /// meaning for a single CLI invocation.
 enum ScheduledRunSignals {
 
@@ -135,7 +144,9 @@ enum ScheduledRunSignals {
               notify.isUsable else { return }
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
-            artifact: artifact, sheetFailures: sheetFailures
+            artifact: artifact, sheetFailures: sheetFailures,
+            products: EnvironmentProducts.webhookValue(workspace: profile),
+            scope: SiteScope.persisted(profile: profile).summary
         )
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.send(
@@ -201,7 +212,7 @@ enum ScheduledRunSignals {
                 + (failure.reason ?? "unknown")
             fputs(message + "\n", stderr)
             recorder?.record(message)
-            AppLogger.webhook.error("\(message, privacy: .public)")
+            AppLogger.webhook.error("\(message, privacy: .private)")
         }
         noteWebhook(outcome, failure: failure)
     }
@@ -233,13 +244,14 @@ enum ScheduledRunSignals {
         let targets = notifyTargets(in: profiles.filter { !excluded.contains($0) }) { _ in false }
         let marker = DayMarker(name: "heartbeat")
         for target in targets where target.notify.sendsHeartbeat {
-            let folder = stateRoot.appendingPathComponent(
-                ProfileName.pathComponent(target.profile), isDirectory: true)
+            guard let id = WorkspaceID(target.profile) else { continue }
+            let folder = stateRoot.appendingPathComponent(id.pathComponent, isDirectory: true)
             // Every wake gets here; skip before building anything once today's card is out.
             guard !marker.isStamped(day, in: folder) else { continue }
             let facts = heartbeatFacts(
                 detail: target.notify.resolvedDetail, profile: target.profile,
-                newestSummaryDay: SummaryJSONParser.newestSummaryDay(profile: target.profile))
+                newestSummaryDay: SummaryJSONParser.newestSummaryDay(profile: target.profile),
+                products: EnvironmentProducts.webhookValue(workspace: target.profile))
             let failure = WebhookNotifier.DeliveryFailure()
             let outcome = await AttentionLog.recording(profile: target.profile) {
                 let outcome = await marker.sendOnce(
@@ -259,7 +271,7 @@ enum ScheduledRunSignals {
                 let message = "[warn] heartbeat notification failed for '\(target.profile)': "
                     + (failure.reason ?? "unknown")
                 fputs(message + "\n", stderr)
-                AppLogger.webhook.error("\(message, privacy: .public)")
+                AppLogger.webhook.error("\(message, privacy: .private)")
             }
         }
     }
@@ -300,13 +312,15 @@ enum ScheduledRunSignals {
         recorder: ScheduledRunRecorder?,
         report: DoctorReport? = nil
     ) -> Int {
-        let report = report ?? ConfigDoctorService.run(profile: profile)
+        // Only `.fail` rows are kept, and the jamf-cli probes are `.warn`: a scheduled run
+        // under the tick lock asks jamf-cli for nothing it would throw away.
+        let report = report ?? ConfigDoctorService.run(profile: profile, includeProbes: false)
         let failures = report.rows.filter { $0.severity == .fail }
         guard !failures.isEmpty else { return 0 }
 
         let headline = "[warn] \(failures.count) config check(s) failing — data may be "
             + "unreliable until fixed"
-        AppLogger.collect.warning("\(headline, privacy: .public)")
+        AppLogger.collect.warning("\(headline, privacy: .private)")
         print(headline)
         recorder?.record(headline)
         for row in failures {
@@ -335,7 +349,8 @@ enum ScheduledRunSignals {
         config: ReportConfig?,
         profile: String,
         workspace: URL,
-        recorder: ScheduledRunRecorder?
+        recorder: ScheduledRunRecorder?,
+        now: Date = Date()
     ) async {
         guard let config, let alerts = config.alerts, alerts.isEnabled else { return }
         let rules = alerts.resolvedRules
@@ -349,7 +364,7 @@ enum ScheduledRunSignals {
         // Run History) so a misconfigured URL isn't discovered only by absence.
         guard let configured = config.notify, configured.isUsable else {
             let message = "[warn] alerts enabled but no usable notify webhook — alerts cannot be delivered"
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
             recorder?.record(message)
             return
         }
@@ -361,13 +376,14 @@ enum ScheduledRunSignals {
         // Only evaluate a summary this run actually wrote today. A day that
         // produced no fresh summary (e.g. no source landed) leaves an older
         // newest-summary that would be carded as if it were today's — skip it.
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: now)
         guard current.date == today else {
             AppLogger.event(.webhook, .notice,
                 "metric alerts skipped — newest summary \(current.date) is not today (\(today))")
             return
         }
-        let hits = evaluateHits(rules: rules, current: current, history: summaries)
+        let hits = evaluateHits(
+            rules: rules, current: current, history: summaries, format: config.percentFormat)
         guard !hits.isEmpty else { return }
         // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
         // doesn't re-card, but a rule that trips for the first time later today does.
@@ -377,7 +393,9 @@ enum ScheduledRunSignals {
         ))
         let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
         guard !newHits.isEmpty else { return }
-        let facts = alertFacts(detail: notify.resolvedDetail, profile: profile, hits: newHits)
+        let facts = alertFacts(
+            detail: notify.resolvedDetail, profile: profile, hits: newHits,
+            scope: SiteScope.persisted(profile: profile).summary)
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.sendAlert(
             config: notify, title: "Metric alert — \(profile)", facts: facts,
@@ -404,7 +422,8 @@ enum ScheduledRunSignals {
     static func evaluateHits(
         rules: [AlertRule],
         current: DailySummary,
-        history: [DailySummary]
+        history: [DailySummary],
+        format: PercentFormat = .standard
     ) -> [MetricAlertHit] {
         let candidates = Array(history.dropLast())  // everything older than `current`
         var hits: [MetricAlertHit] = []
@@ -420,7 +439,8 @@ enum ScheduledRunSignals {
                 metrics: dropMetrics, lookbackDays: lookback
             )
             hits.append(contentsOf:
-                MetricAlertEvaluator.evaluate(rules: group, current: current, prior: prior))
+                MetricAlertEvaluator.evaluate(
+                    rules: group, current: current, prior: prior, format: format))
         }
         hits.sort { MetricAlertEvaluator.dedupKey(for: $0) < MetricAlertEvaluator.dedupKey(for: $1) }
         return hits
@@ -465,14 +485,14 @@ enum ScheduledRunSignals {
             let whenStr = rule.when ?? "(none)"
             let message = "[warn] alert rule ignored — metric='\(metricStr)' when='\(whenStr)': "
                 + "unknown metric/operator or invalid threshold"
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
             recorder?.record(message)
         }
     }
 }
 
 /// The "[partial] N sheet failure(s)…" marker text kept byte-identical to the
-/// scheduled path's (main.swift), so `RunHistoryService.isPartialRun`'s
+/// scheduled path's (HeadlessRun.swift), so `RunHistoryService.isPartialRun`'s
 /// `contains("[partial]")` scan recognizes a partially-failed CLI `generate`
 /// the same way it does a scheduled one.
 func partialRunMarker(sheetFailures: Int) -> String {
@@ -503,31 +523,39 @@ let deviceScanNotWrittenMarkerSuffix = "— not written"
 /// is already reading. A locked box
 /// rather than a captured `var` because `onLine` is `@Sendable` and the engine
 /// calls it from its process-reader queues.
-final class CollectHonestyWatcher: @unchecked Sendable {
-    private let lock = NSLock()
-    private var standDown = false
-    /// The stand-down was for a peer's recent collect, not its live claim.
-    private var freshnessStandDown = false
-    private var summaryFailed = false
-    private var partial = false
-    /// Sources the `[partial]` lines named as not landed.
-    private var unlanded: Set<String> = []
-    /// A `[partial]` line that names no source, so no failure record can explain it.
-    private var unexplainedPartial = false
-    /// A `[partial]` line for a failure a retry repeats and no failure record can explain.
-    private var permanentPartial = false
+final class CollectHonestyWatcher: Sendable {
+    private struct Flags {
+        var standDown = false
+        /// The stand-down was for a peer's recent collect, not its live claim.
+        var freshnessStandDown = false
+        var summaryFailed = false
+        var partial = false
+        /// Sources the `[partial]` lines named as not landed.
+        var unlanded: Set<String> = []
+        /// A `[partial]` line that names no source, so no failure record can explain it.
+        var unexplainedPartial = false
+        /// A `[partial]` line for a failure a retry repeats and no failure record can explain.
+        var permanentPartial = false
+        /// The run stopped before its sources were done (`ReportEngine.stoppedEarlyMarker`).
+        var stoppedEarly = false
+    }
+    private let flags = Mutex(Flags())
 
     init() {}
 
     /// Feed one log line. Cheap enough to call on every line of a collect.
     func observe(_ line: String) {
+        if line.hasPrefix(ReportEngine.stoppedEarlyMarker) {
+            flags.withLock { $0.stoppedEarly = true }
+            return
+        }
         if line.hasPrefix(ReportEngine.standDownMarker) {
             // A peer's live claim may end before the same-day retry; "collected recently" won't.
             let liveClaim = line.hasSuffix(ReportEngine.liveClaimStandDownSuffix)
-            lock.withLock {
-                standDown = true
-                if liveClaim { partial = true; unexplainedPartial = true } else {
-                    freshnessStandDown = true
+            flags.withLock {
+                $0.standDown = true
+                if liveClaim { $0.partial = true; $0.unexplainedPartial = true } else {
+                    $0.freshnessStandDown = true
                 }
             }
             return
@@ -538,16 +566,19 @@ final class CollectHonestyWatcher: @unchecked Sendable {
         let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
         let kinds = Self.unlandedKinds(in: line)
         let protectThrew = line.hasPrefix(ReportEngine.protectCollectFailedMarker)
+            || line.hasPrefix(ReportEngine.securityCollectFailedMarker)
         // Follows from the sources line before it, which names them.
-        let noSourceLanded = line.hasPrefix(
-            "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason)")
-        lock.withLock {
-            partial = true
-            if summary { summaryFailed = true }
-            if let kinds { unlanded.formUnion(kinds) } else if protectThrew {
-                permanentPartial = true
+        let noSourceLanded = [ReportEngine.noSourceLandedReason,
+                              ReportEngine.noJamfProSourceLandedReason].contains {
+            line.hasPrefix("\(ReportEngine.summaryNotWrittenMarker) \($0)")
+        }
+        flags.withLock {
+            $0.partial = true
+            if summary { $0.summaryFailed = true }
+            if let kinds { $0.unlanded.formUnion(kinds) } else if protectThrew {
+                $0.permanentPartial = true
             } else if !noSourceLanded {
-                unexplainedPartial = true
+                $0.unexplainedPartial = true
             }
         }
     }
@@ -568,22 +599,22 @@ final class CollectHonestyWatcher: @unchecked Sendable {
 
     /// The run deferred to another machine — no snapshot, no summary, nothing
     /// to announce. Still a successful outcome, just not a productive one.
-    var stoodDown: Bool { lock.withLock { standDown } }
+    var stoodDown: Bool { flags.withLock { $0.standDown } }
 
     /// The summary write failed, so the trend chart did not advance.
-    var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
+    var summaryWriteFailed: Bool { flags.withLock { $0.summaryFailed } }
 
     /// A source or the summary did not land, or the run stood down for a peer's live claim. A
     /// stand-down because a peer collected recently, a report's sheet failures and a device
     /// scan that landed with gaps are not missing data a retry would fetch, and never set it. Whether a same-day retry is worth it is `retryCouldHelp`.
-    var incomplete: Bool { lock.withLock { partial } }
+    var incomplete: Bool { flags.withLock { $0.partial } }
 
     /// `incomplete` for the background item's same-day retry: false when the `[partial]`
     /// lines only name sources whose last failure a retry would repeat. Run History still
     /// reads such a run as Partial from its log.
     func retryCouldHelp(lastFailureRepeats: (String) -> Bool) -> Bool {
-        let (partial, unexplained, permanent, kinds) = lock.withLock {
-            (self.partial, unexplainedPartial, permanentPartial, unlanded)
+        let (partial, unexplained, permanent, kinds) = flags.withLock {
+            ($0.partial, $0.unexplainedPartial, $0.permanentPartial, $0.unlanded)
         }
         guard partial else { return false }
         if unexplained { return true }
@@ -592,18 +623,24 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     }
 
     /// The rule self-remediation uses (`WorkspaceStore.lastFailureRepeatsOnRetry`), read from
-    /// `profile`'s state files, except that exit 3 still retries (#226 5a).
+    /// `profile`'s state files, except that exit 3 still retries (#226 5a). Like it, a source
+    /// that timed out twice in a row is left to the next day's run: retrying it holds the lock
+    /// for its whole limit each time, which on a large fleet is most of the day.
     ///
     /// A stand-down because a peer collected recently is also worth a retry while `profile` has
     /// no summary for today: if that peer is off, a later wake finds its data older than the
     /// window and collects.
     func retryCouldHelp(profile: String, now: Date = Date()) -> Bool {
-        if lock.withLock({ freshnessStandDown }),
+        // Not Partial, but sources were left for the next run: the background item's retry is
+        // that run.
+        if flags.withLock({ $0.stoppedEarly }) { return true }
+        if flags.withLock({ $0.freshnessStandDown }),
            !SummaryJSONParser.hasSummary(profile: profile, on: now) { return true }
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
         let store = StateFileStore(directory: stateDir)
         return retryCouldHelp {
-            WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store, countingUnauthorized: false)
+            WorkspaceStore.lastFailureRepeatsOnRetry(
+                $0, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true)
         }
     }
 
@@ -623,7 +660,8 @@ final class CollectHonestyWatcher: @unchecked Sendable {
             .filter { (store.failures(report: $0)?.last ?? .distantPast) >= floor }
         guard !failed.isEmpty else { return true }
         return !failed.allSatisfy {
-            WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store, countingUnauthorized: false)
+            WorkspaceStore.lastFailureRepeatsOnRetry(
+                $0, in: store, countingUnauthorized: false, countingRepeatedTimeouts: true)
         }
     }
 
@@ -657,6 +695,9 @@ struct CLIRunSignals: Sendable {
     /// Watches the run's own log stream for the two markers that make a bare
     /// exit 0 a lie. `generate` never emits them, so it is simply always quiet.
     let honesty: CollectHonestyWatcher
+    /// The run's start: the day its metric alerts judge the newest summary against, so a
+    /// collect that crosses midnight is still alerted on the day it dated its summary.
+    var startedAt: Date = Date()
 
     /// True only for `collect` — `generate` does not collect, so it never
     /// evaluates alerts (mirrors the scheduled jamf-cli-only rule).
@@ -667,14 +708,14 @@ struct CLIRunSignals: Sendable {
 
     static func evaluatesAlerts(for kind: Kind) -> Bool { kind == .collect }
 
-    /// The gate, per kind, mirroring what `main.swift` does for each mode.
+    /// The gate, per kind, mirroring what `HeadlessRun.swift` does for each mode.
     ///
     /// A `collect`'s entire product is the day's summary, so either marker
     /// suppresses the card: a stand-down collected nothing, and a failed summary
-    /// write left Trends where it was (`main.swift:480`). A `generate` renders a
+    /// write left Trends where it was (`HeadlessRun.swift:480`). A `generate` renders a
     /// real workbook whether or not the summary write that follows it succeeded
     /// — `ReportEngine.generate` emits the same marker — so only a stand-down
-    /// suppresses it, matching the scheduled twin at `main.swift:547`/`:558`.
+    /// suppresses it, matching the scheduled twin at `HeadlessRun.swift:547`/`:558`.
     static func announcesSuccess(for kind: Kind, honesty: CollectHonestyWatcher) -> Bool {
         kind == .collect ? honesty.producedFreshSnapshot : !honesty.stoodDown
     }
@@ -687,10 +728,9 @@ struct CLIRunSignals: Sendable {
     /// A distinct, valid LaunchAgent-style label so CLI runs appear honestly in
     /// Run History (`<prefix>.<profile>.cli-collect` / `.cli-generate`) rather
     /// than being attributed to a scheduled agent.
-    static func cliLabel(profile: String, kind: Kind) -> String {
+    static func cliLabel(workspace: WorkspaceID, kind: Kind) -> String {
         let kindSlug = kind == .collect ? "collect" : "generate"
-        let labelProfile = ProfileName.labelComponent(profile)
-        return "\(LaunchAgentWriter.labelPrefix).\(labelProfile).cli-\(kindSlug)"
+        return "\(LaunchAgentWriter.labelPrefix).\(workspace.labelComponent).cli-\(kindSlug)"
     }
 
     /// Best-effort setup for an included-CLI run. Resolves the workspace, loads
@@ -699,18 +739,30 @@ struct CLIRunSignals: Sendable {
     /// un-openable recorder degrades to a run that still executes, just without
     /// the trust signals.
     static func begin(profile: String, kind: Kind, config: ReportConfig? = nil) -> CLIRunSignals {
-        let workspace = ProfileService.workspaceURL(for: profile)
+        let id = WorkspaceID(profile)
+        let workspace = id.map { WorkspacePaths.workspaceURL(for: $0) }
         let resolvedConfig = config ?? workspace.flatMap {
             try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
         }
-        let recorder = workspace.flatMap {
-            ScheduledRunRecorder(workspace: $0, label: cliLabel(profile: profile, kind: kind))
+        let recorder = id.flatMap {
+            ScheduledRunRecorder(
+                workspace: WorkspacePaths.workspaceURL(for: $0),
+                label: cliLabel(workspace: $0, kind: kind))
         }
         return CLIRunSignals(
             profile: profile, workspace: workspace, config: resolvedConfig,
             mode: mode(for: kind), kind: kind, recorder: recorder,
             honesty: CollectHonestyWatcher()
         )
+    }
+
+    /// Commit the run's Needs attention items into this run's status file, naming its log, as a
+    /// scheduled run does; without a recorder they land in the app record. Call inside
+    /// `AttentionLog.recording`.
+    func bindAttention() {
+        guard let recorder else { return }
+        AttentionLog.current?.record(
+            into: recorder.statusURL, runLog: recorder.logURL.lastPathComponent)
     }
 
     /// Wrap the CLI's own log-line router so every engine line is also recorded
@@ -752,7 +804,8 @@ struct CLIRunSignals: Sendable {
             )
             if evaluatesAlerts, let workspace {
                 await ScheduledRunSignals.notifyMetricAlerts(
-                    config: config, profile: profile, workspace: workspace, recorder: recorder
+                    config: config, profile: profile, workspace: workspace, recorder: recorder,
+                    now: startedAt
                 )
             }
         }
@@ -766,9 +819,9 @@ struct CLIRunSignals: Sendable {
     /// finished (as the scheduled path does) so webhook latency never blocks the
     /// exit. Does not swallow the error — the caller still rethrows it.
     func finishFailure(_ error: Error) async {
-        let desc = error.localizedDescription
+        let desc = error.englishDescription
         // Redaction boundary: the local Run History log gets the raw error
-        // (operator's own workspace, matching main.swift's scheduled path);
+        // (operator's own workspace, matching HeadlessRun.swift's scheduled path);
         // only the webhook egress below is LogRedactor/DiagnosticRedactor-
         // scrubbed, inside notifyScheduledRunFailure.
         recorder?.record("[error] \(desc)")

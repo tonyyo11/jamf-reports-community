@@ -30,10 +30,10 @@ final class StandDownRetryTests: XCTestCase {
     func testAFreshnessStandDownIsRetriedWhileTodaysSummaryIsMissing() {
         let watcher = watcherAfterFreshnessStandDown()
         XCTAssertFalse(watcher.incomplete, "Run History still shows a clean stand-down")
-        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile, now: .testNoon))
         let outcome = ScheduleRunOutcome(
             exitCode: 0, incomplete: watcher.incomplete,
-            retryCouldHelp: watcher.retryCouldHelp(profile: profile))
+            retryCouldHelp: watcher.retryCouldHelp(profile: profile, now: .testNoon))
         XCTAssertTrue(outcome.succeeded)
         XCTAssertFalse(outcome.endsRetries, "the tick must not stamp the day done")
     }
@@ -41,9 +41,10 @@ final class StandDownRetryTests: XCTestCase {
     func testAFreshnessStandDownEndsTheDayOnceTodaysSummaryExists() throws {
         let dir = try WorkspacePaths.summariesDir(for: profile)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let today = SummaryJSONParser.dateFormatter.string(from: .testNoon)
         try Data("{}".utf8).write(to: dir.appendingPathComponent("summary_\(today).json"))
-        XCTAssertFalse(watcherAfterFreshnessStandDown().retryCouldHelp(profile: profile))
+        XCTAssertFalse(
+            watcherAfterFreshnessStandDown().retryCouldHelp(profile: profile, now: .testNoon))
     }
 
     /// A dead collect prints no `[partial]` line, so the verdict comes from the failures it
@@ -69,6 +70,6 @@ final class StandDownRetryTests: XCTestCase {
     func testARunThatDidNotStandDownIsUnaffected() {
         let watcher = CollectHonestyWatcher()
         watcher.observe("[ok] collected")
-        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile, now: .testNoon))
     }
 }

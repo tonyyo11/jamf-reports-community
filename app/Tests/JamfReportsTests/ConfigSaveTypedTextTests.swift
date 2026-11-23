@@ -225,7 +225,7 @@ final class ConfigSaveTypedTextTests: XCTestCase {
                      "provider: teams", "detail: full", "retention:\n  enabled: false"] {
             XCTAssertTrue(copy.contains(kept), kept)
         }
-        XCTAssertTrue(ConfigService.backupOmitsWebhook(backup))
+        XCTAssertEqual(ConfigService.backupOmissions(backup), ["webhook URL"])
         XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("secret-token"),
                       "the live file keeps its URL")
     }
@@ -441,6 +441,27 @@ final class ConfigSaveTypedTextTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// Config › Output's file prefix: a typed prefix is written, blank removes the key, and the
+    /// default is not added to a file that never had it.
+    func testTheFilePrefixFieldWritesOnlyWhatWasTyped() throws {
+        func saved(_ yaml: String, prefix: String) throws -> String {
+            let (root, url) = try workspace(with: yaml)
+            var loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+            loaded.state.filePrefix = prefix
+            _ = try ConfigService.save(
+                profile: Self.profile, state: loaded.state, existingDocument: loaded.document,
+                workspaceRoot: root)
+            return try String(contentsOf: url, encoding: .utf8)
+        }
+        let plain = "output:\n  keep_latest_runs: 3\n"
+        XCTAssertTrue(try saved(plain, prefix: "acme").contains("file_prefix: acme"))
+        XCTAssertFalse(try saved(plain, prefix: "jamf").contains("file_prefix"))
+        XCTAssertFalse(try saved("output:\n  file_prefix: acme\n", prefix: " ").contains("file_prefix"))
+        let (root, _) = try workspace(with: "output:\n  file_prefix: acme\n")
+        XCTAssertEqual(try ConfigService.load(profile: Self.profile, workspaceRoot: root).state.filePrefix,
+                       "acme")
+    }
 
     private static let profile = "typed-text"
 

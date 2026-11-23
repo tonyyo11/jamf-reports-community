@@ -37,7 +37,7 @@ struct ContactGapSection: View {
         if !findings.isEmpty {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Contact gap").padding(16)
+                    SectionHeader(title: L("Contact gap")).padding(16)
                     Divider().background(Theme.Colors.hairline)
                     ForEach(findings) { finding in row(finding) }
                 }

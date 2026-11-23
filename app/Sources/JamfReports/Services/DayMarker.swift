@@ -64,7 +64,7 @@ struct DayMarker: Sendable {
                 claimed.append(url)
             } catch {
                 // A name that cannot hold a claim; sending anyway keeps the alert.
-                log("[warn] \(name) claim failed (\(error.localizedDescription)); "
+                log("[warn] \(name) claim failed (\(error.englishDescription)); "
                     + "sending without it", onLine)
             }
         }
@@ -76,9 +76,9 @@ struct DayMarker: Sendable {
 
     private func log(_ message: String, _ onLine: (@Sendable (String) -> Void)?) {
         if message.hasPrefix("[warn]") {
-            AppLogger.webhook.warning("\(message, privacy: .public)")
+            AppLogger.webhook.warning("\(message, privacy: .private)")
         } else {
-            AppLogger.webhook.notice("\(message, privacy: .public)")
+            AppLogger.webhook.notice("\(message, privacy: .private)")
         }
         onLine?(message)
     }

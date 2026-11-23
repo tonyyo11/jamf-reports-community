@@ -1,4 +1,6 @@
+import CryptoKit
 import Foundation
+import Synchronization
 
 /// A read of a file another Mac can write, bounded in size and type. The file is opened once
 /// (non-blocking, so a FIFO planted at the name cannot hang the open), its type is checked on
@@ -141,15 +143,131 @@ enum BoundedFile {
     /// Largest cached `pro audit` or group-tools snapshot read for the Audit screen.
     static let snapshotLimit = 64 * 1024 * 1024
 
-    /// Largest inventory snapshot (`mobile-devices-list`): a large district's list passes 64 MB.
+    /// Largest inventory snapshot: a large district's `mobile-devices-list`, `computers` or
+    /// `ea-results` passes 64 MB.
     static let inventoryLimit = 256 * 1024 * 1024
 
-    /// `read` following links, or nil. A file over `limit` or not a regular file is logged by
-    /// name, so a snapshot left unread is never silent; other failures are the caller's to log.
-    static func readLogged(_ url: URL, limit: Int, category: AppLogger.Category) -> Data? {
+    /// The kinds whose rows grow with the fleet; every reader of one shares `inventoryLimit`.
+    private static let inventoryKinds = [
+        "ea-results", "computers", "computers-list", "mobile-devices-list",
+        "mobile-device-inventory-details",
+        // The per-device scans: one row per device, so 64 MB is passed near 17,000 Macs.
+        "ddm-device-status", "mdm-command-health", "school-device-detail",
+    ]
+
+    /// A snapshot `readLogged` refused because it is over its read limit. Unreadable is not
+    /// absent: a report that leaves the data out has to say this, not "no snapshot found".
+    struct SizeRefusal: Sendable, Equatable {
+        let kind: String
+        let megabytes: Int
+        let limitMegabytes: Int
+
+        var sentence: String {
+            "the \(kind) snapshot is \(megabytes) MB, over the \(limitMegabytes) MB this Mac reads"
+        }
+    }
+
+    private static let sizeRefusals = Mutex<[String: SizeRefusal]>([:])
+
+    /// Every kind refused for size since `resetSizeRefusals`, by kind name.
+    static var allSizeRefusals: [SizeRefusal] {
+        sizeRefusals.withLock { $0.values.sorted { $0.kind < $1.kind } }
+    }
+
+    /// The refusal for any of `names` (`_` and `-` are one spelling), if one was recorded.
+    static func sizeRefusal(forAnyOf names: [String]) -> SizeRefusal? {
+        let wanted = Set(names.map { $0.replacingOccurrences(of: "_", with: "-") })
+        return allSizeRefusals.first { wanted.contains($0.kind) }
+    }
+
+    /// A report calls this when it starts, so it answers for its own reads only.
+    static func resetSizeRefusals() { sizeRefusals.withLock { $0.removeAll() } }
+
+    private static func noteSizeRefusal(_ url: URL, limit: Int) {
+        let kind = url.deletingLastPathComponent().lastPathComponent
+            .replacingOccurrences(of: "_", with: "-")
+        let bytes = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size]
+            as? NSNumber)?.intValue ?? limit
+        let refusal = SizeRefusal(
+            kind: kind, megabytes: bytes / 1_048_576, limitMegabytes: limit / 1_048_576)
+        sizeRefusals.withLock { $0[kind] = refusal }
+    }
+
+    /// The read limit for a snapshot of `kind` (`_` and `-` are one spelling).
+    static func limit(forKind kind: String) -> Int {
+        inventoryKinds.contains(kind.replacingOccurrences(of: "_", with: "-"))
+            ? inventoryLimit : snapshotLimit
+    }
+
+    /// The read limit for the snapshot file `url`, from its kind: the folder it sits in, else
+    /// the flat `<kind>-<stamp>` file name.
+    static func limit(for url: URL) -> Int {
+        let folder = url.deletingLastPathComponent().lastPathComponent
+        let name = url.lastPathComponent.replacingOccurrences(of: "_", with: "-")
+        let isInventory = limit(forKind: folder) == inventoryLimit
+            || inventoryKinds.contains { name.hasPrefix($0 + "-") }
+        return isInventory ? inventoryLimit : snapshotLimit
+    }
+
+    /// A handle on the regular file at `url` for a reader that seeks or streams: opened
+    /// non-blocking (a FIFO cannot hang the open), a link or a second hard link refused, the
+    /// type checked on the descriptor. The handle closes when released.
+    static func openChecked(_ url: URL) throws -> FileHandle {
+        let descriptor = try openRegular(url, followSymlinks: false, inside: nil)
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// SHA-256 of the regular file at `url`, hashed in 1 MB chunks through `openChecked`, so
+    /// a workbook of any size is neither held in memory nor read twice. Exactly the size
+    /// `fstat` gave at open is hashed, so a file a peer keeps growing cannot stretch the read.
+    /// Nil when unreadable or shorter than that size.
+    static func sha256Hex(_ url: URL) -> String? {
+        fingerprint(url)?.sha256
+    }
+
+    /// `sha256Hex` with the size it hashed. With `root`, a link anywhere below it is refused, as
+    /// `read(inside:)` does, so a run manifest lists only files that are in its folder.
+    static func fingerprint(_ url: URL, inside root: URL? = nil) -> (sha256: String, size: Int)? {
+        guard let descriptor = try? openRegular(url, followSymlinks: false, inside: root)
+        else { return nil }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(handle.fileDescriptor, &info) == 0 else { return nil }
+        let size = Int(max(info.st_size, 0))
+        var remaining = size
+        var hasher = SHA256()
+        while remaining > 0 {
+            let chunk: Data?
+            do { chunk = try handle.read(upToCount: min(remaining, 1_048_576)) } catch {
+                return nil
+            }
+            // nil or empty before the size is reached: the file shrank under the read.
+            guard let chunk, !chunk.isEmpty else { return nil }
+            hasher.update(data: chunk)
+            remaining -= chunk.count
+        }
+        return (hasher.finalize().hexString, size)
+    }
+
+    /// The one reader of a snapshot, summary, cache or log file the picker chose: `read` refusing a
+    /// link or a second hard link, or nil. A missing file is nil with no line; a file over
+    /// `limit`, not a regular file or otherwise unreadable is logged by name, so a file left
+    /// unread is never silent. Callers read nil as "not read", never as an empty snapshot. The
+    /// limit defaults to the file's kind (`limit(for:)`). `root` is the folder the caller holds
+    /// (a data folder), as the caller holds it: `read(inside:)` follows its own links, then
+    /// refuses a link at any component below it, so a kind folder that is a link is refused.
+    static func readLogged(
+        _ url: URL, limit: Int? = nil, inside root: URL? = nil,
+        category: AppLogger.Category = .collect
+    ) -> Data? {
+        let limit = limit ?? Self.limit(for: url)
         do {
-            return try read(url, limit: limit)
-        } catch let failure as Failure where failure == .tooLarge || failure == .notRegular {
+            return try read(url, limit: limit, followSymlinks: false, inside: root)
+        } catch let failure as Failure {
+            // EMLINK is logged by the open itself.
+            if failure == .unreadable(ENOENT) || failure == .unreadable(EMLINK) { return nil }
+            if failure == .tooLarge { noteSizeRefusal(url, limit: limit) }
             let name = ConfigSchema.displayText(url.lastPathComponent)
             let detail = failure == .tooLarge
                 ? "over \(limit / 1_048_576) MB" : failure.localizedDescription
@@ -158,6 +276,15 @@ enum BoundedFile {
         } catch {
             return nil
         }
+    }
+
+    /// `readLogged` for a snapshot at `<data folder>/<kind>/<file>`, with the data folder as the
+    /// root: a kind folder a peer replaced with a link is refused, not followed.
+    static func readSnapshotLogged(
+        _ url: URL, limit: Int? = nil, category: AppLogger.Category = .collect
+    ) -> Data? {
+        let dataFolder = url.deletingLastPathComponent().deletingLastPathComponent()
+        return readLogged(url, limit: limit, inside: dataFolder, category: category)
     }
 
     /// Largest cached single-device record.
@@ -181,4 +308,9 @@ enum BoundedFile {
     ) -> String? {
         stateData(url, limit: limit, inside: root).flatMap { String(data: $0, encoding: .utf8) }
     }
+}
+
+extension Sequence where Element == UInt8 {
+    /// Lowercase hex, two digits a byte: how a SHA-256 or fingerprint is written and compared.
+    var hexString: String { map { String(format: "%02x", $0) }.joined() }
 }

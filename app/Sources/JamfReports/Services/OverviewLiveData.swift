@@ -52,10 +52,10 @@ extension RecentDeviceRow {
     /// The Devices screen's wording: "Today", "1 day", "12 days".
     static func lastSeenLabel(_ record: DeviceInventoryRecord) -> String {
         if let days = record.daysSinceContact {
-            if days <= 0 { return "Today" }
-            return days == 1 ? "1 day" : "\(days) days"
+            if days <= 0 { return L("Today") }
+            return days == 1 ? L("1 day") : L("\(days) days")
         }
-        return record.lastContact.isEmpty ? "Unknown" : record.lastContact
+        return record.lastContact.isEmpty ? L("Unknown") : record.lastContact
     }
 }
 
@@ -113,7 +113,7 @@ enum OverviewLiveDataLoader {
         let wanted = sections.intersection(OverviewLiveData.sections)
         guard !wanted.isEmpty else { return data }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-            let why = OverviewUnavailable(reason: "This profile's workspace isn't set up yet.")
+            let why = OverviewUnavailable(reason: L("This profile's workspace isn't set up yet."))
             for section in wanted { data.unavailable[section] = why }
             return data
         }
@@ -160,7 +160,7 @@ enum OverviewLiveDataLoader {
               let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: raw),
               !rows.isEmpty else {
             data.unavailable[.osDistribution] = OverviewUnavailable(
-                reason: "No inventory summary yet. Every collect writes one.",
+                reason: L("No inventory summary yet. Every collect writes one."),
                 remedy: .sources)
             return
         }
@@ -191,24 +191,20 @@ enum OverviewLiveDataLoader {
         }
         guard let baseline, let listColumn = baseline.failuresListColumn else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "Map your compliance failures-list extension attribute "
-                    + "(compliance.failures_list_column) in Config, or collect Compliance "
-                    + "Benchmarks with a Jamf Platform API profile.",
+                reason: L("Map your compliance failures-list extension attribute (compliance.failures_list_column) in Config, or collect Compliance Benchmarks with a Jamf Platform API profile."),
                 remedy: .config)
             return
         }
         guard let eaRows else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "No extension-attribute results yet. They are collected with the "
-                    + "inventory.",
+                reason: L("No extension-attribute results yet. They are collected with the inventory."),
                 remedy: .sources)
             return
         }
         let built = failingRules(rows: eaRows, listColumn: listColumn, baseline: baseline.name)
         guard built.reportingMacs > 0 else {
             data.unavailable[.topFailingRules] = OverviewUnavailable(
-                reason: "No Mac reports \"\(listColumn)\" in the collected extension "
-                    + "attributes. Check the column name in Config.",
+                reason: L("No Mac reports \"\(listColumn)\" in the collected extension attributes. Check the column name in Config."),
                 remedy: .config)
             return
         }
@@ -225,14 +221,13 @@ enum OverviewLiveDataLoader {
     ) {
         guard !agents.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "List your security agents under Security Agents in Config.",
+                reason: L("List your security agents under Security Agents in Config."),
                 remedy: .config)
             return
         }
         guard let eaRows else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "No extension-attribute results yet. They are collected with the "
-                    + "inventory.",
+                reason: L("No extension-attribute results yet. They are collected with the inventory."),
                 remedy: .sources)
             return
         }
@@ -240,8 +235,7 @@ enum OverviewLiveDataLoader {
         let reported = coverage.filter { $0.reporting > 0 }
         guard !reported.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
-                reason: "No Mac reports a value for any configured agent's column. Check "
-                    + "each column matches its extension attribute's name in Config.",
+                reason: L("No Mac reports a value for any configured agent's column. Check each column matches its extension attribute's name in Config."),
                 remedy: .config)
             return
         }
@@ -266,7 +260,7 @@ enum OverviewLiveDataLoader {
         let inventory = DeviceInventoryService.load(profile: profile, demoMode: false)
         guard !inventory.devices.isEmpty else {
             data.unavailable[.recentActivity] = OverviewUnavailable(
-                reason: "No computer inventory yet. A collect writes it.",
+                reason: L("No computer inventory yet. A collect writes it."),
                 remedy: .sources)
             return
         }
@@ -321,22 +315,17 @@ enum OverviewLiveDataLoader {
     ) -> (rows: [OSDistribution], currentShare: Double?, total: Int, versions: Int) {
         // "26.7" and "26.7.0" are one release (`OSVersionName`).
         let valid = Dictionary(
-            counts.filter { $0.value > 0 && !$0.key.isEmpty }
+            counts.filter { $0.value > 0 && OSVersionName.isMeasured($0.key) }
                 .map { (OSVersionName.normalized($0.key), $0.value) },
             uniquingKeysWith: +)
         let total = valid.values.reduce(0, +)
         guard total > 0 else { return ([], nil, 0, 0) }
         let ranked = valid.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
         let shown = ranked.count > limit ? Array(ranked.prefix(max(limit - 1, 1))) : ranked
-        // Gold for versions on their major's latest release, greys for the rest —
-        // the demo donut's scheme.
-        var currentPalette: [UInt32] = [0xC9970A, 0xA87E08, 0x8A6906]
-        var behindPalette: [UInt32] = [0x7D8794, 0x5A6068, 0x4A4F55, 0x3F4449]
         func pct(_ count: Int) -> Double { (Double(count) / Double(total) * 1000).rounded() / 10 }
-        var rows: [OSDistribution] = shown.map { entry -> OSDistribution in
+        let colors = ChartPalette.hexes(for: .version, keys: shown.map(\.key), scheme: .dark)
+        var rows: [OSDistribution] = zip(shown, colors).map { entry, color -> OSDistribution in
             let current = SOFAFeedService.isCurrent(entry.key, latestByMajor: latestByMajor) == true
-            let color = current
-                ? currentPalette.removeFirstOrLast() : behindPalette.removeFirstOrLast()
             return OSDistribution(version: "macOS \(entry.key)", count: entry.value,
                                   pct: pct(entry.value), colorHex: color, current: current)
         }
@@ -344,7 +333,7 @@ enum OverviewLiveDataLoader {
         if otherCount > 0 {
             rows.append(OSDistribution(
                 version: "Other (\(ranked.count - shown.count) versions)", count: otherCount,
-                pct: pct(otherCount), colorHex: 0x33373B, current: false))
+                pct: pct(otherCount), colorHex: ChartPalette.neutralHex, current: false))
         }
         var share: Double?
         if !latestByMajor.isEmpty {
@@ -365,7 +354,7 @@ enum OverviewLiveDataLoader {
     ) -> (rules: [FailingRule], label: String, reportingMacs: Int) {
         let names = snapshot.benchmarks
         let scoped = names.count > 1 ? snapshot.filtered(to: names[0]) : snapshot
-        let label = names.first ?? "Compliance Benchmark"
+        let label = names.first ?? L("Compliance Benchmark")
         let rules = scoped.rules.compactMap { rule -> FailingRule? in
             guard let failed = rule.failed, failed > 0 else { return nil }
             // The title, which a benchmark always carries; the ID only when a row lacks one.
@@ -434,11 +423,8 @@ enum OverviewLiveDataLoader {
     static func recentDevices(
         _ records: [DeviceInventoryRecord], limit: Int
     ) -> [DeviceInventoryRecord] {
-        let iso = ISO8601DateFormatter()
-        let isoFractional = ISO8601DateFormatter()
-        isoFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let dated: [(record: DeviceInventoryRecord, date: Date?)] = records.map {
-            ($0, iso.date(from: $0.lastContact) ?? isoFractional.date(from: $0.lastContact))
+            ($0, ISO8601Time.parse($0.lastContact))
         }
         let sorted = dated.sorted { a, b in
             switch (a.record.daysSinceContact, b.record.daysSinceContact) {
@@ -470,12 +456,5 @@ enum OverviewLiveDataLoader {
         guard let raw = try? ReportEngine.loadLatestSnapshotData(
             kind: "ea-results", dataDir: dataDir) else { return nil }
         return EAResultRow.decodeSnapshot(raw).rows
-    }
-}
-
-private extension Array where Element == UInt32 {
-    /// Next colour in the palette; the last one repeats once the rest are used.
-    mutating func removeFirstOrLast() -> UInt32 {
-        count > 1 ? removeFirst() : (first ?? 0x4A4F55)
     }
 }

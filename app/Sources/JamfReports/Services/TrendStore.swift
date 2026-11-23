@@ -9,8 +9,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     var id: Date { date }
 }
 
+@MainActor
 @Observable final class TrendStore {
-    private var allSummaries: [DailySummary] = []
+    private var allSummaries: [DailySummary] = [] {
+        didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
+    }
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
@@ -28,6 +31,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// summary.json mscpBands (fallback). Rebuilt once per load/reload; never
     /// re-scanned during view rendering. Keyed by baseline name.
     private var cachedBandSeries: [String: [MSCPChartDataBuilder.BandPoint]] = [:]
+    /// `cachedBandSeries` by baseline, then by the day key its points format to, so the mSCP
+    /// trend finds a day's point without formatting every point's date per summary per redraw.
+    /// Written only by `storeBandSeries`.
+    @ObservationIgnored private var bandPointsByDay: [String: [String: MSCPChartDataBuilder.BandPoint]] = [:]
 
     /// Ordered baseline names for the mSCP band trend picker. Config order
     /// (resolvedBaselines) when loaded from disk, or the sorted set of summary
@@ -61,7 +68,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // In-memory init: build band points from summaries only. The inaccessible
         // dataDir degrades gracefully to summaries-only inside buildAllSeries.
         let built = Self.computeBandPoints(profile: nil, summaries: summaries)
-        cachedBandSeries = built.series
+        storeBandSeries(built.series)
         mscpBaselineNames = built.names
         selectedMSCPBaseline = built.names.first
     }
@@ -71,6 +78,16 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     func selectMSCPBaseline(_ name: String) {
         guard mscpBaselineNames.contains(name) else { return }
         selectedMSCPBaseline = name
+    }
+
+    private func storeBandSeries(_ series: [String: [MSCPChartDataBuilder.BandPoint]]) {
+        cachedBandSeries = series
+        bandPointsByDay = series.mapValues { points in
+            // The first point of a day wins, as the scan this replaces found it.
+            Dictionary(
+                points.map { (SummaryJSONParser.dateFormatter.string(from: $0.date), $0) },
+                uniquingKeysWith: { first, _ in first })
+        }
     }
 
     /// The band series for the currently-selected baseline (or the first).
@@ -120,7 +137,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         allSummaries = snapshot.summaries
         latestSnapshotDate = snapshot.latestSnapshotDate
         hasEverFetchedLive = snapshot.hasEverFetchedLive
-        cachedBandSeries = snapshot.bandSeries
+        storeBandSeries(snapshot.bandSeries)
         mscpBaselineNames = snapshot.baselineNames
         // Preserve a still-valid selection across reloads; else default to first.
         let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
@@ -135,7 +152,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// days from their dated `ea-results` and `mobile-devices-list` snapshots
     /// (`resolvingAgentCoverage`, `resolvingMobile`) off the main actor, then republishes.
     /// Dropped if another load started, or the profile changed, meanwhile.
-    @MainActor
     func backfillHistory(profile: String) async {
         let generation = loadGeneration
         let summaries = allSummaries
@@ -154,6 +170,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         filterSummaries(range: range)
     }
 
+    /// Whether the held summaries were read for `profile`. False before the first load, after a
+    /// profile switch cleared them, and while another profile's data is held (the store outlives
+    /// the screens), so a screen shows its loading state instead of an empty state or the
+    /// previous profile's data.
+    func isLoaded(for profile: String) -> Bool { currentProfile == profile }
+
     /// Clear displayed data when switching to a DIFFERENT profile, so the loading
     /// overlay shows for the new profile rather than the previous tenant's data
     /// during the scan. A same-profile reload (tab re-entry) is a no-op — data
@@ -162,7 +184,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         guard let current = currentProfile, current != profile else { return }
         allSummaries = []
         filteredSummaries = []
-        cachedBandSeries = [:]
+        storeBandSeries([:])
         mscpBaselineNames = []
         selectedMSCPBaseline = nil
         latestSnapshotDate = nil
@@ -288,6 +310,16 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
     }
 
+    /// `points(metric:)` for a tile that states the CURRENT figure: empty when the newest summary
+    /// in range did not measure `metric`, because `points` skips such days and its last point is
+    /// then an older day passed off as today's.
+    func currentPoints(metric: TrendSeries.Metric) -> [TrendPoint] {
+        guard let newest = filteredSummaries.last, value(for: metric, in: newest) != nil else {
+            return []
+        }
+        return points(metric: metric)
+    }
+
     /// Series values for `metric`. Kept for existing summary-only callers;
     /// `points(metric:)` should be used when dates are rendered with values.
     func values(metric: TrendSeries.Metric) -> [Double] {
@@ -317,9 +349,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             // date matches this summary's date (string-matched), then sum the 5
             // bands. Falls back to that baseline's summary.mscpBands entry.
             let dayKey = summary.date
-            if let pt = selectedBandPoints.first(where: {
-                SummaryJSONParser.dateFormatter.string(from: $0.date) == dayKey
-            }) {
+            if let name = selectedMSCPBaseline ?? mscpBaselineNames.first,
+               let pt = bandPointsByDay[name]?[dayKey] {
                 let total = pt.counts.pass + pt.counts.low + pt.counts.medLow
                     + pt.counts.medium + pt.counts.high
                 return total > 0 ? Double(total) : nil
@@ -335,6 +366,20 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .managedDevices:
             // The Mac count only; a day with no Macs (a mobile-only fleet) is a gap, never 0.
             return summary.totalDevices > 0 ? Double(summary.totalDevices) : nil
+        case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
+             .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
+             .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
+             .securityCloudHighRisk:
+            return Self.environmentValue(metric, in: summary)
+        }
+    }
+
+    /// A mobile, Protect or Security Cloud metric's point in one summary; nil for any other
+    /// metric. The demo series end on it, so they round as a live history does.
+    nonisolated static func environmentValue(
+        _ metric: TrendSeries.Metric, in summary: DailySummary
+    ) -> Double? {
+        switch metric {
         case .mobileManaged: return summary.mobile.map { Double($0.managed) }
         case .mobileOSCurrent: return summary.mobile?.osCurrent?.pct
         case .mobilePasscode: return summary.mobile?.passcode?.pct
@@ -342,6 +387,13 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .mobileDataProtection: return summary.mobile?.dataProtection?.pct
         case .mobileStale: return summary.mobile?.stale.map(Double.init)
         case .mobileJailbroken: return summary.mobile?.jailbroken.map(Double.init)
+        case .protectComputers: return summary.protectComputerCount.map(Double.init)
+        case .protectMatched: return summary.protectMatched?.pctOneDecimal
+        case .protectOpenAlerts: return summary.protectOpenAlerts.map(Double.init)
+        case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
+        case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
+        case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)
+        default: return nil
         }
     }
 
@@ -349,8 +401,32 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile { return allSummaries.contains { value(for: metric, in: $0) != nil } }
+        if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+            return allSummaries.contains { value(for: metric, in: $0) != nil }
+        }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
+    }
+
+    /// The newest summary and the one before it, by date, from everything loaded rather than
+    /// the range shown, so a short range cannot hide the day before.
+    private(set) var newestTwoSummaries: (newest: DailySummary?, previous: DailySummary?) =
+        (nil, nil)
+
+    private static func newestTwo(
+        of allSummaries: [DailySummary]
+    ) -> (newest: DailySummary?, previous: DailySummary?) {
+        var newest: DailySummary?, previous: DailySummary?
+        for summary in allSummaries {
+            if let top = newest, summary.date <= top.date {
+                // A second summary of the newest day is not the day before.
+                let floor = previous?.date ?? ""
+                if top.date > summary.date, summary.date > floor { previous = summary }
+            } else {
+                previous = newest
+                newest = summary
+            }
+        }
+        return (newest, previous)
     }
 
     func dates() -> [Date] {
@@ -378,25 +454,56 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             + "there is the definition, not the fleet."
     }
 
-    /// The Security Score's values in range since its definition last changed, so a change
-    /// over the range compares days scored the same way.
-    func comparableSecurityScores() -> [Double] {
-        Self.comparableSecurityScores(in: filteredSummaries)
+    /// The metric's values in range since its measurement basis last changed, so a change
+    /// over the range compares days measured the same way; every value for a metric with
+    /// one definition.
+    func comparableValues(metric: TrendSeries.Metric) -> [Double] {
+        comparablePoints(metric: metric).map(\.value)
     }
 
-    /// Whether the two newest scored days in range share a definition; true with fewer than
-    /// two scored days, which have no change to compare.
-    var latestSecurityScoresComparable: Bool {
-        let scored = filteredSummaries.filter { $0.securityScore != nil }.count
-        return scored < 2 || comparableSecurityScores().count >= 2
+    /// `comparableValues` with their dates, for the AI trend input.
+    func comparablePoints(metric: TrendSeries.Metric) -> [TrendPoint] {
+        Self.comparablePoints(of: metric, in: filteredSummaries) ?? points(metric: metric)
     }
 
-    /// The newest run of scored days that share `securityScoreBasis`, oldest first.
-    nonisolated static func comparableSecurityScores(in summaries: [DailySummary]) -> [Double] {
-        let scored = summaries.filter { $0.securityScore != nil }.sorted { $0.date < $1.date }
-        guard let newest = scored.last else { return [] }
-        return scored.reversed().prefix { $0.securityScoreBasis == newest.securityScoreBasis }
-            .reversed().compactMap(\.securityScore)
+    /// Whether the two newest measured days in range share a basis; true with fewer than
+    /// two measured days, which have no change to compare.
+    func latestValuesComparable(metric: TrendSeries.Metric) -> Bool {
+        values(metric: metric).count < 2 || comparableValues(metric: metric).count >= 2
+    }
+
+    /// Whether the newest compliance figure in range is the four-control proxy, which names
+    /// the figure on every screen instead of the configured benchmark.
+    var latestComplianceIsProxy: Bool {
+        filteredSummaries.filter { $0.compliancePct != nil }
+            .max { $0.date < $1.date }?.complianceIsProxy == true
+    }
+
+    /// The newest run of measured days that share the metric's basis, oldest first; nil for a
+    /// metric with one definition. The bases are the ones the alerts, the HTML report and the
+    /// period report compare: `securityScoreBasis`, `complianceIsProxy` and `patchPctBasis`.
+    nonisolated static func comparableValues(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> [Double]? {
+        comparablePoints(of: metric, in: summaries)?.map(\.value)
+    }
+
+    nonisolated static func comparablePoints(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> [TrendPoint]? {
+        let read: (DailySummary) -> (value: Double?, basis: String?)
+        switch metric {
+        case .securityScore: read = { ($0.securityScore, $0.securityScoreBasis) }
+        case .compliance: read = { ($0.compliancePct, $0.complianceIsProxy.map { "\($0)" }) }
+        case .patch: read = { ($0.patchPct, $0.patchPctBasis) }
+        default: return nil
+        }
+        let measured = summaries.sorted { $0.date < $1.date }.compactMap { day in
+            read(day).value.map { (point: TrendPoint(date: day.parsedDate, value: $0),
+                                   basis: read(day).basis) }
+        }
+        guard let newest = measured.last else { return [] }
+        return measured.reversed().prefix { $0.basis == newest.basis }.reversed().map(\.point)
     }
 
     var isEmpty: Bool {
@@ -554,11 +661,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         of kind: String, in dataDir: URL
     ) -> [(url: URL, date: Date)] {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+        guard let files = FileManager.snapshotFolderEntries(in: dir) else { return [] }
         return files
             .filter { $0.pathExtension.lowercased() == "json" }
             .filter(FileManager.isSelectableSnapshot)
@@ -628,7 +731,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
         var recomputed: [String: Double] = [:]
         for (day, urls) in newestFirstByDay {
-            guard let rows = urls.lazy.compactMap(decodePatchRows).first else { continue }
+            guard let rows = urls.lazy.compactMap { decodePatchRows(at: $0, inside: dataDir) }.first else { continue }
             if let pct = PatchStatusService.fleetCompliancePct(rows) {
                 recomputed[day] = (pct * 10).rounded() / 10
             }
@@ -636,9 +739,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return recomputed
     }
 
-    private nonisolated static func decodePatchRows(at url: URL) -> [PatchStatusRow]? {
-        guard let data = BoundedFile.readLogged(
-            url, limit: BoundedFile.snapshotLimit, category: .report) else { return nil }
+    private nonisolated static func decodePatchRows(at url: URL, inside root: URL) -> [PatchStatusRow]? {
+        guard let data = BoundedFile.readLogged(url, inside: root, category: .report) else {
+            return nil
+        }
         return try? JSONDecoder().decode([PatchStatusRow].self, from: data)
     }
 }
@@ -698,7 +802,8 @@ extension FleetInsightInput {
         for (fact, span) in zip(facts, spans) {
             if case .count = fact.value, let prior = fact.prior {
                 notes.append(
-                    "\(fact.label): \(prior.text) at the start, \(fact.value.text) at the end.")
+                    "\(fact.label): \(prior.text(format: .standard)) at the start, "
+                        + "\(fact.value.text(format: .standard)) at the end.")
             }
             if span.first != start || span.last != end {
                 notes.append("\(fact.label): compared from \(day(span.first)) to "
@@ -721,7 +826,9 @@ private extension TrendSeries.Metric {
     func insightValue(_ value: Double) -> FleetInsightInput.Value {
         switch self {
         case .stability, .securityScore: return .number(value)
-        default: return unit == "%" ? .percent(value) : .count(Int(value.rounded()))
+        default:
+            if unit == "%" { return .percent(value) }
+            return wholeInt(value).map { .count($0) } ?? .number(value)
         }
     }
 

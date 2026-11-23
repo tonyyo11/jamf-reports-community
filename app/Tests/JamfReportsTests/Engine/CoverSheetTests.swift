@@ -75,4 +75,56 @@ final class CoverSheetTests: XCTestCase {
         let actualTop8 = Array(names.prefix(8))
         XCTAssertEqual(actualTop8, expectedTop8)
     }
+
+    // MARK: - Sheet manifest
+
+    func testEveryPlannedTabHasADescription() {
+        let descriptions = CoreDashboard.sheetManifestDescriptions()
+        let missing = makeDashboard().sheetPlan.map(\.name).filter { descriptions[$0] == nil }
+        XCTAssertEqual(missing, [])
+        XCTAssertNotNil(descriptions["EA Warnings"])
+        XCTAssertNotNil(descriptions[ReportEngine.chartsSheetName])
+    }
+
+    /// The manifest lists the tabs the workbook holds, in tab order, after `sheets.order` and
+    /// the custom EA tabs, and none it does not hold.
+    func testManifestListsTheWrittenTabsInOrder() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cover-gen-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let ea = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: ea, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: [
+            ["definition_id": "1", "device": "Mac-1", "ea_name": "FV", "value": "Encrypted"],
+        ]).write(to: ea.appendingPathComponent("ea-results_20261111T120000.json"))
+        let config = try ConfigLoader.loadFromString("""
+        custom_eas:
+          - {name: FileVault, column: FV, type: boolean, true_value: Encrypted}
+        sheets:
+          order: [FileVault]
+        """)
+        let out = dataDir.appendingPathComponent("out/report.xlsx")
+        try await ReportEngine(config: config, dataDir: dataDir)
+            .generate(outputURL: out, locateJamfCLI: { nil })
+
+        let tabs = try XLSXReader.tabs(of: out)
+        let cover = try XCTUnwrap(tabs.first { $0.name == "Cover" })
+        func text(_ cell: XLSXReader.Cell?) -> String? {
+            if case .text(let value)? = cell { return value }
+            return nil
+        }
+        let start = try XCTUnwrap(cover.rows.firstIndex { text($0.first) == "Sheet Manifest" })
+        let manifest = cover.rows[(start + 1)...].filter { !$0.isEmpty }
+        XCTAssertEqual(manifest.map { text($0.first) },
+                       tabs.enumerated().map { "\($0.offset + 1). \($0.element.name)" })
+        XCTAssertEqual(tabs.first?.name, "FileVault")
+        XCTAssertEqual(text(manifest.first?.dropFirst().first),
+                       "Custom extension attribute: FV")
+        for row in manifest {
+            XCTAssertFalse((text(row.dropFirst().first) ?? "").isEmpty, "\(row)")
+        }
+        let cells = cover.rows.flatMap { $0 }.compactMap(text)
+        XCTAssertFalse(cells.contains { $0.hasPrefix("Sheets ") },
+                       "no numbered ranges that can name tabs the workbook lacks")
+    }
 }

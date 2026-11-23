@@ -18,7 +18,7 @@ extension DemoData {
     /// dates. Built from the reference date, never the clock, so demo ages hold.
     static func timestamp(minutesBefore minutes: Int) -> String {
         let date = referenceDate.addingTimeInterval(-Double(minutes) * 60)
-        return ISO8601DateFormatter().string(from: date)
+        return ISO8601Time.string(date)
     }
 
     // MARK: - Fleet
@@ -36,6 +36,8 @@ extension DemoData {
         let department: String
         let osVersion: String
         let daysSinceContact: Int
+        /// `hardware.model`, the marketing name the model-family map reads.
+        let model: String
 
         var email: String { "\(user)@meridian.health" }
         var osMajor: Int { ComplianceBandingService.parseOSMajor(osVersion) ?? 0 }
@@ -49,7 +51,8 @@ extension DemoData {
             macs.append(FleetMac(
                 jamfID: String(1001 + position), name: record.name, serial: record.serial,
                 user: record.user, department: record.department,
-                osVersion: record.osVersion, daysSinceContact: record.daysSinceContact ?? 0))
+                osVersion: record.osVersion, daysSinceContact: record.daysSinceContact ?? 0,
+                model: record.model))
         }
         return macs
     }
@@ -70,7 +73,8 @@ extension DemoData {
                 user: user,
                 department: departmentCycle[(position * 7) % departmentCycle.count],
                 osVersion: versions[(position * 211) % versions.count],
-                daysSinceContact: checkInDays(position: position)))
+                daysSinceContact: checkInDays(position: position),
+                model: modelNames[suffix] ?? ""))
         }
         return macs
     }
@@ -87,6 +91,10 @@ extension DemoData {
         "MBA", "MBA", "MBA", "MBA", "MBA", "MBA", "MBA", "MM", "MM",
     ]
     private static let serialPrefixes = ["MBP": "C02", "MBA": "FVF", "MM": "H4T"]
+    private static let modelNames = [
+        "MBP": "MacBook Pro (14-inch, M3, 2023)", "MBA": "MacBook Air (13-inch, M2, 2022)",
+        "MM": "Mac mini (2024)",
+    ]
     /// `deviceInventory`'s departments, weighted toward a health system's clinical
     /// staff: in every 20 Macs, 6 Clinical, 3 Engineering, 3 Operations, 2 each other.
     private static let departmentCycle = [
@@ -171,7 +179,11 @@ extension DemoData {
 
     /// The Offline Outreach screen's inventory: every Mac in `fleetMacs`, last in
     /// contact `daysSinceContact` days before `referenceDate`.
-    static let outreachRecords: [DeviceInventoryRecord] = fleetMacs.map(outreachRecord)
+    static let outreachRecords: [DeviceInventoryRecord] = fleetMacs.enumerated().map {
+        var record = outreachRecord($1)
+        record.management = managementFacts(index: $0)
+        return record
+    }
 
     private static func outreachRecord(_ mac: FleetMac) -> DeviceInventoryRecord {
         var record = DeviceInventoryRecord.empty(id: mac.jamfID, source: "demo")
@@ -179,6 +191,7 @@ extension DemoData {
         record.name = mac.name
         record.serial = mac.serial
         record.osVersion = mac.osVersion
+        record.marketingModel = mac.model
         record.user = mac.user
         record.email = mac.email
         record.department = mac.department
@@ -462,6 +475,17 @@ extension DemoData {
         ]
     }()
 
+    /// The demo's Mobile Devices findings, counted from the Mobile Devices demo fleet through
+    /// the same rules the screen filters with. The iOS feed is the newest of each demo version;
+    /// no update scan ran, so that finding is left out.
+    static var mobileAuditFindings: [AuditFinding] {
+        mobileDevicesFindings(MobileFleetView.makeDemoSnapshot(), context: mobileFindingContext)
+    }
+
+    /// What the demo's Mobile Devices filters and Audit findings judge devices against.
+    static let mobileFindingContext = MobileFinding.Context(
+        latestByMajor: [18: "18.2.1", 17: "17.6.1"], staleDays: 30, now: referenceDate)
+
     /// Computer groups no policy or profile references.
     static let unusedGroups: [UnusedGroup] = [
         UnusedGroup(
@@ -532,18 +556,6 @@ extension DemoData {
         ("Informational", "GPClickEvent", "Resolved", 2_296),
     ]
 
-    /// Insight results over the 12 pilot Macs.
-    private static let protectInsightFacts: [(
-        label: String, section: String, pass: Int, fail: Int, enabled: Bool
-    )] = [
-        ("Firewall Configuration", "Network Security", 10, 2, true),
-        ("FileVault Status", "Data Protection", 12, 0, true),
-        ("Gatekeeper Policy", "Application Security", 11, 1, true),
-        ("SIP Status", "System Integrity", 12, 0, true),
-        ("XProtect Updates", "Malware Protection", 9, 3, false),
-        ("Certificate Validation", "PKI", 11, 1, true),
-    ]
-
     /// Rows decoded from the JSON jamf-cli prints, so the demo goes through the
     /// decoders a live tenant's snapshots do.
     private static func decodedRows<Row: Decodable>(_ objects: [[String: Any]]) -> [Row] {
@@ -553,14 +565,21 @@ extension DemoData {
         return rows
     }
 
+    /// Major, minor and patch of "15.7.3" (a missing part is 0), as jamf-cli prints them.
+    private static func osNumbers(_ version: String) -> [Int] {
+        let parts = version.split(separator: ".").map { Int($0) ?? 0 }
+        return (parts + [0, 0, 0]).prefix(3).map { $0 }
+    }
+
     private static func protectComputerRows() -> [ProtectComputerRow] {
         var objects: [[String: Any]] = []
         for (mac, agent) in zip(protectPilotMacs, protectAgentStates) {
+            let osParts = osNumbers(mac.osVersion)
             var object: [String: Any] = [
                 "uuid": "meridian-protect-\(mac.jamfID)",
                 "hostname": mac.name,
                 "serial": mac.serial,
-                "osString": "macOS \(mac.osVersion)",
+                "osMajor": osParts[0], "osMinor": osParts[1], "osPatch": osParts[2],
                 "plan": agent.plan,
                 "webProtectionActive": agent.web,
                 "fullDiskAccess": agent.fullDisk ? "Authorized" : "Unauthorized",
@@ -590,26 +609,13 @@ extension DemoData {
         return decodedRows(objects)
     }
 
-    private static func protectInsightRows() -> [ProtectInsightRow] {
-        var objects: [[String: Any]] = []
-        for insight in protectInsightFacts {
-            objects.append([
-                "label": insight.label, "section": insight.section,
-                "totalPass": insight.pass, "totalFail": insight.fail,
-                "enabled": insight.enabled,
-            ])
-        }
-        return decodedRows(objects)
-    }
-
     /// The Protect screen's snapshot. Every count is taken from the rows it lists.
     static let protectSnapshot = makeProtectSnapshot()
 
     private static func makeProtectSnapshot() -> ProtectDashboardService.Snapshot {
         let computers = protectComputerRows()
         let alerts = protectAlertRows()
-        let insights = protectInsightRows()
-        let severities = alerts.compactMap(\.severity)
+        let severity = ProtectDashboardService.alertSeverityCounts(alerts)
         let plans = [
             ProtectPlanRow(
                 name: "Standard", logLevel: "INFO", autoUpdate: true,
@@ -624,7 +630,6 @@ extension DemoData {
             overviewItems: [],
             alerts: alerts,
             computers: computers,
-            insights: insights,
             plans: plans,
             totalComputers: computers.count,
             webProtectionActiveCount: computers.filter { $0.webProtectionActive == true }.count,
@@ -632,11 +637,10 @@ extension DemoData {
             connectedCount: computers.filter {
                 ProtectDashboardService.isConnected($0.connectionStatus)
             }.count,
-            highAlerts: severities.filter { $0 == "High" }.count,
-            mediumAlerts: severities.filter { $0 == "Medium" }.count,
-            lowAlerts: severities.filter { $0 == "Low" }.count,
-            informationalAlerts: severities.filter { $0 == "Informational" }.count,
-            failingInsights: insights.filter { ($0.totalFail ?? 0) > 0 }.count,
+            highAlerts: severity.high,
+            mediumAlerts: severity.medium,
+            lowAlerts: severity.low,
+            informationalAlerts: severity.informational,
             sourceFile: nil,
             snapshotDate: referenceDate)
     }

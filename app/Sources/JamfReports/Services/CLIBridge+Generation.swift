@@ -38,7 +38,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// The profile belongs to another product, so a Jamf Pro command was not run; the text is
     /// the refusal (`ProfileAuthMethod.Resolved.proRefusal`).
     case wrongProduct(String)
-    /// The named backup's Jamf Pro part failed, so it holds only Jamf Protect objects.
+    /// The named backup's Jamf Pro part failed or was skipped, so it holds at most Jamf Protect
+    /// objects.
     case backupWithoutPro(String)
     /// A required directory could not be created or a file move failed.
     /// `path` is for private logging only — never interpolated into user-visible strings.
@@ -55,12 +56,15 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// A report is being generated in this app, so the collect (or second report) did not
     /// start: it would replace snapshots under the report. Nothing is queued.
     case generateInProgress
+    /// A workspace merge is running in this app, so nothing that reads or writes a workspace
+    /// starts. Nothing is queued.
+    case mergeInProgress
 
     /// True for the ways a collect or report is turned away before it starts. A refusal is
     /// not a failure: it is shown as information and leaves no Run History record.
     var isCollectRefusal: Bool {
         self == .tickLockHeld || self == .collectInProgress || self == .toolUpdateInProgress
-            || self == .generateInProgress
+            || self == .generateInProgress || self == .mergeInProgress
     }
 
     /// `isCollectRefusal` for an error of unknown type.
@@ -71,53 +75,80 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .notImplemented(let detail):
-            return "Not implemented: \(detail)"
+            return L("Not implemented: \(detail)")
         case .codesignRejected:
             return "jamf-cli signature verification failed — reinstall jamf-cli via Homebrew."
         case .launchFailed:
             // Reason omitted: may contain a system path or sandbox detail.
-            return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
+            return L("Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact.")
         case .invalidProfile(let slug):
             let why = ProfileName.problem(with: slug)?.explanation ?? ""
-            return "Profile name '\(slug)' isn't supported. \(why)"
+            return L("Profile name '\(ConfigSchema.displayText(slug))' isn't supported. \(why)")
         case .workspaceMissing(let profile):
-            return "Workspace not found for profile '\(profile)'."
+            return L("Workspace not found for profile '\(profile)'.")
         case .profileCaseConflict(let profile, let owner):
-            return "The workspace folder for '\(profile)' belongs to profile '\(owner)', which "
-                + "differs from it only by letter case. If both name the same Jamf server, set "
-                + "jamf_cli.profile to \(profile) in that folder's config.yaml; otherwise add "
-                + "this profile again in jamf-cli under a name that differs by more than case."
+            return L("The workspace folder for '\(profile)' belongs to profile '\(ConfigSchema.displayText(owner))', which differs from it only by letter case, so nothing runs for '\(profile)'. Use '\(ConfigSchema.displayText(owner))', or add this profile again in jamf-cli under a name that differs by more than case.")
         case .configLoadFailed(_, let detail):
             // Path omitted: may contain the home directory. The detail is a
             // YAML key path from the decoder, safe to display.
             if let detail {
-                return "config.yaml could not be parsed — \(detail). Fix it on the Config "
-                    + "page, or restore the default config from there."
+                return L("config.yaml could not be parsed — \(detail). Fix it on the Config page, or restore the default config from there.")
             }
-            return "config.yaml could not be parsed — the file may be corrupt. The Config "
-                + "page can restore the default config."
+            return L("config.yaml could not be parsed — the file may be corrupt. The Config page can restore the default config.")
         case .configWriteRefused(let key, let fix):
-            return "\(key) was not written to config.yaml: \(fix)"
+            return L("\(key) was not written to config.yaml: \(fix)")
         case .executableNotFound:
             return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
         case .invalidArgument(let detail):
-            return "Invalid argument: \(detail)"
+            return L("Invalid argument: \(detail)")
         case .wrongProduct(let refusal):
             return refusal
         case .backupWithoutPro(let name):
-            return "Backup \(name) has no Jamf Pro part (its Jamf Pro backup failed), so there "
-                + "is nothing to compare. Choose two backups that hold a Jamf Pro backup."
+            return L("Backup \(name) has no Jamf Pro part (its Jamf Pro backup failed or was skipped), so there is nothing to compare. Choose two backups that hold a Jamf Pro backup.")
         case .directoryOperationFailed:
             // Path omitted: may contain the home directory or workspace layout.
-            return "A required directory could not be created or moved — check available disk space and folder permissions."
+            return L("A required directory could not be created or moved — check available disk space and folder permissions.")
         case .tickLockHeld:
-            return "A scheduled run is in progress — try again when it finishes"
+            return L("A scheduled run is in progress — try again when it finishes")
         case .collectInProgress:
-            return "A refresh is already running — try again when it finishes"
+            return L("A refresh is already running — try again when it finishes")
         case .toolUpdateInProgress:
             return "jamf-cli is being updated — try again when it finishes"
         case .generateInProgress:
-            return "A report is being generated — try again when it finishes"
+            return L("A report is being generated — try again when it finishes")
+        case .mergeInProgress:
+            return L("A workspace merge is running — try again when it finishes")
+        }
+    }
+}
+
+/// The files one Generate run wrote, in the order its formats wrote them (the workbook first),
+/// and the config the first of them loaded, so `generateAll` seals the run once.
+final class RunArtifacts: Sendable {
+    private let state = Mutex<(urls: [URL], config: ReportConfig?)>(([], nil))
+
+    var urls: [URL] { state.withLock { $0.urls } }
+    var config: ReportConfig? { state.withLock { $0.config } }
+
+    func add(_ urls: [URL], config: ReportConfig) {
+        state.withLock {
+            $0.urls += urls
+            if $0.config == nil { $0.config = config }
+        }
+    }
+
+    /// `files` added to `run`, or, for a step that runs on its own (no `run`: the Overview's
+    /// workbook, onboarding, the Reports screen's PDF and CSV exports), sealed now, so every
+    /// report file the app writes is in a manifest.
+    static func record(
+        _ files: [URL], in run: RunArtifacts?, config: ReportConfig, profile: String,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        if let run {
+            run.add(files, config: config)
+        } else {
+            await ReportEngine.sealRun(
+                artifacts: files, config: config, profile: profile, onLine: onLine)
         }
     }
 }
@@ -154,27 +185,34 @@ extension CLIBridge {
         schoolMode: Bool = false,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        now: Date = Date(),
         onLine rawOnLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
         // Each format resolves the report folder; a refused `output_dir` is said once per run.
         let onLine = Self.droppingRepeatedFolderWarnings(rawOnLine)
+        // Every format adds what it wrote; the run is sealed once, after the last one.
+        let written = RunArtifacts()
         // The workbook step's `generate` checkpoints too; the run names each drift once.
         return await SharedConfigPin.announcingOnce {
             SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
-            return await Self.runGenerateAll(
+            let result = await Self.runGenerateAll(
                 types: types,
                 onLine: onLine,
                 generateXLSX: {
                     if schoolMode {
                         return try await self.schoolGenerate(
-                            profile: profile, onLine: onLine)
+                            profile: profile, outputDir: outputDir,
+                            csvFolder: types.contains(.csvFolder),
+                            now: now, written: written, onLine: onLine)
                     }
                     // A chosen HTML format is the run's one HTML report; `html.with_workbook`
                     // would write a second.
                     return try await self.generate(
                         profile: profile, template: template,
                         outputDir: outputDir, aiNarrative: aiNarrative,
-                        htmlWithWorkbook: !types.contains(.html), onLine: onLine
+                        htmlWithWorkbook: !types.contains(.html),
+                        csvFolder: types.contains(.csvFolder), now: now, written: written,
+                        onLine: onLine
                     )
                 },
                 generateHTML: {
@@ -182,23 +220,35 @@ extension CLIBridge {
                         profile: profile, outputDir: outputDir, type: .html, onLine: onLine)
                     return try await self.generateHTML(
                         profile: profile, outFile: outURL.path, template: template,
-                        aiNarrative: aiNarrative, onLine: onLine
+                        aiNarrative: aiNarrative, written: written, onLine: onLine
                     )
                 },
                 generatePDF: {
                     let outURL = try self.reportFileURL(
                         profile: profile, outputDir: outputDir, type: .pdf, onLine: onLine)
                     return try await self.generatePDF(
-                        profile: profile, outFile: outURL.path, template: template, onLine: onLine
+                        profile: profile, outFile: outURL.path, template: template,
+                        written: written, onLine: onLine
                     )
                 },
                 generateCSV: {
+                    // A chosen folder takes the CSV too, so the run's files share one folder.
+                    let outURL = try outputDir.map { _ in
+                        try self.reportFileURL(
+                            profile: profile, outputDir: outputDir, type: .csv, onLine: onLine)
+                    }
                     return try await self.exportInventoryCSV(
-                        profile: profile, outFile: nil, onLine: onLine
+                        profile: profile, outFile: outURL?.path, written: written, onLine: onLine
                     )
                 },
-                tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
+                tighten: { await WorkspacePermissionHardener.tightenOffMain(profile: profile) }
             )
+            let files = written.urls
+            if !files.isEmpty {
+                await ReportEngine.sealRun(
+                    artifacts: files, config: written.config, profile: profile, onLine: onLine)
+            }
+            return result
         }
     }
 
@@ -237,23 +287,28 @@ extension CLIBridge {
         generateHTML: () async throws -> Int32,
         generatePDF: () async throws -> Int32,
         generateCSV: () async throws -> Int32,
-        tighten: () -> Void
+        tighten: () async -> Void
     ) async -> GenerateAllResult {
         var result = GenerateAllResult()
 
-        // XLSX is the canonical workbook output.
-        if types.contains(.xlsx) {
+        // XLSX is the canonical workbook output. The CSV folder is written by the same run
+        // from the same tabs, so asking for it runs the workbook step and shares its outcome.
+        let workbookTypes = [GenerateOutputType.xlsx, .csvFolder].filter(types.contains)
+        if !workbookTypes.isEmpty {
             do {
                 let code = try await generateXLSX()
-                if code == 0 {
-                    result.succeeded.append(.xlsx)
-                } else {
-                    result.failed.append((.xlsx, code))
+                for type in workbookTypes {
+                    if code == 0 {
+                        result.succeeded.append(type)
+                    } else {
+                        result.failed.append((type, code))
+                    }
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] generate failed: \(error.localizedDescription)"))
-                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                    text: "[fatal] generate failed: \(error.englishDescription)"))
+                // -1: no process exit code (pre-spawn failure)
+                result.failed.append(contentsOf: workbookTypes.map { ($0, -1) })
                 // Continue to next format — do not return.
             }
         }
@@ -269,7 +324,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] html generate failed: \(error.localizedDescription)"))
+                    text: "[fatal] html generate failed: \(error.englishDescription)"))
                 result.failed.append((.html, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -285,7 +340,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] pdf generate failed: \(error.localizedDescription)"))
+                    text: "[fatal] pdf generate failed: \(error.englishDescription)"))
                 result.failed.append((.pdf, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -301,7 +356,7 @@ extension CLIBridge {
                 }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] csv export failed: \(error.localizedDescription)"))
+                    text: "[fatal] csv export failed: \(error.englishDescription)"))
                 result.failed.append((.csv, -1)) // -1: no process exit code (pre-spawn failure)
             }
         }
@@ -310,7 +365,7 @@ extension CLIBridge {
         // (ReportEngine XLSX, native HTML, PDF) are now Swift; each respects the
         // process umask, so the sweep normalises any 0644 files to 0600.
         if result.anySucceeded {
-            tighten()
+            await tighten()
         }
 
         return result
@@ -324,7 +379,7 @@ extension CLIBridge {
     /// when that command is available.
     nonisolated func listExtensionAttributes(profile: String) async throws -> [ExtensionAttribute] {
         throw CLIBridgeError.notImplemented(
-            "listExtensionAttributes: wire jamf-cli pro computer-extension-attributes list --output json"
+            L("listExtensionAttributes: wire jamf-cli pro computer-extension-attributes list --output json")
         )
     }
 
@@ -345,21 +400,17 @@ extension CLIBridge {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             let path = dir.path
-            let desc = error.localizedDescription
+            let desc = error.englishDescription
             AppLogger.cli.warning("""
                 reportFileURL: could not create \(path, privacy: .private): \
                 \(desc, privacy: .private)
                 """)
         }
-        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: false)
+        let stem = ExportNaming.stem(
+            for: type, profile: profile, schoolMode: false,
+            prefix: ExportNaming.filePrefix(profile: profile))
         let ext = type.rawValue.lowercased()
-        return dir.appendingPathComponent("\(stem)_\(htmlTimestamp()).\(ext)")
-    }
-
-    private nonisolated func htmlTimestamp() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd_HHmmss"
-        return f.string(from: Date())
+        return dir.appendingPathComponent("\(stem)_\(ExportNaming.timestamp()).\(ext)")
     }
 
 }

@@ -33,6 +33,14 @@ final class OSCurrentPercentTests: XCTestCase {
         XCTAssertEqual(result, 100.0)
     }
 
+    func testUnmeasuredMacsAreInNeitherNumeratorNorDenominator() {
+        // 10 Macs: 4 current, 4 behind, 2 with no version. 4 of 8, not 4 of 10.
+        let result = ReportEngine.osCurrentPercent(
+            macOSRows: [macOSRow(version: "15.7.7")],
+            osCounts: ["15.7.7": 4, "15.7.1": 4, "Unknown": 2], totalDevices: 10)
+        XCTAssertEqual(result, 50.0)
+    }
+
     // MARK: - Nil cases
 
     func testNilWhenMacOSRowsEmpty() {

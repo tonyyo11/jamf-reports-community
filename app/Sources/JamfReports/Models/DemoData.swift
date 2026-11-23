@@ -27,6 +27,7 @@ enum DemoData {
         let cal = Calendar(identifier: .iso8601)
         var end = DateComponents(calendar: cal, year: 2026, month: 4, day: 20).date!
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         for i in stride(from: 25, through: 0, by: -1) {
             let d = cal.date(byAdding: .day, value: -i * 7, to: end)!
@@ -153,13 +154,18 @@ enum DemoData {
 
     /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the
     /// demo legend reads as a live one does.
-    static let osDistribution: [OSDistribution] = [
-        .init(version: "macOS 15.4",   count: 287, pct: 54.8, colorHex: 0xC9970A, current: true),
-        .init(version: "macOS 15.3.2", count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
-        .init(version: "macOS 14.7.4", count:  84, pct: 16.0, colorHex: 0x7D8794, current: false),
-        .init(version: "macOS 13.7.6", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
-        .init(version: "macOS 12.7.6", count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
-    ]
+    static let osDistribution: [OSDistribution] = {
+        let rows: [(version: String, count: Int, pct: Double, current: Bool)] = [
+            ("macOS 15.4", 287, 54.8, true), ("macOS 15.3.2", 98, 18.7, true),
+            ("macOS 14.7.4", 84, 16.0, false), ("macOS 13.7.6", 38, 7.2, false),
+            ("macOS 12.7.6", 17, 3.2, false),
+        ]
+        let colors = ChartPalette.hexes(for: .version, keys: rows.map(\.version), scheme: .dark)
+        return zip(rows, colors).map { row, hex in
+            OSDistribution(version: row.version, count: row.count, pct: row.pct,
+                           colorHex: hex, current: row.current)
+        }
+    }()
 
     static let securityAgents: [SecurityAgent] = [
         .init(name: "CrowdStrike Falcon",  installed: edrInstalled, pct: coverage(edrInstalled),
@@ -200,13 +206,16 @@ enum DemoData {
     static let scheduledRuns: [Schedule] = [
         .init(name: "Weekly Executive Report", profile: "meridian-prod", schedule: "Monday · 07:00",
               cadence: "weekly", mode: .jamfCLIFull, next: "Apr 27, 07:00", last: "Apr 20, 07:02",
-              lastStatus: .ok, artifacts: ["xlsx", "html"], enabled: true),
+              lastStatus: .ok, artifacts: ["xlsx", "html", "csv"], enabled: true),
         .init(name: "Daily Snapshot Collection", profile: "meridian-prod", schedule: "Daily · 06:00",
               cadence: "daily", mode: .snapshotOnly, next: "Apr 26, 06:00", last: "Apr 25, 06:01",
               lastStatus: .ok, artifacts: [], enabled: true),
-        .init(name: "Monthly Compliance Brief", profile: "meridianedu", schedule: "1st · 06:00",
-              cadence: "monthly", mode: .jamfCLIFull, next: "May 1, 06:00", last: "Apr 1, 06:14",
-              lastStatus: .ok, artifacts: ["xlsx", "html", "csv"], enabled: true),
+        .init(name: "Monthly School Device Report", profile: "meridianedu", schedule: "1st · 06:00",
+              cadence: "monthly", mode: .jamfCLIFull, next: "May 1, 06:00", last: "Apr 1, 06:03",
+              lastStatus: .ok, artifacts: ["xlsx"], enabled: true),
+        .init(name: "Daily School Snapshot", profile: "meridianedu", schedule: "Daily · 05:30",
+              cadence: "daily", mode: .snapshotOnly, next: "Apr 26, 05:30", last: "Apr 25, 05:30",
+              lastStatus: .ok, artifacts: [], enabled: true),
         .init(name: "Mobile Inventory (iPad)", profile: "meridian-prod", schedule: "Weekdays · 07:30",
               cadence: "weekdays", mode: .jamfCLIOnly, next: "Apr 27, 07:30", last: "Apr 24, 07:33",
               lastStatus: .warn, artifacts: ["xlsx"], enabled: true),
@@ -222,26 +231,25 @@ enum DemoData {
         // hosts that map to live Jamf infrastructure — security audit TA-03).
         // Every name is Meridian-prefixed: a demo profile named like a real one
         // ("dummy", "prod") would switch the demo onto that real workspace.
-        .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1,
-              status: .ok),
+        .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok,
+              authMethod: "oauth2", product: .pro),
+        .init(name: "meridianedu", url: "meridian-edu.jamfschool.example", schedules: 2,
+              status: .ok, authMethod: "apikey", product: .school),
         .init(name: "meridian-sandbox", url: "sandbox.jamfcloud.example", schedules: 1,
-              status: .idle),
+              status: .idle, authMethod: "oauth2", product: .pro),
         .init(name: "meridian-msp", url: "prod-msp.jamfcloud.example", schedules: 0,
-              status: .idle),
+              status: .idle, authMethod: "oauth2", product: .pro),
     ]
 
-    /// One demo Platform API connection over two of `cliProfiles`, so the sidebar menu and Fleet
-    /// Overview show a grouped section in demo mode. The IDs are placeholders.
+    /// The demo Platform API connection: meridian-prod, the one demo workspace with a Platform
+    /// API slot, so the sidebar menu shows a grouped section in demo mode. The ID is a placeholder.
     static let connections: [Connection] = [
         Connection(
             id: UUID(uuidString: "00000000-0000-0000-0000-00000000DE01") ?? UUID(),
             name: "Meridian Platform", region: .us, level: .environment,
             members: [
-                .init(profile: "meridian-prod", scopeID: "demo-environment-prod",
+                .init(profile: org.profile, scopeID: "demo-environment-prod",
                       label: "Production", product: .pro),
-                .init(profile: "meridian-sandbox", scopeID: "demo-environment-sandbox",
-                      label: "Sandbox", product: .pro),
             ],
             createdAt: Date(timeIntervalSince1970: 0)),
     ]
@@ -346,7 +354,11 @@ enum DemoData {
     ]
 
     static let deviceSnapshot = DeviceInventorySnapshot(
-        devices: deviceInventory,
+        devices: deviceInventory.enumerated().map {
+            var record = $1
+            record.management = managementFacts(index: $0)
+            return record
+        },
         patchTitles: patchTitleSummary,
         sourceFiles: [
             "~/Jamf-Reports/meridian-prod/Generated Reports/automation_inventory_meridian-prod_2026-04-25_060155.csv",

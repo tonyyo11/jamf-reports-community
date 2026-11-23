@@ -17,10 +17,10 @@ enum JamfCLIProduct: String, Sendable, Equatable {
 
     var displayName: String {
         switch self {
-        case .pro, .unknown: "Jamf Pro"
-        case .protect: "Jamf Protect"
-        case .school: "Jamf School"
-        case .securityCloud: "Jamf Security Cloud"
+        case .pro, .unknown: L("Jamf Pro")
+        case .protect: L("Jamf Protect")
+        case .school: L("Jamf School")
+        case .securityCloud: L("Jamf Security Cloud")
         }
     }
 }
@@ -45,7 +45,7 @@ enum PlatformScopeLevel: String, Sendable, Equatable {
 extension PlatformScopeLevel {
     /// Why an organization-level profile cannot be a workspace, in the words every screen, log
     /// line and Config Doctor row uses.
-    static let organizationLevelReason = "An organization-level integration reaches only Jamf "
-        + "Account. Create an environment-level integration in Jamf Account and add that "
-        + "profile instead."
+    static var organizationLevelReason: String {
+        L("An organization-level integration reaches only Jamf Account. Create an environment-level integration in Jamf Account and add that profile instead.")
+    }
 }

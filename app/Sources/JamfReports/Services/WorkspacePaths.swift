@@ -10,6 +10,13 @@ import Foundation
 /// mirrors that behavior, reading the file through the engine's loader.
 enum WorkspacePaths {
 
+    /// The workspace's folder under the workspaces root. Every folder path starts here.
+    static func workspaceURL(
+        for workspace: WorkspaceID, under root: URL = ProfileService.workspacesRoot()
+    ) -> URL {
+        root.appendingPathComponent(workspace.pathComponent, isDirectory: true)
+    }
+
     /// The conventional subdirectory name for generated report output.
     /// Used by `CLIBridge+Generation` to construct HTML and PDF output paths
     /// without duplicating the literal.
@@ -180,12 +187,10 @@ enum WorkspacePaths {
         for profile: String,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> URL {
-        guard ProfileService.workspaceURL(for: profile) != nil else {
-            throw PathError.invalidProfile(profile)
-        }
+        guard let id = WorkspaceID(profile) else { throw PathError.invalidProfile(profile) }
         return home
             .appendingPathComponent("Library/Logs/JamfReports/diagnostics", isDirectory: true)
-            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
+            .appendingPathComponent(id.pathComponent, isDirectory: true)
     }
 
     /// A fixed folder below a workspace (or below a config-derived folder such as `data_dir`),
@@ -254,8 +259,8 @@ enum WorkspacePaths {
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let p): "Invalid profile: \(p)"
-            case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
+            case .invalidProfile(let p): ProfileName.invalidMessage(p)
+            case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.englishDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
             case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"
             case .worldReadableFolder(let u): "World-readable folder: \(u.path)"
@@ -497,7 +502,7 @@ enum WorkspacePaths {
             // are legitimate "no value here" outcomes; surface a debug log
             // so an unparseable config doesn't masquerade as a missing key.
             AppLogger.collect.warning(
-                "WorkspacePaths: could not parse config.yaml: \(error.localizedDescription, privacy: .private)"
+                "WorkspacePaths: could not parse config.yaml: \(error.englishDescription, privacy: .private)"
             )
         }
         return nil

@@ -21,11 +21,11 @@ Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency.
 
 - **GUI** (`JamfReports.app`): the SwiftUI app: dashboards, config editing, report
   generation, scheduling, run history, Historical Trends.
-- **Bundled background item** (`main.swift --tick`): one `SMAppService` agent inside the
+- **Bundled background item** (`--tick`, `App/Tick.swift`): one `SMAppService` agent inside the
   signed app bundle wakes the app every 300 s; `TickScheduler` decides which schedules
   are due and runs them without a window. The GUI "Run now" button starts a schedule
   through the same path (`--tick --now <label>`).
-- **External scheduler** (`main.swift --scheduled-run --mode <mode>`): the same headless
+- **External scheduler** (`--scheduled-run --mode <mode>`): the same headless
   run, for a scheduler you manage yourself.
 - **`jamf-reports` CLI**: the same binary run from a terminal; a recognized subcommand
   (`generate`, `html`, `collect`, `backup`, `schedules`, and others) runs headlessly.

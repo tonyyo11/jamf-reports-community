@@ -468,6 +468,40 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].count, 42)
     }
 
+    // MARK: - Planted counts
+
+    func testPlantedSecuritySummaryCountReadsAsUnreported() throws {
+        let json = """
+        [{"section":"summary","data":{"total_devices":10,
+        "filevault_encrypted":-9223372036854775808,"sip_enabled":9}}]
+        """
+        let items = try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8))
+        guard case .summary(let s) = items[0] else { return XCTFail("Expected .summary") }
+        XCTAssertNil(s.data.fileVaultEncrypted)
+        XCTAssertEqual(s.data.sipEnabled, 9)
+        let fleet = SecurityFleetCounts.build(
+            totalDevices: 10, onCounts: SecurityFleetCounts.onCounts(s.data), devices: [],
+            hardware: [:], policy: .default)
+        XCTAssertNil(fleet.controls[.fileVault])
+    }
+
+    func testPlantedOSVersionCountsAreRefused() {
+        let json = """
+        [{"section":"os_version","os_version":"26.1","count":9223372036854775807,"pct":"1%"},
+         {"section":"os_version","os_version":"26.1.0","count":9223372036854775807,"pct":"1%"}]
+        """
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8)))
+    }
+
+    func testPlantedUpdateStatusCountIsRefused() {
+        let json = """
+        [{"total":5,"status_summary":[{"status":"PENDING","count":-1}]}]
+        """
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8)))
+    }
+
     // MARK: - DeviceComplianceRow
 
     func testDeviceComplianceRowDecoding() throws {
@@ -709,9 +743,9 @@ final class JamfCLIDecoderTests: XCTestCase {
         // flattenComputer: lower-case `hostname`, `plan` as a name, `fullDiskAccess` as an enum.
         let json = """
         [{"connectionStatus":"Connected","fullDiskAccess":"Authorized",
-          "hostname":"lab-mac-01.example","insightsStatsFail":4,
+          "hostname":"lab-mac-01.example",
           "lastConnection":"2026-05-01T09:45:00.000Z","memorySize":32,"modelName":"Mac Studio",
-          "osMajor":15,"osMinor":7,"osPatch":3,"osString":"15.7.3","plan":"Engineering Lab",
+          "osMajor":15,"osMinor":7,"osPatch":3,"plan":"Engineering Lab",
           "serial":"SYNTH0000001","tags":"[lab dev]","uuid":"comp-1","version":"6.1.0.2",
           "webProtectionActive":true}]
         """
@@ -720,14 +754,21 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].hostName, "lab-mac-01.example")
         XCTAssertEqual(rows[0].serial, "SYNTH0000001")
         XCTAssertEqual(rows[0].modelName, "Mac Studio")
-        XCTAssertEqual(rows[0].osString, "15.7.3")
+        XCTAssertEqual(rows[0].osString, "macOS 15.7.3")
+        let bare = try JSONDecoder().decode(
+            [ProtectComputerRow].self,
+            from: Data(#"[{"osMajor":26,"osMinor":1,"osPatch":0},{"hostname":"x"}]"#.utf8))
+        XCTAssertEqual(bare[0].osString, "macOS 26.1")
+        XCTAssertNil(bare[1].osString)
+        let legacy = try JSONDecoder().decode(
+            [ProtectComputerRow].self, from: Data(#"[{"osString":"15.7.3"}]"#.utf8))
+        XCTAssertEqual(legacy[0].osString, "15.7.3")
         XCTAssertEqual(rows[0].planName, "Engineering Lab")
         XCTAssertEqual(rows[0].version, "6.1.0.2")
         XCTAssertEqual(rows[0].webProtectionActive, true)
         XCTAssertEqual(rows[0].fullDiskAccess, true)
         XCTAssertEqual(rows[0].connectionStatus, "Connected")
         XCTAssertEqual(rows[0].lastConnection, "2026-05-01T09:45:00.000Z")
-        XCTAssertEqual(rows[0].insightsStatsFail, 4)
     }
 
     func testProtectComputerRowOmittedFieldsAreNil() throws {
@@ -758,32 +799,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows.map(\.hostName), [
             "lab-mac-01.example", "exec-mbp-09.example", "build-mini-02.example",
         ])
-    }
-
-    // MARK: - ProtectInsightRow
-
-    func testProtectInsightRowReadsJamfCLIFlattenedRow() throws {
-        // flattenInsight carries no uuid or description; `cisIDs` is one comma-joined string.
-        let json = """
-        [{"cisIDs":"2.3.1, 2.3.2","enabled":true,"label":"Bluetooth sharing disabled",
-          "section":"Sharing","totalFail":12,"totalNone":0,"totalPass":88}]
-        """
-        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].label, "Bluetooth sharing disabled")
-        XCTAssertEqual(rows[0].section, "Sharing")
-        XCTAssertEqual(rows[0].totalPass, 88)
-        XCTAssertEqual(rows[0].totalFail, 12)
-        XCTAssertEqual(rows[0].enabled, true)
-    }
-
-    func testProtectInsightListSurvivesOddFieldType() throws {
-        let json = """
-        [{"enabled":true,"label":"A","totalFail":"12","totalPass":88},
-         {"enabled":false,"label":"B","totalFail":0,"totalPass":100}]
-        """
-        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.map(\.label), ["A", "B"])
-        XCTAssertEqual(rows.map(\.totalFail), [nil, 0])
     }
 
     // MARK: - ProtectPlanRow
@@ -955,6 +970,15 @@ final class JamfCLIDecoderTests: XCTestCase {
             }
             XCTAssertEqual(key.stringValue, "status_summary",
                            "The missing key must be reported under its JSON name")
+        }
+    }
+
+    func testInventorySummaryCountOutsideTheBoundIsRefused() throws {
+        let ok = Data(#"[{"os_version":"15.1","count":3}]"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode([InventorySummaryRow].self, from: ok).first?.count, 3)
+        for bad in ["9223372036854775807", "-1"] {
+            let data = Data(#"[{"os_version":"15.1","count":\#(bad)}]"#.utf8)
+            XCTAssertThrowsError(try JSONDecoder().decode([InventorySummaryRow].self, from: data))
         }
     }
 }

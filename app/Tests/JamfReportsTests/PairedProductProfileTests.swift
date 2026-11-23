@@ -30,6 +30,96 @@ final class PairedProductProfileTests: XCTestCase {
 
     private func names(_ profiles: [JamfCLIProfile]) -> [String] { profiles.map(\.name) }
 
+    func testAProtectOnlyEnvironmentIsAWorkspaceAndANamedLoginStillIsNot() throws {
+        try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
+        try workspace("prod", config: "profiles:\n  jamf_pro: prod\n  protect: other\n")
+        var only = profile("pro-only")
+        only.product = .protect
+        var other = profile("other")
+        other.product = .protect
+        XCTAssertTrue(ProfileService.isProtectOnlyWorkspace("pro-only", root: root))
+        XCTAssertFalse(ProfileService.isProtectOnlyWorkspace("prod", root: root))
+        XCTAssertEqual(
+            names(ProfileService.droppingPairedProductProfiles(
+                [profile("prod"), only, other], under: root)),
+            ["prod", "pro-only"])
+    }
+
+    func testAProtectOnlyEnvironmentExpectsTheProtectKindsAlone() throws {
+        try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        XCTAssertEqual(
+            WorkspaceStore.expectedKinds(
+                profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
+                protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
+                                              product: .protect) },
+                protectPinAllows: { _, _ in true }),
+            DataFreshnessHealth.protectKinds)
+    }
+
+    func testAnUnconfirmedProtectOnlyEditExpectsNothing() throws {
+        try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let kinds = WorkspaceStore.expectedKinds(
+            profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
+            protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
+                                          product: .protect) },
+            protectPinAllows: { _, _ in false })
+        XCTAssertEqual(kinds, [])
+    }
+
+    func testTheSourcesPlanOfAProtectOnlyEnvironmentIsTheProtectListAlone() {
+        let plan = CollectSourcesPlan.build(.init(
+            product: .jamfPro, profile: "p", protectProfile: "p", protectOnly: true))
+        XCTAssertEqual(plan.sources.map(\.kind), DataFreshnessHealth.protectKinds)
+    }
+
+    private func protectLogin(_ name: String) -> JamfCLIProfile {
+        var login = profile(name)
+        login.product = .protect
+        return login
+    }
+
+    func testALegacyKeysFolderDoesNotMakeAProtectLoginAWorkspace() throws {
+        try workspace("lone", config: "jamf_cli:\n  profile: lone\nprotect:\n  enabled: true\n  profile: lone\n")
+        XCTAssertFalse(ProfileService.isProtectOnlyWorkspace("lone", root: root))
+        XCTAssertEqual(names(ProfileService.droppingPairedProductProfiles(
+            [protectLogin("lone")], under: root)), [])
+    }
+
+    func testAFolderWhoseProtectSlotNamesAnotherLoginStaysDropped() throws {
+        try workspace("lone", config: "profiles:\n  protect: elsewhere\n")
+        XCTAssertFalse(ProfileService.isProtectOnlyWorkspace("lone", root: root))
+        XCTAssertEqual(names(ProfileService.droppingPairedProductProfiles(
+            [protectLogin("lone")], under: root)), [])
+    }
+
+    func testRunnableWorkspacesUseTheRootAndSeamGiven() throws {
+        try workspace("po", config: "profiles:\n  protect: po\n")
+        let runnable = ProfileService.runnableWorkspaces(
+            [protectLogin("po"), protectLogin("x")], excluding: [], under: root,
+            hasWorkspace: { _ in true })
+        XCTAssertEqual(names(runnable), ["po"])
+    }
+
+    func testAProtectOnlyLoginIsNeverOfferedToAttachElsewhere() throws {
+        try workspace("po", config: "profiles:\n  protect: po\n")
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let login = protectLogin("po")
+        let rows = AddSheetPlan.unassigned(
+            profiles: [login], workspaces: [], paired: [], unusable: [:])
+        XCTAssertNotEqual(rows.map(\.use), [.addToCurrent(.protect)])
+        let proposal = EnvironmentProposal.propose(
+            profiles: [login, profile("prod")], learnedJamfProURLs: [:],
+            existingWorkspaces: [
+                "po": EnvironmentProfiles.read(
+                    configURL: root.appendingPathComponent("po/config.yaml"), workspace: "po")])
+        XCTAssertEqual(proposal.protectChoices, [])
+    }
+
     func testProfileNamedOnlyAsProtectConnectionIsNotListed() throws {
         try workspace("prod", config: "protect:\n  enabled: true\n  profile: protect\n")
         let listed = ProfileService.droppingPairedProductProfiles(
@@ -90,10 +180,11 @@ final class PairedProductProfileTests: XCTestCase {
         try workspace("prod", config: "protect:\n  enabled: true\n  profile: protect\n")
         let listed = ProfileService.droppingPairedProductProfiles(
             [profile("prod"), profile("protect")], under: root)
-        XCTAssertEqual(names(ProfileService.runnableProfiles(listed, excluding: [])), ["prod"])
+        XCTAssertEqual(names(ProfileService.runnableWorkspaces(
+            listed, excluding: [], hasWorkspace: { _ in true })), ["prod"])
     }
 
-    func testConnectedProductsReadsEnabledBlocksWithAProfile() throws {
+    func testEnvironmentReadsEnabledBlocksWithAProfile() throws {
         try workspace("prod", config: """
             protect:
               enabled: true
@@ -103,22 +194,23 @@ final class PairedProductProfileTests: XCTestCase {
               profile: school
             """)
         XCTAssertEqual(
-            ConnectedProducts.read(profile: "prod", under: root),
-            ConnectedProducts(protectProfile: "protect", foreignSchoolProfile: nil))
+            EnvironmentProfiles.read(workspace: "prod", under: root).connectedProfiles, ["protect"])
     }
 
-    func testConnectedProductsNamesOnlyAForeignSchoolProfile() throws {
+    func testEnvironmentNamesOnlyAForeignSchoolProfile() throws {
         try workspace("prod", config: "school_cli:\n  enabled: true\n  profile: school\n")
         try workspace("edu", config: "school_cli:\n  enabled: true\n  profile: edu\n")
         XCTAssertEqual(
-            ConnectedProducts.read(profile: "prod", under: root),
-            ConnectedProducts(protectProfile: nil, foreignSchoolProfile: "school"))
-        XCTAssertEqual(ConnectedProducts.read(profile: "edu", under: root), .none)
+            EnvironmentProfiles.read(workspace: "prod", under: root).connectedProfiles, ["school"])
+        XCTAssertEqual(
+            EnvironmentProfiles.read(workspace: "edu", under: root).connectedProfiles, [])
     }
 
-    func testConnectedProductsIsNoneForMissingOrBlankConfig() throws {
+    func testEnvironmentNamesNoLoginForMissingOrBlankConfig() throws {
         try workspace("blank", config: "protect:\n  enabled: true\n")
-        XCTAssertEqual(ConnectedProducts.read(profile: "blank", under: root), .none)
-        XCTAssertEqual(ConnectedProducts.read(profile: "absent", under: root), .none)
+        for name in ["blank", "absent"] {
+            XCTAssertEqual(
+                EnvironmentProfiles.read(workspace: name, under: root).connectedProfiles, [], name)
+        }
     }
 }

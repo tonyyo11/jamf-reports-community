@@ -28,7 +28,7 @@ final class CatchUpCollectTests: XCTestCase {
     }
 
     func testExcludedAndInvalidProfilesAreDropped() {
-        var p = AutomationPolicy(); p.isManaged = true; p.excludedProfiles = ["dummy"]
+        var p = AutomationPolicy(); p.isManaged = true; p.excludedWorkspaces = ["dummy"]
         XCTAssertEqual(
             WorkspaceStore.catchUpTargets(
                 policy: p, discovered: ["alpha", "dummy", "Bad\tSlug", "beta"]

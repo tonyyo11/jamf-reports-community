@@ -10,12 +10,16 @@ struct DDMBlueprintView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
-    @State private var fleetCounts: (enabled: Int, total: Int) = (0, 0)
+    @State private var fleetCounts: (enabled: Int, total: Int)? = (0, 0)
+    @State private var scanProgress: DeviceScanPasses.RoundProgress?
     @State private var showAllIdentifiers = false
     /// A Platform API profile, as profile discovery read it from jamf-cli.
     private var platformAvailable: Bool {
-        !workspace.demoMode && workspace.activeCLIProfile?.auth?.isPlatform == true
+        !workspace.demoMode && workspace.environmentProducts.has(.platform)
     }
 
     /// Tri-state lock decision the view's body switches on.
@@ -29,21 +33,23 @@ struct DDMBlueprintView: View {
         PageScaffold {
             DDMBlueprintView.header(kicker: showsPlatformSections
                 ? "Platform API" : "Declarative Device Management")
-            if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
-                if deviceSnapshot.isDetected {
-                    FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
-                                     expectedKinds: ["ddm-device-status"])
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("declarative device management data"))
+            } else {
+                if !workspace.demoMode && lockState == .unlockedWithData {
+                    CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
+                    if deviceSnapshot.isDetected {
+                        FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
+                                         expectedKinds: ["ddm-device-status"])
+                    }
                 }
+                content
             }
-            content
         }
         .tint(Theme.Colors.goldBright)
-        .task(id: workspace.profile) {
-            reload()
-        }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -57,7 +63,8 @@ struct DDMBlueprintView: View {
             platformAvailable: platformAvailable,
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
             hasDeviceData: !deviceSnapshot.records.isEmpty,
-            ddmEnabledCount: fleetCounts.enabled,
+            // An unreadable computers file (nil) unlocks nothing: only a count can.
+            ddmEnabledCount: fleetCounts?.enabled ?? 0,
             hasDeviceSnapshot: deviceSnapshot.isDetected)
     }
 
@@ -91,6 +98,9 @@ struct DDMBlueprintView: View {
             unlockedEmptyCard
         case .unlockedWithData:
             headerStrip
+            if !workspace.demoMode, let line = DeviceScanCoverage.line(scanProgress?.ddm) {
+                Text(line).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+            }
             if showsPlatformSections {
                 adoptionCard
                 blueprintTableCard
@@ -134,9 +144,8 @@ struct DDMBlueprintView: View {
     private static func header(kicker: String) -> some View {
         PageHeader(
             kicker: kicker,
-            title: "DDM Blueprints",
-            subtitle: "Per-device DDM status comes from the weekly device scan (any profile). "
-                + "The Blueprints sections below need a Platform API profile.",
+            title: L("DDM Blueprints"),
+            subtitle: L("Per-device DDM status comes from the weekly device scan (any profile). The Blueprints sections below need a Platform API profile."),
             lastModified: nil
         )
     }
@@ -146,7 +155,7 @@ struct DDMBlueprintView: View {
             VStack(alignment: .leading, spacing: 16) {
                 EmptyStateView(
                     systemImage: "lock.shield",
-                    title: "Platform API profile required",
+                    title: L("Platform API profile required"),
                     message: DDMBlueprintView.lockReason(),
                     commands: DDMBlueprintView.setupCommands
                 )
@@ -157,21 +166,18 @@ struct DDMBlueprintView: View {
     private var unlockedEmptyCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 14) {
-                if deviceSnapshot.isDetected && fleetCounts.enabled == 0 {
+                if deviceSnapshot.isDetected && fleetCounts?.enabled == 0 {
                     EmptyStateView(
                         systemImage: "checkmark.circle",
-                        title: "No DDM-enabled Macs",
-                        message: "The per-device scan ran; no Mac in this inventory has "
-                            + "Declarative Device Management enabled.",
+                        title: L("No DDM-enabled Macs"),
+                        message: L("The per-device scan ran; no Mac in this inventory has Declarative Device Management enabled."),
                         commands: []
                     )
                 } else {
                     EmptyStateView(
                         systemImage: "doc.badge.gearshape",
-                        title: "No DDM snapshots yet",
-                        message: "Run a collect with the Scan tier (or wait for the weekly "
-                            + "managed scan) to populate per-device DDM status. Platform "
-                            + "profiles can also run the blueprint reports.",
+                        title: L("No DDM snapshots yet"),
+                        message: L("Run a collect with the Scan tier (or wait for the weekly managed scan) to populate per-device DDM status. Platform profiles can also run the blueprint reports."),
                         // The scan walks the computers snapshot, so inventory comes too.
                         commands: [EmptyStateView.collectCommand(
                             profile: workspace.profile, kinds: ["computers", "ddm-device-status"])]
@@ -187,7 +193,7 @@ struct DDMBlueprintView: View {
         let agg = snapshot.blueprintAggregate
         return Card {
             VStack(alignment: .leading, spacing: 14) {
-                SectionHeader(title: "Blueprint Adoption",
+                SectionHeader(title: L("Blueprint Adoption"),
                               trailing: HtmlSectionFormatters.plural(snapshot.totalBlueprints, "blueprint"))
                 HStack(alignment: .top, spacing: 28) {
                     DDMBlueprintView.adoptionDonut(deployed: agg.deployed,
@@ -208,7 +214,7 @@ struct DDMBlueprintView: View {
     private var blueprintTableCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Blueprints", trailing: "Top 20 by failures, pending, name")
+                SectionHeader(title: L("Blueprints"), trailing: L("Top 20 by failures, pending, name"))
                 ForEach(DDMBlueprintView.sortedBlueprints(snapshot.blueprints).prefix(20)) { blueprint in
                     DDMBlueprintView.blueprintRow(blueprint, contrast: contrast)
                 }
@@ -216,8 +222,7 @@ struct DDMBlueprintView: View {
                     // Sheet names come from SheetID so they cannot drift from the workbook
                     // again: both footnotes kept the v2.1.0 names after the sheets were
                     // renamed (#207 G14).
-                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook "
-                         + "(\"\(SheetID.blueprintStatus.rawValue)\" sheet).")
+                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook (\"\(SheetID.blueprintStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -229,16 +234,16 @@ struct DDMBlueprintView: View {
         let agg = snapshot.declarationAggregate
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Declaration Sources",
+                SectionHeader(title: L("Declaration Sources"),
                               trailing: HtmlSectionFormatters.plural(snapshot.totalDeclarationSources, "source"))
                 HStack(spacing: 10) {
-                    DDMBlueprintView.declarationCounter(label: "Sources w/ Issues",
+                    DDMBlueprintView.declarationCounter(label: L("Sources w/ Issues"),
                                                         value: agg.sourcesWithIssues,
                                                         color: Theme.Colors.danger)
-                    DDMBlueprintView.declarationCounter(label: "Unsuccessful",
+                    DDMBlueprintView.declarationCounter(label: L("Unsuccessful"),
                                                         value: agg.unsuccessfulTotal,
                                                         color: Theme.Colors.warn)
-                    DDMBlueprintView.declarationCounter(label: "Sources",
+                    DDMBlueprintView.declarationCounter(label: L("Sources"),
                                                         value: snapshot.totalDeclarationSources,
                                                         color: Theme.Colors.ok)
                 }
@@ -246,8 +251,7 @@ struct DDMBlueprintView: View {
                     DDMBlueprintView.declarationRow(entry, contrast: contrast)
                 }
                 if snapshot.declarations.count > 30 {
-                    Text("Showing the first 30 sources. Full data is in the Excel workbook "
-                         + "(\"\(SheetID.ddmStatus.rawValue)\" sheet).")
+                    Text("Showing the first 30 sources. Full data is in the Excel workbook (\"\(SheetID.ddmStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -259,16 +263,16 @@ struct DDMBlueprintView: View {
         Card(padding: 14) {
             HStack(spacing: 10) {
                 DDMBlueprintView.declarationCounter(
-                    label: "DDM enabled",
-                    value: fleetCounts.enabled, color: Theme.Colors.teal)
+                    label: L("DDM enabled"),
+                    value: fleetCounts?.enabled, color: Theme.Colors.tealBright)
                 DDMBlueprintView.declarationCounter(
-                    label: "Macs in inventory",
-                    value: fleetCounts.total, color: Theme.Colors.fgMuted)
+                    label: L("Macs in inventory"),
+                    value: fleetCounts?.total, color: Theme.Colors.fgMuted)
                 DDMBlueprintView.declarationCounter(
-                    label: "Reported", value: deviceSnapshot.ddmReportedCount,
+                    label: L("Reported"), value: deviceSnapshot.ddmReportedCount,
                     color: Theme.Colors.ok)
                 DDMBlueprintView.declarationCounter(
-                    label: "Declaration failures",
+                    label: L("Declaration failures"),
                     value: deviceSnapshot.failingDeclarationCount,
                     color: deviceSnapshot.failingDeclarationCount > 0
                         ? Theme.Colors.danger : Theme.Colors.ok)
@@ -288,9 +292,9 @@ struct DDMBlueprintView: View {
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Declarations by identifier",
+                    title: L("Declarations by identifier"),
                     trailing: Self.identifiersSummary(
-                        total: overview.totalCount, withIssues: overview.withIssuesCount))
+                        total: overview.totalCount, withFailures: overview.withFailuresCount))
                 if overview.totalCount == 0 {
                     Text("No declarations reported by any DDM-enabled Mac yet.")
                         .font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
@@ -325,10 +329,11 @@ struct DDMBlueprintView: View {
                 .lineLimit(1)
             Spacer()
             Pill(text: HtmlSectionFormatters.plural(entry.deviceCount, "device"), tone: .muted)
-            if entry.active > 0 { Pill(text: "\(entry.active) active", tone: .teal) }
-            if entry.inactive > 0 { Pill(text: "\(entry.inactive) inactive", tone: .warn) }
-            if entry.invalid > 0 { Pill(text: "\(entry.invalid) invalid", tone: .danger) }
-            if entry.mixed > 0 { Pill(text: "\(entry.mixed) mixed", tone: .danger) }
+            if entry.active > 0 { Pill(text: L("\(entry.active) active"), tone: .teal) }
+            // Inactive and mixed are states, not failures: only invalid is coloured.
+            if entry.inactive > 0 { Pill(text: L("\(entry.inactive) inactive"), tone: .muted) }
+            if entry.invalid > 0 { Pill(text: L("\(entry.invalid) invalid"), tone: .danger) }
+            if entry.mixed > 0 { Pill(text: L("\(entry.mixed) mixed"), tone: .muted) }
         }
     }
 
@@ -347,8 +352,7 @@ struct DDMBlueprintView: View {
                     }
                 }
                 if quiet.count > Self.quietListCap {
-                    Text("+ \(quiet.count - Self.quietListCap) more \u{2014} full list in the "
-                         + "workbook's DDM Device Status sheet.")
+                    Text("+ \(quiet.count - Self.quietListCap) more \u{2014} full list in the workbook's DDM Device Status sheet.")
                         .font(.caption).foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -361,22 +365,24 @@ struct DDMBlueprintView: View {
         }
     }
 
-    /// "2,204 identifiers, 29 with issues" (the card's count, not the header tile's).
-    nonisolated static func identifiersSummary(total: Int, withIssues: Int) -> String {
-        "\(HtmlSectionFormatters.plural(total, "identifier")), \(withIssues) with issues"
+    /// "2,204 identifiers, 3 with invalid declarations" (identifiers, not the header tile's
+    /// device-declaration pairs).
+    nonisolated static func identifiersSummary(total: Int, withFailures: Int) -> String {
+        let identifiers = HtmlSectionFormatters.plural(total, "identifier")
+        return L("\(identifiers), \(withFailures) with invalid declarations")
     }
 
     nonisolated static func quietSinglesText(_ count: Int) -> String {
         let noun = HtmlSectionFormatters.plural(count, "identifier")
         return count == 1
-            ? "\(noun) appears on one device and is healthy"
-            : "\(noun) appear on one device each and are healthy"
+            ? L("\(noun) appears on one device and is healthy")
+            : L("\(noun) appear on one device each and are healthy")
     }
 
     private var softwareUpdatesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Software updates (DDM)")
+                SectionHeader(title: L("Software updates (DDM)"))
                 if deviceSnapshot.pendingVersions.isEmpty && deviceSnapshot.failureReasons.isEmpty {
                     Text("No pending DDM software updates and no failures reported.")
                         .font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
@@ -416,8 +422,7 @@ struct DDMBlueprintView: View {
                 }
             }
             if devices.count > 50 {
-                Text("+ \(devices.count - 50) more — full list in the workbook's "
-                    + "DDM Device Status sheet.")
+                Text("+ \(devices.count - 50) more — full list in the workbook's DDM Device Status sheet.")
                     .font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
         }
@@ -429,18 +434,44 @@ struct DDMBlueprintView: View {
 
     // MARK: - Helpers
 
-    private func reload() {
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            deviceSnapshot = .empty
+            fleetCounts = (0, 0)
+            scanProgress = nil
+        }
         if workspace.demoMode {
             // The demo fleet: DDM on every Mac but the 17 on Monterey, with the
             // per-device scan the blueprint counts come from.
             snapshot = DemoData.ddmBlueprintSnapshot
             deviceSnapshot = DemoData.ddmDeviceStatusSnapshot
             fleetCounts = (DemoData.ddmFleetMacs.count, DemoData.fleetMacs.count)
+            loadedSource = source
             return
         }
-        snapshot = DDMBlueprintService.load(profile: workspace.profile)
-        deviceSnapshot = DDMDeviceStatusService.load(profile: workspace.profile)
-        fleetCounts = DDMDeviceStatusService.fleetDDMCounts(profile: workspace.profile)
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> (DDMBlueprintService.Snapshot, DDMDeviceStatusService.Snapshot,
+                           (enabled: Int, total: Int)?, DeviceScanPasses.RoundProgress?) in
+                (DDMBlueprintService.load(profile: profile),
+                 DDMDeviceStatusService.load(profile: profile),
+                 DDMDeviceStatusService.fleetDDMCounts(profile: profile),
+                 DeviceScanPasses.roundProgress(profile: profile))
+            }
+        ) else { return }
+        snapshot = loaded.0
+        deviceSnapshot = loaded.1
+        fleetCounts = loaded.2
+        scanProgress = loaded.3
+        loadedSource = source
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)
@@ -451,15 +482,13 @@ struct DDMBlueprintView: View {
     ]
 
     private static func lockReason() -> String {
-        "Your active jamf-cli profile does not use auth-method: platform. Connect with a Jamf "
-            + "Account integration (Settings › Add connection, then Platform API) or switch this "
-            + "workspace to a Platform profile."
+        L("Your active jamf-cli profile does not use auth-method: platform. Connect with a Jamf Account integration (Settings › Add connection, then Platform API) or switch this workspace to a Platform profile.")
     }
 
     private static func adoptionDonut(deployed: Int, notDeployed: Int) -> some View {
         let slices: [(label: String, value: Int, color: Color)] = [
-            ("Deployed", deployed, Theme.Colors.ok),
-            ("Not deployed", notDeployed, Theme.Colors.warn),
+            (L("Deployed"), deployed, Theme.Colors.ok),
+            (L("Not deployed"), notDeployed, Theme.Colors.warn),
         ].filter { $0.value > 0 }
         return Chart(slices, id: \.label) { slice in
             SectorMark(
@@ -482,15 +511,15 @@ struct DDMBlueprintView: View {
                                        rate: Double,
                                        contrast: ColorSchemeContrast) -> some View {
         let rows: [(label: String, value: Int, color: Color)] = [
-            ("Deployed", deployed, Theme.Colors.ok),
-            ("Not deployed", notDeployed, Theme.Colors.warn),
-            ("With failures", failing, Theme.Colors.danger),
-            ("With pending", pending, Theme.Colors.gold),
+            (L("Deployed"), deployed, Theme.Colors.ok),
+            (L("Not deployed"), notDeployed, Theme.Colors.warn),
+            (L("With failures"), failing, Theme.Colors.danger),
+            (L("With pending"), pending, Theme.Colors.gold),
         ]
-        let percent = Int((rate * 100).rounded())
+        let percent = PercentFormat.whole.text(rate * 100)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(percent)%")
+                Text(verbatim: percent)
                     .font(Theme.Fonts.mono(28, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
@@ -588,21 +617,21 @@ struct DDMBlueprintView: View {
     }
 
     private static func blueprintA11y(_ blueprint: DDMBlueprintService.Snapshot.Blueprint) -> String {
-        let name = blueprint.name.isEmpty ? "Unnamed blueprint" : blueprint.name
-        let state = blueprint.state.isEmpty ? "no state" : blueprint.state
-        let failed = blueprint.failed.map { "\($0) failed" } ?? "no failures reported"
-        let pending = blueprint.pending.map { "\($0) pending" } ?? "no pending"
-        let succeeded = blueprint.succeeded.map { "\($0) succeeded" } ?? "no deployment counts"
+        let name = blueprint.name.isEmpty ? L("Unnamed blueprint") : blueprint.name
+        let state = blueprint.state.isEmpty ? L("no state") : blueprint.state
+        let failed = blueprint.failed.map { L("\($0) failed") } ?? L("no failures reported")
+        let pending = blueprint.pending.map { L("\($0) pending") } ?? L("no pending")
+        let succeeded = blueprint.succeeded.map { L("\($0) succeeded") } ?? L("no deployment counts")
         return "\(name), \(state), \(succeeded), \(failed), \(pending)"
     }
 
-    private static func declarationCounter(label: String, value: Int, color: Color) -> some View {
+    private static func declarationCounter(label: String, value: Int?, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
                 .font(.caption2.monospaced().weight(.semibold))
                 .tracking(1.0)
                 .foregroundStyle(color)
-            Text("\(value)")
+            Text(value.map(String.init) ?? "\u{2014}")
                 .font(Theme.Fonts.mono(20, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
@@ -657,9 +686,19 @@ struct DDMBlueprintView: View {
     }
 
     private static func declarationA11y(_ entry: DDMBlueprintService.Snapshot.Declaration) -> String {
-        let source = entry.source.isEmpty ? "Unnamed source" : entry.source
-        let type = entry.type.isEmpty ? "unknown type" : entry.type
-        return "\(source), \(type), \(HtmlSectionFormatters.plural(entry.devices, "device")), "
-            + "\(entry.successful) successful, \(entry.unsuccessful) unsuccessful"
+        let source = entry.source.isEmpty ? L("Unnamed source") : entry.source
+        let type = entry.type.isEmpty ? L("unknown type") : entry.type
+        return L("\(source), \(type), \(HtmlSectionFormatters.plural(entry.devices, "device")), \(entry.successful) successful, \(entry.unsuccessful) unsuccessful")
+    }
+}
+
+/// The scan screens' one neutral line while a scan round is open.
+enum DeviceScanCoverage {
+    static func line(_ progress: (scanned: Int, total: Int)?) -> String? {
+        guard let progress else { return nil }
+        let (n, m) = progress
+        return m == 1
+            ? L("Scan in progress: \(n) of \(m) Mac scanned this round")
+            : L("Scan in progress: \(n) of \(m) Macs scanned this round")
     }
 }

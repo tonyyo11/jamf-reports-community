@@ -67,7 +67,8 @@ struct Sidebar: View {
         }
         // A collect or generate flips the in-flight flag when it starts and ends.
         .task(id: "\(workspace.profile)|\(workspace.demoMode)|"
-              + "\(workspace.isCollectInFlight(for: workspace.profile))") {
+              + "\(workspace.isCollectInFlight(for: workspace.profile))|"
+              + workspace.profiles.map(\.name).joined(separator: ",")) {
             await loadBadgeCounts()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
@@ -247,6 +248,7 @@ struct Sidebar: View {
     private func loadBadgeCounts() async {
         let profile = workspace.profile
         guard !workspace.demoMode else { return }
+        await workspace.refreshDeviceCounts()
         let counts = await Self.readBadgeCounts(profile: profile)
         guard !Task.isCancelled, profile == workspace.profile else { return }
         liveTrendCount = counts.trends
@@ -293,7 +295,7 @@ struct Sidebar: View {
                             .foregroundStyle(Theme.Colors.fg)
                             .lineLimit(1)
                         Text(workspace.lastSyncedRelative(for: workspace.profile))
-                            .font(Theme.Fonts.mono(9.5))
+                            .font(Theme.Fonts.mono(10))
                             .tracking(0.4)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -330,7 +332,7 @@ struct Sidebar: View {
         .menuIndicator(.hidden)
         .focused($chipFocused)
         .onHover { chipHovered = $0 }
-        .animation(.easeOut(duration: 0.18), value: engaged)
+        .motionSafeAnimation(.easeOut(duration: 0.18), value: engaged)
         .accessibilityLabel(Self.workspaceChipLabel(
             profile: workspace.profile, subtitle: workspaceSubtitle,
             hasError: workspace.profiles.first { $0.name == workspace.profile }?.status == .error))
@@ -339,7 +341,7 @@ struct Sidebar: View {
 
     /// Spoken name of the workspace chip; the red dot on the avatar is `hasError`.
     static func workspaceChipLabel(profile: String, subtitle: String, hasError: Bool) -> String {
-        "Workspace: \(profile). \(subtitle).\(hasError ? " Has an error." : "")"
+        (hasError ? L("Workspace: \(profile). \(subtitle). Has an error.") : L("Workspace: \(profile). \(subtitle)."))
     }
 
     /// Profiles that belong to a connection sit under a section titled with its name and show
@@ -366,7 +368,7 @@ struct Sidebar: View {
             let count = workspace.deviceCount(for: p.name)
             HStack {
                 Text(title)
-                if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
+                if let count, count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
                 if p.name == workspace.profile { Image(systemName: "checkmark") }
             }
         }
@@ -376,8 +378,8 @@ struct Sidebar: View {
     /// it's informative (>0); otherwise falls back to the static label.
     private var workspaceSubtitle: String {
         let count = workspace.initializedProfiles.count
-        guard count > 0 else { return "Active workspace" }
-        return "\(count) workspace\(count == 1 ? "" : "s")"
+        guard count > 0 else { return L("Active workspace") }
+        return (count == 1 ? L("\(count) workspace") : L("\(count) workspaces"))
     }
 
     /// Distinctive avatar: gradient derived from a hue keyed off the profile's first
@@ -399,7 +401,7 @@ struct Sidebar: View {
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ))
             Text(monogram)
-                .font(Theme.Fonts.mono(9, weight: .bold))
+                .font(Theme.Fonts.mono(10, weight: .bold))
                 .foregroundStyle(.white)
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .strokeBorder(

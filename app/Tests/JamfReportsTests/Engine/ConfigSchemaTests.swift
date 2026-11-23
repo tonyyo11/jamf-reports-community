@@ -144,6 +144,20 @@ final class ConfigSchemaTests: XCTestCase {
         XCTAssertNil(keys.first?.suggestion)
     }
 
+    /// Jamf removed Compliance from Jamf Protect, and the Insights Drift section went with it.
+    func testInsightsDriftSnapshotsIsReportedAsRetiredAndStillLoads() throws {
+        let yaml = """
+        html:
+          section_limits:
+            protect_alerts: 50
+            insights_drift_snapshots: 4
+        """
+        let keys = try unknownKeys(yaml)
+        XCTAssertEqual(keys.map(\.keyPath), ["html.section_limits.insights_drift_snapshots"])
+        XCTAssertEqual(keys.first?.retiredSince, "2.12")
+        XCTAssertEqual(try ConfigLoader.loadFromString(yaml).html?.sectionLimits?.protectAlerts, 50)
+    }
+
     func testTheVocabularyBlocksAreKnownAndTheirUnknownKeysAreReported() throws {
         let keys = try unknownKeys("""
         security_policy:

@@ -10,7 +10,7 @@ Get the latest notarized `.dmg` or `.pkg` from the
 [Releases page](https://github.com/tonyyo11/jamf-reports-community/releases). Either
 installs `JamfReports.app` — no Xcode or source build required.
 
-## 2. Install jamf-cli (optional, recommended)
+## 2. Install jamf-cli
 
 `jamf-cli` is Jamf's official command-line interface and powers live data collection.
 Install it with Homebrew:
@@ -21,14 +21,12 @@ brew install Jamf-Concepts/tap/jamf-cli
 
 This project needs jamf-cli v1.29.0 or later. With an older jamf-cli, collect, backup and
 scheduled runs stop with a message to update it (Settings says the same); a scheduled
-run that only generates from cached data does not call jamf-cli and is not stopped. The app itself currently
-tracks v1.34.0. See
+run that only generates from cached data does not call jamf-cli and is not stopped. See
 [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for the full requirements table and pre-built binary
 links.
 
-jamf-cli is optional — without it the app works only from cached snapshots, since live
-collection, scheduling and automation all go through jamf-cli. If you're skipping it, go to
-step 4.
+jamf-cli is required: every collect, backup and scheduled collect goes through it. Without it
+the app can only show demo mode, or build reports from snapshots already in a workspace.
 
 **Only use Jamf School?** On the Welcome chooser, choose **Connect Jamf School** — a
 dedicated path that skips the Jamf Pro Authenticate and Validate steps and connects your
@@ -54,10 +52,11 @@ for the exact privilege table.
 
 ## 4. Launch the app and start onboarding
 
-Open `JamfReports.app`. On first launch you'll see a **Welcome chooser** with three
-cards — **Connect Jamf Pro**, **Connect Jamf School**, and **Try the demo first**.
-Choose **Connect Jamf Pro** to start the guided onboarding flow (Jamf School-only
-districts pick **Connect Jamf School** instead).
+Open `JamfReports.app`. On first launch you'll see a **Welcome chooser** with four
+cards: **Connect with Jamf Account** (recommended for Jamf Cloud), **Connect a Jamf Pro
+server**, **Connect Jamf School**, and **Try the demo first**.
+Choose **Connect with Jamf Account** or **Connect a Jamf Pro server** to start the guided
+onboarding flow (Jamf School-only districts pick **Connect Jamf School** instead).
 
 ## 5. Follow the onboarding steps
 

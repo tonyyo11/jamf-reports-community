@@ -1,12 +1,12 @@
 import SwiftUI
+import Synchronization
 import AppKit
 import UniformTypeIdentifiers
 
-private final class TextLineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _lines: [String] = []
-    func append(_ text: String) { lock.withLock { _lines.append(text) } }
-    var lines: [String] { lock.withLock { _lines } }
+private final class TextLineBuffer: Sendable {
+    private let stored = Mutex<[String]>([])
+    func append(_ text: String) { stored.withLock { $0.append(text) } }
+    var lines: [String] { stored.withLock { $0 } }
 }
 
 struct SettingsView: View {
@@ -51,10 +51,11 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Kicker(text: "Application", tone: .gold)
+                    Kicker(text: L("Application"), tone: .gold)
                     Text("Settings")
-                        .font(Theme.Fonts.serif(26, weight: .bold))
+                        .font(Theme.Fonts.serifTitle())
                         .foregroundStyle(Theme.Text.primary)
+                        .accessibilityAddTraits(.isHeader)
                 }
                 .padding(.bottom, 8)
 
@@ -106,6 +107,7 @@ struct SettingsView: View {
             // so a profile that just gained platform auth must not stay excluded for the
             // rest of the session.
             ProfileAuthMethod.invalidateCache()
+            PlatformTwin.invalidateCache()
         }
     }
 
@@ -116,9 +118,9 @@ struct SettingsView: View {
                 // Demo mode never runs jamf-cli, so this card describes nothing
                 // the demo uses; only its Demo mode switch stays live.
                 settingsRow(
-                    label: "Installed version",
+                    label: L("Installed version"),
                     sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLISubtitle,
-                    trailing: AnyView(PNPButton(title: "Refresh", size: .sm) {
+                    trailing: PNPButton(title: L("Refresh"), size: .sm) {
                         guard !workspace.demoMode else { return }
                         workspace.refreshToolStatus()
                         workspace.reloadFromDisk()
@@ -126,27 +128,27 @@ struct SettingsView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Re-detect jamf-cli on PATH and reload workspace state from disk."))
+                          : L("Re-detect jamf-cli on PATH and reload workspace state from disk."))
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
-                    label: "jamf-cli updates",
+                    label: L("jamf-cli updates"),
                     sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLIUpdateSubtitle,
-                    trailing: AnyView(jamfCLIUpdateControls)
+                    trailing: jamfCLIUpdateControls
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
-                    label: "Auto-update jamf-cli",
-                    sub: autoUpdateManaged ? ManagedPreference.note : "Check on launch",
-                    trailing: AnyView(PNPToggle(isOn: $autoUpdate)
+                    label: L("Auto-update jamf-cli"),
+                    sub: autoUpdateManaged ? ManagedPreference.note : L("Check on launch"),
+                    trailing: PNPToggle(isOn: $autoUpdate)
                         .disabled(workspace.demoMode || autoUpdateManaged)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : ""))
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
-                    label: "Demo mode",
-                    sub: "Synthetic data, no API calls",
-                    trailing: AnyView(PNPToggle(isOn: demoModeBinding))
+                    label: L("Demo mode"),
+                    sub: L("Synthetic data, no API calls"),
+                    trailing: PNPToggle(isOn: demoModeBinding)
                 )
             }
         }
@@ -155,15 +157,12 @@ struct SettingsView: View {
 
     // MARK: - Included CLI install
 
-    private nonisolated static let workspaceLocationBlurb: String =
-        "Where profiles, history, snapshots and reports are kept. Point this at a " +
-        "shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted " +
-        "share — so several Macs can report against the same tenants and build " +
-        "one history between them. Keep the default if this Mac is the only one " +
-        "reporting."
+    private nonisolated static var workspaceLocationBlurb: String {
+        L("Where profiles, history, snapshots and reports are kept. Point this at a shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted share — so several Macs can report against the same tenants and build one history between them. Keep the default if this Mac is the only one reporting.")
+    }
 
     private nonisolated static func providerLabel(_ name: String) -> String {
-        "On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here."
+        L("On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here.")
     }
 
     private var workspaceRootManaged: Bool {
@@ -173,7 +172,7 @@ struct SettingsView: View {
     private var workspaceLocationCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Workspace location")
+                SectionHeader(title: L("Workspace location"))
                 Text(Self.workspaceLocationBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -203,23 +202,23 @@ struct SettingsView: View {
                 }
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Choose folder…", icon: "folder", size: .sm) {
+                    PNPButton(title: L("Choose folder…"), icon: "folder", size: .sm) {
                         chooseWorkspaceRoot()
                     }
                     .disabled(workspace.demoMode || workspaceRootManaged)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
                           : workspaceRootManaged ? ManagedPreference.note
-                          : "Pick the folder that holds your Jamf Reports workspaces.")
+                          : L("Pick the folder that holds your Jamf Reports workspaces."))
                     .accessibilityHint("Opens a folder picker for the workspace location.")
 
                     if !workspace.demoMode && WorkspaceRootStore.isCustomised() {
-                        PNPButton(title: "Use default", icon: "arrow.uturn.backward", size: .sm) {
+                        PNPButton(title: L("Use default"), icon: "arrow.uturn.backward", size: .sm) {
                             applyWorkspaceRoot(nil)
                         }
                         .disabled(workspaceRootManaged)
                         .help(workspaceRootManaged
-                              ? ManagedPreference.note : "Go back to ~/Jamf-Reports on this Mac.")
+                              ? ManagedPreference.note : L("Go back to ~/Jamf-Reports on this Mac."))
                     }
                 }
 
@@ -271,32 +270,26 @@ struct SettingsView: View {
             // synchronously here — the message below reflects that.
             Task { await workspace.applyAutomationPolicy() }
             workspaceRootMessage = url == nil
-                ? "Back to the default location. Profiles already in the previous folder stay "
-                    + "there — copy them across if you want them here."
-                : "Workspace location updated. Profiles already elsewhere are not moved; copy "
-                    + "them in if you want them here. Scheduled runs use the new folder from "
-                    + "their next run."
+                ? L("Back to the default location. Profiles already in the previous folder stay there — copy them across if you want them here.")
+                : L("Workspace location updated. Profiles already elsewhere are not moved; copy them in if you want them here. Scheduled runs use the new folder from their next run.")
         } catch {
-            workspaceRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
+            workspaceRootMessage = L("Couldn't use that folder: \(error.localizedDescription)")
         }
     }
 
     private var commandLineToolCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Command-line tool")
+                SectionHeader(title: L("Command-line tool"))
                 Text(
-                    "Install a `jamf-reports` command so you can generate reports, " +
-                    "collect snapshots, and back up from Terminal or a script — the same " +
-                    "engine the app uses. This links the app into a directory on your PATH; " +
-                    "the app never uses administrator rights."
+                    "Install a `jamf-reports` command so you can generate reports, collect snapshots, and back up from Terminal or a script — the same engine the app uses. This links the app into a directory on your PATH; the app never uses administrator rights."
                 )
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Install command-line tool", icon: "terminal", size: .sm) {
+                    PNPButton(title: L("Install command-line tool"), icon: "terminal", size: .sm) {
                         installCommandLineTool()
                     }
                     .help("Create a `jamf-reports` symlink in /usr/local/bin, or show the command to run if it isn't writable.")
@@ -310,17 +303,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let cmd = cliInstallCommand {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(cmd)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        PNPButton(title: "Copy command", icon: "doc.on.doc", size: .sm) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(cmd, forType: .string)
-                        }
-                        .help("Copy the install command to the clipboard.")
-                    }
+                    CommandText(command: cmd)
                 }
             }
         }
@@ -332,64 +315,62 @@ struct SettingsView: View {
     private func installCommandLineTool() {
         switch CLIInstaller.install() {
         case let .installed(path):
-            cliInstallMessage = "Installed — open a new Terminal and run `jamf-reports --help`. (\(path))"
+            cliInstallMessage = L("Installed — open a new Terminal and run `jamf-reports --help`. (\(path))")
             cliInstallCommand = nil
         case let .alreadyInstalled(path):
-            cliInstallMessage = "Already installed at \(path)."
+            cliInstallMessage = L("Already installed at \(path).")
             cliInstallCommand = nil
         case let .manual(command):
             cliInstallMessage =
-                "The app can't write to /usr/local/bin. Run this in Terminal to finish installing:"
+                L("The app can't write to /usr/local/bin. Run this in Terminal to finish installing:")
             cliInstallCommand = command
         case let .failed(reason):
-            cliInstallMessage = "Couldn't install: \(reason)"
+            cliInstallMessage = L("Couldn't install: \(reason)")
             cliInstallCommand = nil
         }
     }
 
     /// This Mac's jamf-cli: version, install source and path. Live mode only.
     private var jamfCLISubtitle: String {
-        guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
-        let source = workspace.jamfCLIInstallSource ?? "Unknown source"
+        guard let path = workspace.jamfCLIPath else { return L("Not found in /opt/homebrew/bin or /usr/local/bin") }
+        let source = workspace.jamfCLIInstallSource ?? L("Unknown source")
         let versionLabel: String
         if let spec = workspace.jamfCLISpecProVersion, spec != "unknown" {
-            versionLabel = "\(workspace.jamfCLIVersion ?? "unknown") (spec \(spec))"
+            versionLabel = L("\(workspace.jamfCLIVersion ?? "unknown") (spec \(spec))")
         } else {
             versionLabel = workspace.jamfCLIVersion ?? "unknown"
         }
         let base = "\(versionLabel) · \(source) · \(path)"
         if workspace.jamfCLIVerificationFailed {
-            return "\(base)\nCodesign verification failed — binary may be tampered. Update or reinstall jamf-cli."
+            return L("\(base)\nCodesign verification failed — binary may be tampered. Update or reinstall jamf-cli.")
         }
         if JamfCLIInstaller.isBelowMinimumSupported(workspace.jamfCLIVersion) {
-            return "\(base)\nOlder than the supported "
-                + "\(JamfCLIInstaller.minimumSupportedVersion) — scheduled collects and backups "
-                + "stop until jamf-cli is updated."
+            return L("\(base)\nOlder than the supported \(JamfCLIInstaller.minimumSupportedVersion) — scheduled collects and backups stop until jamf-cli is updated.")
         }
         return base
     }
 
     private var jamfCLIUpdateSubtitle: String {
         workspace.jamfCLIUpdateMessage
-            ?? "Homebrew installs use brew; direct installs use GitHub releases"
+            ?? L("Homebrew installs use brew; direct installs use GitHub releases")
     }
 
     private var jamfCLIUpdateControls: some View {
         HStack(spacing: 8) {
             if workspace.isUpdatingJamfCLI {
                 ProgressView().controlSize(.small)
+                    .accessibilityLabel("Updating jamf-cli")
             } else {
-                PNPButton(title: "Check", size: .sm) {
+                PNPButton(title: L("Check"), size: .sm) {
                     guard !workspace.demoMode else { return }
                     Task { await workspace.checkJamfCLIUpdate() }
                 }
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Check GitHub releases (or Homebrew, depending on install source) for "
-                          + "a newer jamf-cli.")
+                      : L("Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli."))
                 if workspace.jamfCLIUpdateAvailable && !workspace.demoMode {
-                    PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
+                    PNPButton(title: L("Update"), icon: "arrow.down.circle", style: .gold, size: .sm) {
                         Task { await workspace.updateJamfCLI() }
                     }
                     .help("Download and install the newer jamf-cli release.")
@@ -405,7 +386,7 @@ struct SettingsView: View {
         )
     }
 
-    private func settingsRow(label: String, sub: String, trailing: AnyView) -> some View {
+    private func settingsRow<Trailing: View>(label: String, sub: String, trailing: Trailing) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.callout.weight(.medium))
@@ -421,7 +402,7 @@ struct SettingsView: View {
     private var connectionsCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Connections")
+                SectionHeader(title: L("Connections"))
                 VStack(spacing: 0) {
                     ForEach(Array(workspace.profiles.enumerated()), id: \.element.id) { idx, c in
                         let isUnsupported = c.status == .error
@@ -439,7 +420,7 @@ struct SettingsView: View {
                             if !isUnsupported {
                                 testControlView(for: c.name)
                             }
-                            if c.name == workspace.profile { Pill(text: "ACTIVE", tone: .gold) }
+                            if c.name == workspace.profile { Pill(text: L("ACTIVE"), tone: .gold) }
                         }
                         .padding(.vertical, 10)
                         .opacity(isUnsupported ? 0.55 : 1)
@@ -458,15 +439,13 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     // The way out of demo mode: setup ends it through
                     // `setDemoMode(false)` once the new profile exists.
-                    PNPButton(title: "Add connection", icon: "plus", style: .gold, size: .sm) {
+                    PNPButton(title: L("Add connection"), icon: "plus", style: .gold, size: .sm) {
                         NotificationCenter.default.post(name: .showAddSheet, object: nil)
                     }
                     .help(workspace.demoMode
-                          ? "Set up a real connection; demo mode ends when setup finishes."
-                          : "Add a workspace or Jamf Protect, or use a profile jamf-cli "
-                              + "already has.")
-                    Text("A new Jamf Pro, Platform API or Jamf School workspace, Jamf Protect "
-                        + "for this workspace, or a profile jamf-cli already has.")
+                          ? L("Set up a real connection; demo mode ends when setup finishes.")
+                          : L("Add a workspace or Jamf Protect, or use a profile jamf-cli already has."))
+                    Text("A new Jamf Pro, Platform API or Jamf School workspace, Jamf Protect for this workspace, or a profile jamf-cli already has.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -483,6 +462,7 @@ struct SettingsView: View {
             if testingProfile == profileName {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
+                        .accessibilityLabel("Testing the connection to \(profileName)")
                     if testingTooLong {
                         Text("Taking longer than usual…")
                             .font(.caption)
@@ -494,26 +474,29 @@ struct SettingsView: View {
                     Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
                         .font(.system(size: 14))
-                    PNPButton(title: "Retest", size: .sm) {
+                    PNPButton(title: L("Retest"), size: .sm) {
                         runConnectionTest(for: profileName)
                     }
                 }
                 if let err = testErrors[profileName] {
-                    Text(err)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(Theme.Colors.warn)
-                        .lineLimit(4)
-                        .onTapGesture { testErrors[profileName] = nil }
+                    Button { testErrors[profileName] = nil } label: {
+                        Text(err)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Colors.warn)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Dismisses this message")
                 }
             } else {
-                PNPButton(title: "Test", size: .sm) {
+                PNPButton(title: L("Test"), size: .sm) {
                     runConnectionTest(for: profileName)
                 }
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode
                       ? DemoData.liveOnlyHelp
-                      : "Run `jamf-cli config validate` and check this profile's URL and credential "
-                          + "settings, plus the config file itself.")
+                      : L("Run `jamf-cli config validate` and check this profile's URL and credential settings, plus the config file itself."))
             }
         }
     }
@@ -547,7 +530,7 @@ struct SettingsView: View {
             testResults[profileName] = exit == 0
             if exit != 0 {
                 let msg = buf.lines.filter { !$0.isEmpty }.joined(separator: "\n")
-                testErrors[profileName] = msg.isEmpty ? "Connection failed (exit \(exit))" : msg
+                testErrors[profileName] = msg.isEmpty ? L("Connection failed (exit \(exit))") : msg
             }
             testingProfile = nil
             testingTooLong = false
@@ -557,7 +540,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func tokenStatusLabel(for profileName: String) -> some View {
         if loadingTokenProfiles.contains(profileName) {
-            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Text.tertiary(contrast))
+            Mono(text: L("Token: checking..."), size: 10).foregroundStyle(Theme.Text.tertiary(contrast))
         } else if let status = tokenStatuses[profileName] {
             Mono(text: tokenStatusText(status), size: 10)
                 .foregroundStyle(tokenStatusColor(status))
@@ -565,22 +548,30 @@ struct SettingsView: View {
     }
 
     private func tokenStatusText(_ status: TokenStatus) -> String {
+        if status.keychainLocked {
+            return L("Token: login keychain is locked. \(FailureCause.keychainLockedHint)")
+        }
         guard status.isValid else {
-            return "Token: not authenticated"
+            return L("Token: not authenticated")
         }
         guard let exp = status.expiresAt else {
-            return "Token: valid (no expiry)"
+            return L("Token: valid (no expiry)")
         }
         if exp <= tokenClock {
-            return "Token: expired"
+            return L("Token: expired")
         }
+        return L("Token valid until \(Self.mediumShortFormatter.string(from: exp))")
+    }
+
+    private static let mediumShortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return "Token valid until \(formatter.string(from: exp))"
-    }
+        return formatter
+    }()
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
+        if status.keychainLocked { return Theme.Colors.warn }
         guard status.isValid else { return Theme.Text.tertiary(contrast) }
         if let exp = status.expiresAt, exp <= tokenClock { return Theme.Colors.warn }
         return Theme.Colors.ok
@@ -634,35 +625,35 @@ struct SettingsView: View {
         let updates = AppUpdateModel.shared
         return Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "App updates")
+                SectionHeader(title: L("App updates"))
                 settingsRow(
-                    label: "Check for updates",
+                    label: L("Check for updates"),
                     sub: updates.isForcedByProfile
                         ? ManagedPreference.note
-                        : "Once a day, stable releases only. Nothing is downloaded or installed.",
-                    trailing: AnyView(PNPToggle(isOn: Binding(
+                        : L("Once a day, stable releases only. Nothing is downloaded or installed."),
+                    trailing: PNPToggle(isOn: Binding(
                         get: { updates.isEnabled }, set: { updates.setEnabled($0) }
                     ))
-                    .disabled(updates.isForcedByProfile))
+                    .disabled(updates.isForcedByProfile)
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
-                    label: "Status",
+                    label: L("Status"),
                     sub: updates.statusText,
-                    trailing: AnyView(HStack(spacing: 8) {
+                    trailing: HStack(spacing: 8) {
                         if let page = updates.latest?.page, updates.isEnabled {
-                            PNPButton(title: "View release", icon: "arrow.up.right.square",
+                            PNPButton(title: L("View release"), icon: "arrow.up.right.square",
                                       size: .sm) {
                                 NSWorkspace.shared.open(page)
                             }
                             .help("Open the release notes on GitHub. Nothing is downloaded.")
                         }
-                        PNPButton(title: "Check now", size: .sm) {
+                        PNPButton(title: L("Check now"), size: .sm) {
                             Task { await updates.checkNow() }
                         }
                         .disabled(!updates.isEnabled || updates.isChecking)
                         .help("Ask GitHub for the latest stable release now.")
-                    })
+                    }
                 )
             }
         }
@@ -672,7 +663,7 @@ struct SettingsView: View {
         Card(padding: 18) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Kicker(text: "Open Source", tone: .gold)
+                    Kicker(text: L("Open Source"), tone: .gold)
                     SectionHeader(title: "jamf-reports-community")
                     HStack(spacing: 4) {
                         Text("A GUI for the open-source")
@@ -690,25 +681,25 @@ struct SettingsView: View {
                         .frame(maxWidth: 620, alignment: .leading)
 
                     HStack(spacing: 14) {
-                        metaPair(label: "App:", value: appVersion)
+                        metaPair(label: L("App:"), value: appVersion)
                         metaPair(label: "jamf-cli:", value: workspace.demoMode
-                                 ? "demo" : workspace.jamfCLIVersion ?? "not found")
-                        metaPair(label: "Maintainer:", value: "@tonyyo11")
-                        metaPair(label: "License:", value: "MIT")
+                                 ? "demo" : workspace.jamfCLIVersion ?? L("not found"))
+                        metaPair(label: L("Maintainer:"), value: L("@tonyyo11"))
+                        metaPair(label: L("License:"), value: L("MIT"))
                     }
                     .padding(.top, 4)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
-                    PNPButton(title: "View on GitHub", icon: "arrow.up.right.square") {
+                    PNPButton(title: L("View on GitHub"), icon: "arrow.up.right.square") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community")
                     }
                     .help("Open the project's GitHub repository.")
-                    PNPButton(title: "Read the docs", icon: "chevron.left.forwardslash.chevron.right") {
+                    PNPButton(title: L("Read the docs"), icon: "chevron.left.forwardslash.chevron.right") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community#readme")
                     }
                     .help("Open the README and setup guide on GitHub.")
-                    PNPButton(title: "Release notes", icon: "bolt") {
+                    PNPButton(title: L("Release notes"), icon: "bolt") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community/releases")
                     }
                     .help("View release notes and download history on GitHub.")
@@ -731,7 +722,7 @@ struct SettingsView: View {
     private func profileType(_ profile: JamfCLIProfile) -> String {
         if let reason = profile.unusableReason { return reason }
         let product = profile.product.displayName
-        if profile.authMethod.isEmpty { return "\(product) profile" }
+        if profile.authMethod.isEmpty { return L("\(product) profile") }
         return "\(product) · \(profile.authMethod)"
     }
 
@@ -772,20 +763,23 @@ struct SettingsView: View {
     private var dataAndChartsCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Data & Charts")
+                SectionHeader(title: L("Data & Charts"))
                 settingsRow(
-                    label: "Default trend range",
+                    label: L("Default trend range"),
                     sub: trendRangeManaged ? ManagedPreference.note
-                        : "Applies to Overview and Trends until you change the picker in-view.",
-                    trailing: AnyView(trendRangePicker)
+                        : L("Applies to Overview and Trends until you change the picker in-view."),
+                    trailing: trendRangePicker
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
-                    label: "Skip expensive collections",
+                    label: L("Skip expensive collections"),
                     sub: skipExpensiveManaged
-                        ? ManagedPreference.note : skipExpensiveCollectionsSubtitle,
-                    trailing: AnyView(PNPToggle(isOn: $skipExpensiveCollections)
-                        .disabled(skipExpensiveManaged))
+                        ? ManagedPreference.note
+                        : workspace.isSchoolWorkspace
+                            ? L("Applies to Jamf Pro workspaces only. Jamf School collects ignore it; the weekly per-device scan is set on the Automation screen.")
+                            : skipExpensiveCollectionsSubtitle,
+                    trailing: PNPToggle(isOn: $skipExpensiveCollections)
+                        .disabled(skipExpensiveManaged)
                 )
             }
         }
@@ -815,10 +809,9 @@ struct SettingsView: View {
 
     /// The app is also the `jamf-reports` command-line tool (one binary, installed from the
     /// Command-line tool card above); jamf-cli, which supplies the data, is separate.
-    nonisolated static let commandLineBlurb =
-        "This app includes its own jamf-reports command-line tool, so reports, collection, "
-        + "backups and diagnostics can be scripted. Both use the same config.yaml and report "
-        + "engine. The fleet data comes from jamf-cli, which is installed separately."
+    nonisolated static var commandLineBlurb: String {
+        L("This app includes its own jamf-reports command-line tool, so reports, collection, backups and diagnostics can be scripted. Both use the same config.yaml and report engine. The fleet data comes from jamf-cli, which is installed separately.")
+    }
 
     private var skipExpensiveCollectionsSubtitle: String {
         Self.skipExpensiveSubtitle(skipping: skipExpensiveCollections)
@@ -829,14 +822,11 @@ struct SettingsView: View {
     /// with the position, so it never reads as the opposite of the switch's label.
     nonisolated static func skipExpensiveSubtitle(skipping: Bool) -> String {
         let kinds = ReportEngine.expensivePerDeviceKinds.sorted()
-        let list = "\(kinds.count) per-device commands (\(kinds.joined(separator: ", ")))"
+        let list = L("\(kinds.count) per-device commands (\(kinds.joined(separator: ", ")))")
         if skipping {
-            return "On: manual refreshes skip the \(list), so the screens built on them keep "
-                + "their last cached values until a collect runs them. Scheduled collects "
-                + "still run them."
+            return L("On: manual refreshes skip the \(list), so the screens built on them keep their last cached values until a collect runs them. Scheduled collects still run them.")
         }
-        return "Off: every collect runs the \(list), which can be slow on a large on-prem "
-            + "server. Turn on to skip them on manual refreshes."
+        return L("Off: every collect runs the \(list), which can be slow on a large on-prem server. Turn on to skip them on manual refreshes.")
     }
 
     // MARK: - Diagnostics
@@ -844,12 +834,9 @@ struct SettingsView: View {
     private var diagnosticsCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Diagnostics")
+                SectionHeader(title: L("Diagnostics"))
                 Text(
-                    "Generate a redacted zip of recent logs, summaries, config, and " +
-                    "versions to share when reporting issues. Credentials are always " +
-                    "redacted; hostnames, serials, emails, and device names are " +
-                    "replaced with stable hash placeholders by default."
+                    "Generate a redacted zip of recent logs, summaries, config, and versions to share when reporting issues. Credentials are always redacted; hostnames, serials, emails, and device names are replaced with stable hash placeholders by default."
                 )
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -858,6 +845,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     if isGeneratingBundle {
                         ProgressView().controlSize(.small)
+                            .accessibilityLabel("Generating diagnostic bundle")
                         Text("Generating bundle…")
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -865,7 +853,7 @@ struct SettingsView: View {
                         // Both act on the real workspace under the demo
                         // profile's name, which demo mode never touches.
                         PNPButton(
-                            title: "Generate diagnostic bundle now",
+                            title: L("Generate diagnostic bundle now"),
                             icon: "archivebox",
                             size: .sm
                         ) {
@@ -874,23 +862,21 @@ struct SettingsView: View {
                         .disabled(workspace.profile.isEmpty || workspace.demoMode)
                         .help(workspace.demoMode
                               ? DemoData.liveOnlyHelp
-                              : "Build the redacted diagnostic zip in this profile's workspace "
-                                  + "and reveal it in Finder. Runs entirely in-app — no Terminal "
-                                  + "needed.")
+                              : L("Build the redacted diagnostic zip in this profile's workspace and reveal it in Finder. Runs entirely in-app — no Terminal needed."))
                         .accessibilityHint(
                             "Generates a redacted diagnostic bundle and reveals it in Finder.")
                     }
                 }
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Reveal Workspace", size: .sm) {
+                    PNPButton(title: L("Reveal Workspace"), size: .sm) {
                         guard !workspace.demoMode, let url = currentWorkspaceURL else { return }
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                     .disabled(workspace.demoMode || currentWorkspaceURL == nil)
                     .help(workspace.demoMode
                           ? DemoData.liveOnlyHelp
-                          : "Open the active workspace directory in Finder.")
+                          : L("Open the active workspace directory in Finder."))
                 }
 
                 if let msg = diagnosticBundleMessage {
@@ -901,11 +887,11 @@ struct SettingsView: View {
                 }
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Restore in-app tips", icon: "lightbulb", size: .sm) {
+                    PNPButton(title: L("Restore in-app tips"), icon: "lightbulb", size: .sm) {
                         let ok = AppTips.resetAll()
                         tipsResetConfirmation = ok
-                            ? "In-app tips restored — they'll reappear as you visit each screen."
-                            : "Couldn't reset the tips datastore."
+                            ? L("In-app tips restored — they'll reappear as you visit each screen.")
+                            : L("Couldn't reset the tips datastore.")
                     }
                     .help("Clear the seen/dismissed state for all guidance tips so they show again.")
                     .accessibilityHint("Restores all in-app guidance tips.")
@@ -928,7 +914,7 @@ struct SettingsView: View {
     private var loggingCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Logging")
+                SectionHeader(title: L("Logging"))
                 Text("View recent log entries and turn on verbose diagnostics.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -940,12 +926,11 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    PNPButton(title: "Reveal MDM profile", icon: "doc.badge.gearshape", size: .sm) {
+                    PNPButton(title: L("Reveal MDM profile"), icon: "doc.badge.gearshape", size: .sm) {
                         revealDebugProfile()
                     }
                     .help("Reveal the bundled debug-logging .mobileconfig in Finder for Jamf deployment.")
-                    Text("Deploying it through MDM keeps debug and info messages; private values "
-                        + "stay hidden.")
+                    Text("Deploying it through MDM keeps debug and info messages; private values stay hidden.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
@@ -970,8 +955,7 @@ struct SettingsView: View {
             Text("Turn on verbose logs on this Mac").font(.caption.weight(.semibold))
             loggingCommandRow(DebugLoggingService.enableCommand)
             loggingCommandRow(DebugLoggingService.resetCommand)
-            Text("Needs an administrator and applies to this Mac. The reset command returns "
-                + "logging to the default.")
+            Text("Needs an administrator and applies to this Mac. The reset command returns logging to the default.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -983,7 +967,7 @@ struct SettingsView: View {
             Mono(text: command, size: 11)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
+            PNPButton(title: L("Copy"), icon: "doc.on.doc", size: .sm) {
                 SystemActions.copyToClipboard(command)
             }
             .help("Copy the command to the clipboard.")
@@ -992,16 +976,13 @@ struct SettingsView: View {
 
     /// Names what a deployed logging profile sets for this app, or that none does.
     nonisolated static func managedLoggingText(_ managed: ManagedDebugLogging?) -> String {
-        guard let managed else { return "No configuration profile sets logging for Jamf Reports." }
+        guard let managed else { return L("No configuration profile sets logging for Jamf Reports.") }
         func onOff(_ value: Bool?) -> String {
-            value.map { $0 ? "on" : "off" } ?? "not set"
+            value.map { $0 ? L("on") : L("off") } ?? L("not set")
         }
-        let base = "A configuration profile sets logging for Jamf Reports: "
-            + "verbose logs \(onOff(managed.persistVerbose)), "
-            + "private data \(onOff(managed.revealPrivate))."
+        let base = L("A configuration profile sets logging for Jamf Reports: verbose logs \(onOff(managed.persistVerbose)), private data \(onOff(managed.revealPrivate)).")
         guard managed.revealPrivate == true else { return base }
-        return base + " Private values (server names, paths, account names) are written to "
-            + "this Mac's unified log."
+        return L("\(base) Private values (server names, paths, account names) are written to this Mac's unified log.")
     }
 
     private func revealDebugProfile() {
@@ -1028,11 +1009,9 @@ struct SettingsView: View {
 
     // MARK: - AI Insights (macOS 27+, opt-in)
 
-    nonisolated static let aiInsightsBlurb: String =
-        "Turn already-collected fleet data into plain-language insight cards on "
-        + "Overview, Trends, Audit, Security Posture and Compliance Posture, using "
-        + "the On-Device Foundation Model (Apple Intelligence). Off by default. "
-        + "The model runs on this Mac and nothing leaves it."
+    nonisolated static var aiInsightsBlurb: String {
+        L("Turn already-collected fleet data into plain-language insight cards on Overview, Trends, Audit, Security Posture and Compliance Posture, using the On-Device Foundation Model (Apple Intelligence). Off by default. The model runs on this Mac and nothing leaves it.")
+    }
 
     /// Turns already-collected fleet data into plain-language insight cards on
     /// five screens. Off by default; requires macOS 27, where Apple's on-device
@@ -1042,7 +1021,7 @@ struct SettingsView: View {
     private var aiInsightsCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "AI Insights")
+                SectionHeader(title: L("AI Insights"))
                 Text(Self.aiInsightsBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1102,8 +1081,7 @@ struct SettingsView: View {
                 get: { aiConfig.includeInReports ?? false },
                 set: { aiConfig.includeInReports = $0; saveAIConfig() }))
                 .disabled(workspace.demoMode || AIPolicy.locksSettings())
-            Text("Adds a model-written paragraph to the HTML and PDF reports you generate "
-                + "here. It can misstate a figure; scheduled reports never include it.")
+            Text("Adds a model-written paragraph to the HTML and PDF reports you generate here. It can misstate a figure; scheduled reports never include it.")
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1131,7 +1109,7 @@ struct SettingsView: View {
             aiSaveMessage = nil
             if let saved = written.report.note(for: profile) { aiSaveNote = saved }
         } catch {
-            aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
+            aiSaveMessage = L("Couldn't save AI settings: \(error.localizedDescription)")
         }
     }
 
@@ -1152,7 +1130,7 @@ struct SettingsView: View {
         let profile = workspace.profile
         guard !workspace.demoMode else { return }
         guard !profile.isEmpty else {
-            diagnosticBundleMessage = "Select a workspace profile first."
+            diagnosticBundleMessage = L("Select a workspace profile first.")
             return
         }
         isGeneratingBundle = true
@@ -1164,13 +1142,11 @@ struct SettingsView: View {
                 }.value
                 let revealed = SystemActions.reveal(url)
                 diagnosticBundleMessage = revealed
-                    ? "Bundle written to \(url.lastPathComponent) and revealed in Finder."
-                    : "Bundle written to \(url.lastPathComponent) in " +
-                      "~/Library/Logs/JamfReports/diagnostics (Finder reveal was blocked)."
+                    ? L("Bundle written to \(url.lastPathComponent) and revealed in Finder.")
+                    : L("Bundle written to \(url.lastPathComponent) in ~/Library/Logs/JamfReports/diagnostics (Finder reveal was blocked).")
             } catch {
                 diagnosticBundleMessage =
-                    "Diagnostic bundle failed: \(error.localizedDescription). Verify "
-                    + "~/Library/Logs/JamfReports/diagnostics is writable and has free space."
+                    L("Diagnostic bundle failed: \(error.localizedDescription). Verify ~/Library/Logs/JamfReports/diagnostics is writable and has free space.")
             }
             isGeneratingBundle = false
         }
@@ -1194,7 +1170,7 @@ struct SettingsView: View {
                     }
                     .padding(.top, 10)
                 } label: {
-                    SectionHeader(title: "Experimental Features")
+                    SectionHeader(title: L("Experimental Features"))
                 }
                 .accessibilityHint("Opt-in toggles for preview features")
             }
@@ -1217,7 +1193,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.Text.primary)
                 experimentalBadge
                 Spacer()
-                PNPToggle(isOn: toggleBinding, label: "\(feature.displayName) toggle")
+                PNPToggle(isOn: toggleBinding, label: L("\(feature.displayName) toggle"))
             }
             Text(feature.description)
                 .font(.caption.monospaced())
@@ -1244,26 +1220,24 @@ struct SettingsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "Sidebar Visibility")
+                    SectionHeader(title: L("Sidebar Visibility"))
                     Spacer()
-                    PNPButton(title: "Show all", size: .sm) {
+                    PNPButton(title: L("Show all"), size: .sm) {
                         var v = TabVisibility.parse(hiddenTabsRaw)
                         v.showAll()
                         hiddenTabsRaw = v.serialize()
                     }
                     .disabled(hiddenTabsManaged)
                     .help(hiddenTabsManaged
-                          ? ManagedPreference.note : "Restore every hidden tab to the sidebar.")
+                          ? ManagedPreference.note : L("Restore every hidden tab to the sidebar."))
                 }
                 Text(hiddenTabsManaged ? ManagedPreference.note
-                     : "Hide dashboards you don't use. Core tabs (Overview, \(inventoryTabLabel), "
-                     + "Data Sources, Settings) cannot be hidden.")
+                     : "Hide dashboards you don't use. Core tabs (Overview, \(inventoryTabLabel), Data Sources, Settings) cannot be hidden.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(
                     SettingsView.toggleableGroups(
-                        school: workspace.isSchoolWorkspace,
-                        protectConnected: workspace.protectConnected),
+                        environment: workspace.environmentProducts),
                     id: \.label
                 ) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)
@@ -1279,10 +1253,9 @@ struct SettingsView: View {
     /// `Tab.navGroups` gets a switch here with no second list to forget (Groups & Searches
     /// had none). A group left with no tab to switch is dropped.
     nonisolated static func toggleableGroups(
-        school: Bool, protectConnected: Bool = false
+        environment: EnvironmentProducts
     ) -> [(label: String, tabs: [Tab])] {
-        let available = TabVisibility()
-            .limited(toSchool: school, protectConnected: protectConnected)
+        let available = TabVisibility().limited(to: environment)
         return Tab.navGroups.compactMap { group in
             let tabs = group.items.filter { !$0.isCoreTab && available.isAvailable($0) }
             return tabs.isEmpty ? nil : (label: group.label, tabs: tabs)
@@ -1325,7 +1298,7 @@ struct SettingsView: View {
                         hiddenTabsRaw = v.serialize()
                     }
                 ),
-                label: "\(tab.label) visibility"
+                label: L("\(tab.label) visibility")
             )
             .disabled(hiddenTabsManaged)
         }

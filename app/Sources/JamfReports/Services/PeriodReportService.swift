@@ -150,16 +150,22 @@ enum PeriodReportService {
                 .compactMap { $0 }
         }
 
-        let model = PeriodReportModel.build(
-            period: period, metrics: selected, summaries: summaries,
-            eaSnapshots: eaSnapshots, profile: profile, generatedAt: now)
+        let model = Localization.english {
+            PeriodReportModel.build(
+                period: period, metrics: selected, summaries: summaries,
+                eaSnapshots: eaSnapshots, profile: profile, generatedAt: now)
+        }
 
         let dir = try WorkspacePaths.outputDir(for: profile)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(ExportNaming.filename(
             kind: PeriodReportEmitter.reportKind(for: model),
             profile: profile, ext: "xlsx", now: now))
-        try PeriodReportEmitter.emit(model: model, to: url)
+        let percent = DisplayConfigLoader.percentFormat(profile: profile)
+        let scope = SiteScope.persisted(profile: profile)
+        try Localization.english {
+            try PeriodReportEmitter.emit(model: model, to: url, percent: percent, siteScope: scope)
+        }
         return url
     }
 
@@ -181,7 +187,8 @@ enum PeriodReportService {
     }
 
     private static func dayDate(_ s: String) -> Date? {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
         return f.date(from: s)
     }
 }

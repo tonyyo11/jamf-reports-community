@@ -46,7 +46,7 @@ final class ChartsConfigStoreTests: XCTestCase {
 
         XCTAssertThrowsError(try CustomizeView.writeOptions(
             ChartsOptions(savePNGs: false, perMajorCharts: true), withWorkbook: true,
-            profile: profile) { notes.append($0) })
+            percentDecimals: 1, profile: profile) { notes.append($0) })
 
         XCTAssertEqual(notes.count, 1)
         XCTAssertEqual(notes.first?.profile, profile)

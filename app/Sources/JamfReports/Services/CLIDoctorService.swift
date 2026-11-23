@@ -26,6 +26,8 @@ struct CLIDoctorReport: Sendable, Equatable, Codable {
 
     struct Credential: Sendable, Equatable, Codable {
         var field: String?
+        /// Where jamf-cli reads the value from, e.g. `keychain:`, `file:` or `env:` plus a name.
+        var reference: String?
         var resolved: Bool?
         var fingerprint: String?
     }
@@ -43,10 +45,16 @@ struct CLIDoctorReport: Sendable, Equatable, Codable {
     var connectivity: Connectivity?
 
     /// One-line health verdict the UI maps to an icon/colour. Derivation order
-    /// (most-blocking first): no profile resolved → unreachable server →
-    /// auth rejected → unresolved credentials → healthy.
+    /// (most-blocking first): no profile resolved → environment-variable credential →
+    /// unreachable server → auth rejected → unresolved credentials → healthy.
     enum Health: Sendable, Equatable {
         case noProfile
+        /// A credential is an `env:` reference. The app starts jamf-cli with a cleaned
+        /// environment, so it can never resolve here, whatever Terminal shows.
+        case environmentReference
+        /// doctor sent no probe and the login has no URL (a Security Cloud login): jamf-cli
+        /// has no connection check for it, which is not a failed one.
+        case notChecked
         case unreachable
         case unauthorized
         case credentialsUnresolved
@@ -61,8 +69,20 @@ struct CLIDoctorReport: Sendable, Equatable, Codable {
         return creds.allSatisfy { $0.resolved == true }
     }
 
+    /// Only the `env:` scheme counts; a missing or unrecognised reference is not "env".
+    var usesEnvironmentReference: Bool {
+        profile?.credentials?.contains { credential in
+            let reference = credential.reference?.trimmingCharacters(in: .whitespaces)
+            return reference?.lowercased().hasPrefix("env:") == true
+        } == true
+    }
+
     var health: Health {
         guard let profile, !(profile.name ?? "").isEmpty else { return .noProfile }
+        if usesEnvironmentReference { return .environmentReference }
+        if connectivity == nil, (profile.url ?? "").isEmpty, (profile.effectiveUrl ?? "").isEmpty {
+            return .notChecked
+        }
         // No status (nil or 0) means the HEAD probe never reached the server.
         let status = connectivity?.statusCode ?? 0
         if status == 0 { return .unreachable }

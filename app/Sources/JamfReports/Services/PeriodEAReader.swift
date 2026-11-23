@@ -22,8 +22,8 @@ enum PeriodEAReader {
     /// Newest `ea-results` snapshot on or before `date`, if one exists.
     static func load(dataDir: URL, on date: Date) -> PeriodEASnapshot? {
         let dir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil)) ?? []
+        let files = FileManager.snapshotFolderEntries(
+            in: dir, includingPropertiesForKeys: nil, options: []) ?? []
         let candidate = files
             .filter { $0.pathExtension == "json" && $0.lastPathComponent != "manifest.json" }
             .compactMap { url -> (Date, URL)? in
@@ -33,7 +33,7 @@ enum PeriodEAReader {
             .filter { $0.0 <= date }
             .sorted { $0.0 < $1.0 }
             .last
-        guard let candidate, let data = try? Data(contentsOf: candidate.1) else { return nil }
+        guard let candidate, let data = BoundedFile.readLogged(candidate.1, inside: dataDir) else { return nil }
         return snapshot(from: data, at: candidate.0)
     }
 }

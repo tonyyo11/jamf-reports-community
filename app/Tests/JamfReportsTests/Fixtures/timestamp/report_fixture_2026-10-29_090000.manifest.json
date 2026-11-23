@@ -1,0 +1,23 @@
+{
+  "artifacts" : [
+    {
+      "name" : "report_fixture_2026-10-29_090000.xlsx",
+      "sha256" : "e2b29a48746aa8ece308a3ed9bd7d54b764ed433d6f56fcbcb66411508349bda",
+      "size" : 17
+    },
+    {
+      "name" : "report_fixture_2026-10-29_090000.html",
+      "sha256" : "6877dd7496ad4f7207e97bd89fa2e78093f19a31b3f8c7d1d69787bc536ae448",
+      "size" : 22
+    },
+    {
+      "name" : "report_fixture_2026-10-29_090000_csv/Overview.csv",
+      "sha256" : "74fd98cfeda717d6a69527b27bd9939b58ad136b4f62179b161cac8efe0b3269",
+      "size" : 25
+    }
+  ],
+  "format" : "jamf-reports-run-manifest",
+  "generated_at" : "2026-10-29T09:00:00Z",
+  "generator" : "JamfReports 16.0",
+  "version" : 1
+}

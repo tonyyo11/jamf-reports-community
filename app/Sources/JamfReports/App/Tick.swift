@@ -1,5 +1,41 @@
 import Foundation
 
+/// What `runTick` touches outside its own logic. The defaults are the real files, clock, runs
+/// and exit; a test swaps them so the real function runs end to end.
+struct TickEnvironment: Sendable {
+    var lock = TickLock(url: TickLock.defaultURL)
+    var blockedURL = TickLock.defaultBlockedURL
+    var stateURL = TickState.defaultURL
+    var markerDir = TickRunner.runNowMarkerDir
+    var scheduleStore = ScheduleStore()
+    var profiles: @Sendable () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
+    var policy: @Sendable () -> AutomationPolicy = { TickEnvironment.storedPolicy() }
+    var clock: @Sendable () -> Date = { Date() }
+    var summaryIsMissing: @Sendable (Schedule, [JamfCLIProfile], Date) -> Bool = {
+        summaryMissing(for: $0, profiles: $1, now: $2)
+    }
+    var perform: @Sendable (TickScheduler.DueRun) async -> ScheduleRunOutcome = { run in
+        // A same-day retry must not be answered by the once-a-day collect guard.
+        await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
+            await runSchedule(
+                run.schedule, verbose: false, skipping: run.skipProfiles)
+        }
+    }
+    var heartbeatEvery: Duration = TickLock.heartbeatInterval
+    var heartbeatLimit: Duration = TickLock.heartbeatLimit
+    var exit: @Sendable (Int32) -> Void = { Darwin.exit($0) }
+
+    /// The stored policy. A test process shares `UserDefaults.standard` across suites, so a
+    /// policy one left behind would run managed schedules another never asked for; there a tick
+    /// reads the default policy unless the test injects one through `policy`.
+    static func storedPolicy() -> AutomationPolicy {
+        #if DEBUG
+        if NSClassFromString("XCTestCase") != nil { return AutomationPolicy() }
+        #endif
+        return AutomationPolicy.current()
+    }
+}
+
 /// The bundled agent's entry: `JamfReports --tick [--now <label>]`.
 /// Exit 0 unless the lock or a tick-state stamp cannot be written, 75 when another run holds
 /// the lock. Each schedule's own outcome lands in its Run History record, not in this code,
@@ -7,13 +43,16 @@ import Foundation
 @Sendable
 func runTick(
     arguments: [String],
-    now: Date = Date(),
-    lock: TickLock = TickLock(url: TickLock.defaultURL)
+    environment: TickEnvironment = TickEnvironment()
 ) async -> Int32 {
+    let now = environment.clock()
+    let lock = environment.lock
     if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count,
        !arguments[idx + 1].hasPrefix("--") {
-        do { try TickRunner.requestRunNow(label: arguments[idx + 1]) } catch {
-            fputs("[error] could not queue run-now: \(error.localizedDescription)\n", stderr)
+        do {
+            try TickRunner.requestRunNow(label: arguments[idx + 1], dir: environment.markerDir)
+        } catch {
+            fputs("[error] could not queue run-now: \(error.englishDescription)\n", stderr)
             return 1
         }
     }
@@ -24,7 +63,7 @@ func runTick(
     case .heldElsewhere:
         // Stamp the refusal before returning: the non-catch-up window and the off gap for the
         // wake that eventually gets in are measured from here, not from that wake's own clock.
-        TickLock.noteBlocked()
+        TickLock.noteBlocked(url: environment.blockedURL, now: now)
         fputs("[info] tick: another run holds the lock — queued markers run on the next wake\n",
               stderr)
         return TickRunner.queuedExitCode
@@ -33,55 +72,62 @@ func runTick(
         // `TickState.save` writes beside it, and a blocked stamp would hide the overdue warning.
         let message = "lock file not writable (\(lock.url.path))"
         fputs("[error] tick: \(message)\n", stderr)
-        let failures = TickFailureLog(profiles: ProfileService.discoverLocal())
+        let failures = TickFailureLog(profiles: environment.profiles())
         failures.recordInEveryWorkspace(message)
         failures.finish()
         return 1
     }
     defer { hold.release() }
-    let blocked = TickLock.takeBlockedSince()
+    let blocked = TickLock.takeBlockedSince(url: environment.blockedURL)
 
     // Listed before the schedules load: Run now only queues a label whose schedule
     // already exists, so the load below sees every schedule a listed marker names.
-    let runNowLabels = TickRunner.pendingRunNowLabels()
-    let policy = AutomationPolicy.current()
-    let profiles = ProfileService.discoverLocal()
+    let runNowLabels = TickRunner.pendingRunNowLabels(dir: environment.markerDir)
+    let policy = environment.policy()
+    let profiles = environment.profiles()
     let base = ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy)
     let managed = ManagedAutomation.desiredSchedules(for: policy, baseProfile: base)
-    let handBuilt = ScheduleStore().load().map { $0.toSchedule() }
+    let handBuilt = environment.scheduleStore.load().map { $0.toSchedule() }
         .sorted { ($0.launchAgentLabel ?? "") < ($1.launchAgentLabel ?? "") }
     let schedules = managed + handBuilt
     // A marker no schedule carries can never run: drop it now, as the old
     // read-and-delete did. The rest are cleared one by one as their runs start.
     let known = Set(schedules.compactMap(\.launchAgentLabel))
     for label in runNowLabels.subtracting(known) {
-        TickRunner.clearRunNowMarker(label: label)
+        TickRunner.clearRunNowMarker(label: label, dir: environment.markerDir)
     }
 
-    var state = TickState.load()
+    var state = TickState.load(url: environment.stateURL)
     let due = TickScheduler.due(
         schedules: schedules, state: state, runNowLabels: runNowLabels, now: now,
         nonCatchUpAnchor: TickScheduler.nonCatchUpAnchor(refusals: blocked, now: now),
         wasOff: TickScheduler.wasOff(lastTick: state.lastTick, refusals: blocked, now: now),
-        summaryMissingToday: { summaryMissing(for: $0, profiles: profiles, now: now) })
+        summaryMissingToday: { environment.summaryIsMissing($0, profiles, now) })
     // After the decision, which reads the previous wake. Best-effort: without it a daily
     // schedule just waits for its fire. A wake a long run turns away stamps `.tick.blocked`,
     // so the run's own length never reads as the Mac being off.
     state.lastTick = now
-    saveLastTick(state)
+    saveLastTick(state, to: environment.stateURL)
     let failures = TickFailureLog(profiles: profiles)
     defer { failures.finish() }
     let result = await TickLoop.runDue(
         due, state: state, runNowLabels: runNowLabels,
-        save: { try $0.save() },
-        clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0) },
+        clock: environment.clock,
+        save: { try $0.save(url: environment.stateURL) },
+        clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0, dir: environment.markerDir) },
         perform: { run in
             hold.touch()
-            return await hold.keepingAlive(onGiveUp: { exitAfterLockGiveUp(profiles: profiles) }) {
-                // A same-day retry must not be answered by the once-a-day collect guard.
-                await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
-                    await runSchedule(run.schedule, verbose: false)
+            return await hold.keepingAlive(
+                every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
+                onGiveUp: {
+                    // The stalled run is this schedule's, so its record goes to the workspaces
+                    // the schedule is for.
+                    exitAfterLockGiveUp(
+                        workspaces: { workspaces(of: run.schedule, among: { profiles }) },
+                        exit: environment.exit)
                 }
+            ) {
+                await environment.perform(run)
             }
         },
         recordFailure: failures.record,
@@ -90,13 +136,17 @@ func runTick(
         // reported overdue by the same process. Inside the heartbeat like the runs, so a slow
         // webhook send cannot let the lock read as stale.
         notifyOverdue: {
-            await hold.keepingAlive(onGiveUp: { exitAfterLockGiveUp(profiles: profiles) }) {
+            await hold.keepingAlive(
+                every: environment.heartbeatEvery, limit: environment.heartbeatLimit,
+                onGiveUp: { exitAfterLockGiveUp(profiles: profiles, exit: environment.exit) }
+            ) {
                 await notifyOverdueSchedulesHeadless(
-                    profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles))
+                    profiles: profiles.map(\.name), excluding: Set(policy.excludedWorkspaces),
+                    policy: policy)
                 // A Run now (the GUI, `schedules run`) is not the background item's own wake.
                 guard !arguments.contains("--now") else { return }
                 await ScheduledRunSignals.notifyHeartbeats(
-                    profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles))
+                    profiles: profiles.map(\.name), excluding: Set(policy.excludedWorkspaces))
             }
         })
     return result
@@ -110,31 +160,89 @@ func summaryMissing(for schedule: Schedule, profiles: [JamfCLIProfile], now: Dat
           schedule.tiers.map({ !$0.isDisjoint(with: [.refresh, .inventory]) }) ?? true
     else { return false }
     let names = schedule.isMulti
-        ? ProfileService.runnableProfiles(
+        ? ProfileService.runnableWorkspaces(
             profiles, excluding: Set(schedule.excludedProfiles ?? [])).map(\.name)
         : [schedule.profile]
     return names.contains { !SummaryJSONParser.hasSummary(profile: $0, on: now) }
 }
 
+/// Who held the tick lock when its heartbeat gave it up; names the process in the log line and
+/// the Run History record.
+enum LockHolder: Sendable {
+    case tick, scheduledRun, command
+
+    var label: String {
+        switch self {
+        case .tick: "tick"
+        case .scheduledRun: "scheduled run"
+        case .command: "command"
+        }
+    }
+}
+
 /// The heartbeat gave the lock up after `TickLock.heartbeatLimit`, so a call that never
 /// answered is still running with no lock. The next wake would start a second run beside it, so
 /// the process ends, which ends the call; the run's own record is left without a footer and
-/// reads as interrupted, and this adds the reason to every workspace's Run History.
-private func exitAfterLockGiveUp(profiles: [JamfCLIProfile]) {
+/// reads as interrupted, and this adds the reason to the Run History of `workspaces` (the ones
+/// the run was for). `workspaces` runs after the children are stopped: discovering profiles can
+/// launch `config list`, and the stalled call must not keep running while it does.
+func exitAfterLockGiveUp(
+    caller: LockHolder = .tick,
+    workspaces: () -> [String],
+    exit: @Sendable (Int32) -> Void
+) {
     let hours = TickLock.heartbeatLimit.components.seconds / 3600
     let message = "a run passed the tick lock's \(hours)-hour limit and was stopped so it "
         + "cannot run beside the next wake"
-    reportTickError(message)
-    let failures = TickFailureLog(profiles: profiles)
-    failures.recordInEveryWorkspace(message)
+    reportTickError(message, caller: caller)
+    // Ending this process does not end the jamf-cli call it started, so stop that first. It also
+    // latches the exit path, so a probe the lookup below launches is stopped at its own site.
+    CLIBridge.terminateRunningChildren()
+    let failures = TickFailureLog(profiles: [])
+    failures.record(message, in: workspaces(), as: caller)
     failures.finish()
+    // A launch that slipped in during the writes above is stopped by its own site; this catches
+    // any that were already running.
+    CLIBridge.terminateRunningChildren()
     exit(1)
 }
 
-private func saveLastTick(_ state: TickState) {
-    do { try state.save() } catch {
+/// The tick's give-up: its record goes to every runnable workspace, since any of them may be the
+/// one an operator opens.
+func exitAfterLockGiveUp(profiles: [JamfCLIProfile], exit: @Sendable (Int32) -> Void) {
+    exitAfterLockGiveUp(
+        workspaces: { ProfileService.runnableWorkspaces(profiles, excluding: []).map(\.name) },
+        exit: exit)
+}
+
+/// The give-up for a process that holds the tick lock through `holdingForRun` (`--scheduled-run`,
+/// the included CLI): the tick's own, so a stalled jamf-cli call there cannot run beside the
+/// next wake either.
+func lockGiveUp(
+    _ caller: LockHolder,
+    workspaces: @escaping @Sendable () -> [String],
+    exit: @escaping @Sendable (Int32) -> Void = { Darwin.exit($0) }
+) -> @Sendable () -> Void {
+    { exitAfterLockGiveUp(caller: caller, workspaces: workspaces, exit: exit) }
+}
+
+/// The workspaces a scheduled run is for: its profile, or for a multi-profile schedule the
+/// runnable ones it fans out over. For a multi schedule `among` defaults to discovery, which in a
+/// give-up runs after the exit path is latched, so it is folder-based at that point.
+func workspaces(
+    of schedule: Schedule,
+    among profiles: () -> [JamfCLIProfile] = { ProfileService.discoverLocal() }
+) -> [String] {
+    guard schedule.isMulti else { return [schedule.profile] }
+    return ProfileService.runnableWorkspaces(
+        profiles(), excluding: Set(schedule.excludedProfiles ?? [])
+    ).map(\.name)
+}
+
+private func saveLastTick(_ state: TickState, to url: URL) {
+    do { try state.save(url: url) } catch {
         AppLogger.schedule.warning(
-            "tick: wake time not recorded: \(error.localizedDescription, privacy: .public)")
+            "tick: wake time not recorded: \(error.englishDescription, privacy: .private)")
     }
 }
 
@@ -146,9 +254,14 @@ private func saveLastTick(_ state: TickState) {
 func runScheduleExclusively(
     _ schedule: Schedule,
     verbose: Bool,
-    lock: TickLock = TickLock(url: TickLock.defaultURL)
+    lock: TickLock = TickLock(url: TickLock.defaultURL),
+    limit: Duration = TickLock.heartbeatLimit,
+    onGiveUp: (@Sendable () -> Void)? = nil
 ) async -> ScheduleRunOutcome? {
-    let outcome = await lock.holdingForRun { await runSchedule(schedule, verbose: verbose) }
+    let giveUp = onGiveUp ?? lockGiveUp(.scheduledRun, workspaces: { workspaces(of: schedule) })
+    let outcome = await lock.holdingForRun(limit: limit, onGiveUp: giveUp) {
+        await runSchedule(schedule, verbose: verbose)
+    }
     if outcome == nil {
         fputs("[info] scheduled-run: \(TickLock.busyMessage)\n", stderr)
     }
@@ -207,7 +320,7 @@ enum TickLoop {
                 state = before
                 failed = true
                 let message = "skipped \(label): its start could not be recorded — "
-                    + "could not write tick-state.json: \(error.localizedDescription)"
+                    + "could not write tick-state.json: \(error.englishDescription)"
                 reportTickError(message)
                 recordFailure(run.schedule, message)
                 continue
@@ -215,9 +328,17 @@ enum TickLoop {
             // The start is on disk, so the request is honoured. Cleared before the
             // run, never after: see `TickRunner.clearRunNowMarker`.
             if runNowLabels.contains(label) { clearRunNowMarker(label) }
-            let outcome = await perform(run)
+            let ran = await perform(run)
             // A Run now pays no day and ends no retries.
             let scheduled = run.reason != .runNow
+            let outcomesChanged = state.noteProfileOutcomes(
+                label, ran.profiles, considered: ran.considered, reason: run.reason)
+            // A retry of some profiles still answers for all of them, one that ran none included.
+            // Only a multi-profile run answers for stored outcomes; any other result stands alone.
+            let merged = scheduled && ran.considered != nil
+                ? state.profileOutcomes[label] ?? [] : []
+            let outcome = merged.isEmpty
+                ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
             if scheduled, outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
                 do {
@@ -225,15 +346,19 @@ enum TickLoop {
                 } catch {
                     failed = true
                     let message = "\(label) succeeded, but the success could not be recorded — "
-                        + "could not write tick-state.json: \(error.localizedDescription)"
+                        + "could not write tick-state.json: \(error.englishDescription)"
                     reportTickError(message)
                     recordFailure(run.schedule, message)
                 }
-            } else if scheduled, state.noteRetry(label, couldHelp: outcome.retryCouldHelp) {
-                // Best-effort: unrecorded, the hourly retries run as if a retry could help.
-                do { try save(state) } catch {
-                    AppLogger.schedule.warning(
-                        "tick: \(label, privacy: .public) retry verdict not recorded")
+            } else if scheduled {
+                let verdictChanged = state.noteRetry(label, couldHelp: outcome.retryCouldHelp)
+                // Best-effort: unrecorded, the hourly retries run as if a retry could help and
+                // a retry runs every profile.
+                if verdictChanged || outcomesChanged {
+                    do { try save(state) } catch {
+                        AppLogger.schedule.warning(
+                            "tick: \(label, privacy: .private) retry verdict not recorded")
+                    }
                 }
             }
             print(tickResultLine(
@@ -272,7 +397,7 @@ final class TickFailureLog {
 
     func record(_ schedule: Schedule, _ message: String) {
         let names = schedule.isMulti
-            ? ProfileService.runnableProfiles(
+            ? ProfileService.runnableWorkspaces(
                 profiles, excluding: Set(schedule.excludedProfiles ?? [])).map(\.name)
             : [schedule.profile]
         for name in names {
@@ -283,8 +408,13 @@ final class TickFailureLog {
     /// A failure that belongs to no schedule (the tick could not take its lock): the record
     /// goes to every runnable workspace, since any of them may be the one an operator opens.
     func recordInEveryWorkspace(_ message: String) {
-        for profile in ProfileService.runnableProfiles(profiles, excluding: []) {
-            recorder(for: profile.name)?.record("[error] tick: \(message)")
+        record(message, in: ProfileService.runnableWorkspaces(profiles, excluding: []).map(\.name))
+    }
+
+    /// A failure of the process `caller` names, recorded in the workspaces it was for.
+    func record(_ message: String, in names: [String], as caller: LockHolder = .tick) {
+        for name in names {
+            recorder(for: name)?.record("[error] \(caller.label): \(message)")
         }
     }
 
@@ -311,7 +441,7 @@ final class TickFailureLog {
 
 /// stderr reaches only a Run now caller that streams the tick's output; the bundled
 /// agent's stderr goes nowhere, so OSLog and `TickFailureLog` are the lasting record.
-private func reportTickError(_ message: String) {
-    fputs("[error] tick: \(message)\n", stderr)
-    AppLogger.schedule.error("tick: \(message, privacy: .public)")
+private func reportTickError(_ message: String, caller: LockHolder = .tick) {
+    fputs("[error] \(caller.label): \(message)\n", stderr)
+    AppLogger.schedule.error("\(caller.label, privacy: .private): \(message, privacy: .private)")
 }

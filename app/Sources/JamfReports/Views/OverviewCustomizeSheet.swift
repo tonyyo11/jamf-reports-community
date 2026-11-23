@@ -15,6 +15,8 @@ struct OverviewCustomizeSheet: View {
     let unavailable: (OverviewSection) -> OverviewUnavailable?
     /// Whether a score card has a value in the loaded summaries.
     let metricHasData: (TrendSeries.Metric) -> Bool
+    /// The Overview's newest compliance figure is the four-control proxy, so its card is named so.
+    let complianceIsProxy: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -46,8 +48,7 @@ struct OverviewCustomizeSheet: View {
                 Text("Customize Overview")
                     .font(.headline)
                     .foregroundStyle(Theme.Colors.fg)
-                Text("Pick what the Overview shows and in what order. "
-                     + "A section this profile can't fill says what it needs.")
+                Text("Pick what the Overview shows and in what order. A section this profile can't fill says what it needs.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -69,14 +70,14 @@ struct OverviewCustomizeSheet: View {
 
     private var footer: some View {
         HStack {
-            PNPButton(title: "Reset to Defaults", icon: "arrow.counterclockwise",
+            PNPButton(title: L("Reset to Defaults"), icon: "arrow.counterclockwise",
                       style: .ghost, size: .sm) {
                 workspace.overviewLayout = .standard
                 workspace.selectedScoreCards = WorkspaceStore.defaultScoreCards
             }
             .help("Show every section in the standard order, with the four standard score cards.")
             Spacer()
-            PNPButton(title: "Done", style: .gold) {
+            PNPButton(title: L("Done"), style: .gold) {
                 dismiss()
             }
             .keyboardShortcut(.defaultAction)
@@ -97,7 +98,7 @@ struct OverviewCustomizeSheet: View {
     private var sectionsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Sections", style: .body)
+                SectionHeader(title: L("Sections"), style: .body)
                 Text("Shown top to bottom beneath the page header and any banners.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -121,6 +122,7 @@ struct OverviewCustomizeSheet: View {
             get: { workspace.overviewLayout.isVisible(section) },
             set: { workspace.overviewLayout.setVisible(section, $0) }
         )
+        let isLeftOut = !section.availability(in: workspace.environmentComposition).isShown
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: section.sfSymbol)
                 .font(.system(size: 14, weight: .medium))
@@ -136,7 +138,9 @@ struct OverviewCustomizeSheet: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let why = unavailable(section) {
+                if let reason = section.availability(in: workspace.environmentComposition).reason {
+                    leftOutNote(reason)
+                } else if let why = unavailable(section) {
                     unavailableNote(why.reason)
                 }
             }
@@ -148,9 +152,11 @@ struct OverviewCustomizeSheet: View {
                 up: { workspace.overviewLayout.swap(section, with: listed[index - 1]) },
                 down: { workspace.overviewLayout.swap(section, with: listed[index + 1]) }
             )
-            PNPToggle(isOn: isOn, label: "Show \(section.title)")
+            PNPToggle(isOn: isOn, label: L("Show \(section.title)"))
         }
         .padding(.vertical, 8)
+        // The switch still saves the choice for when the environment has the devices.
+        .opacity(isLeftOut ? 0.55 : 1)
     }
 
     // MARK: Score cards
@@ -159,30 +165,32 @@ struct OverviewCustomizeSheet: View {
     /// does not offer is left out of both.
     static func scoreCardRows(
         selected: [TrendSeries.Metric], policy: SecurityControlPolicy,
-        agents: [TrendSeries.Metric] = []
+        agents: [TrendSeries.Metric] = [], mobile: [TrendSeries.Metric] = [],
+        composition: EnvironmentComposition = .unknown
     ) -> [TrendSeries.Metric] {
-        let all = TrendSeries.Metric.allCases + agents
+        let all = TrendSeries.Metric.allCases + mobile + agents
         let rows = selected + all.filter { !selected.contains($0) }
         return rows.filter { metric in
-            if case .agent = metric { return agents.contains(metric) }
-            return metric.isOffered(under: policy)
+            if case .agent = metric, !agents.contains(metric) { return false }
+            return metric.isOffered(under: policy, in: composition)
         }
     }
 
     private var scoreCardsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Score Cards", style: .body)
-                Text("Tiles in the Score Cards section, left to right. Each shows the "
-                     + "latest daily summary and its change since the one before.")
+                SectionHeader(title: L("Score Cards"), style: .body)
+                Text("Tiles in the Score Cards section, left to right. Each shows the latest daily summary and its change since the one before.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
                     .padding(.bottom, 8)
                 let rows = Self.scoreCardRows(
-                    selected: workspace.selectedScoreCards, policy: workspace.securityPolicy,
-                    agents: workspace.agentMetrics)
+                    selected: workspace.selectedScoreCards,
+                    policy: workspace.securityPolicy, agents: workspace.agentMetrics,
+                    mobile: workspace.scoreCardExtraMetrics,
+                    composition: workspace.environmentComposition)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)
                     if index < rows.count - 1 {
@@ -194,25 +202,19 @@ struct OverviewCustomizeSheet: View {
     }
 
     private func scoreCardRow(_ metric: TrendSeries.Metric) -> some View {
-        let selected = workspace.selectedScoreCards
-        // Positions follow the listed cards; the selection keeps the hidden ones.
-        let shown = selected.filter { workspace.isOffered($0) }
+        // Positions follow the cards on the Overview; the selection keeps the hidden ones.
+        let shown = workspace.shownScoreCards
         let position = shown.firstIndex(of: metric)
+        let isLast = OverviewScoreCards.isLastOnMobileOnly(
+            metric, shown: shown, composition: workspace.environmentComposition)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
-            edrAgentName: workspace.edrAgentName
+            edrAgentName: workspace.edrAgentName,
+            complianceIsProxy: complianceIsProxy
         )
         let isOn = Binding<Bool>(
-            get: { workspace.selectedScoreCards.contains(metric) },
-            set: { on in
-                if on {
-                    if !workspace.selectedScoreCards.contains(metric) {
-                        workspace.selectedScoreCards.append(metric)
-                    }
-                } else {
-                    workspace.selectedScoreCards.removeAll { $0 == metric }
-                }
-            }
+            get: { shown.contains(metric) },
+            set: { workspace.setScoreCard(metric, shown: $0) }
         )
         return HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -222,7 +224,12 @@ struct OverviewCustomizeSheet: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if !metricHasData(metric) {
-                    unavailableNote("No value in the loaded summaries. \(metric.dataRequirement)")
+                    unavailableNote(L("No value in the loaded summaries. \(metric.dataRequirement)"))
+                }
+                if isLast {
+                    Text("To remove them, turn off Show Score Cards under Sections.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
             Spacer(minLength: 8)
@@ -235,17 +242,30 @@ struct OverviewCustomizeSheet: View {
                     down: { moveScoreCard(metric, to: shown[safe: position + 1]) }
                 )
             }
-            PNPToggle(isOn: isOn, label: "Show \(label)")
+            PNPToggle(isOn: isOn, label: L("Show \(label)"))
+                .disabled(isLast)
         }
         .padding(.vertical, 8)
     }
 
     private func moveScoreCard(_ metric: TrendSeries.Metric, to neighbour: TrendSeries.Metric?) {
         guard let neighbour else { return }
-        workspace.selectedScoreCards = workspace.selectedScoreCards.moving(metric, to: neighbour)
+        workspace.moveScoreCard(metric, to: neighbour)
     }
 
     // MARK: Shared pieces
+
+    /// A section this environment cannot fill: informational, not a warning.
+    private func leftOutNote(_ reason: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "minus.circle")
+                .accessibilityHidden(true)
+            Text("Left out: \(reason)")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption)
+        .foregroundStyle(Theme.Text.tertiary(contrast))
+    }
 
     private func unavailableNote(_ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -266,9 +286,9 @@ struct OverviewCustomizeSheet: View {
         down: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 2) {
-            moveButton(symbol: "chevron.up", label: "Move \(name) up",
+            moveButton(symbol: "chevron.up", label: L("Move \(name) up"),
                        enabled: canMoveUp, action: up)
-            moveButton(symbol: "chevron.down", label: "Move \(name) down",
+            moveButton(symbol: "chevron.down", label: L("Move \(name) down"),
                        enabled: canMoveDown, action: down)
         }
     }

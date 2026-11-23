@@ -1,0 +1,133 @@
+#!/bin/zsh
+# Merge finished task branches into one bundle branch, in a new worktree, in the order given.
+# A merge that conflicts only in CHANGELOG.md is resolved with the changelog-union script; any
+# other conflict stops the run and names the files. Nothing is pushed and no PR is opened.
+#
+# Usage: bundle-wave [--dry-run] --dir DIR BUNDLE_BRANCH BASE_REF BRANCH...
+#   BASE_REF   what the bundle branches from, e.g. origin/dev/2-12-0
+#   BRANCH     a branch on origin ("origin/" prefix optional), merged with --no-ff, in order
+#   --dir      the worktree folder (required; it outlives the run, so it is not defaulted to a
+#              temp folder). Keep it on a local disk: a build in an iCloud-synced folder fails
+#              the xctest codesign step.
+#   --dry-run  fetch, check every ref and predict each merge against BASE_REF; create nothing.
+set -euo pipefail
+
+dry_run=0
+dir=""
+while (($#)); do
+  case "$1" in
+  --dry-run)
+    dry_run=1
+    shift
+    ;;
+  --dir)
+    dir="${2:?bundle-wave: --dir needs a folder}"
+    shift 2
+    ;;
+  -h | --help)
+    sed -n '2,13p' "$0"
+    exit 0
+    ;;
+  --) shift ;;
+  -*)
+    print -u2 "bundle-wave: unknown option $1"
+    exit 2
+    ;;
+  *) break ;;
+  esac
+done
+if (($# < 3)); then
+  print -u2 "usage: bundle-wave [--dry-run] --dir DIR BUNDLE_BRANCH BASE_REF BRANCH..."
+  exit 2
+fi
+bundle="$1"
+base="$2"
+shift 2
+branches=()
+for b in "$@"; do branches+=("${b#origin/}"); done
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+union="${script_dir}/../../changelog-union/scripts/changelog_union.py"
+[[ -f "${union}" ]] || {
+  print -u2 "bundle-wave: changelog-union script not found at ${union}"
+  exit 2
+}
+[[ -n "${dir}" ]] || {
+  print -u2 "bundle-wave: --dir is required (a local-disk folder for the bundle worktree)"
+  exit 2
+}
+case "${dir}" in
+*"/Mobile Documents/"* | *"/CloudStorage/"*)
+  print -u2 "bundle-wave: ${dir} is in a synced folder; use a local-disk folder (--dir)"
+  exit 2
+  ;;
+esac
+
+git fetch --quiet origin
+git rev-parse --verify --quiet "${base}^{commit}" >/dev/null || {
+  print -u2 "bundle-wave: BASE_REF is not a commit: ${base}"
+  exit 2
+}
+git show-ref --verify --quiet "refs/heads/${bundle}" && {
+  print -u2 "bundle-wave: branch ${bundle} already exists; pick a new bundle name"
+  exit 2
+}
+[[ ! -e "${dir}" ]] || {
+  print -u2 "bundle-wave: ${dir} already exists"
+  exit 2
+}
+for b in "${branches[@]}"; do
+  git rev-parse --verify --quiet "refs/remotes/origin/${b}^{commit}" >/dev/null || {
+    print -u2 "bundle-wave: origin/${b} does not exist (pushed?)"
+    exit 2
+  }
+done
+
+if ((dry_run)); then
+  print "dry run: would create worktree ${dir} on new branch ${bundle} from ${base}"
+  for b in "${branches[@]}"; do
+    ahead="$(git rev-list --count "${base}..origin/${b}")"
+    rc=0
+    out="$(git merge-tree --write-tree --name-only --no-messages "${base}" "origin/${b}")" || rc=$?
+    if ((rc == 0)); then
+      verdict="merges cleanly into the base"
+    else
+      files="$(print -r -- "${out}" | sed 1d | paste -sd' ' -)"
+      verdict="conflicts with the base in: ${files}"
+    fi
+    print "  would merge --no-ff origin/${b} (${ahead} commit(s) over the base); ${verdict}"
+  done
+  print "(each prediction is against ${base} alone, not after the earlier merges)"
+  exit 0
+fi
+
+git worktree add --no-track -b "${bundle}" "${dir}" "${base}"
+for b in "${branches[@]}"; do
+  print "== merging origin/${b}"
+  if git -C "${dir}" merge --no-ff --no-edit "origin/${b}"; then
+    continue
+  fi
+  conflicted="$(git -C "${dir}" diff --name-only --diff-filter=U)"
+  if [[ -z "${conflicted}" ]]; then
+    print -u2 "bundle-wave: merging origin/${b} failed without a conflict; worktree left at ${dir}"
+    exit 1
+  fi
+  if [[ "${conflicted}" != "CHANGELOG.md" ]]; then
+    print -u2 "bundle-wave: merging origin/${b} conflicts in: ${conflicted//$'\n'/ }"
+    print -u2 "Resolve in ${dir}, commit, then merge the remaining branches by hand (or git merge --abort)."
+    exit 1
+  fi
+  if ! python3 -I "${union}" "${dir}/CHANGELOG.md"; then
+    print -u2 "bundle-wave: CHANGELOG.md checks failed after the union; fix it in ${dir}, then git add and git commit --no-edit"
+    exit 1
+  fi
+  git -C "${dir}" add CHANGELOG.md
+  git -C "${dir}" commit --no-edit
+done
+
+print
+print "== bullets added relative to ${base}"
+git -C "${dir}" diff "${base}..HEAD" -- CHANGELOG.md | grep -E '^\+- ' | cut -c2- || true
+print
+print "Bundle ${bundle} is ready in ${dir}. Next: run the full suite from there (tip-test skill),"
+print "then push the branch and open the PR yourself; this script never does either."

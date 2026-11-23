@@ -49,22 +49,32 @@ struct MDMCommandHealthService: Sendable {
         func record(forDeviceId id: String) -> MDMCommandHealthRecord? {
             records.first { $0.deviceId == id }
         }
+
+        /// The oldest row's scan time; nil when no row has a known one.
+        var oldestScannedAt: Date? {
+            DeviceScanPasses.oldestScan(records, fileStamp: snapshotDate)
+        }
     }
 
     static func load(profile: String) -> Snapshot {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return .empty }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let kindDir = dir.appendingPathComponent(kind, isDirectory: true)
         return load(url: FileManager.newestJSONFile(in: kindDir))
     }
 
     static func load(url: URL?) -> Snapshot {
         guard let url else { return .empty }
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = BoundedFile.readSnapshotLogged(url) else {
             return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .empty
         }
         guard let rows = try? JSONDecoder().decode([MDMCommandHealthRecord].self, from: data) else {
             AppLogger.collect.warning(
-                "MDMCommandHealthService: decode failed \(url.lastPathComponent, privacy: .public)"
+                "MDMCommandHealthService: decode failed \(url.lastPathComponent, privacy: .private)"
             )
             return .unreadable
         }

@@ -61,7 +61,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         existingProfiles: [String] = ["acme-prod"],
         reRegistrable: Set<String> = [],
         usesStoredLeftoverRule: Bool = false,
-        region: Connection.Region = .eu
+        region: Connection.Region = .eu,
+        storedURLs: [String: String] = [:]
     ) throws -> Harness {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("credentials-model-\(UUID().uuidString)", isDirectory: true)
@@ -100,7 +101,8 @@ final class ConnectionCredentialsModelTests: XCTestCase {
                         name: name, url: "", schedules: 0, status: .idle,
                         authMethod: "platform"),
                     connections: store.load(), workspaceExists: false)
-            })
+            },
+            storedURL: { storedURLs[$0] })
         let model = ConnectionCredentialsModel(
             connection: connection, mode: mode, dependencies: dependencies)
         return Harness(
@@ -148,7 +150,7 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertEqual(row.outcome, .notJamfPro)
         XCTAssertTrue(row.suggestsJamfSchool)
         XCTAssertTrue(row.leavesProfileRegistered)
-        XCTAssertTrue(row.message.contains("jamf-cli config remove-profile acme-school"))
+        XCTAssertTrue(row.message.contains("jamf-cli config remove-profile -- acme-school"))
         XCTAssertTrue(h.provisioned.profiles.isEmpty)
         XCTAssertEqual(members(h).map(\.profile), ["acme-prod"])
     }
@@ -429,10 +431,11 @@ final class ConnectionCredentialsModelTests: XCTestCase {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
             try? FileManager.default.removeItem(at: root)
         }
-        XCTAssertTrue(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+        XCTAssertTrue(try OnboardingFlow.createJamfCLIOnlyWorkspace(
+            for: "acme-prod", as: .init(platform: true)))
         let config = root.appendingPathComponent("acme-prod/config.yaml")
         let before = try String(contentsOf: config, encoding: .utf8)
-        XCTAssertTrue(before.contains("profile: \"acme-prod\""))
+        XCTAssertTrue(before.contains("jamf_pro: \"acme-prod\"\n  platform: \"acme-prod\""))
 
         let h = try harness(mode: .addEnvironments)
         try h.store.removeMember(profile: "acme-prod")
@@ -440,6 +443,50 @@ final class ConnectionCredentialsModelTests: XCTestCase {
         XCTAssertTrue(h.store.load().isEmpty)
         XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), before)
         // A config.yaml already there is kept, not rewritten.
-        XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(for: "acme-prod"))
+        XCTAssertFalse(try OnboardingFlow.createJamfCLIOnlyWorkspace(
+            for: "acme-prod", as: .init(platform: true)))
+    }
+
+    // MARK: Gateway host
+
+    /// Every member of one connection shares the gateway, so the first readable stored URL wins.
+    func testAnOtherRegionUsesTheHostItsMembersProfilesStore() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other,
+            storedURLs: ["acme-prod": "Gateway.Example.org:8443"])
+        XCTAssertNil(h.model.gatewayProblem)
+        XCTAssertEqual(h.model.gatewayURL, "https://gateway.example.org:8443")
+        fill(h.model, ids: "env-stage Staging")
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertEqual(registrations.map(\.gatewayURL), ["https://gateway.example.org:8443"])
+    }
+
+    func testAnUnreadableMemberURLIsSkippedForTheNextMember() throws {
+        let h = try harness(
+            mode: .updateAll,
+            members: [.init(profile: "a", scopeID: "env-a"), .init(profile: "b", scopeID: "env-b")],
+            region: .other, storedURLs: ["a": "(jamf-cli profile)", "b": "gw.example.org"])
+        XCTAssertEqual(h.model.gatewayURL, "https://gw.example.org")
+    }
+
+    func testAnOtherRegionOnTheRetiredGatewayRegistersNothing() async throws {
+        let h = try harness(
+            mode: .addEnvironments, region: .other,
+            storedURLs: ["acme-prod": "https://us.apigw.jamf.com"])
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
+        fill(h.model, ids: "env-stage Staging")
+        XCTAssertFalse(h.model.canRun)
+        await h.model.run()
+        let registrations = await h.recorder.registrations
+        XCTAssertTrue(registrations.isEmpty)
+    }
+
+    func testAnOtherRegionWithNoReadableMemberURLSaysItIsUnknown() throws {
+        let h = try harness(mode: .updateAll, region: .other)
+        XCTAssertNil(h.model.gatewayURL)
+        XCTAssertNotNil(h.model.gatewayProblem)
+        XCTAssertNotEqual(h.model.gatewayProblem, GatewayRegion.retiredRefusal)
     }
 }

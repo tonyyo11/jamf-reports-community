@@ -1,6 +1,6 @@
 # Organization-defined security policy — design
 
-Status: proposed 2026-10-01, awaiting owner sign-off. Base: `efae9496` (`v2.9.0-beta1`).
+Status: shipped in 2.9.0 (proposed 2026-10-01). Base: `efae9496` (`v2.9.0-beta1`).
 
 ## Why
 

@@ -13,7 +13,6 @@ struct ProtectDashboardService: Sendable {
         let overviewItems: [ProtectOverviewItem]
         let alerts: [ProtectAlertRow]
         let computers: [ProtectComputerRow]
-        let insights: [ProtectInsightRow]
         let plans: [ProtectPlanRow]
 
         // Derived aggregates
@@ -26,15 +25,20 @@ struct ProtectDashboardService: Sendable {
         let lowAlerts: Int
         /// Protect's SEVERITY enum has no Critical; Informational is its lowest tier.
         let informationalAlerts: Int
-        let failingInsights: Int
 
         let sourceFile: URL?
         let snapshotDate: Date?
         /// Per-kind newest-file dates for the freshness chip row. Keys are the
         /// on-disk kind names (`protect-overview`, `protect-alerts`,
-        /// `protect-computers`, `protect-insights`, `protect-plans`); a kind
+        /// `protect-computers`, `protect-plans`); a kind
         /// absent from disk is absent from the map.
         var sourceDates: [String: Date] = [:]
+        /// Kinds whose newest file exists but could not be read or decoded (a planted link or
+        /// pipe, an oversize file, bad JSON); never shown as "not detected" or as zero rows.
+        var unreadableKinds: [String] = []
+
+        /// Alerts that are not Resolved or AutoResolved; the severity counts are over these.
+        var openAlertCount: Int { alerts.filter(\.isOpen).count }
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
         /// threshold as TrendStore to align with the standard daily-schedule cadence.
@@ -48,7 +52,6 @@ struct ProtectDashboardService: Sendable {
             overviewItems: [],
             alerts: [],
             computers: [],
-            insights: [],
             plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
@@ -58,7 +61,6 @@ struct ProtectDashboardService: Sendable {
             mediumAlerts: 0,
             lowAlerts: 0,
             informationalAlerts: 0,
-            failingInsights: 0,
             sourceFile: nil,
             snapshotDate: nil
         )
@@ -74,11 +76,11 @@ struct ProtectDashboardService: Sendable {
             lhs.mediumAlerts == rhs.mediumAlerts &&
             lhs.lowAlerts == rhs.lowAlerts &&
             lhs.informationalAlerts == rhs.informationalAlerts &&
-            lhs.failingInsights == rhs.failingInsights &&
             lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
-            lhs.sourceDates == rhs.sourceDates
+            lhs.sourceDates == rhs.sourceDates &&
+            lhs.unreadableKinds == rhs.unreadableKinds
         }
     }
 
@@ -87,23 +89,25 @@ struct ProtectDashboardService: Sendable {
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
 
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let overviewURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-overview", isDirectory: true))
         let alertsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
         let computersURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
-        let insightsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
         let plansURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-plans", isDirectory: true))
 
         return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL,
-                    insightsURL: insightsURL, plansURL: plansURL)
+                    plansURL: plansURL)
     }
 
     /// Test seam: load directly from specific URLs. Returns `.empty` when all URLs are nil.
     /// `plansURL` defaults to nil so pre-plans callers/tests keep compiling.
     static func load(overviewURL: URL?, alertsURL: URL?, computersURL: URL?,
-                     insightsURL: URL?, plansURL: URL? = nil) -> Snapshot {
-        guard overviewURL != nil || alertsURL != nil || computersURL != nil
-            || insightsURL != nil || plansURL != nil else {
+                     plansURL: URL? = nil) -> Snapshot {
+        guard overviewURL != nil || alertsURL != nil || computersURL != nil || plansURL != nil else {
             return .empty
         }
 
@@ -111,16 +115,31 @@ struct ProtectDashboardService: Sendable {
         // array). A readable empty file is "detected" so the view renders
         // its sections instead of the empty state.
         var readSomething = false
-        let overview = loadOverview(from: overviewURL, success: &readSomething)
-        let alerts = loadAlerts(from: alertsURL, success: &readSomething)
-        let computers = loadComputers(from: computersURL, success: &readSomething)
-        let insights = loadInsights(from: insightsURL, success: &readSomething)
-        let plans = loadPlans(from: plansURL, success: &readSomething)
+        var unreadable: [String] = []
+        func track(_ kind: String, _ url: URL?, _ read: (inout Bool) -> Void) {
+            var read1 = false
+            read(&read1)
+            if read1 {
+                readSomething = true
+            } else if let url, FileManager.default.fileExists(atPath: url.path) {
+                unreadable.append(kind)
+            }
+        }
+        var overview: [ProtectOverviewItem] = []
+        var alerts: [ProtectAlertRow] = []
+        var computers: [ProtectComputerRow] = []
+        var plans: [ProtectPlanRow] = []
+        track("protect-overview", overviewURL) { overview = loadOverview(from: overviewURL, success: &$0) }
+        track("protect-alerts", alertsURL) { alerts = loadAlerts(from: alertsURL, success: &$0) }
+        track("protect-computers", computersURL) {
+            computers = loadComputers(from: computersURL, success: &$0)
+        }
+        track("protect-plans", plansURL) { plans = loadPlans(from: plansURL, success: &$0) }
 
         let hasData = readSomething
 
         // Find most recent source file across all loaded data
-        let allURLs = [overviewURL, alertsURL, computersURL, insightsURL, plansURL].compactMap { $0 }
+        let allURLs = [overviewURL, alertsURL, computersURL, plansURL].compactMap { $0 }
         let sourceFile = allURLs.max { lhs, rhs in
             let lDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             let rDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
@@ -138,15 +157,13 @@ struct ProtectDashboardService: Sendable {
         let connectedCount = computers.filter { isConnected($0.connectionStatus) }.count
 
         let (high, medium, low, informational) = alertSeverityCounts(alerts)
-        let failingInsights = insights.filter { ($0.totalFail ?? 0) > 0 }.count
 
         // Per-kind freshness for the chip row, based on file presence — honest
         // even when a kind's own decode failed (see PatchStatusService).
         var sourceDates: [String: Date] = [:]
         for (kind, url) in [
             ("protect-overview", overviewURL), ("protect-alerts", alertsURL),
-            ("protect-computers", computersURL), ("protect-insights", insightsURL),
-            ("protect-plans", plansURL),
+            ("protect-computers", computersURL), ("protect-plans", plansURL),
         ] {
             guard let url, FileManager.default.fileExists(atPath: url.path),
                   let d = (try? url.resourceValues(
@@ -161,7 +178,6 @@ struct ProtectDashboardService: Sendable {
             overviewItems: overview,
             alerts: alerts,
             computers: computers,
-            insights: insights,
             plans: plans,
             totalComputers: totalComputers,
             webProtectionActiveCount: webProtectionActiveCount,
@@ -171,10 +187,10 @@ struct ProtectDashboardService: Sendable {
             mediumAlerts: medium,
             lowAlerts: low,
             informationalAlerts: informational,
-            failingInsights: failingInsights,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate,
-            sourceDates: sourceDates
+            sourceDates: sourceDates,
+            unreadableKinds: unreadable
         )
     }
 
@@ -183,7 +199,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadOverview(
         from url: URL?, success: inout Bool
     ) -> [ProtectOverviewItem] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readSnapshotLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectOverviewItem].self, from: data)
         else { return [] }
         success = true
@@ -193,7 +209,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadAlerts(
         from url: URL?, success: inout Bool
     ) -> [ProtectAlertRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readSnapshotLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectAlertRow].self, from: data)
         else { return [] }
         success = true
@@ -203,18 +219,8 @@ struct ProtectDashboardService: Sendable {
     private static func loadComputers(
         from url: URL?, success: inout Bool
     ) -> [ProtectComputerRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readSnapshotLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
-        else { return [] }
-        success = true
-        return decoded
-    }
-
-    private static func loadInsights(
-        from url: URL?, success: inout Bool
-    ) -> [ProtectInsightRow] {
-        guard let url, let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([ProtectInsightRow].self, from: data)
         else { return [] }
         success = true
         return decoded
@@ -223,7 +229,7 @@ struct ProtectDashboardService: Sendable {
     private static func loadPlans(
         from url: URL?, success: inout Bool
     ) -> [ProtectPlanRow] {
-        guard let url, let data = try? Data(contentsOf: url),
+        guard let url, let data = BoundedFile.readSnapshotLogged(url),
               let decoded = try? JSONDecoder().decode([ProtectPlanRow].self, from: data)
         else { return [] }
         success = true
@@ -297,14 +303,14 @@ struct ProtectDashboardService: Sendable {
         return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 
-    /// Count alerts by severity level (case-insensitive). Protect's SEVERITY
-    /// enum is High/Medium/Low/Informational — there is no Critical.
-    private static func alertSeverityCounts(
+    /// Count open alerts by severity level (case-insensitive); a Resolved or AutoResolved alert
+    /// is not counted. Protect's SEVERITY enum is High/Medium/Low/Informational — no Critical.
+    static func alertSeverityCounts(
         _ alerts: [ProtectAlertRow]
     ) -> (high: Int, medium: Int, low: Int, informational: Int) {
         var high = 0, medium = 0, low = 0, informational = 0
 
-        for alert in alerts {
+        for alert in alerts where alert.isOpen {
             guard let severity = alert.severity?.lowercased() else { continue }
             switch severity {
             case let s where s.contains("high"):

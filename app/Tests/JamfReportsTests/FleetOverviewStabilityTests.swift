@@ -11,10 +11,10 @@ final class FleetOverviewStabilityTests: XCTestCase {
     }
 
     func testPillTextAndAccessibilityLabelCarryTheWord() {
-        XCTAssertEqual(stabilityPillText(92.34), "Healthy · 92.3%")
-        XCTAssertEqual(stabilityPillText(nil), "--")
-        XCTAssertEqual(stabilityAccessibilityLabel(72, hasSummary: true), "Stability Watch, 72.0 percent")
-        XCTAssertEqual(stabilityAccessibilityLabel(nil, hasSummary: true), "Stability unknown")
-        XCTAssertEqual(stabilityAccessibilityLabel(nil, hasSummary: false), "Stability: no data")
+        XCTAssertEqual(stabilityPillText(92.34, format: .standard), "Healthy · 92.3%")
+        XCTAssertEqual(stabilityPillText(nil, format: .standard), "--")
+        XCTAssertEqual(stabilityAccessibilityLabel(72, hasSummary: true, format: .standard), "Stability Watch, 72.0 percent")
+        XCTAssertEqual(stabilityAccessibilityLabel(nil, hasSummary: true, format: .standard), "Stability unknown")
+        XCTAssertEqual(stabilityAccessibilityLabel(nil, hasSummary: false, format: .standard), "Stability: no data")
     }
 }

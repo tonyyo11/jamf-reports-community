@@ -39,12 +39,153 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         do {
             try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
                 profile: profile, workspacePaths: WorkspacePaths.self, force: true,
                 locateJamfCLI: { stub }, onLine: { _ in })
             XCTFail("a School run that launched nothing must not succeed")
         } catch ReportEngineError.collectDead(_, let failedCount, _) {
             XCTAssertGreaterThan(failedCount, 0)
         }
+    }
+
+    /// UNCAPTURED fixture: go-keyring's error shape, printed on stderr only.
+    private func installLockedKeychainStub() throws {
+        let body = "#!/bin/sh\necho 'Error: reading keychain item jamf-cli/p/client-secret: "
+            + "exit status 36' >&2\nexit 1\n"
+        try body.write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+    }
+
+    func testSchoolRunWithALockedKeychainIsADeadCollectNamingTheKeychain() async throws {
+        try installLockedKeychainStub()
+        let stub: URL = bin
+        let seen = LineBox()
+        do {
+            try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
+                profile: profile, workspacePaths: WorkspacePaths.self, force: true,
+                locateJamfCLI: { stub }, onLine: seen.append)
+            XCTFail("a locked keychain must not read as a successful School run")
+        } catch ReportEngineError.collectDead(_, _, let cause) {
+            XCTAssertEqual(cause, .keychainLocked)
+            XCTAssertTrue(seen.texts.contains { $0.contains(FailureCause.keychainLockedHint) },
+                          "\(seen.texts)")
+        }
+    }
+
+    func testProtectCollectRecordsALockedKeychainAsTheCause() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installLockedKeychainStub()
+        let stub: URL = bin
+        try await ReportEngine.protectCollect(
+            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
+        XCTAssertEqual(store.cause(for: kind)?.kind, .keychainLocked)
+    }
+
+    /// Protect rides after the MDM collect. Unforced, a source that landed inside the refresh
+    /// cadence, or that timed out twice in a row, is left alone; a direct or forced call and a
+    /// Protect-only environment collect everything.
+    func testAnUnforcedProtectCollectKeepsTheCadenceAndTheTimeoutHold() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        let calls = root.appendingPathComponent("calls")
+        try "#!/bin/sh\necho x >> '\(calls.path)'\nprintf '[]'\n"
+            .write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+        let stub: URL = bin
+        let kinds = ReportEngine.protectCommandMatrix(profile: profile).map(\.kind)
+        func callCount() -> Int {
+            ((try? String(contentsOf: calls, encoding: .utf8)) ?? "")
+                .split(separator: "\n").count
+        }
+        func collect(forced: Bool) async throws -> [String] {
+            try await ReportEngine.$addOnCollectForced.withValue(forced) {
+                try await ReportEngine.protectCollect(
+                    profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+            }
+        }
+
+        let first = try await collect(forced: false)
+        XCTAssertEqual(first, kinds, "never collected: every source is due")
+        XCTAssertEqual(callCount(), kinds.count)
+        let second = try await collect(forced: false)
+        XCTAssertEqual(second, [], "all inside the cadence: nothing runs, nothing landed")
+        XCTAssertEqual(callCount(), kinds.count)
+        let forced = try await collect(forced: true)
+        XCTAssertEqual(forced, kinds)
+        XCTAssertEqual(callCount(), kinds.count * 2)
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let held = try XCTUnwrap(kinds.first)
+        let old = Date().addingTimeInterval(-90_000)
+        for kind in kinds { store.record(.landed, report: kind, at: old) }
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: held, at: Date())
+        store.record(.failed(exitCode: CLIBridge.exitCodeTimedOut), report: held, at: Date())
+        let afterHold = try await collect(forced: false)
+        XCTAssertEqual(afterHold, Array(kinds.dropFirst()), "the held source waits")
+    }
+
+    /// jamf-cli's swallowed 403: exit 0, nothing on stdout, the refusal on stderr.
+    private func installSwallowed403Stub() throws {
+        let body = "#!/bin/sh\necho 'permission denied (HTTP 403)' >&2\nexit 0\n"
+        try body.write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+    }
+
+    /// `failedRun` is for a collect that threw (a dead School run prints no `[partial]` line, so
+    /// the verdict comes from the failures it recorded); otherwise the `[partial]` line decides.
+    private func assertMissingPermissionEndsRetries(
+        kind: String, lines: LineBox, failedRunSince start: Date? = nil
+    ) throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: kind)?.kind, .missingPermission)
+        let warn = try XCTUnwrap(
+            lines.texts.first { $0.hasPrefix("[warn] \(kind): exit 0 — skipped") },
+            "\(lines.texts)")
+        XCTAssertTrue(warn.contains("— cause: missing permission"), warn)
+        let watcher = CollectHonestyWatcher()
+        lines.texts.forEach(watcher.observe)
+        if let start {
+            XCTAssertFalse(watcher.retryCouldHelp(profile: profile, exitCode: 1, since: start),
+                           "a refused permission is not fetched by a retry: \(lines.texts)")
+        } else {
+            XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
+            XCTAssertFalse(watcher.retryCouldHelp(profile: profile),
+                           "a refused permission is not fetched by a retry: \(lines.texts)")
+        }
+    }
+
+    func testSchoolSwallowed403IsAMissingPermissionAndNotRetried() async throws {
+        try installSwallowed403Stub()
+        let stub: URL = bin
+        let seen = LineBox()
+        let start = Date().addingTimeInterval(-1)
+        do {
+            try await ReportEngine.schoolCollect(
+                workspace: WorkspaceID(validating: profile),
+                profile: profile, workspacePaths: WorkspacePaths.self, force: true,
+                locateJamfCLI: { stub }, onLine: seen.append)
+            XCTFail("every source refused: the run is dead")
+        } catch ReportEngineError.collectDead(_, _, let cause) {
+            XCTAssertEqual(cause, .noPermission)
+        }
+        let kind = try XCTUnwrap(ReportEngine.schoolCommandMatrix(profile: profile).first?.kind)
+        try assertMissingPermissionEndsRetries(kind: kind, lines: seen, failedRunSince: start)
+    }
+
+    func testProtectSwallowed403IsAMissingPermissionAndNotRetried() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installSwallowed403Stub()
+        let stub: URL = bin
+        let seen = LineBox()
+        try await ReportEngine.protectCollect(
+            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: seen.append)
+        let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
+        try assertMissingPermissionEndsRetries(kind: kind, lines: seen)
     }
 
     /// A `state` folder that is a link is refused with one `[warn]`, not skipped in silence.
@@ -68,6 +209,7 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         let seen = LineBox()
         _ = try? await ReportEngine.schoolCollect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, force: true,
             locateJamfCLI: { stub }, onLine: seen.append)
         XCTAssertEqual(refusals(seen.texts).count, 1, "\(seen.texts)")

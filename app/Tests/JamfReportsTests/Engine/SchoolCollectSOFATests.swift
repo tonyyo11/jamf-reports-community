@@ -88,16 +88,12 @@ final class SchoolCollectSOFATests: XCTestCase {
 
     // MARK: - Helpers
 
-    private static let devices = """
-    [{"name":"Lab Mac 01","serialNumber":"M1","os":"macOS 14.3","isManaged":true,
-      "lastCheckin":"2026-10-18 09:00:00","inTrash":false,"udid":"u1"},
-     {"name":"Lab Mac 02","serialNumber":"M2","os":"macOS 26.6.2","isManaged":true,
-      "lastCheckin":"2026-10-18 09:00:00","inTrash":false,"udid":"u2"},
-     {"name":"Cart iPad 01","serialNumber":"I1","os":"iPadOS 27.0.1","isManaged":true,
-      "lastCheckin":"2026-10-18 09:00:00","inTrash":false,"udid":"u3"},
-     {"name":"Cart iPad 02","serialNumber":"I2","os":"iPadOS 18.1","isManaged":true,
-      "lastCheckin":"2026-10-18 09:00:00","inTrash":false,"udid":"u4"}]
-    """
+    private static let devices = SchoolRows.json([
+        SchoolRows.device(1, ["name": "Lab Mac 01", "os": "macOS 14.3"]),
+        SchoolRows.device(2, ["name": "Lab Mac 02", "os": "macOS 26.6.2"]),
+        SchoolRows.device(3, ["name": "Cart iPad 01", "os": "iPadOS 27.0.1"]),
+        SchoolRows.device(4, ["name": "Cart iPad 02", "os": "iPadOS 18.1"]),
+    ])
 
     private static func installFeed(
         into dataDir: URL
@@ -144,14 +140,16 @@ final class SchoolCollectSOFATests: XCTestCase {
         let lines = LineBox()
         let stub = try makeStub()
         try await ReportEngine.schoolCollect(
+            workspace: WorkspaceID(validating: profile),
             profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
-            force: true, locateJamfCLI: { stub }, refreshSOFA: fetch, onLine: lines.append)
+            force: true, locateJamfCLI: { stub }, refreshSOFA: fetch, now: .testNoon,
+            onLine: lines.append)
         return lines.texts
     }
 
     private func todaysSummary() throws -> DailySummary {
         let dir = try WorkspacePaths.summariesDir(for: profile)
-        let name = "summary_\(SummaryJSONParser.dateFormatter.string(from: Date())).json"
+        let name = "summary_\(SummaryJSONParser.dateFormatter.string(from: .testNoon)).json"
         return try SummaryJSONParser.decode(Data(contentsOf: dir.appendingPathComponent(name)))
     }
 }

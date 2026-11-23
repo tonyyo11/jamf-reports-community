@@ -22,11 +22,17 @@ import Foundation
 ///
 /// Security audit refs: C-01 (reports world-readable), C-03 (regression in
 /// permission mode across writers), C-04 (jamf-cli-data dirs at 0755).
-@MainActor
 enum WorkspacePermissionHardener {
 
-    private static let fileMode: NSNumber = NSNumber(value: Int16(0o600))
-    private static let dirMode:  NSNumber = NSNumber(value: Int16(0o700))
+    private static let fileMode: mode_t = 0o600
+    private static let dirMode: mode_t = 0o700
+
+    /// `tighten(profile:)` for a caller on the main actor. A workspace holds thousands of
+    /// files, and the sweep froze the window for 3.9 s on one of 6,910 (2026-10-30).
+    @discardableResult
+    static func tightenOffMain(profile: String) async -> SweepResult {
+        await Task.detached(priority: .utility) { tighten(profile: profile) }.value
+    }
 
     /// Walk `<profile>` and tighten file/dir permissions in-place.
     ///
@@ -51,7 +57,7 @@ enum WorkspacePermissionHardener {
         if resolved != workspacesRoot,
            !resolved.hasPrefix(workspacesRoot + "/") {
             AppLogger.collect.error(
-                "WorkspacePermissionHardener: refusing sweep — profile=\(profile, privacy: .public) resolves outside workspaces root"
+                "WorkspacePermissionHardener: refusing sweep — profile=\(profile, privacy: .private) resolves outside workspaces root"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
         }
@@ -60,7 +66,7 @@ enum WorkspacePermissionHardener {
         // because the slug is also visible in LaunchAgent labels and is not
         // itself a secret.
         AppLogger.collect.info(
-            "WorkspacePermissionHardener.tighten profile=\(profile, privacy: .public)"
+            "WorkspacePermissionHardener.tighten profile=\(profile, privacy: .private)"
         )
         return tighten(directory: workspace)
     }
@@ -74,6 +80,10 @@ enum WorkspacePermissionHardener {
     /// workspace is non-empty is itself a signal worth surfacing.
     @discardableResult
     static func tighten(directory root: URL) -> SweepResult {
+        AppLogger.signpost("Permission sweep") { sweep(root) }
+    }
+
+    private static func sweep(_ root: URL) -> SweepResult {
         let fm = FileManager.default
         guard let walker = fm.enumerator(
             at: root,
@@ -84,7 +94,7 @@ enum WorkspacePermissionHardener {
             // this loudly: a CLI run that completes "successfully" without a
             // matching tighten leaves files at 0644.
             AppLogger.collect.error(
-                "WorkspacePermissionHardener: cannot enumerate \(root.lastPathComponent, privacy: .public) — sweep skipped"
+                "WorkspacePermissionHardener: cannot enumerate \(root.lastPathComponent, privacy: .private) — sweep skipped"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
         }
@@ -99,7 +109,7 @@ enum WorkspacePermissionHardener {
             // legitimately escape the workspace and we don't want to touch it.
             if vals?.isSymbolicLink == true { continue }
 
-            let mode: NSNumber
+            let mode: mode_t
             if vals?.isRegularFile == true {
                 mode = fileMode
             } else if vals?.isDirectory == true {
@@ -109,13 +119,18 @@ enum WorkspacePermissionHardener {
             }
 
             do {
-                try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+                // Most entries are already right after the first sweep; chmod was most of the cost.
+                var info = stat()
+                if lstat(url.path, &info) != 0 || info.st_mode & 0o7777 != mode {
+                    try fm.setAttributes(
+                        [.posixPermissions: NSNumber(value: mode)], ofItemAtPath: url.path)
+                }
                 touched += 1
             } catch {
                 failed += 1
                 let name = url.lastPathComponent
                 AppLogger.collect.warning(
-                    "WorkspacePermissionHardener: chmod failed on \(name): \(error.localizedDescription)"
+                    "WorkspacePermissionHardener: chmod failed on \(name): \(error.englishDescription)"
                 )
             }
         }

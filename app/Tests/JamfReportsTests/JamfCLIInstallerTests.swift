@@ -234,4 +234,64 @@ final class JamfCLIInstallerTests: XCTestCase {
         try contents.write(to: url)
         return url
     }
+
+    // MARK: - replaceDirectBinary
+
+    private func installScratch() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir
+    }
+
+    func test_replaceDirectBinary_refusesALinkAtTheTarget() throws {
+        let dir = try installScratch()
+        let managed = dir.appendingPathComponent("managed")
+        try Data("old".utf8).write(to: managed)
+        let target = dir.appendingPathComponent("jamf-cli")
+        try FileManager.default.createSymbolicLink(at: target, withDestinationURL: managed)
+        let source = dir.appendingPathComponent("new")
+        try Data("new".utf8).write(to: source)
+
+        XCTAssertThrowsError(try JamfCLIInstaller.replaceDirectBinary(at: target, with: source)) {
+            XCTAssertTrue($0.localizedDescription.contains("is a link"), "\($0)")
+        }
+        XCTAssertEqual(try String(contentsOf: managed, encoding: .utf8), "old")
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: target.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted(),
+                       ["jamf-cli", "managed", "new"])
+    }
+
+    func test_replaceDirectBinary_removesTheStagedCopyWhenTheReplaceFails() throws {
+        let dir = try installScratch()
+        let target = dir.appendingPathComponent("jamf-cli")
+        try Data("old".utf8).write(to: target)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: target.path)
+        addTeardownBlock {
+            try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: target.path)
+        }
+        let source = dir.appendingPathComponent("new")
+        try Data("new".utf8).write(to: source)
+
+        XCTAssertThrowsError(try JamfCLIInstaller.replaceDirectBinary(at: target, with: source))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted(),
+                       ["jamf-cli", "new"])
+    }
+
+    func test_replaceDirectBinary_replacesARegularFileAndKeepsItsMode() throws {
+        let dir = try installScratch()
+        let target = dir.appendingPathComponent("jamf-cli")
+        try Data("old".utf8).write(to: target)
+        chmod(target.path, 0o755)
+        let source = dir.appendingPathComponent("new")
+        try Data("new".utf8).write(to: source)
+
+        try JamfCLIInstaller.replaceDirectBinary(at: target, with: source)
+
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "new")
+        let mode = try FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions]
+            as? NSNumber
+        XCTAssertEqual(mode?.int16Value, 0o755)
+    }
 }

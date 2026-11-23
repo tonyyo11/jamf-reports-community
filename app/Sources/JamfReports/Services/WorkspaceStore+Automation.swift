@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 // MARK: - Automation health (dead-man switch, 2.6 trust trio #2)
 
@@ -126,7 +127,7 @@ enum AutomationHealth {
         if wantsTicker, tickerOff {
             return [AutomationHealthIssue(
                 label: tickerLabel,
-                displayName: "Background item disabled",
+                displayName: L("Background item disabled"),
                 kind: .tickerDisabled,
                 isMulti: true,
                 profile: "",
@@ -278,7 +279,7 @@ extension WorkspaceStore {
         } catch {
             fputs(
                 "[warn] could not register the background item: "
-                    + "\(error.localizedDescription)\n",
+                    + "\(error.englishDescription)\n",
                 stderr)
         }
     }
@@ -289,8 +290,7 @@ extension WorkspaceStore {
     func warnIfTickerNeedsApproval() {
         guard tickerStatus == .requiresApproval || tickerStatus == .notRegistered else { return }
         toast = Toast(
-            message: "Setup finished — allow JamfReports under Login Items › "
-                + "Allow in the Background to start automation",
+            message: L("Setup finished — allow JamfReports under Login Items › Allow in the Background to start automation"),
             style: .warning
         )
     }
@@ -320,7 +320,7 @@ extension WorkspaceStore {
                 AppLogger.schedule.error(
                     """
                     ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
-                    \(error.localizedDescription, privacy: .public)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
             }
@@ -479,7 +479,19 @@ extension WorkspaceStore {
         // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
             profile: profile, jamfCLIVersion: jamfCLIVersion, auth: resolveAuth(profile))
-        let states = store.collectionStates(for: kinds)
+        // patch-release-dates walks the patch-status snapshot. With none it never runs and
+        // records nothing, so it would read as never collected and keep the refresh tier in
+        // hourly self-repair; patch-status itself is the source that reports.
+        let patchStatusLanded = store.lastRun(report: "patch-status") != nil
+        // An open scan round fills the two scan kinds over several days; they land when it ends.
+        let scanInProgress = DeviceScanPasses.scanInProgress(store, now: now)
+        let scanKinds: Set<String> = [ReportEngine.ddmDeviceStatusKind,
+                                      ReportEngine.mdmCommandHealthKind]
+        let states = store.collectionStates(for: kinds).filter {
+            ($0.kind != ReportEngine.patchReleaseDatesKind || patchStatusLanded
+                || $0.lastSuccess != nil || $0.consecutiveFailures > 0)
+                && !(scanInProgress && scanKinds.contains($0.kind))
+        }
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.
         let hasCollectedBefore = states.contains { $0.lastSuccess != nil }
@@ -500,7 +512,8 @@ extension WorkspaceStore {
     /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
     /// and it skips the dashboard on a jamf-cli before 1.31.0
     /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
-    /// A workspace with Protect connected (`ConnectedProducts`) also expects the `protect-*` kinds.
+    /// A workspace with Protect connected (`EnvironmentProfiles.protect`) also expects the
+    /// `protect-*` kinds, and one with Jamf Security Cloud connected the `security-risk` kind.
     /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
     /// counters on disk: a workspace that ran for months before the collect-side
     /// skip has a standing pile of them, and reading those back is exactly what
@@ -511,10 +524,16 @@ extension WorkspaceStore {
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
         dashboardSupported: Bool = false,
-        protectConnected: Bool = false
+        protectConnected: Bool = false,
+        securityCloudConnected: Bool = false,
+        platformUnavailable: Bool = false,
+        skippedSides: Set<FleetSide> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
-        let protect = protectConnected ? DataFreshnessHealth.protectKinds : []
+        let protect = (protectConnected
+                ? DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) } : [])
+            + (securityCloudConnected
+                ? DataFreshnessHealth.securityCloudKinds.filter { !collectSkip.contains($0) } : [])
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
@@ -524,7 +543,9 @@ extension WorkspaceStore {
                 return false
             }
             if collectSkip.contains(kind) { return false }
-            return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
+            if ReportEngine.skippedSide(of: kind, skipped: skippedSides) != nil { return false }
+            let platformOut = platformUnavailable || skipsPlatform
+            return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))
         } + protect
     }
 
@@ -543,7 +564,7 @@ extension WorkspaceStore {
         guard canRefresh(profileSlug: profile) else {
             // Practically unreachable — freshness only evaluates for a valid
             // profile — but a button click must never be a silent no-op.
-            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
         let tiers = Self.manualCollectTiers(AutomationHealthModel.shared.freshnessIssues)
@@ -602,7 +623,7 @@ extension WorkspaceStore {
         let issues = AutomationHealthModel.shared.freshnessIssues
         guard !issues.isEmpty else { return false }
         let profile = self.profile
-        guard ProfileService.isValid(profile),
+        guard ProfileService.isValid(profile), ProfileService.hasWorkspace(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return false }
         // Stand down WITHOUT claiming the hour, so the next pass retries once
         // the running collect is done rather than an hour later.
@@ -628,7 +649,7 @@ extension WorkspaceStore {
         AppLogger.collect.notice(
             """
             Auto-remediating \(remediable.count, privacy: .public) stale/failing kind(s) \
-            for \(profile, privacy: .public) — tiers \
+            for \(profile, privacy: .private) — tiers \
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
         )
@@ -652,7 +673,7 @@ extension WorkspaceStore {
             AppLogger.collect.info(
                 """
                 Automatic collect deferred: a collect is already running for \
-                \(busy, privacy: .public)
+                \(busy, privacy: .private)
                 """
             )
             return true
@@ -695,7 +716,7 @@ extension WorkspaceStore {
             Skipping remediation for \(permanent.count, privacy: .public) kind(s) whose last \
             failure cannot succeed on retry (usage gate, rejected credentials, policy refusal, \
             scope or permission): \
-            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
+            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .private)
             """
         )
         let skip = Set(permanent.map(\.snapshotKind))
@@ -705,9 +726,9 @@ extension WorkspaceStore {
     /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
     /// permanent cause. The background item's same-day retry shares it with
     /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
-    /// re-authenticates. Self-remediation also passes `countingRepeatedTimeouts`: a kind whose
-    /// last `repeatedTimeoutsBeforeBackoff` failures all timed out would otherwise hold the tick
-    /// lock for its whole limit every hour. Collect now and the same-day retry keep trying it.
+    /// re-authenticates. Both also pass `countingRepeatedTimeouts`: a kind whose last
+    /// `repeatedTimeoutsBeforeBackoff` failures all timed out would otherwise hold the tick
+    /// lock for its whole limit on every retry. Collect now and the next day's run still try it.
     nonisolated static func lastFailureRepeatsOnRetry(
         _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true,
         countingRepeatedTimeouts: Bool = false
@@ -756,8 +777,8 @@ extension WorkspaceStore {
                 if CLIBridgeError.isCollectRefusal(error) {
                     AppLogger.collect.info(
                         """
-                        Auto-remediation stood down for \(profile, privacy: .public): \
-                        \(error.localizedDescription, privacy: .public)
+                        Auto-remediation stood down for \(profile, privacy: .private): \
+                        \(error.englishDescription, privacy: .private)
                         """
                     )
                     return true
@@ -767,9 +788,9 @@ extension WorkspaceStore {
                 // the banner escalates rather than resetting.
                 AppLogger.collect.warning(
                     """
-                    Auto-remediation collect failed for \(profile, privacy: .public) \
+                    Auto-remediation collect failed for \(profile, privacy: .private) \
                     tier \(tier.rawValue, privacy: .public): \
-                    \(error.localizedDescription, privacy: .private)
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
             }
@@ -777,20 +798,64 @@ extension WorkspaceStore {
         return false
     }
 
+    /// A refused profile (an unconfirmed Protect-only edit, another product's login) fails the
+    /// same way every hour, so it stands down before a Run History record opens.
+    nonisolated static func refusedBeforeAutomaticCollect(
+        profile: String, config: ReportConfig?
+    ) -> Bool {
+        // Scheduled runs skip a workspace whose jamf-cli profile is gone; so does every
+        // automatic collect, which would otherwise fail on the auth probe every hour.
+        if ProfileAuthMethod.isAbsent(profile: profile) {
+            AppLogger.collect.info(
+                "Automatic collect stood down for \(profile, privacy: .private): no jamf-cli profile")
+            return true
+        }
+        guard let refusal = CollectRouter.runRefusal(
+            profile: profile, operation: "Automatic collect", config: config) else { return false }
+        AppLogger.collect.info(
+            "Automatic collect stood down for \(profile, privacy: .private): \(refusal, privacy: .private)")
+        return true
+    }
+
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
-        try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: tiers,
-                skipExpensive: false,
-                force: false,
-                config: config,
-                onLine: CLIBridge.bufferingOnLine
-            )
+        guard !WorkspaceStore.refusedBeforeAutomaticCollect(profile: profile, config: config) else { return }
+        try await recordingAutomaticCollect(profile: profile) { onLine in
+            _ = try await CLIBridge.holdingTickLock {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: tiers,
+                    skipExpensive: false,
+                    force: false,
+                    config: config,
+                    onLine: onLine
+                )
+            }
+            return 0
         }
     }
+
+    /// Records an automatic collect under the background refresh's Run History name. A collect
+    /// that returns has exited 0; a failure is thrown.
+    nonisolated private static func recordingAutomaticCollect(
+        profile: String,
+        _ run: @escaping @Sendable (@escaping @Sendable (CLIBridge.LogLine) -> Void)
+            async throws -> Int32
+    ) async throws {
+        // Stops between sources like a scheduled run, so a manual refresh can take over.
+        automaticCollectsRunning.withLock { $0 += 1 }
+        defer { automaticCollectsRunning.withLock { $0 -= 1 } }
+        _ = try await recordingCollect(
+            profile: profile, label: appRefreshRunLabel, keep: keptAppRefreshRuns,
+            honesty: CollectHonestyWatcher()
+        ) { onLine in
+            try await ReportEngine.stoppingBetweenSources(profile: profile) { try await run(onLine) }
+        }
+    }
+
+    /// Self-repair, catch-up and background refresh collects running in this app now.
+    nonisolated static let automaticCollectsRunning = Mutex(0)
 
     /// One-click "Run now" for a failing/overdue managed row on the
     /// Automation Health card. Spawns `JamfReports --tick --now <label>`
@@ -818,7 +883,9 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
-        guard let notify = SharedConfigPin.effectiveNotify(
+        // A case variant is never active, but its webhook and stamp would be another spelling's.
+        guard ProfileService.caseVariantWorkspace(of: profile) == nil,
+              let notify = SharedConfigPin.effectiveNotify(
                 Self.loadNotifyConfig(profile: profile), profile: profile),
               notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
@@ -853,7 +920,7 @@ extension WorkspaceStore {
         if outcome == .failed {
             let reason = failure.reason ?? "unknown"
             AppLogger.webhook.warning(
-                "Overdue dead-man digest failed to send for \(profile, privacy: .public): \(reason, privacy: .public) — day not claimed, will retry (distinct from a routine run digest failure)"
+                "Overdue dead-man digest failed to send for \(profile, privacy: .private): \(reason, privacy: .private) — day not claimed, will retry (distinct from a routine run digest failure)"
             )
         }
     }
@@ -890,8 +957,7 @@ extension WorkspaceStore {
             if issue.kind == .tickerDisabled {
                 return WebhookNotifier.Fact(
                     label: "Automation",
-                    value: "JamfReports is not allowed to run in the background — enable it "
-                        + "under Login Items › Allow in the Background"
+                    value: "JamfReports is not allowed to run in the background — enable it under Login Items › Allow in the Background"
                 )
             }
             let name: String
@@ -907,7 +973,7 @@ extension WorkspaceStore {
             return WebhookNotifier.Fact(
                 label: name,
                 value: issue.expectedFire.map {
-                    "expected \(ISO8601DateFormatter().string(from: $0)); no run recorded"
+                    "expected \(ISO8601Time.string($0)); no run recorded"
                 } ?? "no run recorded"
             )
         }
@@ -931,7 +997,7 @@ extension WorkspaceStore {
 
     /// A profile's decoded config.yaml. Best-effort — nil when the workspace has
     /// no config or it fails to decode.
-    nonisolated private static func loadReportConfig(profile: String) -> ReportConfig? {
+    nonisolated static func loadReportConfig(profile: String) -> ReportConfig? {
         guard ProfileService.isValid(profile),
               let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
@@ -991,7 +1057,7 @@ extension WorkspaceStore {
         guard Self.lastCatchUpDay != today else { return false }
 
         let discovered = ProfileService.discoverLocal()
-        let runnable = ProfileService.runnableProfiles(discovered, excluding: [])
+        let runnable = ProfileService.runnableWorkspaces(discovered, excluding: [])
         let targets = Self.catchUpTargets(policy: policy, discovered: runnable.map(\.name))
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
@@ -1010,15 +1076,19 @@ extension WorkspaceStore {
 
     /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
-        try await CLIBridge.holdingTickLock {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: [.refresh, .inventory],
-                skipExpensive: false,
-                force: false,  // per-kind cadence filter: no-op if this kind already ran today
-                config: config,
-                onLine: CLIBridge.noOpOnLine
-            )
+        guard !WorkspaceStore.refusedBeforeAutomaticCollect(profile: profile, config: config) else { return }
+        try await recordingAutomaticCollect(profile: profile) { onLine in
+            _ = try await CLIBridge.holdingTickLock {
+                try await CollectRouter.run(
+                    workspace: try WorkspaceID(validating: profile),
+                    tiers: [.refresh, .inventory],
+                    skipExpensive: false,
+                    force: false,  // per-kind cadence filter: no-op if this kind already ran today
+                    config: config,
+                    onLine: onLine
+                )
+            }
+            return 0
         }
     }
 
@@ -1029,7 +1099,7 @@ extension WorkspaceStore {
         discovered: [String]
     ) -> [String] {
         guard policy.isManaged, policy.freshnessEnabled else { return [] }
-        let excluded = Set(policy.excludedProfiles)
+        let excluded = Set(policy.excludedWorkspaces)
         return discovered.filter { ProfileService.isValid($0) && !excluded.contains($0) }
     }
 
@@ -1060,14 +1130,14 @@ extension WorkspaceStore {
             if CLIBridgeError.isCollectRefusal(error) {
                 AppLogger.collect.info(
                     """
-                    Catch-up stood down for \(profile, privacy: .public): \
-                    \(error.localizedDescription, privacy: .public)
+                    Catch-up stood down for \(profile, privacy: .private): \
+                    \(error.englishDescription, privacy: .private)
                     """
                 )
                 return true
             }
             AppLogger.cli.warning(
-                "Catch-up collect failed for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                "Catch-up collect failed for \(profile, privacy: .private): \(error.englishDescription, privacy: .private)"
             )
         }
         return false

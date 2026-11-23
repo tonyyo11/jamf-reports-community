@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Resolves a jamf-cli profile's `auth-method` — the fact that decides whether
 /// the Platform API kinds can ever succeed for that profile.
@@ -34,11 +35,12 @@ enum ProfileAuthMethod {
         /// to be another one (School, Protect, Security Cloud) or an organization-level
         /// integration refuses. `.pro` and `.unknown` run.
         func proRefusal(profile: String, operation: String) -> String? {
-            let prefix = "\(operation) is a Jamf Pro command; '\(profile)' is "
+            let prefix = "\(operation) is a Jamf Pro command; "
+                + "'\(ConfigSchema.displayText(profile))' is "
             if !product.canBeProWorkspace { return prefix + "a \(product.displayName) profile" }
             if isOrganizationLevel {
                 return prefix + "an organization-level profile. "
-                    + PlatformScopeLevel.organizationLevelReason
+                    + Localization.english { PlatformScopeLevel.organizationLevelReason }
             }
             return nil
         }
@@ -48,12 +50,22 @@ enum ProfileAuthMethod {
         /// default (a hand-made Protect login has no `product:` key and a plain host) run.
         func protectRefusal(profile: String) -> String? {
             guard product != .protect, product != .unknown, !productIsDefaulted else { return nil }
-            return "'\(profile)' is a \(product.displayName) profile, not a Jamf Protect profile"
+            return "'\(ConfigSchema.displayText(profile))' is a \(product.displayName) profile, "
+                + "not a Jamf Protect profile"
+        }
+
+        /// Why this profile cannot be the `profiles.security_cloud` login, or nil; the rule is
+        /// `protectRefusal`'s, for Jamf Security Cloud.
+        func securityCloudRefusal(profile: String) -> String? {
+            guard product != .securityCloud, product != .unknown, !productIsDefaulted else {
+                return nil
+            }
+            return "'\(ConfigSchema.displayText(profile))' is a \(product.displayName) profile, "
+                + "not a Jamf Security Cloud profile"
         }
     }
 
-    nonisolated(unsafe) private static var cache: [String: Resolved] = [:]
-    private static let cacheLock = NSLock()
+    private static let cache = Mutex<[String: Resolved]>([:])
 
     /// The profile's auth method and scope level, or nil when they cannot be
     /// determined — no jamf-cli, the probe failed, or the profile is not in
@@ -66,9 +78,7 @@ enum ProfileAuthMethod {
         timeout: TimeInterval = JamfCLIProbe.defaultTimeout,
         configFile: URL? = ProfileService.defaultConfigFileURL
     ) -> Resolved? {
-        cacheLock.lock()
-        let cached = cache[profile]
-        cacheLock.unlock()
+        let cached = cache.withLock { $0[profile] }
         if let cached { return cached }
 
         guard let binary, let data = configList(binary: binary, timeout: timeout),
@@ -88,9 +98,7 @@ enum ProfileAuthMethod {
                 configProduct: entry?.product, authMethod: method, url: entry?.url) == nil
         )
 
-        cacheLock.lock()
-        cache[profile] = resolved
-        cacheLock.unlock()
+        cache.withLock { $0[profile] = resolved }
         return resolved
     }
 
@@ -136,6 +144,14 @@ enum ProfileAuthMethod {
         await Task.detached { resolved(profile)?.protectRefusal(profile: profile) }.value
     }
 
+    /// `Resolved.securityCloudRefusal` for `profile`, off the main actor like `protectRefusal`.
+    static func securityCloudRefusal(
+        profile: String,
+        resolved: @escaping @Sendable (String) -> Resolved? = { resolve(profile: $0) }
+    ) async -> String? {
+        await Task.detached { resolved(profile)?.securityCloudRefusal(profile: profile) }.value
+    }
+
     /// Whether `pro auth token` has no meaning for `profile`: API-key auth (Jamf School) or a
     /// product known to be another one. When `config list` cannot be read, a School workspace
     /// (`school_cli` in its config.yaml) or an `apikey` entry in jamf-cli's config file decides;
@@ -143,6 +159,10 @@ enum ProfileAuthMethod {
     static func skipsProAuthProbe(
         profile: String, configFile: URL? = ProfileService.defaultConfigFileURL
     ) -> Bool {
+        // A Protect-only environment has no Jamf Pro; its login may derive as Jamf Pro.
+        if EnvironmentProfiles.read(workspace: profile).isConfirmedProtectOnly(workspace: profile) {
+            return true
+        }
         guard let resolved = resolve(profile: profile, configFile: configFile) else {
             let entry = ProfileService.readConfigFile(at: configFile)?.first { $0.name == profile }
             return JamfCLIAuthMethod(raw: entry?.authMethod) == .apiKey
@@ -156,9 +176,7 @@ enum ProfileAuthMethod {
     /// Drops the cache. Called when profile configuration changes (and by
     /// tests), mirroring `JamfCLIConfigList.refresh()`.
     static func invalidateCache() {
-        cacheLock.lock()
-        cache.removeAll()
-        cacheLock.unlock()
+        cache.withLock { $0.removeAll() }
     }
 
     /// Runs `config list --output json`, returning nil on any failure, including a run that
@@ -170,7 +188,7 @@ enum ProfileAuthMethod {
         }
         guard let output = JamfCLIProbe.run(
             executable: binary,
-            arguments: ["config", "list", "--output", "json"],
+            arguments: CLICommand.configList.argv,
             timeout: timeout
         ), output.exitCode == 0 else { return nil }
         return output.stdout

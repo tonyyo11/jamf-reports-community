@@ -17,6 +17,10 @@ struct SchoolDashboard: Sendable {
     let workbook: Workbook
     /// The profile's daily summaries, for the Trends tab.
     var summaries: [DailySummary] = []
+    /// The run's start: the "Generated" stamp and the age of a check-in.
+    let now: Date
+    /// The kinds this Mac turns off (`SharedConfigPin.collectSkip`).
+    var collectSkip: Set<String> = []
 
     private var staleThreshold: Int { config.thresholds?.resolvedStaleDays ?? 30 }
 
@@ -35,7 +39,8 @@ struct SchoolDashboard: Sendable {
     /// passes the settings from config.yaml (`ReportEngine.sheetSettings`).
     @discardableResult
     func writeAll(
-        sheets: SheetsConfig = SheetsConfig()
+        sheets: SheetsConfig = SheetsConfig(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> (written: [String], failures: [SheetFailure]) {
         var written: [String] = []
         var failures: [SheetFailure] = []
@@ -45,11 +50,17 @@ struct SchoolDashboard: Sendable {
                 written.append(name)
             } catch let skippable as SheetSkippable {
                 // Cached data absent — expected for tenants that haven't collected school snapshots.
-                print("  [skip] \(name): \(skippable)")
+                let msg = SheetRegistry.skipLine(sheet: name, error: skippable)
+                // The run log carries it when there is one; printing it too doubled it in the CLI.
+                if let onLine {
+                    onLine(.init(timestamp: Date(), level: .info, text: msg))
+                } else {
+                    print("  " + msg)
+                }
             } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
+                let failure = SheetRegistry.failure(sheet: name, error: error)
+                failures.append(failure)
+                print("  [fail] \(name): unexpected error — \(failure.error)")
             }
         }
         return (written, failures)
@@ -61,10 +72,11 @@ struct SchoolDashboard: Sendable {
         "School Overview", "Device Groups", "Users", "Classes", "Apps", "Profiles", "Locations",
         "DEP Devices", "iBeacons", "Blueprints", "Device Inventory", "OS Versions",
         "Device Status", "Stale Devices", "Trends",
-    ] + CoreDashboard.protectSheetNames
+    ] + CoreDashboard.protectSheetNames + ["Device Health"]
 
     /// The School tabs in their default order, then the Jamf Pro workbook's Protect tabs, which
-    /// are written while `protect.enabled` is on (2.11), under the same gate and names.
+    /// are written while `protect.enabled` is on (2.11), under the same gate and names, then
+    /// Device Health, appended last so no existing tab moves relative to another.
     var sheetPlan: [(name: String, write: () throws -> Void)] {
         let school: [(name: String, write: () throws -> Void)] = [
             ("School Overview", writeSchoolOverview),
@@ -85,6 +97,100 @@ struct SchoolDashboard: Sendable {
         ]
         return school
             + CoreDashboard(config: config, dataDir: dataDir, workbook: workbook).protectSheetPlan
+            + [("Device Health", writeSchoolDeviceHealth)]
+    }
+
+    // MARK: - Device Health
+
+    /// Neutral counts and the ADE devices not enrolled, from `SchoolDeviceHealth`.
+    func writeSchoolDeviceHealth() throws {
+        let off = collectSkip.contains(ReportEngine.schoolDeviceDetailKind)
+        guard let health = SchoolDeviceHealth(
+            SchoolFleetService.load(dataDir: dataDir), scanTurnedOff: off),
+              !health.figures.isEmpty else {
+            throw SchoolDashboardError.noCachedData(names: [SchoolFleetService.depDevicesKind])
+        }
+        let ws = workbook.addSheet("Device Health")
+        ws.setColumnWidth(0, 0, 48)
+        ws.setColumnWidth(1, 4, 20)
+        var row = ws.writeSheetHeader(
+            title: "Device Health",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
+            ncols: 5
+        )
+        for (col, h) in ["Figure", "Count", "Of"].enumerated() {
+            ws.write(h, row: row, col: col, format: .header)
+        }
+        row += 1
+        for item in health.items {
+            ws.write(item.title, row: row, col: 0, format: .cell)
+            if let figure = health.figures[item] {
+                ws.write(figure.count, row: row, col: 1, format: .cell)
+                ws.write(figure.of, row: row, col: 2, format: .cell)
+            } else {
+                ws.write("could not be read", row: row, col: 1, format: .cell)
+            }
+            row += 1
+        }
+        row = writeDeviceDetailRows(health.detail, to: ws, row: row)
+        guard !health.notEnrolled.isEmpty else { return }
+        row += 1
+        let hdrs = ["Device name", "Serial", "Model", "Profile", "Status"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        for dep in health.notEnrolled {
+            for (col, value) in [dep.name, dep.serial, dep.model, dep.profile, dep.status]
+                .enumerated() {
+                ws.write(value, row: row, col: col, format: .cell)
+            }
+            row += 1
+        }
+    }
+
+    /// The per-device scan's summary rows under the figures: how many devices were scanned, the
+    /// enrollment type and storage breakdowns and the battery counts.
+    private func writeDeviceDetailRows(
+        _ detail: SchoolDeviceHealth.Detail, to ws: Worksheet, row start: Int
+    ) -> Int {
+        var row = start
+        func figure(_ title: String, _ count: Int, of total: Int) {
+            ws.write(title, row: row, col: 0, format: .cell)
+            ws.write(count, row: row, col: 1, format: .cell)
+            ws.write(total, row: row, col: 2, format: .cell)
+            row += 1
+        }
+        func note(_ title: String, _ text: String) {
+            ws.write(title, row: row, col: 0, format: .cell)
+            ws.write(text, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        switch detail.state {
+        case .notCollected: note("Per-device details", "not collected yet")
+        case .turnedOff: note("Per-device details", "turned off (jamf_cli.collect_skip)")
+        case .unreadable: note("Per-device details", "could not be read")
+        case .scanned:
+            if let scanned = detail.scanned, let at = detail.scannedAt {
+                figure("Devices scanned (last scanned \(ISO8601Time.string(at)))",
+                       scanned.count, of: scanned.of)
+            }
+            for value in detail.enrollment.shown {
+                figure("Enrollment type: \(value.value)", value.count, of: detail.enrollmentReporting)
+            }
+            for value in detail.storage.shown {
+                figure("Storage: \(value.value)", value.count, of: detail.storageReporting)
+            }
+            if let low = detail.lowBattery {
+                figure("Battery 1 to \(SchoolDeviceHealth.lowBatteryPercent)% when scanned",
+                       low.count, of: low.of)
+            }
+            if let zero = detail.batteryZero {
+                figure("Battery reported as 0 when scanned", zero.count, of: zero.of)
+            }
+        }
+        if let failed = detail.failedAt {
+            note("Per-device scan", "last attempt failed \(ISO8601Time.string(failed))")
+        }
+        return row
     }
 
     // MARK: - School Overview
@@ -98,7 +204,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 24)
         var row = ws.writeSheetHeader(
             title: "School Overview",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("Resource", row: row, col: 0, format: .header)
@@ -122,7 +228,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 2, 50)
         var row = ws.writeSheetHeader(
             title: "Device Groups",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 3
         )
         let hdrs = ["Group Name", "Device Count", "Location ID"]
@@ -144,7 +250,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolUsers() throws {
         let raw = try loadSchoolJSON(names: ["school-users", "school_users"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         let ws = workbook.addSheet("Users")
         ws.setColumnWidth(0, 1, 20)
         ws.setColumnWidth(2, 2, 20)
@@ -152,7 +258,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(4, 5, 24)
         var row = ws.writeSheetHeader(
             title: "Users",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 6
         )
         // jamf-cli has no user role, only an account status.
@@ -180,7 +286,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Classes",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has a teacher headcount, not teacher names.
@@ -208,7 +314,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Apps",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has no install or managed count per app.
@@ -236,7 +342,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 3, 16)
         var row = ws.writeSheetHeader(
             title: "Profiles",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         // jamf-cli has no category, device count or enabled flag per profile.
@@ -262,7 +368,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 2, 20)
         var row = ws.writeSheetHeader(
             title: "Locations",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 3
         )
         // jamf-cli has no device count or street address per location.
@@ -288,7 +394,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 20)
         var row = ws.writeSheetHeader(
             title: "DEP Devices",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Serial", "Device Name", "Model", "Status", "Profile"]
@@ -318,7 +424,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 4, 12)
         var row = ws.writeSheetHeader(
             title: "iBeacons",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Name", "UUID", "Description", "Major", "Minor"]
@@ -345,7 +451,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(2, 4, 24)
         var row = ws.writeSheetHeader(
             title: "Blueprints",
-            subtitle: "Experimental. Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Experimental. Generated: \(ISO8601Time.string(now))",
             ncols: 5
         )
         let hdrs = ["Name", "State", "Last deployed", "Created", "Updated"]
@@ -371,18 +477,23 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolDeviceInventory() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         let ws = workbook.addSheet("Device Inventory")
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 3, 16)
         ws.setColumnWidth(4, 5, 22)
+        ws.setColumnWidth(6, 9, 18)
         var row = ws.writeSheetHeader(
             title: "Device Inventory",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
-            ncols: 6
+            subtitle: "Generated: \(ISO8601Time.string(now))",
+            ncols: 10
         )
-        let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin"]
+        // The scan's columns come last, so no existing column moves; blank when the device
+        // was not scanned or the scan is missing or unreadable.
+        let detail = SchoolFleetService.loadDeviceDetail(dataDir: dataDir)
+        let hdrs = ["Device Name", "Serial", "Model", "OS Version", "Managed", "Last Checkin",
+                    "Enrollment", "Storage (GB)", "Battery (%) when scanned", "Scanned"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -393,6 +504,13 @@ struct SchoolDashboard: Sendable {
             ws.write(boolField(item, ["isManaged"]), row: row, col: 4, format: .cell)
             ws.write(stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"]),
                      row: row, col: 5, format: .cell)
+            let scanned = detail?.row(forUDID: stringField(item, ["udid"]))
+            ws.write(scanned?.enrollType ?? "", row: row, col: 6, format: .cell)
+            if let gb = scanned?.capacityGB { ws.write(gb, row: row, col: 7, format: .cell) }
+            if let battery = scanned?.battery { ws.write(battery, row: row, col: 8, format: .cell) }
+            if let at = scanned?.scannedAt {
+                ws.write(ISO8601Time.string(at), row: row, col: 9, format: .cell)
+            }
             row += 1
         }
     }
@@ -401,7 +519,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolOSVersions() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
         var counts: [String: Int] = [:]
         for item in items {
             let os = stringField(item, ["os"])
@@ -412,7 +530,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "OS Versions",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("OS Version", row: row, col: 0, format: .header)
@@ -433,7 +551,7 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolDeviceStatus() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
+        let (items, trashed) = SchoolFleetService.partitionFleet(flattenSchoolList(raw))
         var managed = 0
         var unmanaged = 0
         var supervised = 0
@@ -446,7 +564,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 1, 14)
         var row = ws.writeSheetHeader(
             title: "Device Status",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 2
         )
         ws.write("Status", row: row, col: 0, format: .header)
@@ -457,6 +575,7 @@ struct SchoolDashboard: Sendable {
             ("Managed", managed),
             ("Unmanaged", unmanaged),
             ("Supervised", supervised),
+            ("In Trash (not counted above)", trashed),
         ]
         for (label, count) in pairs {
             ws.write(label, row: row, col: 0, format: .cell)
@@ -469,11 +588,13 @@ struct SchoolDashboard: Sendable {
 
     func writeSchoolStaleDevices() throws {
         let raw = try loadSchoolJSON(names: ["school-devices", "school_devices"])
-        let items = flattenSchoolList(raw)
-        // A check-in that does not read is unknown, not stale, so the device is left out.
+        let items = SchoolFleetService.partitionFleet(flattenSchoolList(raw)).members
+        // The Devices screen's rule: stale is MORE than the threshold, and a check-in that does
+        // not read is unknown, so the device is left out.
         let stale = items.compactMap { item -> (item: [String: Any], days: Int)? in
-            let checkin = stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"])
-            guard let days = daysSince(checkin), days > staleThreshold else { return nil }
+            let device = SchoolFleetService.device(from: item, index: 0)
+            guard device.isStale(atDays: staleThreshold, now: now),
+                  let days = device.daysSinceCheckin(now: now) else { return nil }
             return (item, days)
         }
         let ws = workbook.addSheet("Stale Devices")
@@ -483,7 +604,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(3, 3, 18)
         var row = ws.writeSheetHeader(
             title: "Stale Devices (>\(staleThreshold) days)",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: 4
         )
         let hdrs = ["Device Name", "Serial", "Last Checkin", "Days Since Checkin"]
@@ -513,7 +634,7 @@ struct SchoolDashboard: Sendable {
         ws.setColumnWidth(1, 10, 18)
         var row = ws.writeSheetHeader(
             title: "Trends",
-            subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: "Generated: \(ISO8601Time.string(now))",
             ncols: Self.trendColumns.count)
         for (col, title) in Self.trendColumns.enumerated() {
             ws.write(title, row: row, col: col, format: .header)
@@ -569,26 +690,20 @@ struct SchoolDashboard: Sendable {
         var candidates: [URL] = []
         for name in names {
             let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 candidates.append(contentsOf: files.filter {
                     $0.pathExtension == "json"
                     && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                 })
             }
         }
-        func modified(_ url: URL) -> Date {
-            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
-                .flatMap(\.contentModificationDate) ?? .distantPast
-        }
-        guard let newest = candidates.max(by: { modified($0) < modified($1) }) else {
+        // The shared rule: filename stamp first, conflict copies and staging files excluded.
+        guard let newest = FileManager.newestSnapshot(among: candidates) else {
             throw SchoolDashboardError.noCachedData(names: names)
         }
-        let data = try Data(contentsOf: newest)
+        guard let data = BoundedFile.readLogged(newest, inside: dataDir) else {
+            throw SchoolDashboardError.noCachedData(names: names)
+        }
         return try JSONSerialization.jsonObject(with: data)
     }
 
@@ -634,11 +749,6 @@ struct SchoolDashboard: Sendable {
         intField(item, ["members"])
     }
 
-    /// jamf-cli's `lastCheckin` is "yyyy-MM-dd HH:mm:ss", which `DateParser` reads.
-    private func daysSince(_ dateString: String) -> Int? {
-        DateParser().parse(dateString).map { Int(Date().timeIntervalSince($0) / 86400) }
-    }
-
     /// The platform and major version in jamf-cli's `os`, which reads "Prefix Version": "macOS
     /// 14.3" is "macOS 14". The platform stays because from 26 on every Apple platform shares
     /// its major version, and "26" alone merged Macs with iPads. A bare "17.4" is "17".
@@ -656,9 +766,14 @@ struct SchoolDashboard: Sendable {
 enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
 
-    var errorDescription: String? {
+    var errorDescription: String? { skipReason }
+
+    var skipReason: String {
         switch self {
         case .noCachedData(let names):
+            if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
+                return "\(refusal.sentence); left out"
+            }
             return "No cached school snapshot found for: \(names.joined(separator: ", "))"
         }
     }

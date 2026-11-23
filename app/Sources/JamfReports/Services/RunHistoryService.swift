@@ -54,7 +54,9 @@ enum RunHistoryService {
                     && ScheduledRunRecorder.isRunInProgress(logURL: resolved)
                 let status: Schedule.LastStatus
                 if let code = exitCode {
-                    if code == 0 && isPartialRun(logURL: url, logTailText: logText) {
+                    if code == 0 && logText.contains(ScheduledRunRecorder.refusedLine) {
+                        status = .warn
+                    } else if code == 0 && isPartialRun(logTailText: logText) {
                         status = .partial
                     } else {
                         status = code == 0 ? .ok : .fail
@@ -150,6 +152,7 @@ enum RunHistoryService {
         let unstamped = label.replacingOccurrences(
             of: #"\.\d{8}-\d{6}$"#, with: "", options: .regularExpression)
         if unstamped == AutomationHealth.tickerLabel { return "Background item" }
+        if unstamped == WorkspaceStore.appRefreshRunLabel { return "Background refresh" }
         if unstamped == WorkspaceStore.appCollectRunLabel { return "Manual collect" }
         let prefix = "\(LaunchAgentWriter.labelPrefix)."
         guard label.hasPrefix(prefix) else { return label }
@@ -164,7 +167,21 @@ enum RunHistoryService {
         if slug.hasSuffix(".out") || slug.hasSuffix(".err") {
             slug = String(slug.dropLast(4))
         }
-        return slug.replacingOccurrences(of: "-", with: " ").capitalized
+        return displayName(fromSlug: slug)
+    }
+
+    /// Words of a run-label slug that are acronyms, shown upper case.
+    private static let slugAcronyms: Set<String> = [
+        "cli", "csv", "html", "pdf", "ea", "eas", "mdm", "ddm", "sofa", "api", "xlsx", "ui",
+    ]
+
+    /// "cli-generate" -> "CLI Generate": title case as `capitalized` gave, acronyms upper case.
+    static func displayName(fromSlug slug: String) -> String {
+        slug.split(separator: "-").map { part in
+            let word = String(part)
+            if slugAcronyms.contains(word.lowercased()) { return word.uppercased() }
+            return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+        }.joined(separator: " ")
     }
 
     /// Read the last 1 KB of a log to infer exit code, duration, and tail text
@@ -205,55 +222,10 @@ enum RunHistoryService {
         return (exitCode, duration, text)
     }
 
-    /// Authoritative source: sibling `summary_<logFilename>.json` matching the
-    /// log filename. Fallback: `[partial]` marker in the log tail.
-    /// Path: log at `<workspace>/automation/logs/<ts>.log`, summary at
-    /// `<workspace>/snapshots/computers/summaries/summary_<ts>.json`.
-    ///
-    /// PR-11 / threat-model T-12: per-LaunchAgent-run summary files
-    /// (`summary_<logFilename>.json`) are now produced by the Python
-    /// `_emit_per_log_summary_json` helper, called from `cmd_generate` when
-    /// `per_log_summary_filename` is passed. `cmd_launchagent_run` derives
-    /// that filename from the `status_file` argument.
-    ///
-    /// **Manifest discipline:** before trusting the `status` field, verify
-    /// the file's SHA-256 against its sibling `manifest.json` (the same
-    /// `_atomic_write_summary` writer pins the hash). On `.mismatch` or
-    /// `.corrupt`, fall through to the `[partial]` log-marker scan rather
-    /// than trusting an attacker-modifiable file — the file would have
-    /// flipped an actual partial state to "ok" otherwise (T-12 attack
-    /// scenario). On `.absent` (legacy snapshots or summaries that
-    /// pre-date PR-11), trust the file content as before.
-    static func isPartialRun(logURL: URL, logTailText: String) -> Bool {
-        let logFilename = logURL.deletingPathExtension().lastPathComponent
-        let workspace = logURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let summaryURL = workspace
-            .appendingPathComponent("snapshots")
-            .appendingPathComponent("computers")
-            .appendingPathComponent("summaries")
-            .appendingPathComponent("summary_\(logFilename).json")
-
-        if FileManager.default.fileExists(atPath: summaryURL.path),
-           let data = try? BoundedFile.read(
-               summaryURL, limit: BoundedFile.documentLimit, followSymlinks: false) {
-            let verification = SnapshotManifest.verify(snapshot: summaryURL, data: data)
-            // Trust only `.verified` (manifest hash matches) or `.absent`
-            // (legacy pre-PR-11 — no manifest discipline to enforce). On
-            // `.mismatch` (tampered after manifest write), `.corrupt`
-            // (manifest unparseable), or `.omitted` (file not registered
-            // in an existing manifest — security-reviewer 2nd pass M-01:
-            // injection bypass since every legitimate PR-11 write
-            // registers the file), fall back to the `[partial]` log
-            // marker rather than trusting an attacker-modifiable signal.
-            if verification == .verified || verification == .absent {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let status = json["status"] as? String {
-                    return status == "partial"
-                }
-            }
-        }
-
-        return logTailText.contains("[partial]")
+    /// A `[partial]` line in a run's log tail: the one signal Run History and the schedule list
+    /// both read. The recorder writes the log; no file a peer can write overrides it.
+    static func isPartialRun(logTailText: String) -> Bool {
+        logTailText.contains("[partial]")
     }
 
     /// Matches only the recorder's footer (`exit N after 5s`), never an `exit N`

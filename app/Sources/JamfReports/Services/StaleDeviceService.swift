@@ -13,10 +13,10 @@ struct StaleDeviceService: Sendable {
 
         var label: String {
             switch self {
-            case .recent:  return "Recent"
-            case .offline: return "Offline"
-            case .inactive: return "Inactive"
-            case .dormant:  return "Dormant"
+            case .recent:  return L("Recent")
+            case .offline: return L("Offline")
+            case .inactive: return L("Inactive")
+            case .dormant:  return L("Dormant")
             }
         }
 
@@ -234,9 +234,12 @@ struct StaleDeviceService: Sendable {
 
         /// What the Outreach screen shows after the copy.
         var confirmation: String {
-            let copied = "Copied \(count) email\(count == 1 ? "" : "s")"
-            guard skipped > 0 else { return copied }
-            return copied + ", skipped \(skipped) that are not a single address"
+            guard skipped > 0 else {
+                return count == 1 ? L("Copied \(count) email") : L("Copied \(count) emails")
+            }
+            return count == 1
+                ? L("Copied \(count) email, skipped \(skipped) that are not a single address")
+                : L("Copied \(count) emails, skipped \(skipped) that are not a single address")
         }
     }
 
@@ -260,20 +263,43 @@ struct StaleDeviceService: Sendable {
             list: kept.joined(separator: "; "), count: kept.count, skipped: skipped)
     }
 
-    /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
-    /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
-    /// RFC 4180 quoting. The one implementation every CSV writer uses.
+    /// Neutralizes spreadsheet formula injection: a value that starts with `=`, `+`, `-`, `@`,
+    /// tab or carriage return gets a tab prefix. The one guard every spreadsheet and CSV sink
+    /// uses (`CellValue.safe` and `csvField`). A whole plain negative number (`-5`, `-2.5`)
+    /// is left as written: a spreadsheet reads it as a number, never a formula, and Jamf uses
+    /// them for unresolved IDs and "no baseline" counts.
     ///
     /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
     /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
     /// not the sign.
-    static func csvField(_ value: String) -> String {
-        var field = value
-        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first) {
-            field = "\t" + field
-        }
+    static func formulaGuarded(_ value: String) -> String {
+        guard let first = value.unicodeScalars.first,
+              "=+-@\t\r".unicodeScalars.contains(first),
+              !isPlainNegativeNumber(value) else { return value }
+        return "\t" + value
+    }
+
+    /// `-`, one or more ASCII digits, then at most one `.` followed by one or more digits.
+    /// Nothing else: no exponent, space, grouping or second sign, so `-1+1` stays guarded.
+    static func isPlainNegativeNumber(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        guard scalars.first == "-", scalars.count > 1 else { return false }
+        let isDigit = { (s: Unicode.Scalar) in ("0"..."9").contains(s) }
+        let parts = scalars.dropFirst().split(separator: ".", omittingEmptySubsequences: false)
+        return (1...2).contains(parts.count)
+            && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(isDigit) }
+    }
+
+    /// RFC 4180 quoting for a field that is already guarded.
+    static func csvQuoted(_ field: String) -> String {
         guard field.unicodeScalars.contains(where: { ",\"\n\r".unicodeScalars.contains($0) })
         else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Escape a value for CSV output: `formulaGuarded`, then `csvQuoted`. The one
+    /// implementation every CSV writer uses.
+    static func csvField(_ value: String) -> String {
+        csvQuoted(formulaGuarded(value))
     }
 }

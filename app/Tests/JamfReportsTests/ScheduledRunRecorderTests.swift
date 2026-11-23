@@ -146,6 +146,35 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertNotNil(ISO8601DateFormatter().date(from: finishedAt))
     }
 
+    func testFinishRecordsACSVFolderUnderItsOwnKeyWhateverTheProfilesDots() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        let book = workspace.appendingPathComponent("report_acme.example.com_2026-06-01.xlsx")
+        let folder = workspace.appendingPathComponent("report_acme.example.com_2026-06-01_csv")
+        recorder.finish(exitCode: 0, artifacts: [book, folder])
+
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: recorder.statusURL)) as? [String: Any])
+        XCTAssertEqual(payload["csv_folder_path"] as? String, folder.path)
+        XCTAssertEqual(payload["xlsx_report_path"] as? String, book.path)
+        XCTAssertNil(payload["inventory_csv_path"])
+    }
+
+    func testRefusedFinishMarksTheStatusFile() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        recorder.finish(exitCode: 0, refused: true)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: recorder.statusURL)) as? [String: Any])
+        XCTAssertEqual(payload["refused"] as? Bool, true)
+        XCTAssertEqual(payload["exit_code"] as? Int, 0)
+        let plain = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        plain.finish(exitCode: 0)
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: plain.statusURL)) as? [String: Any])
+        XCTAssertNil(after["refused"], "a later normal run clears the marker")
+    }
+
     func testFailedRunStatusJSONReportsFailure() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
@@ -233,7 +262,7 @@ final class ScheduledRunRecorderTests: XCTestCase {
     func testFinishWithSheetFailuresRecordsPartialLineInLog() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
-        // Simulate the main.swift partial-line path: record it before finish.
+        // Simulate the HeadlessRun.swift partial-line path: record it before finish.
         recorder.record("[partial] 2 sheet failure(s) — see lines above")
         recorder.finish(exitCode: 0, sheetFailures: 2)
 

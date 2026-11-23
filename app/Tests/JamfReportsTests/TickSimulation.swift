@@ -13,10 +13,9 @@ struct TickSimRun: Equatable, CustomStringConvertible {
     }
 }
 
-/// Drives `TickScheduler.due` and `TickLoop.runDue` wake by wake, in the order `runTick` does:
-/// the blocked stamp (a real file), the off gap, the decision, `lastTick`, then the runs. The
-/// lock, the state file, the run-now markers and the runs themselves are stand-ins, so a test
-/// states the Mac's wakes and gets back every run with its reason and time.
+/// Drives the real `runTick` wake by wake. The state file, blocked stamp, run-now markers and
+/// lock are temporary files, the clock is the wake's time, and the run itself is a stand-in, so
+/// a test states the Mac's wakes and gets back every run with its reason and time.
 final class TickSimulation {
     var state: TickState
     let schedule: Schedule
@@ -30,17 +29,21 @@ final class TickSimulation {
     }
     /// Whether today's summary is missing at the given wake.
     var summaryMissing: (Date) -> Bool = { _ in true }
-    private(set) var markers: Set<String> = []
-    private let blockedURL: URL
+    private let directory: URL
+
+    /// Labels with a Run now marker still queued.
+    var markers: Set<String> { TickRunner.pendingRunNowLabels(dir: markerDir) }
+    private var markerDir: URL { directory.appendingPathComponent("run-now") }
 
     init(schedule: Schedule, state: TickState) {
         self.schedule = schedule
         self.state = state
-        blockedURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tick-sim-blocked-\(UUID().uuidString)")
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tick-sim-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    deinit { try? FileManager.default.removeItem(at: blockedURL) }
+    deinit { try? FileManager.default.removeItem(at: directory) }
 
     /// A run that fails and that a retry could help.
     static let failure = ScheduleRunOutcome(exitCode: 1, incomplete: false, retryCouldHelp: true)
@@ -53,35 +56,41 @@ final class TickSimulation {
     }
 
     func run(wakes: [Date]) async -> [TickSimRun] {
-        var runs: [TickSimRun] = []
+        let stateURL = directory.appendingPathComponent("tick-state.json")
+        let lock = TickLock(url: directory.appendingPathComponent(".tick.lock"))
+        try? state.save(url: stateURL)
+        let store = ScheduleStore(url: directory.appendingPathComponent("schedules.json"))
+        if let record = ScheduleRecord(schedule: schedule) { try? store.save([record]) }
+        let recorded = RunLog()
         let label = schedule.launchAgentLabel ?? ""
         for now in wakes {
             if runNow.contains(where: { abs($0.timeIntervalSince(now)) < 1 }) {
-                markers.insert(label)
+                try? TickRunner.requestRunNow(label: label, dir: markerDir)
             }
-            if blocked.contains(where: { $0.contains(now) }) {
-                TickLock.noteBlocked(url: blockedURL, now: now)
-                continue
-            }
-            let blockedSince = TickLock.takeBlockedSince(url: blockedURL)
-            let due = TickScheduler.due(
-                schedules: [schedule], state: state, runNowLabels: markers, now: now,
-                nonCatchUpAnchor: TickScheduler.nonCatchUpAnchor(refusals: blockedSince, now: now),
-                wasOff: TickScheduler.wasOff(
-                    lastTick: state.lastTick, refusals: blockedSince, now: now),
-                summaryMissingToday: { [summaryMissing] _ in summaryMissing(now) })
-            state.lastTick = now
-            _ = await TickLoop.runDue(
-                due, state: state, runNowLabels: markers, clock: { now },
-                save: { self.state = $0 },
-                clearRunNowMarker: { self.markers.remove($0) },
+            let summaryMissing = summaryMissing(now)
+            let outcome = outcome(now)
+            let environment = TickEnvironment(
+                lock: lock, blockedURL: directory.appendingPathComponent(".tick.blocked"),
+                stateURL: stateURL, markerDir: markerDir, scheduleStore: store,
+                profiles: { [] }, policy: { AutomationPolicy() }, clock: { now },
+                summaryIsMissing: { _, _, _ in summaryMissing },
                 perform: { run in
-                    runs.append(TickSimRun(at: now, reason: run.reason))
-                    return self.outcome(now)
-                },
-                recordFailure: { _, _ in },
-                notifyOverdue: {})
+                    recorded.add(TickSimRun(at: now, reason: run.reason))
+                    return outcome
+                })
+            // A GUI collect holds the lock: the tick queues behind it.
+            let held = blocked.contains { $0.contains(now) } ? lock.claim() : nil
+            _ = await runTick(arguments: ["--tick"], environment: environment)
+            if case .acquired(let hold) = held { hold.release() }
         }
-        return runs
+        state = TickState.load(url: stateURL)
+        return recorded.runs
     }
+}
+
+private final class RunLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [TickSimRun] = []
+    var runs: [TickSimRun] { lock.withLock { recorded } }
+    func add(_ run: TickSimRun) { lock.withLock { recorded.append(run) } }
 }

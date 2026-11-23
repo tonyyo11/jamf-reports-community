@@ -113,7 +113,9 @@ final class PatchComplianceDefinitionTests: XCTestCase {
 
     // MARK: - The summary writer
 
-    private func writeSummary(patchRows: [[String: Any]]) throws -> (DailySummary, URL) {
+    private func writeSummary(
+        patchRows: [[String: Any]], turnedOff: Set<String>? = nil
+    ) throws -> (DailySummary, URL) {
         let root = makeRoot()
         let dataDir = root.appendingPathComponent("data", isDirectory: true)
         let summariesDir = root.appendingPathComponent("summaries", isDirectory: true)
@@ -125,10 +127,18 @@ final class PatchComplianceDefinitionTests: XCTestCase {
                 .appendingPathComponent("security_\(GoldenFleetClock.stamp(anchor)).json"))
         try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: anchor, rows: patchRows)
 
-        ReportEngine(config: ReportConfig(), dataDir: dataDir)
-            .emitSummaryJSON(summariesDir: summariesDir)
+        var engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        engine.turnedOffKinds = turnedOff
+        engine.emitSummaryJSON(summariesDir: summariesDir)
         let summary = try XCTUnwrap(SummaryJSONParser.parseDirectory(summariesDir).first)
         return (summary, summariesDir)
+    }
+
+    /// A turned-off source stops updating: its last snapshot must not read as today's figure.
+    func testATurnedOffPatchSourceIsAbsentFromTheSummary() throws {
+        let (summary, _) = try writeSummary(
+            patchRows: threeTitleSnapshotRows, turnedOff: ["patch-status"])
+        XCTAssertNil(summary.patchPct)
     }
 
     func testSummaryRecordsTheDeviceWeightedFigureAndItsBasis() throws {
@@ -214,10 +224,12 @@ final class PatchComplianceDefinitionTests: XCTestCase {
         return text(value.value)
     }
 
-    private func dashboard(patchRows: [[String: Any]]) throws -> CoreDashboard {
+    private func dashboard(
+        patchRows: [[String: Any]], config: ReportConfig = ReportConfig()
+    ) throws -> CoreDashboard {
         let dataDir = makeRoot().appendingPathComponent("data", isDirectory: true)
         try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: anchor, rows: patchRows)
-        return CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: Workbook())
+        return CoreDashboard(config: config, dataDir: dataDir, workbook: Workbook())
     }
 
     func testComplianceSheetRowReadsTheDeviceWeightedFigure() throws {
@@ -243,8 +255,10 @@ final class PatchComplianceDefinitionTests: XCTestCase {
 
     /// Active devices only: the sheet scales each title by the active share, but its fleet
     /// row is the same figure as every other surface.
-    private func summaryDashboard(patchRows: [[String: Any]]) throws -> CoreDashboard {
-        let dash = try dashboard(patchRows: patchRows)
+    private func summaryDashboard(
+        patchRows: [[String: Any]], config: ReportConfig = ReportConfig()
+    ) throws -> CoreDashboard {
+        let dash = try dashboard(patchRows: patchRows, config: config)
         let devices: [[String: Any]] = (1...3).map {
             ["name": "Mac-\($0)", "serial": "S\($0)", "managed": true, "stale": false]
         }
@@ -269,6 +283,23 @@ final class PatchComplianceDefinitionTests: XCTestCase {
             if case .string(let s) = $0.value { return s.hasPrefix("Average Completion") }
             return false
         })
+    }
+
+    /// `display.percent_decimals: 0` makes the workbook's percentage text cells whole.
+    func testPatchSummaryDashboardFleetRowFollowsTheWorkspacePrecision() throws {
+        let config = try ConfigLoader.loadFromString("display:\n  percent_decimals: 0\n")
+        let dash = try summaryDashboard(patchRows: threeTitleSnapshotRows, config: config)
+        XCTAssertEqual(
+            try sheetValue(dash, sheet: "Patch Summary Dashboard",
+                           labelPrefix: "Fleet Compliance (devices on latest)"),
+            "79%")
+    }
+
+    /// The colour band comes from the raw share, so 94.6% printed as "95%" stays yellow.
+    func testColourBandIgnoresTheRounding() {
+        XCTAssertEqual(CoreDashboard.colorForPct(94.6), .yellow)
+        XCTAssertEqual(CoreDashboard.colorForPct(95), .green)
+        XCTAssertEqual(CoreDashboard.colorForPct(.nan), .cell)
     }
 
     func testPatchSummaryDashboardFleetRowIsADashWhenNoTitleHasDevices() throws {

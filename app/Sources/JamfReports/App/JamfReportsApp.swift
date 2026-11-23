@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-// Entry point lives in main.swift (top-level code) which dispatches to either
+// Entry point is runJamfReports() (App/HeadlessRun.swift), which dispatches to either
 // the SwiftUI UI path or the --scheduled-run / --check CLI paths. The @main
-// attribute on this App struct conflicts with main.swift's top-level code.
+// attribute on this App struct conflicts with JamfReportsMain/main.swift's top-level code.
 struct JamfReportsApp: App {
     /// Narrowest supported window width (points). 960 satisfies WCAG 1.4.10
     /// Reflow at 200% Dynamic Type and lets the app run on a 13" MacBook.
@@ -64,13 +64,13 @@ struct JamfReportsApp: App {
                 .keyboardShortcut("]", modifiers: .command)
             }
 
-            // Cmd-1..9 switch to the corresponding workspace profile by index.
-            // Profile order matches the workspace chip menu. Out-of-range indices
-            // are no-ops. Guard skips a redundant switch to the active profile.
+            // Cmd-1..9 switch to the corresponding workspace by index.
+            // Order matches the workspace chip menu (`workspaceMenuProfiles`). Out-of-range
+            // indices are no-ops. Guard skips a redundant switch to the active profile.
             CommandGroup(after: .sidebar) {
                 ForEach(1...9, id: \.self) { n in
                     Button("Switch to Profile \(n)") {
-                        if let p = profileAt(index: n - 1, in: workspace.profiles),
+                        if let p = profileAt(index: n - 1, in: workspace.workspaceMenuProfiles),
                            p.name != workspace.profile {
                             workspace.setProfile(p.name)
                         }

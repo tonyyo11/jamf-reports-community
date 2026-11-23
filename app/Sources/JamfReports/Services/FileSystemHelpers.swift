@@ -35,23 +35,76 @@ extension FileManager {
         newestSnapshot(inDirectory: dir, extensions: ["html"])
     }
 
-    /// Shared body: enumerate, confine to `dir`, filter, order.
+    /// "<name>: not a regular file" when the newest `fileExtension` entry by stamp in `dir` is a
+    /// link, folder or other non-regular file. The pickers above drop a link that resolves
+    /// outside `dir`, so one planted at the newest stamp would read as "never collected"; a
+    /// caller that claims something about the cache (the collect's "using cached" note, the
+    /// dashboard section) asks this first. A screen that only reads data keeps the drop: a
+    /// refused link is not data. A link that stays inside `dir` is reported too, though the
+    /// pickers would have resolved it: nothing here writes one. The listing follows a folder
+    /// swapped for a link after the caller confined it; nothing is opened, only the newest name
+    /// is read.
+    static func plantedNewestSnapshot(in dir: URL, fileExtension: String) -> String? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        guard let newest = newestSnapshot(
+                among: entries.filter { $0.pathExtension.lowercased() == fileExtension }),
+              !isRegularFile(newest) else { return nil }
+        return ConfigSchema.displayText(newest.lastPathComponent) + ": not a regular file"
+    }
+
+    /// `lstat`, so a link is not followed.
+    static func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    /// The date of the newest snapshot among `urls`, as every freshness check dates it: regular
+    /// files only (`lstat`, so a planted link counts for nothing), the pickers' exclusions
+    /// (manifest, conflict copy, `.partial`), the stamp in the name before the mtime, and a file
+    /// dated more than `SharedWorkspace.clockSkewTolerance` ahead of `now` left out, since a peer
+    /// can name or touch one for the year 2999 and make a folder look fresh for good.
+    static func newestSnapshotDate(among urls: [URL], now: Date = Date()) -> Date? {
+        let candidates = urls.filter { url in
+            guard isRegularFile(url), let date = snapshotDate(of: url) else { return false }
+            return date.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance
+        }
+        return newestSnapshot(among: candidates).flatMap(snapshotDate(of:))
+    }
+
+    /// Shared body: enumerate, confine to `dir`, filter, order. The candidate comes back as
+    /// `dir` as given plus the entry's name, never as the resolved target, so a link at the
+    /// newest name reaches the reader as a link and is refused there (`BoundedFile` opens with
+    /// `O_NOFOLLOW`). A `dir` that is itself a link is no snapshot folder at all.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
+        guard let files = snapshotFolderEntries(in: dir) else { return nil }
         let dirPrefix = dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         let confined = files
             .filter { extensions.contains($0.pathExtension.lowercased()) }
-            .compactMap { url -> URL? in
-                let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-                return resolved.path.hasPrefix(dirPrefix) ? resolved : nil
+            .filter {
+                $0.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(dirPrefix)
             }
+            .map { dir.appendingPathComponent($0.lastPathComponent) }
         return newestSnapshot(among: confined)
+    }
+
+    /// The entries of a snapshot kind folder: nil when `dir` is missing, unreadable or itself a
+    /// link, so every listing of a kind folder applies the one rule the pickers do. (The data
+    /// folder above the kind folders may be a link; a kind folder may not.)
+    static func snapshotFolderEntries(
+        in dir: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]? = [.contentModificationDateKey],
+        options: DirectoryEnumerationOptions = [.skipsHiddenFiles]
+    ) -> [URL]? {
+        guard !isLink(dir) else { return nil }
+        return try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: keys, options: options)
+    }
+
+    /// `lstat` says `url` is a symbolic link.
+    static func isLink(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFLNK
     }
 
     /// Newest of an arbitrary candidate list, applying the same exclusions and

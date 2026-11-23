@@ -7,6 +7,9 @@ Refreshed: 2026-05-20 (post PR-16..PR-26 — tiered collection, xlsx-corruption 
 Refreshed: 2026-05-20 (v2.0.0 release prep — §7/§9 reconciled: T-11/T-12/T-13 confirmed closed by PR-10/11/12; diagnostic-bundle PII redaction hardened)
 Refreshed: 2026-06-18 (single-engine — standalone Python CLI removed; native Swift `ReportEngine` is the sole engine; Python-specific threat surface dropped)
 Refreshed: 2026-10-10 (2.9.0: SMAppService background item, shared workspaces, jamf-cli trust chain, Swift manifest writer, issue-triage workflow; new entries T-23..T-27)
+Refreshed: 2026-11-12 (2.12: docs review pass — T-23, T-26, T-13 and §9 corrected to the shipped state; new entries T-28..T-33)
+Refreshed: 2026-11-15 (against `dev/2-12-0` at 531bafb8: §1, §2 (TB-6, TB-9), §3, §4, §5, T-1, T-5, T-8, T-12, T-13, T-15..T-19, T-21..T-23, T-28, T-31, §7..§12 corrected to the code; new entries T-34..T-38)
+
 Scope basis: full repo (`app/`, CI workflows, scripts)
 
 Operator-facing version of the controls below: [Security & Operational Considerations](../wiki/10-Security-and-Operational-Considerations.md) (wiki page 10). Working architecture reference: [`CLAUDE.md`](../../CLAUDE.md).
@@ -25,7 +28,7 @@ Operator-facing version of the controls below: [Security & Operational Considera
 - **(2026-05-17 addition)** Planned external distribution: notarized DMG **and** PKG installer for delivery to other organizations running their own Jamf Pro / Jamf School deployments.
 
 ### Out of scope (referenced, not modeled here)
-- The external `jamf-cli` binary (Go, separate repo) — treated as a trusted external dependency once code-signature verification passes (`CodeSignVerifier.verify` against a designated requirement, run through `CLIBridge.codesignGate` / `JamfCLIIdentity.ensureVerifiedJamfCLI` at every site that launches `jamf-cli`, and `OnboardingFlow.verifyJamfCLISignatureGate` on the onboarding PTY path). See T-1.
+- The external `jamf-cli` binary (Go, separate repo) — treated as a trusted external dependency once code-signature verification passes (`CodeSignVerifier.verify` against a designated requirement, run through `CLIBridge.codesignGate` / `JamfCLIIdentity.ensureVerifiedJamfCLI` at every site that launches `jamf-cli`, and `OnboardingFlow.signatureGate` on the onboarding PTY path). See T-1.
 - Jamf Pro / School / Protect servers themselves.
 - Recipient-org Jamf tenant compromise that is not initiated through this app — covered only at the trust boundary.
 
@@ -33,21 +36,22 @@ Operator-facing version of the controls below: [Security & Operational Considera
 | Component | Where | Runtime role |
 |---|---|---|
 | `JamfReports` (GUI) | `app/Sources/JamfReports/App` | User-facing SwiftUI app; spawns `jamf-cli` |
-| `main.swift` (headless modes) | `app/Sources/JamfReports/App/main.swift`, `App/Tick.swift` | Entry for `--tick` (the bundled background item, woken every 300 s), `--scheduled-run` (external scheduler) and the `jamf-reports` CLI; collects + generates |
+| `HeadlessRun.swift` (headless modes) | `app/Sources/JamfReports/App/HeadlessRun.swift`, `app/Sources/JamfReportsMain/main.swift`, `App/Tick.swift` | Entry for `--tick` (the bundled background item, woken every 300 s), `--scheduled-run` (external scheduler) and the `jamf-reports` CLI; collects + generates |
 | `ReportEngine` (native engine) | `app/Sources/JamfReports/Engine/*` | Reads cached JSON, writes XLSX/HTML/CSV |
 | `CLIBridge` | `app/Sources/JamfReports/Services/CLIBridge*.swift` | `Process`-based async wrapper for `jamf-cli`; environment hardening; codesign gate (`codesignGate`) |
 | `LogRedactor` | `app/Sources/JamfReports/Services/LogRedactor.swift` | Free-text + JSON credential redaction (`LogRedactor.patterns` plus webhook URL patterns) |
 | `SnapshotManifest` | `app/Sources/JamfReports/Engine/SnapshotManifest.swift` | SHA-256 manifest reader/verifier (PR-7) and writer (`record`, 2.6, active when `jamf_cli.require_manifest` is true) for `jamf-cli-data/<kind>/*.json` |
-| Background item | `Contents/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist` inside the signed app bundle, registered through `SMAppService` (`TickerRegistrar`) | Runs `JamfReports --tick` every 300 s. `TickScheduler.due` decides which schedules run (managed ones derived from `AutomationPolicy`, hand-built ones from `ScheduleStore`, legacy imports). `TickLock` (pid file) keeps one run at a time; `TickRunner` run-now markers live in Application Support. macOS lists the item in Login Items and Extensions and can require approval (BTM). |
+| Background item | `Contents/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist` inside the signed app bundle, registered through `SMAppService` (`TickerRegistrar`) | Runs `JamfReports --tick` every 300 s. `TickScheduler.due` decides which schedules run (managed ones derived from `AutomationPolicy`, hand-built ones from `ScheduleStore`, legacy imports). `TickLock` (a kernel `flock` on `.tick.lock`; the pid file only feeds a read-only probe) keeps one run at a time; `TickRunner` run-now markers live in Application Support. macOS lists the item in Login Items and Extensions and can require approval (BTM). |
 | `ScheduleStore` | `~/Library/Application Support/JamfReports/schedules.json` (0600, directory 0700) | Per-Mac JSON of hand-built schedules. Never in the workspace, which may be a synced folder. |
 
 ### Data stores
 - `~/Jamf-Reports/<profile>/jamf-cli-data/<kind>/<kind>_<stamp>.json` — cached snapshots (0600). Manifest-covered when `jamf_cli.require_manifest` is true (writer since 2.6). Not stamped: the SOFA cache, `patch-release-dates`, and the `summaries/` directory.
 - `~/Jamf-Reports/<profile>/jamf-cli-data/state/<kind>.last` — per-kind last-success timestamps read by the cadence filter in `ReportEngine.collect`. Listed in a `state/manifest.json` of SHA-256 hashes written beside them (`StateFileStore.rewriteManifest`). The manifest is unkeyed, so it detects corruption, not tampering by a writer — see T-21.
-- `~/Jamf-Reports/<profile>/Generated Reports/*.{xlsx,html}` — outputs. **Not** manifest-covered (see T-13).
-- `~/Jamf-Reports/<profile>/snapshots/computers/summaries/*.json` — trend history. **Not** manifest-covered (see T-12).
+- `~/Jamf-Reports/<profile>/Generated Reports/*.{xlsx,html}` — outputs. Each workbook gets a `.sha256` sidecar and a `.manifest.txt`; each generate run writes a `<stem>.manifest.json` and, when a time-stamp authority is configured, a `<stem>.tsr`. These sit in the same folder as the reports, so they detect damage and give a recipient a check; they do not stop someone who can write the folder (T-13, T-28).
+- `~/Jamf-Reports/<profile>/snapshots/summaries/summary_<date>.json` (the folder follows `charts.historical_csv_dir`) — trend history. **Not** manifest-covered (see T-2, T-12).
+- `~/Jamf-Reports/<profile>/jamf-cli-data/state/` also holds `site-scope.json` (whether the collecting login was site-limited, T-37) and the School device scan's attempt stamp (T-35). Both are peer-writable on a shared workspace.
 - `~/Jamf-Reports/<profile>/automation/logs/` — per-run logs. Credential patterns are redacted when the line is written (`ScheduledRunRecorder.record`) and again at display and export (`RunHistoryService.loadLog`, `RunsView.exportLogFile`, `LogRedactor.redactedForSharing`).
-- `~/Jamf-Reports/<profile>/config.yaml` — column mapping, `jamf_cli.profile`, output and retention settings, `notify.url`, `shared_workspace`. On a shared workspace this file is the one every Mac reads (see T-23).
+- `~/Jamf-Reports/<profile>/config.yaml` — the `profiles:` block (the workspace's own profile is its folder name; `jamf_cli.profile` only names an owner for a mismatch warning), thresholds, output and retention settings, `notify.url`, `shared_workspace`. On a shared workspace this file is the one every Mac reads (see T-23).
 - macOS Keychain (managed by `jamf-cli`, not this app) — long-term Jamf API client secret.
 - **(2026-05-17 addition)** Release artifacts in GitHub Releases (`*.dmg`, `*.pkg`, SHA-256 of each).
 
@@ -62,11 +66,11 @@ Operator-facing version of the controls below: [Security & Operational Considera
 | TB-3 | App ↔ Jamf Pro/School/Protect servers (over network) | TLS via `jamf-cli`; `CLIBridge.authGuard` probes `pro auth token` before live calls; School profiles skip probe (API-key auth). |
 | TB-4 | App ↔ macOS Keychain | Indirect — only `jamf-cli` reads/writes; secret passed by app via PTY stdin during onboarding (`OnboardingFlow.registerJamfCLIProfile`) with `resetBytes` zeroing after dispatch. |
 | TB-5 | Background item ↔ app headless mode | One `SMAppService` user agent declared inside the signed bundle; it only runs `--tick`. The app writes no plist and calls no `launchctl`; no LaunchDaemons, no `sudo`. Per-Mac state (`schedules.json`, `tick-state.json`, run-now markers, `.tick.lock`) lives in Application Support, outside any workspace. |
-| TB-6 | Generated HTML report ↔ downstream readers | Centralized escaping via `HtmlSectionFormatters.escapeHTML` — every dynamic insertion in `HtmlReport` routes through it. HTML output is self-contained (no remote `<script src>`). PR-3 added landmarks + table captions; PR-3 follow-up added keyboard navigation. **Not** signed/integrity-stamped (see T-13). |
+| TB-6 | Generated HTML report ↔ downstream readers | Centralized escaping via `HtmlSectionFormatters.escapeHTML` — every dynamic insertion in `HtmlReport` routes through it. HTML output is self-contained (no remote `<script src>`). PR-3 added landmarks + table captions; PR-3 follow-up added keyboard navigation. Carries an embedded `report-sha256` meta tag and footer, and each run writes a manifest beside the reports (optionally time-stamped). None of these is a signature: anyone who can edit the file can recompute the embedded hash, and anyone who can write the folder can replace the manifest (T-13, T-28). |
 | TB-7 | Build pipeline ↔ shipped artifacts | SwiftPM dependency graph pinned by `Package.resolved` (currently two dependencies: ZIPFoundation and, as of 2.4.0, swift-argument-parser); ad-hoc-signed dev builds; Developer-ID signing, notarization and packaging run on the maintainer's Mac through `app/scripts/release.sh` (see [`app/scripts/README.md`](../../app/scripts/README.md)), not in CI. |
 | TB-11 | **(2.4.0)** App ↔ `/usr/local/bin` (CLI install) | `CLIInstaller` symlinks the in-bundle binary into a PATH dir on user request. No privilege escalation — writes only when the target dir is already user-writable, otherwise returns a `sudo` command for the user to run. Inspects the destination first: replaces a stale symlink, refuses to clobber a real file. |
 | TB-8 | Repo CI workflows ↔ release artifacts and maintainer credentials | `.github/workflows/{ci,release,issue-triage}.yml`. Every third-party action is pinned to a commit SHA. `release.yml` builds a source zip only; it holds no signing material. `issue-triage.yml` is the one workflow that feeds untrusted text (issue title and body from anyone) to a model; what bounds it is in T-27. |
-| TB-9 | **(NEW)** Build host ↔ external recipient | Notarized DMG and PKG installer downloaded by other-org Mac admins via GitHub Releases or a Homebrew tap. Integrity hint via GitHub-served SHA-256 only; no signed manifest of releases. See "External Distribution Annex" §11. |
+| TB-9 | **(NEW)** Build host ↔ external recipient | Notarized DMG and PKG installer downloaded by other-org Mac admins via GitHub Releases (the app has no Homebrew cask or tap; only jamf-cli is installed through Homebrew, see T-19). Integrity hint via GitHub-served SHA-256 only; no signed manifest of releases. See "External Distribution Annex" §11. |
 | TB-10 | **(NEW)** PKG installer pre/post-install scripts ↔ recipient root | Only relevant if the PKG runs scripts with root privileges (current default for `productbuild`-style packages). Privilege boundary; currently nothing in scope requires root install. Documented to avoid scope creep. |
 
 ---
@@ -78,8 +82,8 @@ Operator-facing version of the controls below: [Security & Operational Considera
 | Jamf API client secret (OAuth2) | Most sensitive secret. Lives in macOS Keychain via `jamf-cli`; transits the app only over stdin during onboarding. Compromise → full Jamf Pro tenant read/write per role. |
 | Jamf bearer tokens | Cached on disk by `jamf-cli`; short-lived. Compromise → tenant access until expiry. |
 | Jamf School API key | Long-lived static key (no OAuth refresh). Used by `school-*` commands. Compromise → School tenant access. |
-| Device inventory + compliance JSON | Whole fleet's hardware IDs, serials, users, OS state, compliance/STIG failures. Sensitive in regulated/government environments. Now **integrity-protected** by SHA-256 manifest (PR-7) — see T-11 for residual gap. |
-| Generated reports (XLSX/HTML) | Inherit sensitivity of inventory data. May be shared off-host (user confirmed "unknown / varies"). **No integrity envelope** — see T-13. |
+| Device inventory + compliance JSON | Whole fleet's hardware IDs, serials, users, OS state, compliance/STIG failures. Sensitive in regulated/government environments. Checked against an unkeyed SHA-256 manifest only when `jamf_cli.require_manifest` is on (off by default) — see T-2 and T-11. Some account names and contact fields are removed before disk by default; usernames and email addresses stay (T-31). |
+| Generated reports (XLSX/HTML) | Inherit sensitivity of inventory data. May be shared off-host (user confirmed "unknown / varies"). Hash sidecars, an embedded hash and a per-run manifest (optionally RFC 3161 time-stamped) detect damage and give a recipient a check; none is a signature, and all sit beside the reports — see T-13 and T-28. |
 | `config.yaml` | Reveals org-specific EA names + Jamf URL; pre-onboarding bootstrap values. Also steers output folders, retention mode and the webhook URL (see T-23). |
 | `schedules.json` and the bundled background item | A writer to `~/Library/Application Support/JamfReports/` can change which schedules the tick runs, but already has user-level execution. The agent plist inside the bundle is covered by the bundle signature. |
 | App binary itself | Hardened-Runtime, ad-hoc-signed for local builds; release signing and notarization are scripted (`release.sh`) and run locally. |
@@ -89,7 +93,11 @@ Operator-facing version of the controls below: [Security & Operational Considera
 
 ## 4. Attacker Capabilities
 
-### 4a. Current state — single-admin laptop assumption (unchanged)
+### 4a. Current state — one user per Mac; a workspace may be local or shared
+
+The model covers two layouts. Rule for reading §6: wherever a threat has A1 writing a workspace file, P1 can do the same on a shared workspace, without code execution on this Mac.
+- **Local workspace:** one trusted user per Mac, no co-resident accounts; the workspace sits under that user's home (the default `~/Jamf-Reports`).
+- **Shared or synced workspace (2.7.0):** the workspace folder is on a sync provider, a network volume or another folder other Macs reach. Any peer Mac, anyone with write access to that folder, or a compromised sync account (P1 below) can write **any** file in the workspace: `config.yaml`, snapshots, state files, manifests, status files, run logs and reports. The per-Mac state in Application Support (pins, schedules, tick state, the per-Mac `Started` records) is outside the folder and is not peer-writable.
 
 **Realistic:**
 - A1. Local non-privileged process running as the same user (malware, malicious npm/brew package, drive-by RCE in another app) with read/write to `$HOME`.
@@ -98,19 +106,20 @@ Operator-facing version of the controls below: [Security & Operational Considera
 - A4. Compromised upstream — Homebrew tap or `jamf-cli` GitHub release replaced with a malicious binary.
 - A5. Recipient of a generated HTML/XLSX report (downstream — content-injection vector if a Jamf-side field was attacker-controlled).
 - A6. Attacker who can submit a malicious PR or compromise a maintainer account on GitHub.
+- P1. On a shared workspace only: a peer Mac, another member of the team folder, or a compromised sync account that can write any file in the workspace folder but has no code execution on this Mac (T-23, T-25, T-29, T-30, T-34..T-37).
 
 **Explicit non-capabilities:**
 - Not root / not in `admin` group; the app never requests `sudo` and installs nothing system-wide.
 - No remote unauthenticated network surface — the app exposes no listeners; no inbound sockets.
 - Not assumed to have Keychain access (would require user auth or a prior privilege escalation).
-- Not assumed to have access to a co-resident user account (single-admin model).
+- Not assumed to have access to a co-resident user account on the same Mac. Other Macs reach this Mac only through a shared workspace folder (P1).
 
 ### 4b. Post-release / external-distribution capabilities (NEW, per 2026-05-17 scope expansion)
 
 When the app is shipped to external organizations via notarized DMG or PKG installer, the threat model extends with:
 
 - **A7. Recipient-side attacker (different physical host).** Same A1-style capabilities but on a Mac the maintainer doesn't control. Threat model bounds at the trust boundary — we cannot make assumptions about recipient's EDR, FileVault, or login posture.
-- **A8. Distribution channel attacker.** A party who can replace a release artifact in transit (GitHub Releases CDN — low likelihood given HTTPS + GitHub's controls; Homebrew tap mirror — higher; user-side MITM with self-signed cert — relevant for under-managed Macs).
+- **A8. Distribution channel attacker.** A party who can replace a release artifact in transit (GitHub Releases CDN — low likelihood given HTTPS + GitHub's controls; a re-hosted copy or typosquat repo; user-side MITM with self-signed cert — relevant for under-managed Macs). The app is not distributed through Homebrew; jamf-cli is (T-19).
 - **A9. Compromised maintainer signing key.** Attacker exfiltrates the Developer ID certificate from the build host. Can re-sign and re-notarize malicious updates. Catastrophic; mitigated only by signing-host isolation + key revocation.
 - **A10. Downgrade attacker.** Recipient is tricked into installing an older signed version with known vulnerabilities (e.g., pre-PR-7 manifest, pre-PR-9 codesign coverage). All older versions remain validly signed/notarized.
 
@@ -121,13 +130,14 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 | Entry point | Component | Notes |
 |---|---|---|
 | GUI invocation (`JamfReports.app`) | App | Trusted; same-user only |
-| CLI subcommand invocation (`jamf-reports <cmd>`) | `main.swift` → `JamfReportsCLI` (`CLI/`) | Same-user, same trust as GUI; thin shells over existing engine entry points, args parsed by `swift-argument-parser`. Profile slugs validated via `ProfileService.isValid`; user-supplied `--output`/`--out` paths run through the same `WorkspacePaths.isSensitiveAbsolutePath` deny-list the GUI uses (`CLIRun.requireSafeOutput`), so a CLI write can't clobber `~/.ssh`/`~/Library`. No new privileged operation |
-| Headless invocation by the bundled background item or an external scheduler | `main.swift`, `App/Tick.swift` | `--tick` (the background item) and `--scheduled-run` (an external scheduler); `--tick --now <label>` is how the GUI and `jamf-reports schedules run` start a schedule immediately |
+| CLI subcommand invocation (`jamf-reports <cmd>`) | `HeadlessRun.swift` → `JamfReportsCLI` (`CLI/`) | Same-user, same trust as GUI; thin shells over existing engine entry points, args parsed by `swift-argument-parser`. Profile slugs validated via `ProfileService.isValid`; user-supplied `--output`/`--out` paths run through the same `WorkspacePaths.isSensitiveAbsolutePath` deny-list the GUI uses (`CLIRun.requireSafeOutput`), so a CLI write can't clobber `~/.ssh`/`~/Library`. No new privileged operation |
+| Headless invocation by the bundled background item or an external scheduler | `HeadlessRun.swift`, `App/Tick.swift` | `--tick` (the background item) and `--scheduled-run` (an external scheduler); `--tick --now <label>` is how the GUI and `jamf-reports schedules run` start a schedule immediately |
 | `config.yaml` parsing | `YAMLCodec` (Swift) | Untrusted-ish: user-edited, but could be replaced by A1 |
 | Cached JSON parsed by `ReportEngine` | `app/Sources/JamfReports/Engine/*` | Source-of-truth originates from Jamf, but file is replaceable by A1; **integrity-checked against manifest** (PR-7) for files under `jamf-cli-data/<kind>/` when `jamf_cli.require_manifest` is true |
-| `summary.json` parsed by `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus` | partial-status authoritative source | **Not manifest-covered** (T-12) |
-| CSV imports (Jamf Pro export, Jamf School export) | `ReportEngine` / `CSVFamilyDetector` | Auto-detects family + delimiter; cell values neutralized by `OOXMLWriter.sanitizeString` before write |
-| jamf-cli stdout (JSON) | `CLIBridge.runJSON` | Parsed; effectively trusted because the binary is codesign-verified at every launch |
+| Run status: `automation/logs/<label>.<stamp>.log` tails and `automation/<label>_status.json` | `RunHistoryService`, `LaunchAgentService` | Peer-writable on a shared workspace; neither is manifest-covered (T-12) |
+| Daily summaries `summary_<date>.json` | `SummaryJSONParser.decode` (`numbersAreInRange`), the HTML history and report-library readers | Peer-writable on a shared workspace (T-36) |
+| One-time EA import from a Jamf Pro CSV export (the CSV report pipeline was removed in 2.11) | `InventoryCSV`, `ScaffoldService` | Read through `BoundedFile` up to 256 MB; proposes EAs only; cell values neutralized by `OOXMLWriter.sanitizeString` before write |
+| jamf-cli stdout (JSON) | `CLIBridge.runAndCapture`, then `ReportEngine.saveCollectedPayload` | Parsed; trusted as jamf-cli's output because the binary is codesign-verified at every launch. Once saved it is a workspace file, so on a shared workspace a peer can replace it (T-34, T-36) |
 | Onboarding stdin (client ID + secret) | `OnboardingFlow` PTY setup | Untrusted user input, passed straight to `jamf-cli` |
 | `schedules.json` and run-now markers (read-back) | `ScheduleStore`, `TickRunner` | Could be attacker-modified by A1; a synced `schedules.json` is an operator error the wiki warns against |
 | Legacy LaunchAgent plist (one-time import) | `LaunchAgentService.parse`, `ScheduleImport` | Read once, label checked with `LaunchAgentWriter.isValidLabel`, then archived with webhook URLs scrubbed |
@@ -137,20 +147,21 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 | GitHub Actions triggers | `.github/workflows/` | PRs from outside collaborators |
 | **(NEW)** DMG mount + drag-install | macOS Finder + Gatekeeper | Recipient-side; Gatekeeper enforces notarization |
 | **(NEW)** PKG installer execution | `/usr/sbin/installer` | Recipient-side; runs pre/post-install scripts; can request admin auth (we should NOT) |
-| **(NEW)** Homebrew tap install (if used) | `brew install --cask jamf-reports-community` | Recipient-side; tap repo integrity is GitHub-level |
+| jamf-cli Homebrew install (dependency, not the app) | `brew install Jamf-Concepts/tap/jamf-cli`, or the app's own updater (`JamfCLIInstaller`) | Recipient-side; the app has no cask or tap. Whatever installed jamf-cli, the app checks its signature before every launch (T-1, T-19) |
+| App update check | `AppUpdateCheck` → `api.github.com` | Reports a newer stable release; downloads and installs nothing (T-18, T-33) |
 
 ---
 
 ## 6. Threats (abuse paths)
 
-For each: **goal → path → assets → likelihood × impact → priority**, with file evidence where applicable. Mitigations split into **existing** vs **recommended**. T-1..T-10 updated to reflect PR-1..PR-9 work; T-11..T-15 added from post-PR review batch; T-16..T-20 are post-release (see §11); T-21 added 2026-05-20 for the PR-22 tiered-collection surface; T-23..T-27 added 2026-10-10 (shared workspaces, dashboard frame, custom workspace root, SOFA feed, issue triage). T-16..T-20 stay in the §11 annex.
+For each: **goal → path → assets → likelihood × impact → priority**, with file evidence where applicable. Mitigations split into **existing** vs **recommended**. T-1..T-10 updated to reflect PR-1..PR-9 work; T-11..T-15 added from post-PR review batch; T-16..T-20 are post-release (see §11); T-21 added 2026-05-20 for the PR-22 tiered-collection surface; T-23..T-27 added 2026-10-10 (shared workspaces, dashboard frame, custom workspace root, SOFA feed, issue triage); T-28..T-33 added 2026-11-12; T-34..T-38 added 2026-11-15 (linked snapshot folders, the Jamf School device scan, peer-written numbers and strings, peer-written run records, the on-device AI layer; account names in snapshots extend T-31). T-16..T-20 stay in the §11 annex. Numbers are never reused.
 
 ### T-1. Malicious shim in place of `jamf-cli` exfiltrates onboarding secret or command-time data
 - **Goal:** Steal the Jamf API client secret during onboarding, or hijack a later routine command to receive credentials / corrupt collected data.
 - **Path:** A1 (local same-user malware) replaces the `jamf-cli` binary in a directory the app searches (`/usr/local/bin`, `/opt/homebrew/bin`), or A4 backdoors the Homebrew tap or release package.
 - **Assets:** API client secret → full Jamf tenant compromise. Also: live inventory data → ability to fabricate compliance posture.
 - **Existing mitigations:**
-  - **Onboarding gate:** `OnboardingFlow.verifyJamfCLISignatureGate` runs before the secret is written to stdin. The resolved binary path is verified again immediately before `process.run()` in the PTY launch, on both auth paths (see T-14).
+  - **Onboarding gate:** `OnboardingFlow.signatureGate` runs before the secret is written to stdin. The resolved binary path is verified again immediately before `process.run()` in the PTY launch, on both auth paths (see T-14).
   - **Install gate:** `JamfCLIInstaller` re-verifies after an install or update.
   - **Routine-command gate (PR-2 M-01 + PR-6 + PR-9):** every site that launches a binary named `jamf-cli` goes through `CLIBridge.codesignGate`, which calls `JamfCLIIdentity.ensureVerifiedJamfCLI`: `CLIBridge.run`, `runAndCapture`, `runDeviceDetailProcess`, the version probes (`Provenance`, `JamfCLIInstaller`), `ProfileService.discoverJamfCLIProfiles`, `ProfileAuthMethod` and the diagnostic bundle's `doctor` and `--version` probes.
   - **What the gate checks:** `CodeSignVerifier.verify` builds a designated requirement, `anchor apple generic and certificate leaf[subject.OU] = "<team>"`, and checks the binary against it with strict validation. A self-made or ad-hoc signature that only carries the Team ID string fails. The Team ID is pinned in `JamfCLIIdentity.expectedTeamID`; `JamfCLIInstaller.expectedJamfTeamID` holds a second copy and the two must agree.
@@ -226,6 +237,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Path:** A6 / a device record or patch title with attacker-controlled metadata.
 - **Existing mitigations:**
   - Swift `OOXMLWriter.sanitizeString` prepends a tab to any cell beginning with `=+-@` — the documented XLSX invariant (CLAUDE.md), verified clean in the PR-26 security review.
+  - **2.12 exception:** `StaleDeviceService.formulaGuarded`, the one guard every workbook cell and CSV field now uses, leaves a whole plain negative number (`-`, digits, at most one `.` and digits: `-5`, `-2.5`) unprefixed, because every spreadsheet reads it as a number and Jamf uses such values for unresolved IDs and "no baseline" counts. Any other value starting with `-` (`-1+1`, `-1e9`, `-5 `) is still prefixed; `SafeWriteTests.testOnlyAWholePlainNegativeNumberSkipsTheGuard` pins both sets.
   - **PR-25 Patch Compliance CSV export:** `PatchStatusService.csvField` neutralizes the same formula-injection prefixes before RFC 4180 quoting; covered by `testComplianceCSVNeutralizesFormulaInjection`. This was a MUST-FIX caught in the PR-26 security review and folded into PR-25 before merge.
 - **Likelihood:** Low.
 - **Impact:** Medium.
@@ -235,10 +247,10 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - Treat any new structured-data export (CSV/XLSX/clipboard sink) as required to route through a neutralizing escaper; add a lint or test that fails a new export path lacking one.
 
 ### T-5. Symlink/traversal escape in `SystemActions` open/reveal
-- **Goal:** Trick the app into opening or revealing an attacker-chosen path outside the workspace.
+- **Goal:** Trick the app into opening or revealing an attacker-chosen path outside the allowed folders.
 - **Path:** A1 plants a symlink inside `~/Jamf-Reports/<profile>/Generated Reports/` pointing to e.g. `~/Library/Keychains/login.keychain-db`.
 - **Existing mitigations:**
-  - `SystemActions.canonicalize` resolves symlinks then `resolvedPath == root || resolvedPath.hasPrefix(root + "/")`.
+  - `SystemActions.canonicalize` resolves symlinks then `resolvedPath == root || resolvedPath.hasPrefix(root + "/")` against the allow-list (`SystemActions.allowedParents`): the workspaces root, the default root, `~/Library/LaunchAgents` and `~/Library/Logs/JamfReports`, plus, for a call that names a profile, the reports folder that profile's `output.output_dir` resolves to.
   - `/tmp` removed from allow-list to avoid macOS shared-tmp TOCTOU.
   - **PR-8 MigrationBanner path-traversal verified clean** (security-reviewer audit): `SystemActions.reveal` is called only with workspace root + `~/Library/LaunchAgents`, not interpolated dotted-folder names.
 - **Likelihood:** Low.
@@ -257,9 +269,9 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Existing mitigations:**
   - The background item is one `SMAppService` agent whose plist sits inside the signed bundle (`Contents/Library/LaunchAgents/...tick.plist`), so editing it breaks the bundle signature. The app writes no plist, runs no `launchctl`, installs no LaunchDaemon. macOS shows the item in Login Items and Extensions and can require approval (BTM); `AutomationHealth` raises a `.tickerDisabled` issue when it is not enabled.
   - `ScheduleStore` is a 0600 JSON file in a 0700 directory, written atomically, and each operation re-reads it. Managed schedules are never stored; `ManagedAutomation.desiredSchedules` derives them from the policy on every tick.
-  - `TickLock` is a pid file: a live holder blocks a second tick, a dead one is taken over. A run-now marker that names no schedule is dropped before anything runs.
+  - `TickLock` is a kernel `flock` on `.tick.lock` (2.9): the descriptor is the lock, so the kernel frees it when the holder exits and a Mac that slept mid-run keeps it on wake; the holder's pid and start time are written only so a read-only probe can answer without acquiring. A run-now marker that names no schedule is dropped before anything runs.
   - **S-03 / 2.8.3:** `ProfileName.labelComponent` encodes everything outside ASCII letters, digits, `_` and `-`, so a `.` in a label is always a separator. This replaced the PR-3 rule that rejected dotted slugs.
-  - **Legacy import:** `LaunchAgentService.parse` rejects a label that fails `LaunchAgentWriter.isValidLabel`; an imported plist is read once, then archived to `_archived-launchagents` with webhook URLs scrubbed. PR-8's MigrationBanner covers dotted legacy workspaces.
+  - **Legacy import:** `LaunchAgentService.parse` rejects a label that fails `LaunchAgentWriter.isValidLabel`; an imported plist is read once, then archived to `archived-launchagents` under Application Support (per Mac, never a shared root) with webhook URLs scrubbed. PR-8's MigrationBanner covers dotted legacy workspaces.
 - **Likelihood:** Low for T-6a (assumes A1, who already has user-level execution); Negligible for T-6b and T-6c.
 - **Impact:** Medium for T-6a; Low for T-6b and T-6c.
 - **Priority: LOW.**
@@ -272,7 +284,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - Secret passed via **stdin only**, not argv.
   - Stdin buffer zeroed after dispatch.
   - **LogRedactor:** the credential patterns in `LogRedactor.patterns` (`client_secret`, `client_id`, `Bearer <token>`, JWT, `access_token`, `refresh_token`, `password`, `api_key`/`apikey`, HTTP Basic, `webhook_url`) plus the Slack, Teams, Teams Workflows and Power Automate URL patterns. Run logs are redacted when `ScheduledRunRecorder.record` writes each line, so the file on disk no longer holds those secrets, and again at display and export (`RunHistoryService.loadLog`, `RunsView.exportLogFile`, `LogRedactor.redactedForSharing`, which also removes the Jamf host and tenant and environment IDs). Status markers such as `[partial]` are left readable.
-  - **Diagnostic bundle** (`DiagnosticBundleService` + `DiagnosticRedactor`): credential patterns including secrets in quoted JSON (`"client_secret": "..."`), exact-key JSON values (the IP-address keys `lastIpAddress` and `lastReportedIp` are among them), IPv4 addresses, and HMAC-SHA256 PII placeholders. Seeded literals (server host, tenant and environment IDs, device names) are matched as whole words, so a seed that is also an ordinary word is not cut out of unrelated text. The `doctor.json` capture strips the server hostname via `redactJSON`. Default-on.
+  - **Diagnostic bundle** (`DiagnosticBundleService` + `DiagnosticRedactor`): credential patterns including secrets in quoted JSON (`"client_secret": "..."`), exact-key JSON values (the IP-address keys `lastIpAddress` and `lastReportedIp` are among them), IPv4 addresses, and HMAC-SHA256 PII placeholders. Seeded literals (server host, tenant and environment IDs, device names) are matched as whole words, so a seed that is also an ordinary word is not cut out of unrelated text. The `doctor.json` capture strips the server hostname via `redactJSON`. The staged `config.yaml` (2.12) is written afresh from the parse with every text value replaced by `<string N chars>`, except numbers, `yyyy-MM-dd` dates and short values under the vocabulary keys (`DiagnosticBundleService.reducingFreeText`), so sheet, EA, agent, profile and folder names, which no pattern can find, are not in the staged config.yaml; keys stay. Residual: the staged daily summaries still name configured agents (the `securityAgentCoverage` keys) and baselines, and run logs name sheets and EAs in their `[skip]`/`[warn]` lines. Default-on.
 - **Residual:** profile slugs and schedule labels are not redacted and appear in a bundle's file names and tree listing (documented in `README.md`).
 - **Likelihood:** Very Low.
 - **Impact:** Critical (if leaked).
@@ -287,8 +299,10 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Existing mitigations:**
   - `authGuard` probes the token before each live call.
   - Run logs in `automation/logs/` record warnings.
+  - **Collect timeouts (2.10):** every jamf-cli call a collect makes has a limit: 60 minutes per kind (`ReportEngine.collectKindTimeout`), 180 s per device-scan and patch-definition call, 60 s for the auth probes (`authProbeTimeout`, `CLIBridge.tokenProbeTimeout`) and 2 hours for `pro backup` (`CLIBridge.backupTimeout`). A call that hits its limit is terminated and recorded as a failed attempt, so a stalled server shows as a failure instead of holding the tick lock. Not verified at this refresh: the full list of calls left unbounded on purpose.
+
   - **PR-7 stale banner** on `DeviceLookupView` surfaces last-fetched-X-ago via `RelativeDateTimeFormatter` when live calls fall back to cache.
-  - **PR-8 partial-status pill:** `Schedule.LastStatus.partial` case rendered with distinct icon (`exclamationmark.triangle.fill`) in `RunsView` + `SchedulesView`. Operators see PARTIAL pills instead of green OK on partial runs. Authoritative source = sibling `summary.json` `{"status":"partial"}` with `[partial]` log marker as fallback.
+  - **PR-8 partial-status pill:** `Schedule.LastStatus.partial` case rendered with distinct icon (`exclamationmark.triangle.fill`) in `RunsView` + `SchedulesView`. Run History derives it from the `[partial]` lines in the run log; the schedule list derives it from the run's status JSON. T-12 describes both, and the gaps in each.
 - **Likelihood:** Medium (auth/privilege drift is common).
 - **Impact:** Low–Medium.
 - **Priority: LOW–MEDIUM.**
@@ -303,6 +317,8 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - **Minimal dependency graph:** the app has two external SwiftPM dependencies, ZIPFoundation and swift-argument-parser (2.4.0), pinned by `app/Package.resolved` (revision + version). A bump requires a `Package.resolved` change visible in the diff. Both, and the bundled IBM Plex Mono fonts, are listed in `THIRD_PARTY_NOTICES.md`.
   - jamf-cli is verified against its designated requirement at every launch (T-1); a malicious bumped binary still has to pass that gate.
   - Every third-party GitHub Action is pinned to a commit SHA.
+  - Dependabot proposes a SwiftPM or Actions release only once it is seven days old (`cooldown` in `.github/dependabot.yml`, 2.12), so a compromised version pulled within days never reaches a PR.
+  - The jamf-cli updater refuses an archive whose extracted tree holds a link (`JamfCLIInstaller.findExtractedJamfCLI`, 2.12), on top of the name pre-check for `..`, absolute paths and control characters.
   - CODEOWNERS file present.
 - **Likelihood:** Low.
 - **Impact:** High (signed/notarized release would ship the payload).
@@ -345,39 +361,29 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Residual:** A workspace that never enables `require_manifest` still renders
   tampered data, but the AuditView card makes the unverified state visible.
 
-### T-12. `summary.json` outside manifest coverage; authoritative for PR-8 PARTIAL pill (NEW)
-- **Goal:** Flip a `.partial` run status to `.ok` in the UI by editing one untrusted file.
-- **Path:** PR-8's `RunHistoryService.isPartialRun` reads `<workspace>/snapshots/computers/summaries/summary_<ts>.json` and trusts the `status` field. A1 edits `"status": "partial"` → `"status": "ok"`; the UI downgrades from a yellow pill to a green checkmark unless the summary's SHA-256 is verified against a sibling manifest.
-- **Existing mitigations:** Swift `RunHistoryService.isPartialRun` and
-  `LaunchAgentService.checkSummaryFileForPartialStatus` verify the summary file's
-  SHA-256 against a sibling `manifest.json` (via `SnapshotManifest.verify`) before
-  trusting `status` — a tampered or corrupt summary falls back to the `[partial]`
-  log-marker scan rather than silently misreporting the pill.
-- **Producer gap (open):** the summaries-directory `manifest.json` was emitted by
-  the removed Python generate path. The 2.6 writer stamps only snapshots saved
-  through `ReportEngine.saveSnapshot`, not `summary_<date>.json`, so the SHA-256
-  cross-check has nothing to read and the pill falls back to the `[partial]` log
-  marker, which keeps it honest.
-- **Likelihood:** Low (the `[partial]` log marker remains authoritative on fallback).
-- **Impact:** Undermines a UI control PR-8 added. Low–Medium.
-- **Priority: LOW** (was MEDIUM); the SHA-256 leg is dormant until the summaries directory is stamped (T-2 recommended).
+### T-12. Run status read from peer-writable files (revised 2026-11-15, after #425)
+- **Goal:** Make a Partial or failed run read as OK, by editing one file.
+- **Closed by #425 (2.12):** Run History and the schedule list no longer read a per-run `summary_<label>.<stamp>.json`. No Swift code wrote that file (its writer was the removed Python engine), and a planted one decided Partial before the `[partial]` marker was read. `RunHistoryService.isPartialRun(logTailText:)` is now the one test, and it reads only the `[partial]` marker in the log tail; `LaunchAgentService` uses the same function.
+- **How status is derived today:**
+  - **Run History** (`RunHistoryService`) reads the tail of each `automation/logs/<label>.<stamp>.log`: the recorder's `exit N` footer gives OK or Fail, and an exit-0 run is Partial when the tail holds a `[partial]` line.
+  - **Schedule list "Last Run"** (`LaunchAgentService.lastStatus`) reads `automation/<label>_status.json`, written by `ScheduledRunRecorder`: `success` (exit 0), `exit_code`, `sheet_failures`, `refused`. When that file has `success`, the result is OK, Fail, or Partial only for `sheet_failures > 0`; the `[partial]` log marker is consulted only when there is no status file.
+- **Path (residual):** A1, or P1 on a shared workspace, edits `<label>_status.json` (`success`, `sheet_failures`) or the log tail itself; both are plain files in the workspace's `automation/` folder.
+- **Existing mitigations:** Reads are bounded and refuse a link at the file (`BoundedFile.read(followSymlinks: false)`). The log tail and status file carry no integrity check, and none is claimed.
+- **Likelihood:** Low (needs A1 or P1). **Impact:** Low (an operator misses a Partial run; collected data is unchanged, and `DataFreshnessHealth` and the health banner judge freshness from the state files, not from this status).
+- **Priority: LOW (residual accepted).** Open question, not a defect: whether the schedule list should also read `[partial]` when the status file says success.
 
-### T-13. Generated Reports (XLSX/HTML) have no integrity envelope (NEW)
+### T-13. Generated reports (XLSX/HTML) carry integrity checks, not signatures (revised 2026-11-15)
 - **Goal:** Tamper with a leadership-bound report between generation and recipient open.
-- **Path:** No code execution required — `open -e report.html`, change "FileVault: 100%" to "FileVault: 60%", save, send. Or modify a row in the XLSX. The generation pipeline produces no signature, no embedded hash, no sidecar.
-- **Existing mitigations:** **Closed by PR-12.** Every generated `.xlsx` ships a
-  `<basename>.xlsx.sha256` sidecar in `shasum -a 256 -c` format; generated HTML
-  embeds a `<meta name="report-sha256">` tag plus a visible source-fingerprint
-  footer with the verification procedure. The app's "Report ready" toast and the
-  Generate sheet's completion banner surface the digest. Produced by the Swift
-  engine's `ReportEngine.writeManifestStatic`.
-- **Likelihood:** Low (recipients can verify; tamper is detectable).
+- **Path:** No code execution required — `open -e report.html`, change "FileVault: 100%" to "FileVault: 60%", save, send. Or modify a row in the XLSX.
+- **Existing mitigations (PR-12, 2.12):**
+  - Each workbook gets a `<file>.sha256` sidecar in `shasum -a 256` format (`ReportEngine.writeSHA256Sidecar`) and a `<file>.manifest.txt` (file name, SHA-256, time, generator, profile, template; `ReportEngine.writeManifestStatic`). A failed write is logged and never stops the report.
+  - The HTML report embeds its SHA-256 in a `report-sha256` meta tag and footer. The footer itself says what this proves: "Integrity check, not a signature … it detects damage or a partial copy, not a deliberate edit (anyone who edits the file can recompute it)" (`HtmlReport+Document.swift`, `integrityNote`).
+  - Generation emits `[ok] sha256: <hash> <file>`: the Generate sheet shows it, and a scheduled or tick run records it in its run log under `automation/logs/`, outside the report folder; that is the reference the footer tells a reader to compare with. Whether a GUI generate writes a run-log file was not verified at this refresh. On a shared workspace `automation/logs/` is peer-writable too (P1), so the log line is an outside reference only against someone who can write the report folder but not the workspace.
+  - Since 2.12 every generate run (GUI, scheduled, CLI) writes `<stem>.manifest.json` over all the run's files, and `jamf-reports verify` rechecks it, with an optional RFC 3161 reply (`<stem>.tsr`). See T-28 for exactly what that proves.
+- **Likelihood:** Low that a recipient is fooled when they compare against a copy of the hash they got from a trusted channel; otherwise Medium.
 - **Impact:** Medium (cross-trust-boundary: recipient acts on tampered data).
-- **Priority: LOW — CLOSED by PR-12** (was MEDIUM).
-- **Residual:** The sidecar / meta tag is an integrity *hint*, not a signature —
-  an attacker who controls both the report and its sidecar can rewrite both. It
-  raises tamper cost and gives a careful recipient a check; it is not a
-  cryptographic guarantee.
+- **Priority: LOW–MEDIUM (partially mitigated).** Earlier versions of this document marked T-13 closed; that overstated it. Every check above sits in or beside the file it covers, so anyone who can edit the report, or write its folder, can make them all agree. They detect accidental damage and an edit made without updating the hashes; they do not authenticate the author.
+- **Recommended:** a recipient who needs authorship needs the hash delivered out of band (the run log line, or a manifest whose time-stamp they check with `--signer-sha256`); a signature with an organization key would be a new design.
 
 ### T-14. Codesign-gate stat/exec TOCTOU and bypasses of the check (accepted)
 - **Goal:** Swap or modify a verified binary between the signature check and the exec, or run a different binary than the one checked.
@@ -392,9 +398,9 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Priority: LOW (ACCEPTED).**
 - **Documented:** if Apple exposes a verify-then-exec-from-handle API, revisit.
 
-### T-15. Run-log mtime attacker-controllable; PR-7 stale-data banner suppressible
-- **Goal:** Hide a stale-cache condition from the user by forging the snapshot file's mtime.
-- **Path:** A1 runs `touch -t` on the cached snapshot; `RelativeDateTimeFormatter` then reads the forged mtime; stale banner reports "fresh".
+### T-15. Device Lookup cache: forged freshness and contents of a peer-writable cache
+- **Goal:** Hide a stale Device Lookup result by forging the cache file's mtime, or read personal data from the cache.
+- **Path:** Device Lookup caches each `pro device` / `pro mobile-devices get` answer under `jamf-cli-data/<cache folder>/` and, when a live call fails, shows the cache with a "last fetched" age. A1 (or P1 on a shared workspace) runs `touch -t` on the cache, or edits it; `RelativeDateTimeFormatter` then reads the forged time.
 - **Existing mitigations (updated Epic #103 / PR-7):**
   - Per-cache `.meta` sidecar (`<cache>.json.meta`) written atomically by
     `CLIBridge.writeDeviceDetailFreshnessSidecar` on every successful live-data refresh.
@@ -403,7 +409,10 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - `freshnessTimestamp(for:)` in DeviceLookupView prefers the sidecar over mtime.
     It falls back to `contentModificationDate` only when the sidecar is absent (caches
     written before this fix) or unparseable (truncated write).
+  - **Reduced before it is written (2.12):** the live answer goes to the screen unchanged; the cached copy goes through `ReportEngine.reducingDeviceDetail` first (the snapshot reduction of T-31, plus the flat contact and logged-in-user rows `pro device` prints, outside the MDM-command and policy history sections). When the reduction fails, nothing is cached and a warning is logged (`CLIBridge.swift`, `deviceDetail`). With `jamf_cli.keep_account_names` confirmed on this Mac, names are kept as for snapshots.
+  - The sidecar is read with `BoundedFile.readLogged` (bounded, link at the file refused) but not rooted, so a linked parent folder is followed (T-34).
   - The sidecar uses `.meta` extension (not `.json`) so it is invisible to all services
+
     that scan `jamf-cli-data/` with `pathExtension == "json"` filters
     (DeviceLookupIndex, CompliancePostureService, PolicyHealthService, PatchStatusService).
     `SnapshotManifest` was intentionally not extended — an optional Decodable field with
@@ -426,18 +435,19 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Likelihood:** Low (assumes A1; a single-file edit that the manifest does not stop).
 - **Impact:** Low–Medium (no credential loss; decision quality degraded).
 - **Priority: LOW (accepted).** The same limit as T-2's residual: the manifest is not a defence against a local writer.
-- **Recommended mitigations:** None planned. `DataFreshnessHealth` and the Run History `[skip]` lines are the detection path.
+- **Recommended mitigations:** None planned. `DataFreshnessHealth` and the Run History `[skip]` lines are the detection path. The Jamf School device scan's attempt stamp is the same class with no manual override (T-35).
+
 
 ---
 
-### T-22. Debug-logging profile / OSLog store as a local data surface (NEW, 2.4.0, accepted)
-- **Goal:** Read sensitive fleet data (serials, hostnames, usernames) from the local unified-log store, or use the debug-logging toggle to widen what is captured.
-- **Path:** The Settings → Logging panel writes `~/Library/Preferences/Logging/Subsystems/com.github.tonyyo11.jamf-reports-community.plist` (`DebugLoggingService`, user-owned, no escalation). With `revealPrivate` on, interpolated values OSLog normally renders `<private>` are written in full to the **local** log store; `log`/Console.app can then read them. The in-app log viewer reads only the app's own in-memory `LogBuffer` (this session's tee'd events, not the OSLog store), so `revealPrivate` output is not exposed there. The bundled `JamfReports-Debug-Logging.mobileconfig` only enables persist-verbose (never `Enable-Private-Data`).
-- **Assets:** Device serials / hostnames / usernames already present on the same machine.
-- **Existing mitigations:** Default posture is redacted — `revealPrivate` defaults off, is warned inline, and is intentionally absent from the MDM profile so it cannot be pushed org-wide (a `DebugLoggingProfileTests` test asserts the profile contains no `Enable-Private-Data`). All writes are to the user's own `~/Library/Preferences` (no privilege escalation, no system-wide config). In-app log **export** is always `LogRedactor`-scrubbed regardless of the reveal toggle. The in-app viewer only ever sees this session's own buffered entries, not the whole-system log.
-- **Likelihood:** Low (requires local access already; reveal is an explicit, warned opt-in).
-- **Impact:** Low (data is local-only and already on the box; nothing leaves the device).
-- **Priority: LOW (accepted).** A local admin who can flip the toggle can already read the same data via `log`/Console directly; the feature surfaces an existing OS capability behind a redacted default. In a high-security or regulated build, leave `revealPrivate` off (and the MDM profile already cannot enable it).
+### T-22. Unified-log store and the debug-logging profile as a local data surface (revised 2026-11-15, accepted)
+- **Goal:** Read sensitive fleet data (serials, hostnames, usernames) from the local unified-log store, or widen what is captured.
+- **Path:** os_log reads logging settings only from a deployed `com.apple.system.logging` configuration profile, the app's Info.plist and the system's own folders. An administrator who deploys such a profile with `Enable-Private-Data` makes values the app logs as private readable through `log`/Console.app on that Mac. The `log config` commands the app shows set level and persistence only.
+- **What the app does (2.11 rework):** the Settings → Logging panel writes nothing. `DebugLoggingService` reads, through the managed-preferences layer, whether a deployed logging profile sets verbose persistence or private data for the app's subsystem and shows that state; it shows copyable `sudo log config --subsystem … --mode "level:debug,persist:debug"` and `--reset` commands for an administrator to run; and it reveals the bundled `JamfReports-Debug-Logging.mobileconfig`, which sets persist-verbose only. The 2.4.0 per-user Subsystems plist and the private-data switch are gone (os_log never read that file); a file an older build left is neither read nor deleted.
+- **Existing mitigations:** `AppLogger.event` logs every dynamic string as `.private`, so the unified log shows `<private>` unless a profile enables private data. Some direct `Logger` calls mark fixed vocabulary (kind names, counts, provider names, timeout values) `.public`; this refresh did not audit every such site for personal data. The bundled profile carries no `Enable-Private-Data` (`DebugLoggingProfileTests` asserts it). The in-app log viewer reads only this session's in-memory `LogBuffer`, not the system log store, and its export goes through `LogRedactor`.
+- **Likelihood:** Low (needs an administrator to deploy a private-data profile or run `log config`).
+- **Impact:** Low (data is local and already on the Mac; nothing leaves it).
+- **Priority: LOW (accepted).** An administrator who can enable private data can already read the same data through other local means.
 
 ### T-23. Shared-workspace peer trust: a peer's `config.yaml` steers every Mac (NEW, 2.9.0)
 - **Goal:** Redirect reports, delete data or exfiltrate aggregates by changing settings that every Mac sharing a workspace reads.
@@ -447,9 +457,11 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Likelihood:** Low (needs write access to the shared folder or the sync account).
 - **Impact:** Medium (reports and aggregates leave to a chosen location; retention can destroy local history).
 - **Priority: LOW–MEDIUM.**
-- **Existing mitigations (`SharedConfigPin`, after 2.9.0):** On a shared workspace each Mac pins, in its own Application Support (0600), the values a peer could abuse: `allow_absolute_paths`, the output, archive, data and historical-CSV folders, `retention.archive_dir`, `retention.enabled`/`mode`, the webhook host:port plus a hash of its URL, `notify.detail`, `protect.profile` and `shared_workspace.enabled` itself (so a peer cannot opt the pin off). Scheduled runs, the CLI and automatic GUI collects use the safe value for a drifted key (workspace folders, archive not delete, no webhook send, minimal detail, no borrowed Protect profile) and log one `[warn]` per key; an unreadable pin fails closed. First sight pins what it finds, but an absolute folder outside the workspace or `retention.mode: delete` stays unconfirmed, and so safe, until confirmed. Onboarding confirms exactly the keys it wrote on this Mac; a Config or notification save confirms only a key that save changed; Config Doctor lists drifts with a Confirm action that re-pins only what it showed, and a health-banner entry points at it.
-- **Profile and automation folder (after the 2026-10-11 re-score):** `ReportEngine.generate` takes the profile for its folders from the caller and refuses a `jamf_cli.profile` in config.yaml that names another profile, so a peer cannot point a shared workspace's report at another local workspace (S1). A symlinked `automation/` no longer reads as "already sent": day markers and the metric-alert ledger move to a per-workspace file in Application Support, so alerts, the overdue digest and self-remediation neither go silent nor repeat, and Config Doctor warns (S2).
-- **Residual:** First-sight trust: a Mac joining a workspace a peer already tampered with pins the tampered values, except the two unconfirmed cases above. Keys judged a nuisance rather than abuse (`html.history_file`, `output.timestamp_outputs`, `keep_latest_runs`, `notify.enabled`/`provider`, `collect_skip`, `sheets`, the retention counts) are not pinned. While an automatic collect runs, GUI reads of that workspace see the safe folders. Limit write access to the folder to the reporting team regardless (wiki 10, "Configuration Integrity").
+- **Existing mitigations (`SharedConfigPin`, 21 keys at 531bafb8, `SharedConfigPin.Key`):** On a shared workspace each Mac pins, in its own Application Support (0600), the values a peer could abuse: `output.allow_absolute_paths`, `output.output_dir`, `output.archive_dir`, `jamf_cli.data_dir`, `retention.enabled`, `retention.mode`, `retention.archive_dir`, `shared_workspace.enabled` (so a peer cannot opt the pin off), `charts.historical_csv_dir`, `protect.profile`, `profiles.platform`, `profiles.security_cloud`, `notify.detail`, `notify.url` (host:port plus a hash of the URL), `notify.heartbeat`, `html.history_file`, `branding.logo_path`, `protect.backup_on_synced_storage`, `backup.pro_on_synced_storage`, `jamf_cli.keep_account_names` (2.12, T-31) and `output.timestamp_authority`. Scheduled runs, the CLI and automatic GUI collects use the safe value for a drifted key (workspace folders, archive not delete, no webhook send, minimal detail, no borrowed Protect profile) and log one `[warn]` per key; an unreadable pin fails closed. First sight pins what it finds, but an absolute folder outside the workspace (an absolute `html.history_file` included), `retention.mode: delete`, a `profiles.platform` other than the workspace's own profile, any `profiles.security_cloud`, a `protect.profile` naming the workspace itself, an `output.timestamp_authority` address and a `true` for either backup choice or for `jamf_cli.keep_account_names` stay unconfirmed, and so safe, until confirmed. Onboarding confirms exactly the keys it wrote on this Mac; a Config or notification save confirms only a key that save changed; Config Doctor lists drifts with a Confirm action that re-pins only what it showed, and a health-banner entry points at it.
+- **Writes this Mac makes (2.12):** Setting up a workspace and `scaffold --out` confirm only the values in the text this Mac wrote (`SharedConfigPin.confirmWrittenConfig`, through the token-matching `confirm`), so a peer that replaces config.yaml straight after the write is never confirmed. A CSV folder run replaces an existing `<stem>_csv` folder only when it holds nothing but CSV files (`AtomicInstall.install(replacingFolderIf:)`), so a run cannot delete a folder someone else put at that name.
+- **Profile and automation folder (after the 2026-10-11 re-score; reshaped in 2.12):** every folder the engine reads or writes comes from the caller's workspace, never from config.yaml, and every `-p` comes from `EnvironmentProfiles`, so a peer cannot point a shared workspace's report or commands at another workspace. `jamf_cli.profile` is only an owner hint for a mismatch warning (the `profileMismatch` error is gone from the code); the two MDM slots of `profiles:` must name the workspace itself (S1). A symlinked `automation/` no longer reads as "already sent": day markers and the metric-alert ledger move to a per-workspace file in Application Support, so alerts, the overdue digest and self-remediation neither go silent nor repeat, and Config Doctor warns (S2).
+- **Residual:** First-sight trust: a Mac joining a workspace a peer already tampered with pins the tampered values, except the unconfirmed cases above. A peer can still write the files the pin does not cover: snapshots and state (T-34, T-36, T-37), status files and run logs (T-12), attention items and the site-limited login record (T-37), and manifests (T-28).
+ Keys judged a nuisance rather than abuse (`output.timestamp_outputs`, `keep_latest_runs`, `notify.enabled`/`provider`, `collect_skip`, `sheets`, the retention counts) are not pinned. While an automatic collect runs, GUI reads of that workspace see the safe folders. Limit write access to the folder to the reporting team regardless (wiki 10, "Configuration Integrity").
 
 ### T-24. Embedded jamf-cli dashboard frame (NEW, 2.9.0, accepted)
 - **Goal:** Use script in the jamf-cli dashboard page to leave the frame, reach the report or send data out.
@@ -472,7 +484,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 ### T-26. SOFA feed as an external input (NEW, 2.9.0)
 - **Goal:** Skew the macOS-current, XProtect-current and Security Score figures by serving false release data.
 - **Path:** `SOFAFeedService` fetches `https://sofafeed.macadmins.io/v2/<platform>` during collect, caches it under `jamf-cli-data/sofa/` and `SOFAScoreFeed` reads release dates and the XProtect version from it. A compromised feed host, or a modified cache file (A1), could report a release as newer, older or released in the future.
-- **Existing mitigations:** TLS only (an ephemeral `URLSession`); there is no signature on the feed, so the connection is the only integrity check. Releases dated more than a day ahead are ignored, so a future date cannot skew the `os_current` or `xprotect_current` factors. The factors that depend on it have no data, not 0, when no feed is available. `jamf_cli.collect_skip: [sofa]` stops the fetch for a network that must not reach a third-party host; the last cached feed stays in use. This is the only non-Jamf host the app contacts.
+- **Existing mitigations:** TLS only (an ephemeral `URLSession`); there is no signature on the feed, so the connection is the only integrity check. Each feed is read up to `SOFAFeedService.maxFeedBytes` (8 MB, 2.12); a bigger answer is a failed fetch and the cached feed stays in use. Releases dated more than a day ahead are ignored, so a future date cannot skew the `os_current` or `xprotect_current` factors. The factors that depend on it have no data, not 0, when no feed is available. `jamf_cli.collect_skip: [sofa]` stops the fetch for a network that must not reach a third-party host; the last cached feed stays in use. This is the only unauthenticated third-party data feed the app reads. The app's other egress is `api.github.com` (update checks for the app and, on request, jamf-cli), a configured RFC 3161 time-stamp authority (T-28) and a configured Teams or Slack webhook.
 - **Likelihood:** Low.
 - **Impact:** Low (two score factors and the OS-currency sheets; no credentials involved).
 - **Priority: LOW.**
@@ -487,82 +499,187 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Priority: LOW.**
 - **Residual:** No per-author rate limit (concurrency serialises runs but does not cap how many a person can open). The model can still be talked into a misleading comment, and `Read` stays open for the public checkout, so it can paste a readable file into that comment (Info: on a hosted runner those files are public). The Read denies assume the Ubuntu hosted-runner layout; a self-hosted runner needs its own paths. Anyone adding a tool to the allow-list, a write permission or another secret to this job widens the blast radius and needs review.
 
+### T-28. Run manifest and RFC 3161 timestamp (NEW, 2.12)
+- **Goal:** Pass off an altered report as genuine, or learn which reports a Mac makes.
+- **Path:** Every generate run writes `<name>.manifest.json` (file names, sizes, SHA-256). A peer-writable folder can hold a replaced manifest or `.tsr`; with `output.timestamp_authority` set, each run POSTs the manifest's SHA-256, a nonce and fixed headers to that host.
+- **Existing mitigations:** The manifest is staged hidden and installed atomically; hashing refuses links. A reply is saved only when granted, the imprint and nonce match and the CMS signature verifies; the request goes over https only, 15 s, redirects only to the same host, reply at most 1 MB. The address is pinned per Mac and unconfirmed at first sight, masked in config copies and shared logs. `verify` prints the signer fingerprint and takes `--signer-sha256` so a self-signed authority can be pinned; with no `.tsr` it says the match holds only if the manifest came from a trusted source.
+- **Likelihood:** Low. **Impact:** Low (aggregate hash leaves the Mac; no device data). **Priority: LOW.**
+- **What `verify` proves, in its own words (`RunManifest.swift`):** with no `.tsr`, "a match shows only that the files equal this manifest; it holds only if you trust where the manifest came from" (`untimestampedNote`); with a valid token, "the timestamp shows this manifest existed by the time above; it does not show who wrote the manifest or the files" (`sealScopeNote`); with an untrusted chain, it holds only if the signer fingerprint is the one the authority publishes and the manifest's source is trusted (`untrustedChainNote`). `--signer-sha256` with no `.tsr` fails.
+- **Residual:** A manifest and its sidecars sit in the same folder as the reports, so an attacker who controls the folder can replace all of them; the timestamp proves existence at a time, not authorship. A public authority signs any hash for anyone.
+
+
+### T-29. Workspace merge journal and `_merged` folder (NEW, 2.12)
+- **Goal:** Steer a merge on a shared workspace into copying, replacing or moving files the operator did not intend.
+- **Path:** `.merge-plan.json` and `.merge-journal.json` sit in the target's `automation/` folder, which a peer can write.
+- **Existing mitigations:** A merge is this Mac's only when its own `Started` record in Application Support names the same plan hash; anything else reads as foreign and only Start over is offered. Every path a plan names must lie inside the workspaces root, copies never replace a file (an exclusive install), everything replaced goes to an archive, nothing is deleted, and the merge holds the tick lock and the shared-workspace claim on both workspaces. The source's pin file is removed last.
+- **Likelihood:** Low. **Impact:** Medium. **Priority: LOW.**
+
+### T-30. Jamf Pro backup on synced storage (NEW, 2.12)
+- **Goal:** Read secrets that a configuration backup carries from a shared or synced folder.
+- **Path:** `pro backup` writes LDAP, SMTP and API-client configuration and scripts that can hold secrets; on a synced folder every Mac and the provider can read them.
+- **Existing mitigations:** On shared storage the Jamf Pro part runs only when `backup.pro_on_synced_storage` was chosen and, on a shared workspace, confirmed per Mac; an unset key asks (three grace runs for a workspace that already backed up, then skips). Files are written 0600 in 0700 folders. Protect backups follow the same rule through `protect.backup_on_synced_storage`. A planted backup folder is not trusted for pruning (only folders stamped by this Mac are removed).
+- **Likelihood:** Low. **Impact:** Medium. **Priority: LOW–MEDIUM.**
+- **Residual:** The operator's storage policy decides; a Mac that confirmed `true` backs up there.
+
+### T-31. Data minimisation in snapshots and logs, including account names (NEW, 2.12; extended 2026-11-15)
+- **Goal:** Keep sensitive fields out of snapshots, logs and shared bundles, which can sit in a synced folder (T-23).
+- **Path:** A reader of the workspace folder (P1, a sync provider, a backup of the folder) reads personal data jamf-cli returned and no report needs.
+- **Existing mitigations (what is removed before disk, by default):** the first four in `ReportEngine.saveCollectedPayload`, before `saveSnapshot`; a payload that cannot be reduced is not saved, the kind is recorded failed and a `[warn]` line names it. The Security Cloud reducer runs in its own collect step (`ReportEngine+SecurityCloud.swift`) before the save, and saves nothing when the reduction fails.
+  - `computers` (`ReportEngine.reducingComputers`): `purchasing` cut to `poDate`; and, unless account names are kept, `mdmCapable.capableUsers`/`userManagementInfo`, the three `general.lastLoggedInUsername*` fields, `diskEncryption.fileVault2EnabledUserNames`, `remoteManagement.managementUsername`, and `userAndLocation` real name, phone, position and room (`computerAccountNameKeys`).
+  - `mobile-devices-list` (`droppingLostModeText(removingAccountNames:)`): the four lost-mode text keys always; unless names are kept, `general.lastLoggedInUsernameSelfService`, the same contact fields under `userAndLocation` and `location`, `network.phoneNumber`, every `purchasing` key, and Shared iPad user lists (`mobileAccountNameKeys`).
+  - `app-status` and `profile-status`: `username` in failing and pending device rows (`statusReportAccountNameKeys`), unless names are kept.
+  - `device-enrollment-instances` (`keepingEnrollmentIdentity`): each row cut to `id`, `name`, `serverName`, `tokenExpirationDate`, unless names are kept.
+  - Jamf Security Cloud `security-risk` (`reducingSecurityRisk`, always): rows cut to seven scalar keys plus `hardwareSpec.osType`.
+  - The Device Lookup cache: `reducingDeviceDetail` (T-15).
+  - Logs and bundles: `AppLogger.event` logs dynamic text as `.private` (T-22); diagnostic bundles and shared logs mask the profile name, server host, tenant and scope IDs and every connection's IDs (T-7).
+- **What deliberately stays:** `userAndLocation.username` and `email` in `computers` and `mobile-devices-list` (Offline Outreach reads them); the `username` column of `patch-device-failures` and `update-device-failures` (the patch and update failure reports show it; only `app-status` and `profile-status` are in `statusReportKinds`); device names and serials everywhere; EA values as Jamf returns them. Jamf School `school-users` (`SchoolFleetService.usersKind`): the 2.12 design names it for the same sweep; this refresh found no reducer for it (`rg` for `usersKind` and `"school-users"` shows only the collect command and readers), so it is treated as saved as jamf-cli returns it. So the default does not make snapshots free of personal data.
+- **The opt-in (`jamf_cli.keep_account_names`, 2.12):** absent or false removes the fields above; true keeps them as jamf-cli returned them. The value is resolved once at collect start through `SharedConfigPin.keepAccountNames`, so one run never mixes both. It is a pinned key (T-23): a change to false applies at once; a change to true, a `true` at first sight, or a `true` met when an existing pin learns the key waits for a Confirm on this Mac, so a peer cannot switch another Mac to writing names. Tests: `AccountNamesCollectTests` (an unconfirmed `true` on a shared workspace still removes names; a confirmed one keeps them).
+- **Residual:** snapshots saved by earlier builds are not rewritten; they still hold the names until retention (off by default) or a person removes them. A Mac whose operator confirmed `true` writes names into a folder every peer reads. The fields that stay are personal data in their own right.
+- **Likelihood:** Low. **Impact:** Low–Medium. **Priority: LOW.**
+
+
+### T-32. System proxy handed to the background item (NEW, 2.12)
+- **Goal:** Redirect jamf-cli traffic through an attacker proxy.
+- **Path:** A `--tick` or `--scheduled-run` run passes the System Settings HTTPS proxy and bypass list to jamf-cli as `HTTPS_PROXY`/`NO_PROXY`; the GUI and CLI do not.
+- **Existing mitigations:** Read once at start from the user's own System Settings (a change there already needs user-level control); a variable already in the environment wins; jamf-cli is otherwise started with a cleaned environment. TLS still protects the Jamf server.
+- **Likelihood:** Low. **Impact:** Low. **Priority: LOW (accepted).**
+
+### T-33. Update checks, tick spawn constraint and webhook redirects (NEW, 2.12)
+- **Goal:** Make the app act on a forged release answer, run a swapped executable as the background item, or send a card to another host.
+- **Existing mitigations:** The app update check reads only `api.github.com`, accepts HTTP 200 from that host, ignores drafts, pre-releases and any tag that is not plain `vX.Y[.Z]`, builds the release page from the version itself, and never downloads or installs. A release build adds a `SpawnConstraint` (team identifier and signing identifier) to the tick plist so launchd starts the executable only when its signature matches. A webhook request follows a redirect only to the same host, and a non-2xx answer is logged by status without the URL.
+- **Likelihood:** Low. **Impact:** Low. **Priority: LOW.**
+
+### T-34. Snapshot folder or file replaced by a link on shared storage (NEW, 2026-11-15)
+- **Goal:** Make this Mac read a file outside the workspace as a snapshot, or write a snapshot or manifest through a link to somewhere else.
+- **Path:** P1 (or A1) replaces `jamf-cli-data/<kind>/`, a snapshot inside it, `sofa/`, `state/` or a cache folder with a symbolic link, or adds a second hard link to a file elsewhere.
+- **Existing mitigations:**
+  - Fixed subfolders (`state`, `sofa`, `summaries`, `automation/logs`, the snapshot kind folders, the device-detail cache, `backups`, `_archive`) are resolved through `WorkspacePaths.confinedFolder`, which `lstat`s each component and refuses a link (`symlinkedSubfolder`).
+  - Snapshot reads go through `BoundedFile.readSnapshotLogged`, which roots the read at the data folder: the path below it is opened with `O_NOFOLLOW_ANY` and the opened file's real path (`F_GETPATH`) must lie inside the root, so a kind folder swapped for a link after validation is refused. `SnapshotManifest.readManifest` reads `manifest.json` the same way. Every `BoundedFile` read refuses a FIFO or device and anything over its size limit, and a read that refuses links also refuses a file with a second hard link (`EMLINK`); the refusal is logged by name and reads as unreadable, not as empty.
+  - `SnapshotManifest.record` throws `ELOOP` when the kind folder has become a link since `saveSnapshot` confined it, so a manifest is never written through one. Tests: `WorkspaceConfinementTests.testASymlinkedSnapshotKindFolderTakesNoWrites`, `BoundedReadsTests.testEveryKindFolderListingRefusesALinkedKindFolder`, `DeviceInventoryLinkTests`, `PlantedSnapshotTests`.
+- **Readers still not rooted** (found with `rg -n "readLogged\(" app/Sources | rg -v "inside:"` and reading each hit; the grep is line-based, so `SiteScope.swift:127`, `HtmlReport+Sections.swift:1164` and `ReportLibrary.swift:301`, whose `inside:` is on the next line or passed by the caller, are rooted): `DeviceLookupView.swift:570` (the Device Lookup `.meta` sidecar), `SOFAFeedService.swift:81` and `:163` and `SOFAScoreFeed.swift:20` (the SOFA cache; the `sofa` folder is confined when resolved), `ReportLibrary.swift:365` and `WorkspaceStore.swift:1054` (a daily summary for a report row's device count and the sidebar badge), `DiagnosticBundleService.swift:327` (JSON files walked to seed the redactor) and `:932` (summaries copied into a bundle; the file itself is checked for a link). `SOFAFeedService.swift:95` reads a test fixture. These reads use `followSymlinks: false`, so a link or second hard link at the file itself is refused; a parent folder replaced by a link after it was resolved is followed. Direct `BoundedFile.read` calls (for example the run-status reads in T-12) were not all audited at this refresh.
+- **Likelihood:** Low. **Impact:** Low–Medium (wrong figures or a misleading device count; no write outside the workspace was found through these readers). **Priority: LOW.**
+- **Residual:** the unrooted readers above; a link planted between `confinedFolder` and the read is followed by them.
+
+### T-35. Jamf School per-device scan (NEW, 2.12)
+- **Goal:** Use the scan to run many jamf-cli processes, write data the scan should not keep, or suppress the scan on another Mac.
+- **Path:** `Engine/ReportEngine+SchoolDeviceScan.swift`: after a Jamf School collect (and its Protect and Security Cloud add-ons, `finalize()` and the shared-workspace claim release), `CollectRouter` runs one `school devices get <udid>` per device in the run's device list. It is a new fan-out of jamf-cli processes. The design places it inside the tick lock that wraps `CollectRouter.run` on every path; that was not traced for every caller at this refresh.
+- **Existing mitigations:**
+  - Bounds: four calls at a time (`deviceScanConcurrency`); each call has the 180 s per-call limit (`DeviceCallLimits`); the scan stops when more than 25% of the devices to scan have failed (`DeviceScanBuilders.exceedsFailureBudget`: `failed * 4 > total`), when the first 20 calls all fail (`schoolDeviceScanFirstCalls`), on exit 3, 5, 6 or 8, or at the 60-minute deadline (`schoolDeviceScanDeadline`); no further calls are admitted after any stop or a cancelled run. It runs at most once every 7 days per workspace (`schoolDeviceScanInterval`), only when the run's tiers include the scan tier, `school-devices` landed in this run, and `collect_skip` does not list `school-device-detail`.
+  - Input: the device rows this run landed, not a re-read of the newest file (which on a shared folder could be a peer's). Devices in School's trash, rows with no UDID and UDIDs that fail `CLIBridge.isSafeDeviceIdentifier` are not called; a UDID listed twice is called once.
+  - Output: each answer is reduced to an allow-listed row (`reduceSchoolDeviceDetail`: UDID, serial, battery level 0–100, enrolment type, total capacity ≥ 0; numbers through `wholeInt`, wrong types dropped per field) and saved through `saveSnapshot`.
+  - It never throws out of the router, never emits `[partial]` and never changes the collect's result or exit code; a failure is a `[warn]` line and a recorded failure for its own kind.
+  - Tests: `SchoolDeviceScanTests` (budget, first-20 rule, deadline, exit 3, allow-list, future stamp, force does not bypass the cadence, never changes the result).
+- **The attempt stamp:** written in the workspace's `state/` folder when the scan starts, so a peer Mac sees it as not due. A stamp ahead of now (a peer's clock) reads as absent. A peer that writes a recent, not future, stamp suppresses the scan on every Mac sharing the workspace for up to 7 days, and nothing a person does in the app overrides it: `force` does not bypass the cadence (`testForceDoesNotBypassTheCadence`), and there is no Scan now control in 2.12. This is the same class as T-21 (a forged cadence state file), with no manual override; the only consequence is missing scan data (battery, capacity, enrolment type), not a changed collect.
+- **Likelihood:** Low. **Impact:** Low. **Priority: LOW (accepted).**
+
+### T-36. Peer-written numbers and strings in snapshots and summaries (NEW, 2.12)
+- **Goal:** Crash a run or a screen, or put misleading text in a report, by writing values into a snapshot or daily summary that jamf-cli would never return.
+- **Path:** P1 (or A1) writes NaN, infinity, `1e30`, negative counts or very long or control-character text into a snapshot or `summary_<date>.json`. Swift's `Int(_:)` traps on a non-finite or out-of-range `Double`, which ends the process.
+- **Existing mitigations:**
+  - `wholeInt` (`Engine/JSONCoercion.swift`) returns nil for NaN, infinity and anything outside `Int`'s range; `asInt` and the decoders use `Int(exactly:)`. `wholeInt` is used in `TrendStore`, `FleetReportEmitter`, `SchoolDeviceDetail`, `ManagementDetail`, the accessibility descriptors, `JamfCLIDecoder` and the School scan; commit 676e0c23 added it and changed `JamfCLIDecoder` and `ManagementDetail`. Tests include `ProtectSignaturesTests.testWholeIntRefusesNaNInfinityAndOutOfRange`, `FleetRollupTests.testCountFormattingNeverTrapsOnANonFiniteOrHugeValue` and `PatchComplianceDefinitionTests.testPatchSummaryDashboardSkipsAPlantedSnapshotWithHugeTotals`.
+  - A daily summary read through `SummaryJSONParser.decode` is refused unless `DailySummary.numbersAreInRange`: every share and count finite and within ±1,000,000,000, mobile shares with met ≤ of, environment counts not negative and matched pairs consistent. The HTML history reader and the report library read summaries directly but convert with `Int(exactly:)`.
+  - Text: the management-health breakdowns show at most five values (`ManagementHealth.cappedValues`), each through `ConfigSchema.displayText` (control and format characters removed, length capped), with a count of the distinct values. Reports escape at the sink (T-3, T-4).
+- **Residual:** this refresh did not audit every `Int(…rounded())` site; several in `TrendsView` convert values that come from summaries, which are range-checked only when they were loaded through `SummaryJSONParser.decode` (not verified for every path). A value inside the accepted range is believed.
+- **Likelihood:** Low. **Impact:** Low (a crashed run or screen, a wrong figure). **Priority: LOW.**
+
+### T-37. Peer-written run records: attention items and the site-limited login record (NEW, 2.11/2.12)
+- **Goal:** Hide or invent "Needs attention" items, or hide the warning that a report was collected by a site-limited login.
+- **Path:** Attention items (2.11) are written into `automation/*_status.json` (`attention`, `attention_at`); the newest file by `attention_at` is the workspace's open set. The site-limited verdict (2.12) is `state/site-scope.json` (`SiteScopeRecord`), which report-time code reads rather than re-deriving it; the report surfaces that carry the note were not traced individually at this refresh. On a shared workspace a peer can write both.
+- **Existing mitigations:** attention items decode leniently (an unknown code is skipped), a record stamped after the year 3000 (`AttentionLog.maxAttentionAt`) is ignored, `count` is held to 1…`AttentionItem.maxCount`, and messages are sanitized (`AttentionItem.sanitized`: redacted for sharing, URLs removed, 160 characters). A commit stamps `max(now, newest + 1 ms)` (`AttentionLog.swift:86`) so a peer whose clock runs ahead cannot make this Mac's later record read as older. `site-scope.json` is read rooted (`SiteScopeRecord.load`, `inside:`); a missing, unreadable, oversized or linked file reads as unknown.
+- **Residual:** a peer can still write an `attention` array with a newer `attention_at` (before the year 3000) that clears this Mac's open items until its next commit, or a `site-scope.json` that says `whole` so the next report omits the site-limited note until this Mac's next collect rewrites it.
+- **Likelihood:** Low. **Impact:** Low (an operator misses a warning; data is unchanged). **Priority: LOW (accepted).**
+
+### T-38. On-device AI layer (NEW, 2.5.0; managed policy 2.11)
+- **Goal:** Get fleet data or a run log off the Mac through the AI features, or put model-written text in a report.
+- **What the code does:** the `ai:` block is off unless `ai.enabled` is true (`AIConfig.isEnabled`, absent reads as false). Every model call constructs `SystemLanguageModel.default`, Apple's on-device model; `rg` over `app/Sources` finds no Private Cloud Compute or external-model code. The insight cards are hidden where `ModelAvailability.platformSupported` is false (a system before macOS 27, or a build without Foundation Models) and in demo mode (`AIInsightCard.isOffered`).
+ An organization can set the `AIPolicy` preference by configuration profile: `off` turns AI off whatever any workspace says (any unrecognised value also reads as `off`), `onDevice` allows only the on-device tier. Headless paths (tick, scheduled run, CLI) read no AI settings and never call the model.
+- **Inputs:** the insight cards receive a `FleetInsightInput` of aggregates (counts, shares, check names), never a device, user or host name. The run-failure explainer's `RunFailureInput` can only be built through `build(…)`, which redacts the log excerpt (`LogRedactor` and `DiagnosticRedactor`) and truncates it; the excerpt goes to the on-device model only.
+- **Output that leaves the Mac:** only with `ai.include_in_reports` also true (`writesReportSummary`), a GUI-generated report carries one model-written paragraph built from aggregates; it is HTML-escaped (`HtmlReport+Sections.swift`), and anyone the report is sent to reads it. Model output can be wrong.
+- **Residual:** the explainer redacts with an unseeded `DiagnosticRedactor()` (`RunFailureExplainer.swift:73`), so the profile's scope IDs and workspace name are not masked in its excerpt; the excerpt stays on the Mac.
+ Not verified at this refresh: that every builder of `FleetInsightInput` omits names.
+- **Likelihood:** Low. **Impact:** Low. **Priority: LOW.**
+
 ---
 
 ## 7. Priority Summary (current state)
 
-Open threats first, then those closed by PR-10..PR-12.
+All runtime threats, highest priority first. None is marked closed: T-13, which earlier refreshes marked closed, is an integrity check rather than a signature and is listed as partially mitigated.
 
 | Threat | Priority | Notes |
 |---|---|---|
-| T-9 Supply-chain (SwiftPM deps / scripts) | LOW–MEDIUM | Two pinned deps (ZIPFoundation, swift-argument-parser via `Package.resolved`); CODEOWNERS gap — see §9 |
+| T-9 Supply-chain (SwiftPM deps / scripts) | LOW–MEDIUM | Two pinned deps (ZIPFoundation, swift-argument-parser via `Package.resolved`); Dependabot cooldown; CODEOWNERS present, required review not verified — see §9 |
 | T-3 HTML XSS in shared report | LOW–MEDIUM | Centralized `escapeHTML`; Swift sink tests still recommended; the report's CSP blocks outbound requests but allows inline script (a hash or nonce would close that) |
-| T-4 XLSX formula injection | LOW–MEDIUM | `OOXMLWriter.sanitizeString` + Patch CSV escaper; Swift malicious-payload tests recommended |
-| T-8 Exit-code silent fallback | LOW–MEDIUM | Stale banner + PARTIAL pill close UI surface |
-| T-2 Tampered cached JSON | LOW–MEDIUM | Swift verify + writer (2.6, with `require_manifest`) + AuditView surfacing; summaries, SOFA and patch-release-dates not stamped |
+| T-4 XLSX formula injection | LOW–MEDIUM | `StaleDeviceService.formulaGuarded` + Patch CSV escaper; whole plain negative numbers pass unprefixed (2.12) |
+| T-8 Exit-code silent fallback | LOW–MEDIUM | Stale banner + PARTIAL pill; the pill's own inputs are T-12 |
+| T-2 Tampered cached JSON | LOW–MEDIUM | Swift verify + writer (2.6, with `require_manifest`, off by default) + AuditView surfacing; unkeyed manifest; summaries, SOFA and patch-release-dates not stamped |
+| T-12 Run status from peer-writable files | LOW (residual) | The per-run summary read is gone (#425); the log tail and status JSON stay peer-writable with no integrity check |
+| T-13 Report integrity checks | LOW–MEDIUM (partial) | `.sha256` sidecar, `.manifest.txt`, HTML `report-sha256` meta, run-log hash line; detects damage, not a deliberate edit |
+| T-23 Shared-workspace peer trust | LOW–MEDIUM | Local-or-team-only layout, output deny-list; per-Mac pin and Confirm (`SharedConfigPin`, 21 keys) |
+| T-30 Jamf Pro backup on synced storage | LOW–MEDIUM | Per-workspace choice, per-Mac Confirm, 0600/0700 |
 | T-1 Secret exfil via shim/upstream | LOW | Every launch site gated by `CLIBridge.codesignGate`: designated requirement + fingerprint with ctime |
 | T-5 Symlink/traversal | LOW | Trailing-`/` enforced; PR-8 MigrationBanner verified clean |
 | T-6 Background item / schedule store takeover | LOW | Signed-bundle `SMAppService` item; `schedules.json` 0600; T-6b closed |
-| T-7 Secret + PII leakage via logs/bundle | LOW | `LogRedactor` at log write and at display/export; `DiagnosticBundleService`/`DiagnosticRedactor` (quoted-JSON secrets, IP keys, IPv4, PII placeholders) |
+| T-7 Secret + PII leakage via logs/bundle | LOW | `LogRedactor` at log write and at display/export; `DiagnosticBundleService`/`DiagnosticRedactor` |
 | T-10 YAML parser abuse | LOW | Minimal hand-rolled `YAMLCodec` (no tags/anchors/constructors) |
 | T-14 Codesign TOCTOU and check bypasses | LOW (ACCEPTED) | No `fexecve`; pid-based post-launch check bypassable; no revocation checking |
-| T-15 mtime-forged stale banner | LOW | `.meta` sidecar defeats `touch -t` (Epic #103); content-editing attacker residual |
+| T-15 Device Lookup cache | LOW | `.meta` sidecar defeats `touch -t`; cache reduced before it is written (2.12); content-editing attacker residual |
 | T-21 State-file forged to suppress a fetch | LOW (accepted) | `state/manifest.json` is unkeyed: detects corruption, not a writer |
 | T-11 Manifest absence silent pass | LOW (surfaced, PR-10) | `require_manifest` gate + AuditView card; writer since 2.6 |
-| T-12 summary.json outside manifest | LOW | Verify side intact; no producer for `summaries/`, so the `[partial]` log marker stays authoritative |
-| T-23 Shared-workspace peer trust | LOW–MEDIUM | Local-or-team-only layout, output deny-list; per-Mac confirmation planned |
+| T-22 Unified log and logging profile | LOW (accepted) | The app writes no logging settings; `.private` by default; bundled profile has no private data |
 | T-24 Dashboard frame | LOW (accepted) | Sandbox without same-origin, CSP; self-navigation not preventable |
 | T-25 Custom workspace root | LOW | Owner, mode and ACL checked except under `/Volumes` and CloudStorage |
 | T-26 SOFA feed | LOW | TLS only; future dates ignored; `collect_skip: [sofa]` |
 | T-27 Issue-triage workflow | LOW | Model job holds a read-only token and has no write tool (a model-free job posts the comment), SHA-pinned actions |
-| **T-13** Generated Reports no integrity envelope | **CLOSED (PR-12)** | `.xlsx.sha256` sidecar + HTML `report-sha256` meta tag (Swift `writeManifestStatic`) |
+| T-28 Run manifest and timestamp | LOW | Atomic manifest, verified reply, https/same-host only, pinned per Mac; proves time, not authorship |
+| T-29 Merge journal | LOW | `Started` record per Mac, confined paths, exclusive copies, nothing deleted |
+| T-31 Snapshot and log minimisation, account names | LOW | Reducers before disk; `keep_account_names` pinned; username, email and failure-report usernames stay; old snapshots not rewritten; `school-users` not reduced |
+| T-32 Proxy handed to tick | LOW (accepted) | User's own System Settings, environment wins |
+| T-33 Update check, spawn constraint, webhook redirect | LOW | Stable-tag-only, `SpawnConstraint`, same-host redirects |
+| T-34 Linked snapshot folders | LOW | Rooted snapshot and manifest reads; `record` refuses a linked kind folder; some readers still unrooted |
+| T-35 School device scan | LOW (accepted) | Bounded fan-out, allow-listed rows, never changes the result; a peer's recent stamp suppresses it for up to 7 days |
+| T-36 Peer-written numbers and strings | LOW | `wholeInt`, `numbersAreInRange`, capped values through `displayText`; not every conversion audited |
+| T-37 Attention items, site-limited record | LOW (accepted) | Bounded, sanitized; a peer can clear items or hide the site-limited note until the next run |
+| T-38 On-device AI layer | LOW | Off by default, on-device only, `AIPolicy`, aggregates only; report paragraph only with `include_in_reports` |
 
 ---
 
 ## 8. Assumptions and Open Questions
 
 Confirmed with user (2026-05-12, refreshed 2026-05-17, re-confirmed 2026-05-20):
-- **Single-admin laptop** deployment for current state — re-confirmed 2026-05-20. One trusted user per Mac, no co-resident accounts. Cross-user threats deprioritized.
+- **One trusted user per Mac.** No co-resident accounts; cross-user threats on one Mac are deprioritized.
 - Generated report distribution is **unknown / varies** — output-side injection threats (T-3, T-4) kept at LOW–MEDIUM.
 - **Public release shipped** as v2.0.0 (2026-05-20). Distribution is a notarized DMG **and** a PKG installer (PKG confirmed in scope — see T-17). The §11 annex applies to the shipped artifacts; T-16 / T-17 are live concerns, not hypothetical.
-- Since 2.7.0 a workspace can be shared by several Macs on purpose (T-23). The single-admin assumption holds per Mac; the shared folder's audience is the operator's decision.
 - The Developer ID signing certificate is an **individual** Apple Developer enrollment, not an organization. Recipient-Mac background-activity / Login Items prompts therefore show the individual developer's name. T-16 blast radius is one individual certificate on a single signing host.
+
+Code findings recorded at the 2026-11-15 refresh (not user confirmations):
+- Since 2.7.0 a workspace can be shared by several Macs on purpose. §4a models that layout explicitly (P1: a peer can write any file in the workspace folder); the shared folder's audience is the operator's decision (T-23).
+- The repository has no Homebrew cask, tap or `brew` install path for the app; only jamf-cli is installed through Homebrew (T-19).
 
 Material assumptions still in effect:
 - `JamfCLIIdentity.expectedTeamID` and `JamfCLIInstaller.expectedJamfTeamID` (`"483DWKW443"`) are the legitimate jamf-cli publisher. If false, T-1 jumps to HIGH.
 - `Package.resolved` SwiftPM dependency pins are reviewed in PR and not auto-bumped without review. If false, T-9 jumps to HIGH.
-- `automation/logs/` is treated as same-trust as the workspace. Verified by `WorkspacePermissionHardener` sweep; not by a permission-regression test.
-- The app never auto-updates its own binary (only `jamf-cli`). If a future auto-update path is added, re-rank T-9 / T-16.
+- `automation/logs/` is treated as same-trust as the workspace. Verified by `WorkspacePermissionHardener` sweep; not by a permission-regression test. On a shared workspace it is peer-writable (T-12, T-37).
+- The app never downloads or installs its own updates; it only reports a newer release (`AppUpdateCheck`) and can update `jamf-cli`. If a self-update path is added, re-rank T-9 / T-16 / T-18.
 - Reports may be opened by recipients on Windows / non-macOS — relevant for T-4 (Excel-only formula evaluation).
-- **(NEW)** PKG installer will NOT request admin authorization (no root scripts). If that changes, model TB-10 explicitly and add T-21 (script-as-root abuse).
+- The PKG installer requests no admin authorization for scripts (it has none; `require-scripts="false"`). If that changes, model TB-10 explicitly and add a new threat number for script-as-root abuse.
+
+Open questions (not verified at this refresh):
+- Whether branch protection on `main` requires CODEOWNERS review for the paths in §9 item 2 (a GitHub setting, not visible in the repository).
+- Whether every path that builds a `FleetInsightInput` omits device, user and host names (T-38).
+- Whether every caller of the School device scan holds the tick lock (T-35).
+- How far this refresh went: T-1, T-5, T-8, T-12, T-13, T-15, T-17..T-19, T-22, T-23, T-28, T-31 and T-34..T-38 were checked against the code they describe. T-24, T-27, T-29, T-30 and T-32 had their key constants or symbols spot-checked (frame size limit, workflow tool list and turn limit, merge `Started` record, backup grace runs, proxy variables). For T-2..T-4, T-6, T-7, T-9..T-11, T-14, T-16, T-20, T-21, T-25 and T-26 only the names they cite were confirmed to exist in the code; their wording was not re-read against the code.
 
 ---
 
 ## 9. Highest-Value Next Actions (current state)
 
-With the report-artifact integrity envelope (T-13) shipped, the standalone
-Python engine removed and the Swift snapshot-manifest writer in place (2.6), the
-highest-value remaining actions are:
-
-1. **Per-Mac confirmation of shared-config values (T-23).** Pin `allow_absolute_paths`,
-   output and archive folders, retention mode and `notify.url` per Mac when a
-   workspace is shared, so a peer's edit to `config.yaml` cannot change them silently.
-   Planned, not built.
-2. **Finish the manifest producers (T-2 / T-12).** `SnapshotManifest.record` stamps
-   snapshots saved through `ReportEngine.saveSnapshot` when `require_manifest` is on.
-   The `summaries/` directory, the SOFA cache and `patch-release-dates` have no
-   producer, so the summary-pill SHA-256 cross-check stays dormant.
-3. **Harden the supply-chain trust boundary for a public repo (T-9).** A public
-   repo accepts outside PRs. Add branch protection on `main` requiring CODEOWNERS
-   review for any change to `Package.swift`, `Package.resolved`, the `app/scripts/`
-   release tooling, `.github/workflows/`, and the jamf-cli Team ID constants.
-4. **Act on the release-pipeline threats (§11).** T-16 (signing-key compromise)
-   and T-18 (downgrade attack) are near-term. Keep the Developer ID certificate off
-   CI, store it in a hardware token if possible, and publish a "verify build" doc
-   carrying each release artifact's SHA-256 and the signing certificate fingerprint.
-5. **Add Swift malicious-payload tests over the XLSX/CSV/HTML sinks (T-3 / T-4).**
-   The prior Python sanitization corpus is gone. The report's CSP blocks outbound
-   requests; a hash or nonce for its own script would also block injected inline script.
+1. **Run-status read (T-12): done in #425.** The per-run summary read is removed from `RunHistoryService` and `LaunchAgentService`. Still to decide: whether the schedule list should read `[partial]` when the status JSON says success.
+2. **Harden the supply-chain trust boundary for a public repo (T-9).** A public repo accepts outside PRs. Require CODEOWNERS review on `main` for any change to `Package.swift`, `Package.resolved`, the `app/scripts/` release tooling, `.github/workflows/`, and the jamf-cli Team ID constants.
+3. **Finish the manifest producers (T-2).** `SnapshotManifest.record` stamps snapshots saved through `ReportEngine.saveSnapshot` when `require_manifest` is on. The `summaries/` directory, the SOFA cache and `patch-release-dates` have no producer.
+4. **Close the data-minimisation gaps (T-31).** Reduce `school-users` as the 2.12 design names, and design the rewrite of snapshots saved before 2.12 (tracked for a later release).
+5. **Root the remaining readers (T-34)** listed in T-34, and audit the remaining `Int(…rounded())` sites (T-36).
+6. **Act on the release-pipeline threats (§11).** T-16 (signing-key compromise) and T-18 (downgrade). Keep the Developer ID certificate off CI, store it in a hardware token if possible, and publish a "verify build" doc carrying each release artifact's SHA-256 and the signing certificate fingerprint.
+7. **Add Swift malicious-payload tests over the XLSX/CSV/HTML sinks (T-3 / T-4).** The report's CSP blocks outbound requests; a hash or nonce for its own script would also block injected inline script.
 
 The diagnostic-bundle PII redaction gaps surfaced during release prep are
 already closed (see T-7).
@@ -575,31 +692,34 @@ already closed (see T-7).
 - [x] Each trust boundary appears in at least one threat.
 - [x] Runtime vs build/CI separated (T-9 is the build-time threat; T-16..T-19 are release-pipeline threats).
 - [x] User clarifications recorded (§8).
-- [x] Assumptions explicit (§8).
-- [x] Current-state vs post-release annex separated (§6 vs §11 per user request).
+- [x] Assumptions explicit (§8), with open questions listed as not verified.
+- [x] Current-state vs release-channel annex separated (§6 vs §11 per user request).
 - [x] Both DMG and PKG installer scenarios covered in §11 per user request.
 - [x] PR-1..PR-9 mitigations reflected in T-1..T-10 existing mitigations.
-- [x] PR-16..PR-26 reflected: tiered-collection surface (T-21, `state/` store), xlsx-corruption fix + Patch CSV export (T-4), single-admin + public-release prep re-confirmed with user 2026-05-20 (§8).
-- [x] PR-10/PR-11/PR-12 reflected: T-13 CLOSED (§6/§7); T-11/T-12 surfaced (Swift verify intact).
-- [x] **Single-engine refresh (2026-06-18):** standalone Python CLI removed; Python-only threat surface (runtime supply chain, `yaml.safe_load`, Python sanitization corpus, `_safe_write`) dropped; every Swift control kept. The snapshot-manifest writer gap this opened was closed in 2.6; the `summaries/` directory still has no producer (§9 item 2).
-- [x] **2.9.0 refresh (2026-10-10):** background item (`SMAppService`) replaces LaunchAgent plists in §1, TB-5, T-6; jamf-cli gate described as a designated requirement plus fingerprint (T-1, T-14); T-3, T-7, T-21 corrected; shared workspaces, dashboard frame, custom root, SOFA and issue triage added as T-23..T-27; TB-8 covers the triage workflow.
+- [x] PR-16..PR-26 reflected: tiered-collection surface (T-21, `state/` store), xlsx-corruption fix + Patch CSV export (T-4).
+- [x] PR-10/PR-11/PR-12 reflected; T-13 re-rated on 2026-11-15 from closed to partially mitigated.
+- [x] **Single-engine refresh (2026-06-18):** standalone Python CLI removed; Python-only threat surface dropped. The snapshot-manifest writer gap this opened was closed in 2.6; the `summaries/` directory still has no producer (§9 item 3).
+- [x] **2.9.0 refresh (2026-10-10):** background item (`SMAppService`), jamf-cli gate, shared workspaces, dashboard frame, custom root, SOFA and issue triage (T-23..T-27).
+- [x] **2.12 review pass (2026-11-12):** T-28..T-33 added.
+- [x] **2.12 code refresh (2026-11-15, `dev/2-12-0` at 531bafb8):** one attacker model for local and shared workspaces (§4a, P1); every backticked class, member or function name in the document matched by `rg` in `app/` or `.github/` (a name check, not a behaviour check; Apple API names excepted); T-5, T-12, T-13, T-15, T-22, T-23, T-31 and the Homebrew and update-check statements (§4b, §5, T-16..T-19) corrected to the code; T-34..T-38 added. Depth of review per threat is listed in §8.
 
 ---
 
-## 11. External Distribution Annex (post-release, next 6 months)
+## 11. External Distribution Annex (release channel)
 
-This annex models threats that arise only when the app is shipped externally to other organizations. The current-state model (§§ 1–10) remains primary; this annex is forward-looking. Threats T-16..T-20 are scoped to the additional capabilities A7..A10 and the additional trust boundaries TB-9..TB-10. They sit here, after T-23..T-27 in numbering, because they are the release-channel annex rather than runtime threats.
+This annex models threats that arise because the app is shipped to other organizations (public releases since v2.0.0, 2026-05-20). The current-state model (§§ 1–10) remains primary. Threats T-16..T-20 are scoped to the additional capabilities A7..A10 and the additional trust boundaries TB-9..TB-10. They carry numbers below T-21 because they were written first, in 2026-05; the runtime threats added since (T-21..T-38) continue the main sequence in §6.
 
 ### Distribution channels in scope
 
-Per user confirmation (2026-05-17), planned external distribution includes:
+Per user confirmation (2026-05-17), external distribution includes the two formats below; the Homebrew note is a code finding of 2026-11-15:
 - **Notarized DMG** delivered via GitHub Releases. Recipient drags `.app` to `/Applications` (no install scripts). Gatekeeper enforces notarization.
-- **PKG installer** delivered via GitHub Releases (and potentially a Homebrew cask). Recipient runs `installer -pkg ... -target /` or double-clicks. Pre/post-install scripts MAY run as root depending on `productbuild` flags.
+- **PKG installer** delivered via GitHub Releases. Recipient runs `installer -pkg ... -target /` or double-clicks. `app/build-pkg.sh` adds no install scripts (T-17).
+- There is no Homebrew cask or tap for the app. jamf-cli, a dependency, is installed through Homebrew or its own GitHub release (T-19).
 
 ### T-16. Notarization key / Developer ID certificate compromise
 - **Goal:** Ship malicious updates that pass macOS Gatekeeper on every recipient Mac.
-- **Path:** A9 exfiltrates the Developer ID certificate (and/or notarization API key) from the build host. Re-signs and re-notarizes a backdoored build. Recipients update via Homebrew or manual download and Gatekeeper raises no warning.
-- **Existing mitigations:** Signing, notarization and packaging are scripted in `app/scripts/release.sh` (`sign-release.sh`, `notarize-release.sh`, `package-dmg.sh`; see [`app/scripts/README.md`](../../app/scripts/README.md)) and `app/build-pkg.sh`, and run on the maintainer's Mac. CI (`release.yml`) builds a source zip and holds no signing material. Signing passes `--timestamp`, the notary profile is a keychain profile on the signing host, and a release build (`RELEASE=1`) refuses to fall back to ad-hoc signing. Single-developer signing host.
+- **Path:** A9 exfiltrates the Developer ID certificate (and/or notarization API key) from the build host. Re-signs and re-notarizes a backdoored build. Recipients download it manually (the app never downloads or installs its own updates) and Gatekeeper raises no warning.
+- **Existing mitigations:** Signing, notarization and packaging are scripted in `app/scripts/release.sh` (`sign-release.sh`, `notarize-release.sh`, `package-dmg.sh`; see [`app/scripts/README.md`](../../app/scripts/README.md)) and `app/build-pkg.sh`, and run on the maintainer's Mac. CI (`release.yml`) builds a source zip, creates the release as a draft with no generated notes (2.12), so nothing is public until the maintainer adds the written notes and the signed assets and publishes it, and holds no signing material. Signing passes `--timestamp`, the notary profile is a keychain profile on the signing host, and a release build (`RELEASE=1`) refuses to fall back to ad-hoc signing. Single-developer signing host.
 - **Likelihood:** Low (key kept off CI; manual signing flow).
 - **Impact:** Catastrophic (every recipient).
 - **Priority: HIGH** for the post-release horizon. **N/A** pre-release.
@@ -612,7 +732,8 @@ Per user confirmation (2026-05-17), planned external distribution includes:
 ### T-17. PKG installer root-script abuse
 - **Goal:** Run attacker code as root on the recipient's Mac via a tampered PKG.
 - **Path:** A8 swaps the PKG in transit or A9 ships a malicious one. If the PKG runs pre/post-install scripts as root (default for `productbuild` when scripts directory is provided), those scripts execute with root privileges. A PKG is one of the distribution formats.
-- **Existing mitigations:** `app/build-pkg.sh` builds a component package that installs `JamfReports.app` to `/Applications` with no pre- or post-install scripts (`pkgbuild --root`, no `--scripts`), signs it with `productsign --timestamp`, and notarizes and staples it for a release build. A design-time guard, not a runtime one: adding a scripts directory would change this.
+- **Existing mitigations:** `app/build-pkg.sh` builds a component package that installs `JamfReports.app` to `/Applications` with no pre- or post-install scripts (`pkgbuild --root`, no `--scripts`; the distribution file sets `require-scripts="false"`), signs it with `productsign --timestamp`, and notarizes and staples it for a release build. Since 2.10.0 it passes `pkgbuild --component-plist`
+ with `BundleIsRelocatable` false and fails the build when the expanded `PackageInfo` lacks an empty `<relocate/>`, so the install always lands in `/Applications`; that plist adds no scripts. A design-time guard, not a runtime one: adding a scripts directory would change this.
 - **Likelihood:** Depends entirely on PKG design at build time.
 - **Impact:** Critical (root code execution on recipient host).
 - **Priority: HIGH if the PKG runs scripts as root.** **LOW otherwise.**
@@ -620,31 +741,28 @@ Per user confirmation (2026-05-17), planned external distribution includes:
   - **Strongly prefer a drag-install DMG.** If a PKG is required, design it to install to `/Applications/JamfReports.app` with no pre/post-install scripts (component-only `pkgbuild` + `productbuild` with no `--scripts` arg).
   - If scripts are unavoidable: keep them to filesystem-only operations; never `curl | bash`, never write to `/Library/LaunchDaemons`, never request `setuid` binaries. Audit every line.
   - Sign the PKG with the same Developer ID Installer certificate; notarize the PKG; document the SHA-256 in release notes.
-  - In CI / release docs, explicitly forbid `--component-plist` or `--scripts` flags unless a security review approves the script contents.
+  - In CI / release docs, forbid `--scripts` (and any component-plist key beyond relocation and version checking) unless a security review approves it.
 
 ### T-18. Downgrade attack against signed older versions
 - **Goal:** Trick a recipient into installing an older signed-and-notarized version with known vulnerabilities (e.g., a build pre-PR-7 has no manifest verification; pre-PR-6 has 3 ungated jamf-cli spawn sites).
 - **Path:** A8 serves an older `.dmg` / `.pkg` from a typosquat repo, phishing email, or in-the-middle a slow CDN. Older versions remain validly signed and notarized indefinitely — Gatekeeper does not check version.
-- **Existing mitigations:** None at the app layer.
+- **Existing mitigations:** None that prevents a downgrade. Since 2.10.1 the GUI checks for a newer stable release (`AppUpdateCheck`), from `ContentView` at launch and the 30-minute re-check, at most once a day after a successful check: one GET to `api.github.com/repos/…/releases/latest`, accepted only from that host with HTTP 200, read up to 1 MB, refusing drafts, pre-releases and any tag that is not plain `vX.Y[.Z]`. A newer version shows a banner with View release and Skip this version. It downloads and installs nothing, can be turned off in Settings or by a configuration profile, and does not run from the tick, scheduled runs or the CLI. It helps a recipient notice they are behind; it does not stop an older signed build from being installed or run, and an offline Mac never sees it.
 - **Likelihood:** Medium (low skill required for the social-engineering side).
 - **Impact:** Medium (re-introduces vulnerabilities already fixed).
 - **Priority: MEDIUM** for post-release horizon.
 - **Recommended mitigations:**
-  - In-app version check on launch against a signed `latest-version.json` served from a GitHub Pages site. If running version < latest minor, show "Update recommended" banner. Cheap and high-leverage.
+  - The update check above covers the "update recommended" banner; it trusts GitHub's TLS answer rather than a signed version file. A minimum-version floor (refuse to run below a published version) would be a new design.
   - Document version-specific security notes in `CHANGELOG.md` so a recipient can self-assess whether to upgrade urgently.
   - At a minimum, do NOT delete old releases from GitHub — auditability requires the historical record stay accessible, but recipients should be steered to the latest.
 
-### T-19. Homebrew tap / cask integrity
-- **Goal:** Compromise the Homebrew installation path (if a tap or cask is published).
-- **Path:** A6 (or A8) modifies the cask formula to point to a different `url` and `sha256`. Recipient running `brew upgrade` pulls and installs the malicious build. The Gatekeeper check still passes if the binary is correctly signed by A9; if not, Gatekeeper warns the user but many recipients click through.
-- **Existing mitigations:** None (tap not yet established).
-- **Likelihood:** Medium when established (low when not).
-- **Impact:** High.
-- **Priority: MEDIUM** (conditional on publishing a tap).
-- **Recommended mitigations:**
-  - Use the official `homebrew/cask` repo rather than a personal tap if possible — recipients benefit from the wider security review.
-  - If a personal tap is required, enable GitHub branch protection on the tap repo's `main` (signed commits + CODEOWNERS).
-  - Document the canonical install command in `README.md` so recipients aren't relying on typo-squat taps.
+### T-19. Homebrew path for jamf-cli (the app has no cask)
+- **Goal:** Get a malicious jamf-cli onto a recipient's Mac through Homebrew, or a malicious app build through a cask.
+- **Scope at 531bafb8:** the app is distributed only as the GitHub Release DMG and PKG; no cask, tap or `brew` install path for the app exists in the repo, its scripts, workflows or README. jamf-cli, which the app runs, is installed by `brew install Jamf-Concepts/tap/jamf-cli` (the command README and the wiki document), by its GitHub release package, or by the app's updater (`JamfCLIInstaller`: a Homebrew upgrade when Homebrew linked it, otherwise a GitHub release download checked against the release's checksum file and its code signature before it is staged).
+- **Path:** A4/A8 changes the jamf-cli tap formula or a mirror so `brew upgrade` installs a different binary.
+- **Existing mitigations:** whatever installed jamf-cli, the app verifies its code signature against the designated requirement (Jamf's Team ID) before every launch and spawns nothing on failure (T-1). A replaced binary that is not signed by that team never runs from the app. A binary validly signed by that team (upstream compromise) passes, as T-1 states.
+- **Likelihood:** Low. **Impact:** High (T-1's impact). **Priority: LOW** (the signature gate, not the tap, is the control).
+- **Recommended mitigations:** if a cask for the app is ever published, model it here before release (branch protection on the tap, pinned `sha256`).
+
 
 ### T-20. Recipient's `~/Jamf-Reports/` adoption — multi-org config exposure
 - **Goal:** Cross-recipient data leakage via shared workspace conventions.
@@ -662,7 +780,8 @@ Per user confirmation (2026-05-17), planned external distribution includes:
 ## 12. Annex Quality Check
 
 - [x] §11 covers DMG and PKG paths per user request.
-- [x] §11 covers post-release supply-chain (notarization key, downgrade, Homebrew tap).
+- [x] §11 covers post-release supply-chain (notarization key, downgrade, and the Homebrew path, which at 531bafb8 exists for jamf-cli only; the app has no cask).
+- [x] 2026-11-15: T-17 reconciled with `build-pkg.sh` (component plist, no scripts); T-18 describes the update check that exists since 2.10.1 and that it does not prevent a downgrade.
 - [x] §11 explicitly notes T-17 is HIGH **conditional** on PKG design — design-time guidance provided to keep it LOW.
 - [x] §11 explicitly distinguishes recipient-side capabilities (A7) from build-host capabilities (A9) so mitigations land on the right actor.
 - [x] All §11 threats reference the new trust boundaries (TB-9, TB-10) and new attacker capabilities (A7..A10).

@@ -103,7 +103,10 @@ final class GenerateHoldsTickLockTests: XCTestCase {
     func testAutomaticCollectsStandDownDuringAReport() async throws {
         let (store, _) = try makeStore()
         let profile = self.profile
-        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        let coordinator = RefreshCoordinator { profile, tier in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine)
+        }
         let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: ALPHA\n")
         try await duringAReport {
             XCTAssertTrue(store.automaticCollectMustWait(for: ["beta"]))

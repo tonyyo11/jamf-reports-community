@@ -104,6 +104,11 @@ struct ExtensionAttributeService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
         let resultsDir = dir.appendingPathComponent("ea-results", isDirectory: true)
         let definitionsDir = dir.appendingPathComponent("computer-extension-attributes", isDirectory: true)
 
@@ -133,7 +138,7 @@ struct ExtensionAttributeService: Sendable {
 
         if let definitionsURL,
            FileManager.default.fileExists(atPath: definitionsURL.path) {
-            if let data = try? Data(contentsOf: definitionsURL) {
+            if let data = BoundedFile.readSnapshotLogged(definitionsURL) {
                 do {
                     definitions = try JSONDecoder().decode([ExtensionAttribute].self, from: data)
                     sourceFile = definitionsURL
@@ -142,7 +147,7 @@ struct ExtensionAttributeService: Sendable {
                     readSomething = true
                 } catch {
                     AppLogger.collect.warning(
-                        "ExtensionAttributeService: failed to decode definitions at \(definitionsURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                        "ExtensionAttributeService: failed to decode definitions at \(definitionsURL.lastPathComponent, privacy: .private): \(error.englishDescription, privacy: .private)"
                     )
                 }
             }
@@ -150,7 +155,7 @@ struct ExtensionAttributeService: Sendable {
 
         if let resultsURL,
            FileManager.default.fileExists(atPath: resultsURL.path) {
-            if let data = try? Data(contentsOf: resultsURL) {
+            if let data = BoundedFile.readSnapshotLogged(resultsURL) {
                 let decoded = EAResultRow.decodeSnapshot(data)
                 if let rows = decoded.rows {
                     results = rows
@@ -163,7 +168,7 @@ struct ExtensionAttributeService: Sendable {
                 } else {
                     // `reason` is keys-only (PII-safe).
                     AppLogger.collect.warning(
-                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .public): \(decoded.reason, privacy: .public)"
+                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .private): \(decoded.reason, privacy: .private)"
                     )
                 }
             }
@@ -272,7 +277,7 @@ struct ExtensionAttributeService: Sendable {
                 """
                 ExtensionAttributeService: duplicate extension-attribute display \
                 names; the first definition wins and the rest are dropped: \
-                \(names, privacy: .public)
+                \(names, privacy: .private)
                 """
             )
         }

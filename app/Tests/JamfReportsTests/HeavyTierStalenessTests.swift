@@ -8,6 +8,8 @@ final class HeavyTierStalenessTests: XCTestCase {
 
     private let profile = "acme"
     private let week: TimeInterval = 7 * 86_400
+    /// 2027-01-15; the snapshots are named relative to it, never to the clock.
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let scanKinds = [
         "patch-device-failures", "update-device-failures", "ddm-device-status",
         "mdm-command-health",
@@ -36,10 +38,13 @@ final class HeavyTierStalenessTests: XCTestCase {
     ) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let file = dir.appendingPathComponent("\(kind)_20260930T120000.\(ext)")
-        try Data("[]".utf8).write(to: file)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceNow: -age)], ofItemAtPath: file.path)
+        // The age is the stamp in the name, as the pickers date a file; a sync provider can
+        // restamp the mtime.
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = formatter.string(from: now.addingTimeInterval(-age))
+        try Data("[]".utf8).write(to: dir.appendingPathComponent("\(kind)_\(stamp).\(ext)"))
     }
 
     /// The scan prompt probed update-device-failures, so listing that kind in collect_skip
@@ -53,7 +58,7 @@ final class HeavyTierStalenessTests: XCTestCase {
             skipExpensive: false, authMethod: "oauth2", collectSkip: ["update-device-failures"])
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: expected)
+            profile: profile, olderThan: week, expectedKinds: expected, now: now)
 
         XCTAssertFalse(stale.contains(.scan))
     }
@@ -66,7 +71,7 @@ final class HeavyTierStalenessTests: XCTestCase {
         }
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: scanKinds)
+            profile: profile, olderThan: week, expectedKinds: scanKinds, now: now)
 
         XCTAssertEqual(stale, [.scan], "inventory expects nothing here, so it is never stale")
     }
@@ -76,7 +81,7 @@ final class HeavyTierStalenessTests: XCTestCase {
         let expected = WorkspaceStore.expectedKinds(skipExpensive: true, authMethod: "oauth2")
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: expected)
+            profile: profile, olderThan: week, expectedKinds: expected, now: now)
 
         XCTAssertEqual(stale, [.inventory],
                        "the skip-expensive toggle leaves the scan tier nothing to collect")
@@ -89,7 +94,7 @@ final class HeavyTierStalenessTests: XCTestCase {
         try snapshot("dashboard", in: dataDir, ext: "html")
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: ["computers", "dashboard"])
+            profile: profile, olderThan: week, expectedKinds: ["computers", "dashboard"], now: now)
 
         XCTAssertEqual(stale, [])
     }
@@ -106,7 +111,7 @@ final class HeavyTierStalenessTests: XCTestCase {
 
         let noData = WorkspaceStore.tiersWithNoData(
             profile: profile, among: [.inventory, .scan], expectedKinds: expected,
-            olderThan: week)
+            olderThan: week, now: now)
 
         XCTAssertEqual(noData, [.inventory])
     }
@@ -129,7 +134,8 @@ final class HeavyTierStalenessTests: XCTestCase {
             kind: .softwareUpdatePlansOff, names: [], hint: nil, exitCode: 0))
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"])
+            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"],
+            now: now)
 
         XCTAssertEqual(stale, [])
     }
@@ -141,7 +147,8 @@ final class HeavyTierStalenessTests: XCTestCase {
             kind: .other, names: [], hint: nil, exitCode: 1))
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"])
+            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"],
+            now: now)
 
         XCTAssertEqual(stale, [.inventory])
     }
@@ -157,9 +164,10 @@ final class HeavyTierStalenessTests: XCTestCase {
         let expected = ["computers", "profile-status", "policy-status"]
 
         let stale = WorkspaceStore.staleTiers(
-            profile: profile, olderThan: week, expectedKinds: expected)
+            profile: profile, olderThan: week, expectedKinds: expected, now: now)
         let noData = WorkspaceStore.tiersWithNoData(
-            profile: profile, among: [.inventory], expectedKinds: expected, olderThan: week)
+            profile: profile, among: [.inventory], expectedKinds: expected, olderThan: week,
+            now: now)
 
         XCTAssertEqual(stale, [])
         XCTAssertEqual(noData, [])

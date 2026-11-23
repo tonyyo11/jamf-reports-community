@@ -22,7 +22,7 @@ enum DiagnosticBundleError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidProfile(let p): "Invalid profile: \(p)"
+        case .invalidProfile(let p): ProfileName.invalidMessage(p)
         case .archiveFailed(let msg): "Could not create diagnostic archive: \(msg)"
         }
     }
@@ -131,9 +131,17 @@ final class DiagnosticRedactor {
         self.ipv4RE = Self.mustCompile(
             #"(?<![\w.\-])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"#
             + #"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w\-]|\.\d)"#)
-        // A phone number needs a leading `+` (E.164) or separators (NANP), so a bare 10-digit
-        // Jamf ID, a date or a timestamp is not one.
-        self.phoneE164RE = Self.mustCompile(#"(?<![\w+])\+[1-9]\d{7,14}\b"#)
+        // A phone number needs a leading `+` (E.164, digit groups split by single spaces, dots,
+        // hyphens or parentheses, 7-15 digits in all) or separators (NANP), so a bare 10-digit
+        // Jamf ID, a date or a timestamp is not one. The lookahead counts the digits; the
+        // second guard keeps a `+2020-2026` year range out. The groups are possessive and
+        // there is no end guard, so a trailing letter (`...0958x`) never shortens the match and
+        // leaves digits behind. Known over-masking, accepted: `+2026-10-18` style text after a
+        // plus sign and `+1.29.100.200`.
+        self.phoneE164RE = Self.mustCompile(
+            #"(?<![\w+])\+(?=(?:[ .\-()]*\d){7,15}(?![ .\-()]*\d))"#
+            + #"(?!(?:19|20)\d\d[ .\-](?:19|20)\d\d\b)"#
+            + #"[1-9]\d*+(?:[ .\-]?\(\d++\)|[ .\-]\d++)*+"#)
         self.phoneNANPRE = Self.mustCompile(
             #"(?<![\w.\-])\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}(?![\w\-]|\.\d)"#)
     }
@@ -180,9 +188,6 @@ final class DiagnosticRedactor {
                 self.placeholder("host", g[0] ?? "")
             }
         }
-        // After the hosts: a profile named after a label of its server (`jamf`, for
-        // `jamf.agency.gov`) would otherwise break the host match and leave the domain.
-        out = redactWorkspaceNames(in: out)
         // `ip` has no keep-flag, like the key-based rule and the seeded literals.
         out = replaceMatches(ipv4RE, in: out) { g in self.placeholder("ip", g[0] ?? "") }
         for re in [phoneE164RE, phoneNANPRE] {
@@ -205,6 +210,9 @@ final class DiagnosticRedactor {
                 out = replaceMatches(re, in: out) { g in self.placeholder(category, g[0] ?? "") }
             }
         }
+        // Last: a workspace or login name (some come from a peer-writable config.yaml) must not
+        // split a host, an address or a seeded device or user name before its own rule ran.
+        out = redactWorkspaceNames(in: out)
         return out
     }
 
@@ -259,7 +267,12 @@ final class DiagnosticRedactor {
     /// Registers the profile's configured Jamf server (`host:port` and `host`) to remove
     /// wherever it appears, with or without a scheme. Applied only while hostname redaction is on.
     func seedServerHosts(_ hosts: [String]) {
-        serverHostRegex = Self.boundedLiteralRegex(hosts)
+        // A host spelled like a log word ("partial") would mask that word and its markers.
+        // A host spelled like a log word ("partial") would mask that word and its markers.
+        serverHostRegex = Self.boundedLiteralRegex(hosts.filter {
+            !LogRedactor.commonLogWords.contains(
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        })
     }
 
     /// Registers the workspace's profile name, as typed and as the app writes it in folder,
@@ -308,9 +321,13 @@ final class DiagnosticRedactor {
         jsonFiles.sort { $0.path < $1.path }
         var sets: [String: Set<String>] = [:]
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url),
-                  let obj = try? JSONSerialization.jsonObject(with: data) else { continue }
-            harvest(obj, into: &sets)
+            // Each file is parsed whole; release it before the next, or a workspace of large
+            // snapshots holds them all until the loop ends.
+            autoreleasepool {
+                guard let data = BoundedFile.readLogged(url),
+                      let obj = try? JSONSerialization.jsonObject(with: data) else { return }
+                harvest(obj, into: &sets)
+            }
         }
         let total = sets.values.reduce(0) { $0 + $1.count }
         for (category, values) in sets { compileSeededRegex(category, from: values) }
@@ -474,6 +491,9 @@ final class DiagnosticRedactor {
         // https value. `\b` keeps this off `webhook_url`/`base_url` (no word
         // boundary after an underscore), so it lands on `notify.url` and peers.
         add(#"(\burl\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#, "$1REDACTED_URL$3")
+        // `output.timestamp_authority`, an address that can carry a token like the webhook's.
+        add(#"(\btimestamp_authority\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
+            "$1REDACTED_URL$3")
         return patterns
     }
 
@@ -569,7 +589,7 @@ enum DiagnosticBundleService {
             do { return try resolve() } catch {
                 let reason = WorkspacePaths.refusal(of: error)
                 let note = "DiagnosticBundle: \(name) not collected: \(reason)"
-                AppLogger.collect.warning("\(note, privacy: .public)")
+                AppLogger.collect.warning("\(note, privacy: .private)")
                 refused.append(.skipped(path: name, reason: reason))
                 return nil
             }
@@ -605,35 +625,74 @@ enum DiagnosticBundleService {
     /// does. No file, or a profile without those keys (an instance profile), gives no IDs.
     ///
     /// The IDs of the profile's sibling environments (`ConnectionStore`, same credential) are
-    /// added: they identify the same organisation. connections.json itself is never bundled.
+    /// added: they identify the same organisation. So are those of every login its workspace
+    /// names (the Platform slot's environment ID is echoed in errors); the workspace's
+    /// config.yaml is peer-writable, so it only ever adds IDs to redact. connections.json itself
+    /// is never bundled.
     static func scopeIDs(
         profile: String,
-        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml"),
-        connections: ConnectionStore = ConnectionStore()
+        configURL: URL = ProfileService.jamfCLIConfigFileURL(),
+        connections: ConnectionStore = ConnectionStore(),
+        connectedProfiles: [String]? = nil
     ) -> [String] {
-        let siblings = connections.scopeIDs(sharingConnectionWith: profile)
+        let names = [profile] + (connectedProfiles
+            ?? EnvironmentProfiles.read(workspace: profile).connectedProfiles)
+        let siblings = names.flatMap { connections.scopeIDs(sharingConnectionWith: $0) }
         guard FileManager.default.fileExists(atPath: configURL.path) else { return siblings }
-        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+        guard let text = ProfileService.readConfigFileText(at: configURL) else {
             AppLogger.collect.warning(
                 "DiagnosticBundle: could not read the jamf-cli config; scope IDs not redacted")
             return siblings
         }
-        return scopeIDs(profile: profile, inConfig: text) + siblings
+        return names.flatMap { scopeIDs(profile: $0, inConfig: text) } + siblings
     }
 
     /// Every server in the user's own jamf-cli config file, as `host:port` and `host` (just
-    /// `host` when no port is set): the workspace's config.yaml is peer-writable on a shared
-    /// folder, so it never decides which hosts are redacted, and over-redacting another
-    /// profile's host costs nothing. `profile` is kept for callers. No file or no `url` gives
-    /// none.
+    /// `host` when no port is set), plus `profile`'s `output.timestamp_authority` host and the
+    /// system HTTPS proxy a scheduled run hands jamf-cli, whose errors name it. The
+    /// workspace's config.yaml is peer-writable on a shared folder, so it only ever adds a host
+    /// to redact, never removes one, and over-redacting costs nothing. No file or no `url`
+    /// gives none.
     static func serverHosts(
         profile: String,
-        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/jamf-cli/config.yaml")
+        configURL: URL = ProfileService.jamfCLIConfigFileURL(),
+        proxy: SystemProxy.Reading = SystemProxy.current(),
+        connections: ConnectionStore = ConnectionStore()
     ) -> [String] {
         (ProfileService.readConfigFile(at: configURL) ?? []).flatMap { entry in
             entry.url.map(hostForms(ofURL:)) ?? []
+        } + connections.load().flatMap(\.members).flatMap { member in
+            // The Jamf Pro host a Platform profile reaches: a custom domain the jamfcloud
+            // pattern misses.
+            member.jamfProURL.map(hostForms(ofURL:)) ?? []
+        } + timestampAuthorityHosts(profile: profile) + proxyHosts(proxy)
+    }
+
+    /// `host:port` and `host` of a proxy jamf-cli is given; a skipped one never reaches it.
+    static func proxyHosts(_ proxy: SystemProxy.Reading) -> [String] {
+        guard case .use(let used) = proxy else { return [] }
+        return ["\(used.host):\(used.port)", used.host]
+    }
+
+    /// `hostForms` of `profile`'s `output.timestamp_authority`, read bounded from its config.yaml.
+    /// config.yaml is peer-writable, so only a dotted host or a bracketed IPv6 literal is used:
+    /// a bare word there would mask that word in every shared log.
+    static func timestampAuthorityHosts(profile: String) -> [String] {
+        guard let workspace = ProfileService.workspaceURL(for: profile),
+              let text = try? ConfigLoader.readText(
+                at: workspace.appendingPathComponent("config.yaml")),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text),
+              let url = ConfigLoader.rawValue(
+                at: ["output", "timestamp_authority"], in: root) as? String
+        else { return [] }
+        return seedableHostForms(ofURL: url)
+    }
+
+    /// Pure: the `hostForms` of a peer-writable URL that are a dotted host or a bracketed IPv6
+    /// literal, each with or without its port.
+    static func seedableHostForms(ofURL url: String) -> [String] {
+        hostForms(ofURL: url).filter {
+            $0.hasPrefix("[") || $0.split(separator: ":").first?.contains(".") == true
         }
     }
 
@@ -744,9 +803,9 @@ enum DiagnosticBundleService {
         redactor?.seedServerHosts(sources.serverHosts)
         if !sources.cliProfile.isEmpty {
             redactor?.seedWorkspaceNames(
-                [sources.cliProfile, sources.workspaceName, profileSlug]
-                    + [ProfileName.pathComponent, ProfileName.labelComponent]
-                        .map { $0(sources.cliProfile) })
+                [sources.workspaceName, profileSlug]
+                    + LogRedactor.profileNameForms(of: sources.cliProfile)
+                    + LogRedactor.localWorkspaceNameForms())
         }
 
         let entries = try stageFiles(
@@ -771,9 +830,9 @@ enum DiagnosticBundleService {
                 ofItemAtPath: zipURL.path
             )
         } catch {
-            let msg = error.localizedDescription
+            let msg = error.englishDescription
             AppLogger.collect.warning(
-                "DiagnosticBundle: chmod zip failed: \(msg, privacy: .public)"
+                "DiagnosticBundle: chmod zip failed: \(msg, privacy: .private)"
             )
         }
         return zipURL
@@ -810,7 +869,7 @@ enum DiagnosticBundleService {
 
     // MARK: - Collectors
 
-    private static func collectLogs(
+    static func collectLogs(
         from logsDir: URL, into staging: URL, redactor: DiagnosticRedactor?,
         days: Int, now: Date
     ) -> [ManifestEntry] {
@@ -832,7 +891,8 @@ enum DiagnosticBundleService {
             if let mtime = values?.contentModificationDate, mtime < cutoff { continue }
             let relative = relativePath(of: url, under: logsDir)
             let arcname = "logs/\(redactor?.redactWorkspaceNames(in: relative) ?? relative)"
-            guard let data = try? Data(contentsOf: url) else {
+            // The tail of a log past the limit, as Run History reads it, not a skipped file.
+            guard let data = (try? BoundedFile.readTail(url, limit: 5 * 1024 * 1024))?.data else {
                 entries.append(.skipped(path: arcname, reason: "could not read log"))
                 continue
             }
@@ -859,7 +919,8 @@ enum DiagnosticBundleService {
         let summaries = contents
             .filter { $0.lastPathComponent.hasPrefix("summary_")
                 && $0.pathExtension.lowercased() == "json" }
-            .sorted { lhs, rhs in modified(lhs) > modified(rhs) }
+            .filter(FileManager.isSelectableSnapshot)
+            .sorted { FileManager.isOlderSnapshot($1, than: $0) }
             .prefix(limit)
         var entries: [ManifestEntry] = []
         for url in summaries {
@@ -868,7 +929,8 @@ enum DiagnosticBundleService {
                 entries.append(.skipped(path: arcname, reason: "symlink — skipped"))
                 continue
             }
-            guard let data = try? Data(contentsOf: url),
+            guard let data = BoundedFile.readLogged(
+                    url, limit: SummaryJSONParser.maxSummaryFileBytes),
                   let obj = try? JSONSerialization.jsonObject(with: data) else {
                 entries.append(.skipped(path: arcname, reason: "could not parse summary"))
                 continue
@@ -902,7 +964,8 @@ enum DiagnosticBundleService {
         if let redactor {
             // Comments are free text no pattern can find, so none are staged.
             content = YAMLCodec.removingComments(from: content)
-            content = redactor.redactText(try redactingExceptionText(in: content, with: redactor))
+            content = try redactingExceptionText(in: content, with: redactor)
+            content = redactor.redactText(reducingFreeText(in: content))
         }
         try writeText(content, to: staging.appendingPathComponent("config.yaml"))
         return [.file(path: "config.yaml", size: content.utf8.count, redacted: redactor != nil)]
@@ -938,6 +1001,63 @@ enum DiagnosticBundleService {
             changed = true
         }
         return changed ? lines.joined(separator: "\n") : yaml
+    }
+
+    /// Keys whose text is a fixed vocabulary (a provider, a level, a mode, a kind), kept as
+    /// written; so are the values under `security_policy.controls`.
+    static let vocabularyKeys: Set<String> = [
+        "provider", "detail", "mode", "type", "tier", "level", "when", "metric", "factor",
+        "stale_basis", "collect_skip", "filevault_off_hardware_encrypted",
+    ]
+
+    /// config.yaml as the app reads it, with every string replaced by `<string N chars>` except
+    /// numbers, `yyyy-MM-dd` dates, yes/no/on/off and short vocabulary values (`vocabularyKeys`): sheet, EA,
+    /// agent, profile and folder names are free text no pattern can find. Keys, booleans and
+    /// numbers stay. Written afresh from the parse, so every copy of a repeated key is covered
+    /// and a line the reader skipped is not staged; a file that does not parse is not staged.
+    static func reducingFreeText(in yaml: String) -> String {
+        guard let document = try? YAMLCodec.decode(yaml),
+              case .mapping(let root) = document.root else {
+            return "# config.yaml could not be read as a mapping; not included\n"
+        }
+        let reduced = YAMLCodec.YAMLMapping(entries: root.entries.map {
+            .init(key: $0.key, value: reducing($0.value, key: $0.key, parent: nil))
+        })
+        var fresh = YAMLCodec.emptyDocument()
+        fresh.root = .mapping(reduced)
+        let keys = Set(reduced.entries.map(\.key))
+        return (try? YAMLCodec.encode(fresh, replacingTopLevelKeys: keys)) ?? ""
+    }
+
+    private static func reducing(
+        _ value: YAMLCodec.YAMLValue, key: String, parent: String?
+    ) -> YAMLCodec.YAMLValue {
+        switch value {
+        case .mapping(let mapping):
+            return .mapping(.init(entries: mapping.entries.map {
+                .init(key: $0.key, value: reducing($0.value, key: $0.key, parent: key))
+            }))
+        case .sequence(let items):
+            return .sequence(items.map { reducing($0, key: key, parent: parent) })
+        case .scalar(.string(let text)):
+            let vocabulary = vocabularyKeys.contains(key) || parent == "controls"
+            return .scalar(.string(keepsText(text, vocabulary: vocabulary)
+                ? text : "<string \(text.count) chars>"))
+        case .scalar:
+            return value
+        }
+    }
+
+    private static func keepsText(_ text: String, vocabulary: Bool) -> Bool {
+        // `yes`, `on` and the rest reach here as text; `allow_absolute_paths` reads them as on.
+        if text.isEmpty || ["yes", "no", "on", "off"].contains(text.lowercased()) { return true }
+        if text.range(of: #"^-?[0-9]+(\.[0-9]+)?$"#, options: .regularExpression) != nil
+            || text.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil {
+            return true
+        }
+        return vocabulary
+            && text.range(of: #"^[A-Za-z0-9_.-][A-Za-z0-9 _.-]{0,31}$"#, options: .regularExpression)
+                != nil
     }
 
     /// The lines of one `exceptions:` block with its free text replaced, nil when it has none.
@@ -1026,7 +1146,7 @@ enum DiagnosticBundleService {
         }
         // The probe drains both pipes while the child runs; nil is a launch failure or timeout.
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["-p", cliProfile, "doctor", "--output", "json"],
+            executable: binary, arguments: CLICommand.proDoctor(profile: cliProfile).argv,
             timeout: 15), result.exitCode == 0 else { return [] }
         return stageDoctorJSON(result.stdout, into: staging, redactor: redactor)
     }
@@ -1141,7 +1261,7 @@ enum DiagnosticBundleService {
     /// Build a depth-capped indented tree. Line 1 is the workspace basename
     /// only — never an absolute path. Files are sorted; dirs sorted for
     /// determinism. Mirrors the Python `_bundle_collect_workspace_tree` shape.
-    private static func buildWorkspaceTree(root: URL, name: String, maxDepth: Int) -> String {
+    static func buildWorkspaceTree(root: URL, name: String, maxDepth: Int) -> String {
         var lines = ["\(name)/"]
         walkTree(root, depth: 0, maxDepth: maxDepth, lines: &lines)
         return lines.joined(separator: "\n")
@@ -1168,6 +1288,12 @@ enum DiagnosticBundleService {
             let childDepth = depth + 1
             if childDepth > maxDepth { continue }
             lines.append(String(repeating: "  ", count: childDepth) + child.lastPathComponent + "/")
+            // A CSV folder's file names are EA names, which the config reduction removes.
+            if ReportLibrary.isCSVFolder(child) {
+                let count = (try? FileManager.default.contentsOfDirectory(atPath: child.path).count) ?? 0
+                lines.append(String(repeating: "  ", count: childDepth + 1) + "\(count) files")
+                continue
+            }
             walkTree(child, depth: childDepth, maxDepth: maxDepth, lines: &lines)
         }
     }
@@ -1188,7 +1314,7 @@ enum DiagnosticBundleService {
             return "unavailable (codesign gate rejected binary)"
         }
         guard let result = JamfCLIProbe.run(
-            executable: binary, arguments: ["--version"], timeout: 10) else {
+            executable: binary, arguments: JamfCLIProbe.versionArguments, timeout: 10) else {
             return "unavailable (did not run)"
         }
         guard result.exitCode == 0 else { return "unavailable (exit \(result.exitCode))" }
@@ -1230,8 +1356,6 @@ enum DiagnosticBundleService {
     }
 
     private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
+        ISO8601Time.string(date)
     }
 }

@@ -7,7 +7,10 @@ let package = Package(
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "JamfReports", targets: ["JamfReports"])
+        .executable(name: "JamfReports", targets: ["JamfReportsMain"]),
+        // Nothing links this product: it gives Xcode a scheme for the library, which SwiftUI
+        // previews need (Xcode does not preview an executable target from a package).
+        .library(name: "JamfReportsKit", targets: ["JamfReports"]),
     ],
     dependencies: [
         // ZIPFoundation — pure-Swift ZIP creation for the OOXML (.xlsx) writer.
@@ -20,6 +23,11 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
+            name: "JamfReportsMain",
+            dependencies: ["JamfReports"],
+            path: "Sources/JamfReportsMain"
+        ),
+        .target(
             name: "JamfReports",
             dependencies: [
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),

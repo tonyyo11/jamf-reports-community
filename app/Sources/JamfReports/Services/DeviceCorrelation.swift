@@ -1,6 +1,7 @@
 import Foundation
 
-/// Finds the Jamf Pro computer a probe row describes, by identifier only. Same rule as
+/// Finds the inventory record (a Jamf Pro computer or mobile device, a Jamf School device) a
+/// probe row describes, by identifier only. Same rule as
 /// `DeviceRecordMerger`: a candidate shares an identifier with the probe and no identifier
 /// they both carry differs. A name never decides. An identifier value on more than
 /// `DeviceRecordMerger.maxRecordsPerSharedIdentifier` records is a placeholder and joins nothing.
@@ -63,11 +64,25 @@ struct ProtectProCorrelation: Sendable {
 
     var inventory = Inventory.jamfPro
     var protectCount = 0
+    /// How many inventory records the match ran against.
+    var inventorySize = 0
     var matched = 0
     var ambiguous = 0
     var noIdentifier = 0
+    /// Protect rows that matched a Jamf Pro computer an earlier row already claimed.
+    var duplicates = 0
     var notInPro: [ProtectComputerRow] = []
     var proWithoutProtect: [DeviceInventoryRecord] = []
+
+    /// Protect computers that carry a UUID or serial: the denominator of the match.
+    var identified: Int { protectCount - noIdentifier }
+
+    /// matched of the identified computers less duplicates, so each Mac counts once; nil with no
+    /// inventory or no identified Protect computer.
+    var matchedShare: MobileSummary.Share? {
+        let of = identified - duplicates
+        return inventorySize > 0 && of > 0 ? .init(met: matched, of: of) : nil
+    }
 
     static func build(
         protect: [ProtectComputerRow], pro: [DeviceInventoryRecord]
@@ -81,13 +96,20 @@ struct ProtectProCorrelation: Sendable {
             probe.serial = row.serial ?? ""
             switch correlation.match(probe) {
             case .matched(let position, _):
-                result.matched += 1
-                claimed.insert(position)
+                if claimed.insert(position).inserted {
+                    result.matched += 1
+                } else {
+                    result.duplicates += 1
+                }
             case .unmatched: result.notInPro.append(row)
             case .ambiguous: result.ambiguous += 1
             case .noIdentifier: result.noIdentifier += 1
             }
         }
+        // A record with no UDID or serial can never match, so it is not inventory to match against.
+        result.inventorySize = pro.filter {
+            $0.identifier(.udid) != nil || $0.identifier(.serial) != nil
+        }.count
         result.proWithoutProtect = pro.enumerated()
             .filter { !claimed.contains($0.offset) }.map(\.element)
         return result
@@ -128,5 +150,73 @@ struct ProtectProCorrelation: Sendable {
             ? DemoData.outreachRecords
             : DeviceInventoryService.cachedComputerRecords(profile: profile)
         return pro.map { build(protect: protect, pro: $0) }
+    }
+}
+
+/// Which Security Cloud risk rows are devices of this environment's inventory, by `externalId`
+/// (the device UDID; Security Cloud writes it lowercased, Jamf Pro uppercase, so identifiers
+/// compare lowercased). The inventory is the Jamf Pro computers and mobile devices; Jamf School
+/// devices are never matched, since they reach Security Cloud by management ID, which the reduced
+/// rows do not keep. A name never joins and a row with no `externalId` is counted apart.
+struct SecurityCloudCorrelation: Sendable {
+    var securityCount = 0
+    var inventorySize = 0
+    var matched = 0
+    var ambiguous = 0
+    var noIdentifier = 0
+    /// Rows that matched a device an earlier row already claimed, as Protect counts them.
+    var duplicates = 0
+
+    /// Rows that carry an `externalId`: the denominator of the match.
+    var identified: Int { securityCount - noIdentifier }
+
+    /// matched of the identified rows less duplicates, so each device counts once; nil with no
+    /// inventory or no identified row.
+    var matchedShare: MobileSummary.Share? {
+        let of = identified - duplicates
+        return inventorySize > 0 && of > 0 ? .init(met: matched, of: of) : nil
+    }
+
+    static func build(
+        rows: [SecurityRiskRow], inventory records: [DeviceInventoryRecord]
+    ) -> SecurityCloudCorrelation {
+        let correlation = DeviceCorrelation(records: records)
+        // Only a UDID can match, so a record with none is not inventory to match against.
+        var result = SecurityCloudCorrelation(
+            securityCount: rows.count,
+            inventorySize: records.filter { $0.identifier(.udid) != nil }.count)
+        var claimed = Set<Int>()
+        for row in rows {
+            switch correlation.match(udidRecord(row.externalId, source: "security-cloud")) {
+            case .matched(let position, _):
+                if claimed.insert(position).inserted {
+                    result.matched += 1
+                } else {
+                    result.duplicates += 1
+                }
+            case .unmatched: break
+            case .ambiguous: result.ambiguous += 1
+            case .noIdentifier: result.noIdentifier += 1
+            }
+        }
+        return result
+    }
+
+    /// A record carrying only a UDID, for a device whose snapshot offers nothing else to join on.
+    private static func udidRecord(_ udid: String?, source: String) -> DeviceInventoryRecord {
+        var record = DeviceInventoryRecord.empty(id: source, source: source)
+        record.udid = udid ?? ""
+        return record
+    }
+
+    /// Against Jamf Pro: the `computers` snapshot plus the mobile devices' `general.udid`; nil
+    /// when neither snapshot exists. Protect's match stays computers only.
+    static func load(
+        rows: [SecurityRiskRow], profile: String, mobile: MobileFleetService.Snapshot
+    ) -> SecurityCloudCorrelation? {
+        let computers = DeviceInventoryService.cachedComputerRecords(profile: profile)
+        guard computers != nil || mobile.isDetected else { return nil }
+        let devices = mobile.richDevices.map { udidRecord($0.general?.udid, source: "mobile") }
+        return build(rows: rows, inventory: (computers ?? []) + devices)
     }
 }

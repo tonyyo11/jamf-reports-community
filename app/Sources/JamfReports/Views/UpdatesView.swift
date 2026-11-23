@@ -5,10 +5,13 @@ import Charts
 /// and failure details from `pro report update-status` snapshots via
 /// `UpdateStatusService`.
 struct UpdatesView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: UpdateStatusService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     /// Latest OS versions from cached SOFA feeds. Empty until the first collect that
     /// fetches SOFA — view renders nothing new when empty.
     @State private var sofaRows: [SOFAFeedService.OSFamilyRow] = []
@@ -16,48 +19,51 @@ struct UpdatesView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Operations",
-                title: "OS Updates",
+                kicker: L("Operations"),
+                title: L("OS Updates"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["update-status", "update-device-failures"]
-                )
-            }
-            if snapshot.collectedWithNoData {
-                noUpdateDataState
-            } else if snapshot.total == 0 {
-                emptyState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("OS updates"))
             } else {
-                kpiGrid
-                planStateCard
-                statusSummaryCard
-                if !snapshot.failedPlans.isEmpty {
-                    failedPlansCard
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
+                    // Per-kind file dates are the honest per-screen signal here;
+                    // digest-level collectionSources belongs on summary screens only.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: ["update-status", "update-device-failures"]
+                    )
                 }
-                if !snapshot.errorDevices.isEmpty {
-                    errorDevicesCard
-                }
-                if !sofaRows.isEmpty {
-                    sofaLatestCard
+                if snapshot.collectedWithNoData {
+                    noUpdateDataState
+                } else if snapshot.total == 0 {
+                    emptyState
+                } else {
+                    kpiGrid
+                    planStateCard
+                    statusSummaryCard
+                    if !snapshot.failedPlans.isEmpty {
+                        failedPlansCard
+                    }
+                    if !snapshot.errorDevices.isEmpty {
+                        errorDevicesCard
+                    }
+                    if !sofaRows.isEmpty {
+                        sofaLatestCard
+                    }
                 }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -67,30 +73,37 @@ struct UpdatesView: View {
     /// fetches `/v1/managed-software-updates/update-statuses`), so it is not a device count.
     nonisolated static func subtitle(total: Int) -> String? {
         guard total > 0 else { return nil }
-        return "\(total) update status\(total == 1 ? "" : "es"), one per device and update."
+        return (total == 1 ? L("\(total) update status, one per device and update.") : L("\(total) update statuses, one per device and update."))
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty; sofaRows = [] }
         guard !workspace.demoMode else {
             snapshot = DemoData.updateStatus
-            // SOFA rows come from the workspace's cache. Left in place, a live
-            // profile's rows stayed on screen after switching to the demo.
+            // SOFA rows come from the workspace's cache, which the demo never reads.
             sofaRows = []
+            loadedSource = source
             return
         }
-        snapshot = UpdateStatusService.load(profile: workspace.profile)
-        if let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
-            let sofaSnap = SOFAFeedService.load(dataDir: dir)
-            sofaRows = sofaSnap.rows
-        }
+        let profile = workspace.profile
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { () -> (UpdateStatusService.Snapshot, [SOFAFeedService.OSFamilyRow]) in
+                let rows = (try? WorkspacePaths.dataDir(for: profile))
+                    .map { SOFAFeedService.load(dataDir: $0).rows } ?? []
+                return (UpdateStatusService.load(profile: profile), rows)
+            }
+        ) else { return }
+        snapshot = loaded.0
+        sofaRows = loaded.1
+        loadedSource = source
     }
 
     // MARK: - Computed values
@@ -113,8 +126,8 @@ struct UpdatesView: View {
 
     private var errorDevicesSubtitle: String {
         snapshot.scanFailuresAvailable
-            ? "Device-level failures"
-            : "Failure scan not run"
+            ? L("Device-level failures")
+            : L("Failure scan not run")
     }
 
     // MARK: - Sections
@@ -123,9 +136,8 @@ struct UpdatesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
-                title: "Jamf Pro reports no managed software updates",
-                message: "The latest collection found no update statuses and no update plans, "
-                    + "so there is nothing to chart here."
+                title: L("Jamf Pro reports no managed software updates"),
+                message: L("The latest collection found no update statuses and no update plans, so there is nothing to chart here.")
             )
         }
     }
@@ -134,11 +146,11 @@ struct UpdatesView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
-                title: "No update status data yet",
-                message: "Collect data for this screen with the Collect now banner when it "
-                    + "shows, or collect the Inventory and Scan tiers from the command line.",
+                title: L("No update status data yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or collect the Inventory and Scan tiers from the command line."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["update-status", "update-device-failures"])]
+                    profile: workspace.profile, kinds: ["update-status", "update-device-failures"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory, .scan])
             )
         }
     }
@@ -147,31 +159,31 @@ struct UpdatesView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Update Statuses",
+                label: L("Update Statuses"),
                 value: "\(snapshot.total)",
-                sub: "One per device and update"
+                sub: L("One per device and update")
             )
             // plan_total is every plan, completed and failed ones included (the
             // donut's percentages divide by it); "Plans Active" misnamed it.
             StatTile(
-                label: "Total Plans",
+                label: L("Total Plans"),
                 value: "\(snapshot.planTotal)",
-                sub: "Update plans tracked"
+                sub: L("Update plans tracked")
             )
             StatTile(
-                label: "Failing Plans",
+                label: L("Failing Plans"),
                 value: "\(failingPlansCount)",
-                sub: "Failed or exception state"
+                sub: L("Failed or exception state")
             )
             StatTile(
-                label: "Error Devices",
+                label: L("Error Devices"),
                 value: errorDevicesValue,
                 sub: errorDevicesSubtitle
             )
             StatTile(
-                label: "Plans Completed",
+                label: L("Plans Completed"),
                 value: "\(plansCompleted)",
-                sub: "Successfully finished"
+                sub: L("Successfully finished")
             )
         }
     }
@@ -182,14 +194,15 @@ struct UpdatesView: View {
             Card {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        SectionHeader(title: "Plan State Distribution")
+                        SectionHeader(title: L("Plan State Distribution"))
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
                             action: exportPlanStateDonut
                         )
+                        .disabled(snapshot.planStateBreakdown.allSatisfy { $0.count == 0 })
                         .accessibilityLabel("Export plan state distribution chart as PNG")
                         .help("Save the update plan state distribution donut as a PNG image")
                     }
@@ -211,7 +224,8 @@ struct UpdatesView: View {
             title: "Plan State Distribution",
             subtitle: "OS Updates",
             footnote: "Source: pro report update-status · \(planTotal) plans tracked",
-            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "update-plan-states", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             UpdatesPlanStateDonutExport(slices: slices, planTotal: planTotal)
         }
@@ -235,8 +249,8 @@ struct UpdatesView: View {
         .accessibilityLabel("Update plan state distribution")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "Update Plan State Distribution",
-                unit: " plans",
+                title: L("Update Plan State Distribution"),
+                unit: L(" plans"),
                 slices: snapshot.planStateBreakdown.filter { $0.count > 0 }.map { slice in
                     SectorChartDescriptor.Slice(
                         label: UpdateStatusService.planStateDisplayName(slice.label),
@@ -266,14 +280,14 @@ struct UpdatesView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    Text(String(format: "%.1f%%", pct))
+                    Text(percentFormat.text(pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(name), \(slice.count) plans, \(Int(pct.rounded())) percent")
+                .accessibilityLabel("\(name), \(slice.count) plans, \(PercentFormat.whole.numberText(pct)) percent")
             }
         }
     }
@@ -283,7 +297,7 @@ struct UpdatesView: View {
         if !snapshot.statusBreakdown.isEmpty {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Update Status Summary")
+                    SectionHeader(title: L("Update Status Summary"))
                     ForEach(snapshot.statusBreakdown) { slice in
                         statusBar(for: slice)
                     }
@@ -309,10 +323,10 @@ struct UpdatesView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text("\(slice.count) status\(slice.count == 1 ? "" : "es")")
+                Text(slice.count == 1 ? L("\(slice.count) status") : L("\(slice.count) statuses"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", pct))
+                Text(percentFormat.text(pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Color(hex: slice.colorHex))
                     .frame(minWidth: 56, alignment: .trailing)
@@ -331,7 +345,7 @@ struct UpdatesView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(slice.label) update status, \(String(format: "%.1f", snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
+        .accessibilityLabel("\(slice.label) update status, \(percentFormat.numberText(snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
     }
 
     private func statusIcon(for status: String) -> String {
@@ -347,48 +361,47 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Failed Plans",
+                    title: L("Failed Plans"),
                     trailing: Self.failedPlansTrailing(
                         listed: snapshot.failedPlans.count, failing: failingPlansCount))
                 if snapshot.failedPlans.count < failingPlansCount {
-                    Text("jamf-cli looks up a random sample of failing plans, not all of them. "
-                        + "The Failing Plans tile counts every one.")
+                    Text("jamf-cli looks up a random sample of failing plans, not all of them. The Failing Plans tile counts every one.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Table(Array(snapshot.failedPlans.prefix(50))) {
+                Table(snapshot.failedPlans) {
                     TableColumn("Device") { plan in
                         Text(plan.name)
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .accessibilityLabel("\(plan.name), device name")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Serial") { plan in
                         Mono(text: plan.serial, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("OS Version") { plan in
                         Mono(text: plan.osVersion, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("State") { plan in
                         let state = UpdateStatusService.planStateDisplayName(plan.state)
                         Pill(text: state, tone: pillTone(for: plan.state))
                             .accessibilityLabel("State \(state)")
                     }
-                    .width(min: 118, ideal: 138)
+                    .width(min: 118, ideal: 118)
 
                     TableColumn("Action") { plan in
                         Text(plan.action)
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Error") { plan in
                         Text(truncatedError(plan.error))
@@ -396,16 +409,15 @@ struct UpdatesView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .lineLimit(1)
                     }
-                    .width(min: 150, ideal: 200)
+                    .width(min: 150, ideal: 150)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let plan = snapshot.failedPlans.first(where: { $0.id == ids.first }),
+                       !plan.serial.isEmpty {
+                        Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(plan.serial) }
+                    }
                 }
                 .frame(minHeight: 200)
-
-                if snapshot.failedPlans.count > 50 {
-                    Text("+ \(snapshot.failedPlans.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
-                }
             }
         }
     }
@@ -414,47 +426,46 @@ struct UpdatesView: View {
     private var errorDevicesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
-                Table(Array(snapshot.errorDevices.prefix(50))) {
+                SectionHeader(title: L("Error Devices"), trailing: L("\(snapshot.errorDevices.count) total"))
+                Table(snapshot.errorDevices) {
                     TableColumn("Device") { device in
                         Text(device.name)
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .accessibilityLabel("\(device.name), device name")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Serial") { device in
                         Mono(text: device.serial, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Status") { device in
                         Pill(text: device.status, tone: .danger)
                             .accessibilityLabel("Status \(device.status)")
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Product Key") { device in
                         Mono(text: device.productKey, size: 10.5, color: Theme.Colors.fg2)
                     }
-                    .width(min: 150, ideal: 180)
+                    .width(min: 150, ideal: 150)
 
                     TableColumn("Updated") { device in
                         Text(formatDate(device.updated))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 100, ideal: 120)
+                    .width(min: 100, ideal: 100)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let device = snapshot.errorDevices.first(where: { $0.id == ids.first }),
+                       !device.serial.isEmpty {
+                        Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(device.serial) }
+                    }
                 }
                 .frame(minHeight: 150)
-
-                if snapshot.errorDevices.count > 50 {
-                    Text("+ \(snapshot.errorDevices.count - 50) more")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.top, 4)
-                }
             }
         }
     }
@@ -463,7 +474,7 @@ struct UpdatesView: View {
 
     /// jamf-cli's --scan-failures samples failing plans (max(10%, 100) by default).
     nonisolated static func failedPlansTrailing(listed: Int, failing: Int) -> String {
-        listed < failing ? "\(listed) sampled of \(failing)" : "\(listed) total"
+        listed < failing ? L("\(listed) sampled of \(failing)") : L("\(listed) total")
     }
 
     private func pillTone(for state: String) -> Pill.Tone {
@@ -483,15 +494,21 @@ struct UpdatesView: View {
     }
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        guard let date = isoFormatter.date(from: dateString) else {
+        guard let date = ISO8601Time.parse(dateString) else {
             return dateString
         }
+        return Self.shortFormatter.string(from: date)
+    }
+
+    // Built once: this runs per table row, and neither is mutated after creation.
+    nonisolated private static let shortFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
 
     // MARK: - SOFA OS Latest Versions
 
@@ -501,7 +518,7 @@ struct UpdatesView: View {
     private var sofaLatestCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "OS Latest Versions")
+                SectionHeader(title: L("OS Latest Versions"))
                 ForEach(sofaRows, id: \.osFamily) { row in
                     HStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -531,7 +548,7 @@ struct UpdatesView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
                         "\(row.osFamily): \(row.productVersion)" +
-                        (row.daysSinceRelease.map { ", released \($0) days ago" } ?? "")
+                        (row.daysSinceRelease.map { L(", released \($0) days ago") } ?? "")
                     )
                     if row.osFamily != sofaRows.last?.osFamily {
                         Divider()
@@ -551,6 +568,7 @@ struct UpdatesView: View {
 /// slice color hex values directly — they're already chosen for state
 /// semantics (green completed / blue active / red failed).
 private struct UpdatesPlanStateDonutExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let slices: [UpdateStatusService.Snapshot.Slice]
     let planTotal: Int
 
@@ -587,7 +605,7 @@ private struct UpdatesPlanStateDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)

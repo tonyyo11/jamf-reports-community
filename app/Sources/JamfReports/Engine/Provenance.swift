@@ -87,18 +87,12 @@ extension Provenance {
         if CLIBridge.codesignGate(executable: url, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
-        // The probe blocks its thread until the child exits or the deadline stops it.
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let output = JamfCLIProbe.run(
-                    executable: url, arguments: ["--version"], timeout: timeout)
-                let version = output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
-                    .components(separatedBy: .newlines)
-                    .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                continuation.resume(returning: version)
-            }
-        }
+        let output = await JamfCLIProbe.runAsync(
+            executable: url, arguments: JamfCLIProbe.versionArguments, timeout: timeout)
+        return output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
+            .components(separatedBy: .newlines)
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// Reads the tenant URL from the cached `overview` JSON snapshot in `dataDir`.
@@ -108,12 +102,7 @@ extension Provenance {
         let candidates: [URL] = {
             var result: [URL] = []
             let subdir = dataDir.appendingPathComponent("overview", isDirectory: true)
-            if fm.fileExists(atPath: subdir.path),
-               let files = try? fm.contentsOfDirectory(
-                at: subdir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-               ) {
+            if let files = FileManager.snapshotFolderEntries(in: subdir) {
                 result.append(contentsOf: files.filter {
                     $0.pathExtension == "json"
                     && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
@@ -129,7 +118,7 @@ extension Provenance {
                 forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             return lMod < rMod
         }),
-              let data = try? Data(contentsOf: newest),
+              let data = BoundedFile.readLogged(newest, inside: dataDir),
               let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return nil }
 

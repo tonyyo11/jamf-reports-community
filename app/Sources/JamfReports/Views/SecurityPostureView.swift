@@ -6,101 +6,104 @@ import Charts
 /// Health Dashboard. Reads the latest `pro security report` snapshot via
 /// `SecurityPostureService`.
 struct SecurityPostureView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
     @ScaledMetric(relativeTo: .title) private var actionTileSize: CGFloat = 22
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
-    @State private var hasLoaded = false
-    /// Bumped by each reload, so a read that a newer one replaced is dropped.
-    @State private var loadGeneration = 0
-    /// False until the first read lands: until then the screen does not say there is no data.
-    @State private var hasRead = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match, so the
+    /// screen never says there is no data, or shows another profile's, while one loads.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Posture",
-                title: "Security Posture",
+                kicker: L("Posture"),
+                title: L("Security Posture"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && hasRead {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
-                // Per-kind file dates are the honest per-screen signal here;
-                // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: ["security"]
-                )
-            }
-
-            if let reason = snapshot.loadError {
-                Card(padding: 24) {
-                    ErrorStateView(
-                        title: "Couldn't read security data",
-                        message: reason,
-                        commands: ["Re-run collection from Data Sources, then Refresh."],
-                        retry: { reload() }
-                    )
-                }
-            } else if snapshot.totalDevices == 0 {
-                if hasRead { emptyState }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("security posture"))
             } else {
-                heroScoreCard
-                kpiGrid
-                aiInsightCard
-                actionItemsCard
-                osDistributionCard
+                content
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+        // Suppressed in demo mode (the demo dataset is intentionally static and
+        // not user-perceivably "stale"). Renders nothing when source is .fresh.
+        if !workspace.demoMode {
+            CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
+            // Per-kind file dates are the honest per-screen signal here;
+            // digest-level collectionSources belongs on summary screens only.
+            FreshnessChipRow(
+                sourceDates: snapshot.sourceDates,
+                expectedKinds: ["security"]
+            )
+        }
+
+        if let reason = snapshot.loadError {
+            Card(padding: 24) {
+                ErrorStateView(
+                    title: L("Couldn't read security data"),
+                    message: reason,
+                    commands: [L("Re-run collection from Data Sources, then Refresh.")],
+                    retry: { reloads += 1 }
+                )
+            }
+        } else if snapshot.totalDevices == 0 {
+            emptyState
+        } else {
+            heroScoreCard
+            kpiGrid
+            aiInsightCard
+            actionItemsCard
+            osDistributionCard
         }
     }
 
     private var subtitle: String? {
         if snapshot.totalDevices == 0 { return nil }
         let count = snapshot.totalDevices
-        return "Weighted across \(count) computer\(count == 1 ? "" : "s")."
+        return (count == 1 ? L("Weighted across \(count) computer.") : L("Weighted across \(count) computers."))
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    private func reload() {
-        loadGeneration += 1
-        if workspace.demoMode {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source { loadedSource = nil; snapshot = .empty }
+        guard !workspace.demoMode else {
             snapshot = DemoData.securityPostureSnapshot
-            hasRead = true
+            loadedSource = source
             return
         }
-        let generation = loadGeneration
         let profile = workspace.profile
-        Task {
-            let loaded = await Task.detached(priority: .userInitiated) {
-                SecurityPostureService.load(profile: profile)
-            }.value
-            // A read that a profile switch or a later refresh replaced must not paint.
-            guard generation == loadGeneration else { return }
-            snapshot = loaded
-            hasRead = true
-        }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { SecurityPostureService.load(profile: profile) }
+        ) else { return }
+        snapshot = loaded
+        loadedSource = source
     }
 
     // MARK: - Computed values
@@ -122,8 +125,14 @@ struct SecurityPostureView: View {
 
     /// An Action Items caption with the values the tile leaves out because Jamf did not
     /// report them.
+    /// The list counts device rows, the tile Jamf's security report, so the hint says which.
+    static func controlDrillHint(_ control: SecurityControl, notReported: Int) -> String {
+        let base = L("Opens Computers, listing the Macs whose inventory reads \(control.displayName) off")
+        return notReported > 0 ? L("\(base); \(notReported) not reported are not listed") : base
+    }
+
     static func actionCaption(_ base: String, notReported: Int) -> String {
-        notReported > 0 ? base + " · not reported: \(notReported)" : base
+        notReported > 0 ? L("\(base) · not reported: \(notReported)") : base
     }
 
     /// summary.json writes no P0 without a FileVault count; the tile still sums the
@@ -139,15 +148,15 @@ struct SecurityPostureView: View {
         _ control: SecurityControl, on: Int, total: Int, fleet: SecurityFleetCounts
     ) -> String {
         let counts = fleet.controls[control]
-        if counts?.level == .ignore { return "Not counted by this workspace's policy" }
-        var base = "\(on) of \(total)"
-        if let missing = counts?.notReported, missing > 0 { base += " · not reported: \(missing)" }
+        if counts?.level == .ignore { return L("Not counted by this workspace's policy") }
+        var base = L("\(on) of \(total)")
+        if let missing = counts?.notReported, missing > 0 { base = L("\(base) · not reported: \(missing)") }
         let lowered = fleet.fileVaultOffHardwareEncrypted
         if control == .fileVault, lowered > 0 {
-            return base + " · \(lowered) more hardware-encrypted, FileVault off"
+            return L("\(base) · \(lowered) more hardware-encrypted, FileVault off")
         }
         if let warnings = counts?.warning, warnings > 0 {
-            return base + " · \(warnings) warning\(warnings == 1 ? "" : "s")"
+            return warnings == 1 ? L("\(base) · \(warnings) warning") : L("\(base) · \(warnings) warnings")
         }
         return base
     }
@@ -158,9 +167,8 @@ struct SecurityPostureView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "lock.shield",
-                title: "No security snapshot yet",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No security snapshot yet"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
                     profile: workspace.profile, kinds: ["security"])]
             )
@@ -206,12 +214,12 @@ struct SecurityPostureView: View {
         }
     }
 
-    static let noScoreCaption = "No factor had data"
+    static var noScoreCaption: String { L("No factor had data") }
 
     /// The ring's number: a dash when nothing was scored, never a 0.0 that reads as grade F.
-    static func scoreText(_ score: SecurityScore) -> String {
+    static func scoreText(_ score: SecurityScore, format: PercentFormat) -> String {
         guard !score.parts.isEmpty, score.value.isFinite else { return "—" }
-        return String(format: "%.1f", score.value)
+        return format.numberText(score.value)
     }
 
     /// The hero card's line for metrics the ring does not score. FileVault, when the report
@@ -231,11 +239,10 @@ struct SecurityPostureView: View {
         // (an agent no Mac reports, a SOFA feed not yet cached). The line says what has no
         // data and asks for no collect.
         if !names.isEmpty {
-            sentences.append("No data for \(names), so not scored.")
+            sentences.append(L("No data for \(names), so not scored."))
         }
         if fileVaultNotCounted {
-            sentences.append("FileVault is not scored: every Mac with it off is "
-                + "hardware-encrypted and not counted by this workspace's policy.")
+            sentences.append(L("FileVault is not scored: every Mac with it off is hardware-encrypted and not counted by this workspace's policy."))
         }
         return sentences.joined(separator: " ")
     }
@@ -252,14 +259,16 @@ struct SecurityPostureView: View {
     private var kpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            kpiTile(label: "FileVault", control: .fileVault, count: snapshot.fileVaultEncrypted)
-            kpiTile(label: "SIP", control: .sip, count: snapshot.sipEnabled)
-            kpiTile(label: "Firewall", control: .firewall, count: snapshot.firewallEnabled)
-            kpiTile(label: "Gatekeeper", control: .gatekeeper, count: snapshot.gatekeeperEnabled)
+            kpiTile(label: L("FileVault"), control: .fileVault, count: snapshot.fileVaultEncrypted)
+            kpiTile(label: L("SIP"), control: .sip, count: snapshot.sipEnabled)
+            kpiTile(label: L("Firewall"), control: .firewall, count: snapshot.firewallEnabled)
+            kpiTile(label: L("Gatekeeper"), control: .gatekeeper, count: snapshot.gatekeeperEnabled)
             StatTile(
-                label: "Total Computers",
+                label: L("Total Computers"),
                 value: "\(snapshot.totalDevices)",
-                sub: "Across active and recently inactive"
+                sub: L("Across active and recently inactive"),
+                action: { openComputers(.all) },
+                actionHint: L("Opens Computers, every Mac in the latest inventory")
             )
         }
     }
@@ -269,18 +278,25 @@ struct SecurityPostureView: View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
-            // Rounded as the AI card rounds it, so an exact x.x5 reads the same in both.
+            let counted = snapshot.fleetCounts.controls[control]?.level != .ignore
             StatTile(
                 label: label,
-                value: FleetInsightInput.Value.percent(pct).text,
+                value: percentFormat.text(pct),
                 sub: Self.kpiTileSub(
-                    control, on: count, total: total, fleet: snapshot.fleetCounts)
+                    control, on: count, total: total, fleet: snapshot.fleetCounts),
+                // The tile is the share with the control on; the rows are the Macs that read
+                // off, the rest of the Macs that report it. A control the policy ignores has
+                // no gap to list.
+                action: counted ? { openComputers(.off(control)) } : nil,
+                actionHint: counted ? Self.controlDrillHint(
+                    control, notReported: snapshot.fleetCounts.controls[control]?.notReported ?? 0)
+                    : nil
             )
         } else {
             StatTile(
                 label: label,
                 value: "—",
-                sub: "Not in snapshot"
+                sub: L("Not in snapshot")
             )
         }
     }
@@ -290,13 +306,11 @@ struct SecurityPostureView: View {
     @ViewBuilder
     private var aiInsightCard: some View {
         if AIInsightCard.isOffered(demoMode: workspace.demoMode),
-           let input = FleetInsightInput.posture(.security(snapshot)) {
+           let input = Localization.english { FleetInsightInput.posture(.security(snapshot)) } {
             AIInsightCard(
-                title: "AI Posture Insight",
-                idleText: "Suggest which security control to work first using on-device "
-                    + "intelligence.",
-                provenanceText: "AI-generated from the counts on this screen — verify against "
-                    + "the tiles above.",
+                title: L("AI Posture Insight"),
+                idleText: L("Suggest which security control to work first using on-device intelligence."),
+                provenanceText: L("AI-generated from the counts on this screen — verify against the tiles above."),
                 input: input
             )
         }
@@ -305,16 +319,16 @@ struct SecurityPostureView: View {
     private var actionItemsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Action Items", trailing: "By priority")
+                SectionHeader(title: L("Action Items"), trailing: L("By priority"))
                 HStack(spacing: 12) {
                     actionTile(level: "P0", count: actionItems.p0,
                                caption: Self.actionCaption(
-                                   "FileVault / SIP / Firewall gaps",
+                                   L("FileVault / SIP / Firewall gaps"),
                                    notReported: snapshot.fleetCounts.p0NotReported),
                                tone: .danger)
                     actionTile(level: "P1", count: actionItems.p1,
                                caption: Self.actionCaption(
-                                   "Gatekeeper gaps",
+                                   L("Gatekeeper gaps"),
                                    notReported: snapshot.fleetCounts.p1NotReported),
                                tone: .warn)
                 }
@@ -330,12 +344,15 @@ struct SecurityPostureView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             Spacer()
-            PNPButton(title: "Open Computers", icon: Tab.devices.sfSymbol, size: .sm) {
-                NotificationCenter.default.post(
-                    name: .navigateToTab, object: nil,
-                    userInfo: DevicesView.DeviceFilter.security.navigationUserInfo())
+            PNPButton(title: L("Open Computers"), icon: Tab.devices.sfSymbol, size: .sm) {
+                openComputers(.security)
             }
         }
+    }
+
+    private func openComputers(_ filter: DevicesView.DeviceFilter) {
+        NotificationCenter.default.post(
+            name: .navigateToTab, object: nil, userInfo: filter.navigationUserInfo())
     }
 
     private func actionTile(level: String, count: Int, caption: String,
@@ -368,10 +385,10 @@ struct SecurityPostureView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "macOS Version Distribution")
+                    SectionHeader(title: L("macOS Version Distribution"))
                     if !snapshot.osVersions.isEmpty {
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -399,7 +416,8 @@ struct SecurityPostureView: View {
             title: "macOS Version Distribution",
             subtitle: "Security Posture",
             footnote: "Source: pro report security · \(total) devices",
-            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile)
+            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             SecurityPostureOSDonutExport(rows: rows, totalDevices: total)
         }
@@ -421,7 +439,7 @@ struct SecurityPostureView: View {
         let tail = sorted.dropFirst(Self.osChartTopCount)
         let tailCount = tail.reduce(0) { $0 + $1.count }
         let tailPct = tail.reduce(0.0) { $0 + $1.pct }
-        return top + [.init(osVersion: "Other (\(tail.count))", count: tailCount, pct: tailPct)]
+        return top + [.init(osVersion: L("Other (\(tail.count))"), count: tailCount, pct: tailPct)]
     }
 
     private var osChart: some View {
@@ -434,9 +452,10 @@ struct SecurityPostureView: View {
             )
             .foregroundStyle(by: .value("Version", row.osVersion))
             .accessibilityLabel(row.osVersion)
-            .accessibilityValue("\(row.count) devices, \(Int(row.pct.rounded()))%")
+            .accessibilityValue("\(row.count) devices, \(PercentFormat.whole.text(row.pct))")
         }
-        .chartForegroundStyleScale(domain: orderedKeys, range: Theme.ChartPalette.osVersionInApp)
+        .chartForegroundStyleScale(
+            domain: orderedKeys, range: Theme.ChartColors.colors(forVersions: orderedKeys))
         // ViewThatFits picks the trailing legend when there's room, otherwise
         // falls back to a bottom legend so narrow cards don't truncate.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 8)
@@ -444,8 +463,8 @@ struct SecurityPostureView: View {
         .accessibilityLabel("macOS version distribution across the fleet")
         .accessibilityChartDescriptor(
             SectorChartDescriptor(
-                title: "macOS Version Distribution",
-                unit: " devices",
+                title: L("macOS Version Distribution"),
+                unit: L(" devices"),
                 slices: osChartRows.map { row in
                     SectorChartDescriptor.Slice(
                         label: row.osVersion,
@@ -463,8 +482,8 @@ struct SecurityPostureView: View {
 /// `Circle` shapes: track + filled arc. The center renders the score and
 /// letter grade in the same `Theme.Fonts.serif` used by `StatTile`.
 private struct ScoreRing: View {
+    @Environment(\.percentFormat) private var percentFormat
     let score: SecurityScore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -481,22 +500,22 @@ private struct ScoreRing: View {
                     style: StrokeStyle(lineWidth: 14, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: score.value)
+                .motionSafeAnimation(.easeOut(duration: 0.5), value: score.value)
             VStack(spacing: 2) {
                 Text(displayValue)
                     .font(Theme.Fonts.serif(scoreDisplaySize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
                 Text("of 100")
-                    .font(Theme.Fonts.mono(9.5))
+                    .font(Theme.Fonts.mono(10))
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(score.parts.isEmpty
-            ? "Security score: \(SecurityPostureView.noScoreCaption)"
-            : "Security score \(displayValue) of 100, grade \(score.grade.rawValue)")
+            ? L("Security score: \(SecurityPostureView.noScoreCaption)")
+            : L("Security score \(displayValue) of 100, grade \(score.grade.rawValue)"))
     }
 
     private var clamped: Double {
@@ -504,7 +523,7 @@ private struct ScoreRing: View {
         return min(max(score.value / 100, 0), 1)
     }
 
-    private var displayValue: String { SecurityPostureView.scoreText(score) }
+    private var displayValue: String { SecurityPostureView.scoreText(score, format: percentFormat) }
 }
 
 // MARK: - Export-only chart
@@ -516,11 +535,8 @@ private struct SecurityPostureOSDonutExport: View {
     let rows: [SecurityPostureService.Snapshot.OSVersion]
     let totalDevices: Int
 
-    /// Fixed palette chosen for legibility on the light export canvas. Mirrors
-    /// the ChartExportView color discipline — saturated but not neon.
-    private static let palette: [Color] = Theme.ChartPalette.osVersionExport
-
     var body: some View {
+        let colors = Theme.ChartColors.colors(forVersions: rows.map(\.osVersion), scheme: .light)
         HStack(alignment: .center, spacing: 24) {
             Chart(Array(rows.enumerated()), id: \.offset) { offset, row in
                 SectorMark(
@@ -528,7 +544,7 @@ private struct SecurityPostureOSDonutExport: View {
                     innerRadius: .ratio(0.62),
                     angularInset: 1.5
                 )
-                .foregroundStyle(Self.palette[offset % Self.palette.count])
+                .foregroundStyle(colors[offset])
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
@@ -538,7 +554,7 @@ private struct SecurityPostureOSDonutExport: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { offset, row in
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 2)
-                            .fill(Self.palette[offset % Self.palette.count])
+                            .fill(colors[offset])
                             .frame(width: 10, height: 10)
                         Text(row.osVersion)
                             .font(.system(size: 11.5, weight: .medium))
@@ -549,7 +565,7 @@ private struct SecurityPostureOSDonutExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.0f%%", row.pct))
+                        Text(PercentFormat.whole.text(row.pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 40, alignment: .trailing)
@@ -564,6 +580,7 @@ private struct SecurityPostureOSDonutExport: View {
 
 /// Under the score ring: each scored factor, its share of Macs and the points it adds.
 struct ScoreBreakdownList: View {
+    @Environment(\.percentFormat) private var percentFormat
     let score: SecurityScore
     let staleDays: Int?
     var staleBasis: [StaleBasis] = StaleBasis.default
@@ -577,7 +594,7 @@ struct ScoreBreakdownList: View {
                     Text(part.factor.label(staleDays: staleDays, staleBasis: staleBasis))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(Self.percent(part.share))
+                    Text(Self.percent(part.share, format: percentFormat))
                         .gridColumnAlignment(.trailing)
                     Text(Self.points(score.points(of: part)))
                         .gridColumnAlignment(.trailing)
@@ -589,7 +606,7 @@ struct ScoreBreakdownList: View {
         .accessibilityElement(children: .combine)
     }
 
-    static func percent(_ share: Double) -> String { String(format: "%.1f%%", share) }
+    static func percent(_ share: Double, format: PercentFormat) -> String { format.text(share) }
 
     static func points(_ value: Double) -> String { String(format: "%.1f pts", value) }
 }

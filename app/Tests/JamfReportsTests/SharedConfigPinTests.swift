@@ -40,8 +40,9 @@ final class SharedConfigPinTests: XCTestCase {
         retentionMode: String = "archive", retentionArchiveDir: String = "",
         webhook: String = "https://hooks.example.com/a", detail: String = "full",
         historicalDir: String = "snapshots", protectProfile: String = "protect-a",
-        heartbeat: Bool? = nil, protectBackup: String? = nil
+        heartbeat: Bool? = nil, protectBackup: String? = nil, keepNames: String? = nil
     ) throws {
+        let names = keepNames.map { "\njamf_cli:\n  keep_account_names: \($0)" } ?? ""
         let beat = heartbeat.map { "\n  heartbeat: \($0)" } ?? ""
         let backup = protectBackup.map { "\n  backup_on_synced_storage: \($0)" } ?? ""
         let body = """
@@ -63,7 +64,7 @@ final class SharedConfigPinTests: XCTestCase {
           historical_csv_dir: "\(historicalDir)"
         protect:
           enabled: true
-          profile: "\(protectProfile)"\(backup)
+          profile: "\(protectProfile)"\(backup)\(names)
         """
         try body.write(to: workspace.appendingPathComponent("config.yaml"),
                        atomically: true, encoding: .utf8)
@@ -86,6 +87,87 @@ final class SharedConfigPinTests: XCTestCase {
         SharedConfigPin.check(profile: profile, appSupport: appSupport)
     }
 
+    private func writeBlock(platform: String) throws {
+        let body = """
+        shared_workspace:
+          enabled: true
+        profiles:
+          jamf_pro: "\(profile)"
+          platform: "\(platform)"
+        """
+        try body.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    /// D18: a Platform profile other than the workspace's own is an address this Mac would send
+    /// `-p` to, so it waits for one Confirm, as `output.timestamp_authority` does.
+    func testAPlatformSlotNamingAnotherProfileIsHeldAtFirstSight() throws {
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertEqual(check().drifts.map(\.key), [.platformProfile])
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, name: "\(profile)-API", appSupport: appSupport))
+        try confirmAll()
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: profile, name: "\(profile)-API", appSupport: appSupport))
+    }
+
+    func testAPlatformSlotNamingTheWorkspaceIsTrustedAtFirstSight() throws {
+        try writeBlock(platform: profile)
+        XCTAssertTrue(check().drifts.isEmpty)
+        XCTAssertTrue(SharedConfigPin.platformAllowed(profile: profile, name: profile, appSupport: appSupport))
+    }
+
+    func testAPeerChangingAConfirmedPlatformSlotIsDrift() throws {
+        try writeBlock(platform: "\(profile)-API")
+        try confirmAll()
+        try writeBlock(platform: "other-tenant-API")
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, name: "other-tenant-API", appSupport: appSupport))
+    }
+
+    private func writeSlots(_ slots: String) throws {
+        let body = "shared_workspace:\n  enabled: true\nprofiles:\n  jamf_pro: \"\(profile)\"\n"
+            + slots
+        try body.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    /// A slot spelled like a boolean is still the profile name the decoder hands to `-p`, in its
+    /// exact case, so the pin must see it (two readers of one key).
+    func testAQuotedBooleanPlatformSlotIsHeldAtFirstSight() throws {
+        try writeSlots("  platform: \"True\"\n")
+        XCTAssertEqual(check().drifts.map(\.key), [.platformProfile])
+        XCTAssertEqual(SharedConfigPin.current(workspace: workspace)?.platformProfile, "True")
+    }
+
+    func testAQuotedBooleanProtectSlotDriftsAfterAConfirmedValue() throws {
+        try writeSlots("  protect: \"Protect-Login\"\n")
+        try confirmAll()
+        try writeSlots("  protect: \"false\"\n")
+        XCTAssertEqual(SharedConfigPin.current(workspace: workspace)?.protectProfile, "false")
+        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, name: "false", appSupport: appSupport))
+    }
+
+    /// A pin written before `profiles.platform` was a key adopts it with the same hold.
+    func testAnOlderPinAdoptsAForeignPlatformSlotAsUnconfirmed() throws {
+        try writeConfig()
+        _ = check()
+        var older = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        older.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.platformProfile.rawValue }
+        try SharedConfigPin.save(older, profile: profile, appSupport: appSupport)
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertTrue(check().drifts.map(\.key).contains(.platformProfile))
+        let pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        XCTAssertTrue(pin.unconfirmed.contains(SharedConfigPin.Key.platformProfile.rawValue))
+        XCTAssertFalse(SharedConfigPin.platformAllowed(profile: profile, name: "\(profile)-API", appSupport: appSupport))
+    }
+
+    /// `writeConfig()` pins every key at first sight, so a block added later is drift, not
+    /// adoption.
+    func testChangingToAPlatformSlotIsDrift() throws {
+        try writeConfig()
+        _ = check()
+        try writeBlock(platform: "\(profile)-API")
+        XCTAssertTrue(check().drifts.map(\.key).contains(.platformProfile))
+    }
+
     func testFirstSightPinsTheCurrentValuesAndReportsNoDrift() throws {
         try writeConfig()
         XCTAssertNil(SharedConfigPin.load(profile: profile, appSupport: appSupport))
@@ -93,7 +175,8 @@ final class SharedConfigPinTests: XCTestCase {
         let pinned = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
         XCTAssertEqual(pinned.retentionMode, "archive")
         XCTAssertEqual(pinned.notifyURLHost, "hooks.example.com")
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let permissions = try fileManager.attributesOfItem(atPath: url.path)[.posixPermissions]
         XCTAssertEqual(permissions as? Int, 0o600)
     }
@@ -101,7 +184,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testPinHoldsTheWebhookHostNeverTheURL() throws {
         try writeConfig(webhook: "https://hooks.example.com/services/T0/B0/secret-token")
         _ = check()
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("hooks.example.com"))
         XCTAssertFalse(text.contains("secret-token"))
@@ -169,7 +253,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAnUnreadablePinFailsClosedWithEveryKeyDrifted() throws {
         try writeConfig(retentionMode: "archive")
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
 
         let result = check()
@@ -188,7 +273,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAPinWrittenBeforeAKeyWasAddedPinsThatKeyAtItsFirstSight() throws {
         try writeConfig(historicalDir: outside, protectProfile: "protect-a")
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let old = #"{"allowAbsolutePaths":false,"outputDir":"","archiveDir":"","dataDir":"","#
             + #""retentionEnabled":true,"retentionMode":"archive","#
             + #""notifyURLHost":"hooks.example.com"}"#
@@ -260,10 +346,24 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testASaveConfirmsWhatItWroteNotAPeersCopyThatLandedAfter() throws {
+        try writeConfig(webhook: "https://hooks.example.com/a")
+        _ = check()
+        try writeConfig(webhook: "https://collector.attacker.test/a")
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://hooks.example.com/b"], profile: profile, appSupport: appSupport)
+        XCTAssertEqual(check().drifts.map(\.key), [.notifyURL])
+        SharedConfigPin.confirmWritten(
+            [.notifyURL: "https://collector.attacker.test/a"], profile: profile,
+            appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
     func testConfirmingAnUnreadablePinNeedsEveryKeyToStillMatch() throws {
         try writeConfig()
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
         let shown = check().drifts
         try writeConfig(retentionMode: "delete")
@@ -294,18 +394,109 @@ final class SharedConfigPinTests: XCTestCase {
         let lines = LineBox()
         let protectRuns = LineBox()
         try await CollectRouter.run(
-            profile: profile, config: config,
-            proCollect: { _, _, _, _, _, _ in .collected },
-            protectCollect: { name, _, _ in protectRuns.add(name) },
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
             onLine: { lines.add($0.text) })
         XCTAssertTrue(protectRuns.all.isEmpty)
         XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect: protect.profile changed") })
         XCTAssertFalse(lines.all.contains { $0.contains("[partial]") })
-        XCTAssertFalse(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertFalse(SharedConfigPin.protectAllowed(
+            profile: profile, name: "someone-elses", appSupport: appSupport))
         XCTAssertEqual(ReportEngine.dashboardArguments(
             base: ["x"], profile: profile,
-            protect: SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport)
-                ? config.protect : nil), ["x"])
+            protect: SharedConfigPin.protectAllowed(
+                profile: profile, name: "someone-elses", appSupport: appSupport)
+                ? config.protect?.profile : nil), ["x"])
+    }
+
+    private func writeBlockConfig(protect: String) throws {
+        try """
+        shared_workspace:
+          enabled: true
+        profiles:
+          jamf_pro: \(profile)
+          protect: \(protect)
+        """.write(to: workspace.appendingPathComponent("config.yaml"),
+                  atomically: true, encoding: .utf8)
+    }
+
+    func testAChangedProfilesProtectSkipsProtectAtTheRouter() async throws {
+        try writeBlockConfig(protect: "protect-a")
+        _ = check()
+        try writeBlockConfig(protect: "someone-elses")
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        let lines = LineBox()
+        let protectRuns = LineBox()
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: profile), config: config,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            onLine: { lines.add($0.text) })
+        XCTAssertTrue(protectRuns.all.isEmpty)
+        XCTAssertTrue(lines.all.contains {
+            $0.hasPrefix("[skip] protect: profiles.protect changed")
+        }, "\(lines.all)")
+    }
+
+    /// An unquoted number decodes as its digits, so it pins as them: a blank pin reads it as
+    /// drift instead of letting the run use a profile nobody confirmed.
+    func testANumericProtectProfilePinsAsTheTextJamfCLIReceives() throws {
+        try writeConfig(protectProfile: "")
+        _ = check()
+        let cases = [
+            ("protect:\n  enabled: true\n  profile: 2024\n", "2024"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: 2024\n", "2024"),
+            ("protect:\n  enabled: true\n  profile: \"true\"\n", "true"),
+            ("profiles:\n  jamf_pro: \(profile)\n  protect: \"true\"\n", "true"),
+        ]
+        for (body, expected) in cases {
+            try ("shared_workspace:\n  enabled: true\n" + body).write(
+                to: workspace.appendingPathComponent("config.yaml"),
+                atomically: true, encoding: .utf8)
+            let drift = check().drifts.first { $0.key == .protectProfile }
+            XCTAssertEqual(drift?.current, expected, body)
+        }
+    }
+
+    /// The run loaded B, a peer reverted the file to the pinned A: B is still not allowed.
+    func testAProtectNameLoadedBeforeARevertIsHeld() async throws {
+        try writeConfig(protectProfile: "protect-a")
+        _ = check()
+        try writeConfig(protectProfile: "protect-b")
+        let loaded = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        try writeConfig(protectProfile: "protect-a")
+        let lines = LineBox()
+        let protectRuns = LineBox()
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: profile), config: loaded,
+            proCollect: { _, _, _, _, _, _, _ in .collected },
+            protectCollect: { name, _, _, _ in protectRuns.add(name); return ["protect-alerts"] },
+            onLine: { lines.add($0.text) })
+        XCTAssertTrue(protectRuns.all.isEmpty)
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[skip] protect:") })
+        XCTAssertFalse(SharedConfigPin.protectAllowed(
+            profile: profile, name: "protect-b", appSupport: appSupport))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(
+            profile: profile, name: "protect-a", appSupport: appSupport))
+        XCTAssertNil(ReportEngine.dashboardProtectProfile(
+            config: loaded, workspace: try WorkspaceID(validating: profile)))
+    }
+
+    func testAnUnpinnedLocalWorkspaceAllowsAnyName() throws {
+        try writeConfig(shared: false, protectProfile: "protect-a")
+        XCTAssertTrue(SharedConfigPin.protectAllowed(
+            profile: profile, name: "anything", appSupport: appSupport))
+        XCTAssertTrue(SharedConfigPin.platformAllowed(
+            profile: profile, name: "anything", appSupport: appSupport))
+    }
+
+    func testADriftedValueIsHeldEvenForTheNewFileValue() throws {
+        try writeConfig(protectProfile: "protect-a")
+        _ = check()
+        try writeConfig(protectProfile: "protect-b")
+        XCTAssertFalse(SharedConfigPin.protectAllowed(
+            profile: profile, name: "protect-b", appSupport: appSupport))
     }
 
     @MainActor
@@ -315,7 +506,7 @@ final class SharedConfigPinTests: XCTestCase {
         let flow = OnboardingFlow()
         try flow.writeProtectConfig(profileSlug: profile, protectProfileName: "protect-b")
         XCTAssertTrue(check().drifts.isEmpty, "\(check().drifts)")
-        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: profile, appSupport: appSupport))
+        XCTAssertTrue(SharedConfigPin.protectAllowed(profile: profile, name: "protect-b", appSupport: appSupport))
         XCTAssertEqual(SharedConfigPin.load(profile: profile, appSupport: appSupport)?
             .protectProfile, "protect-b")
     }
@@ -364,34 +555,46 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(check().drifts.map(\.key), [.outputDir])
     }
 
-    func testAWrittenConfigConfirmsExactlyTheKeysItSets() throws {
-        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: """
-        jamf_cli:
-          data_dir: "jamf-cli-data"
-        output:
-          output_dir: "Generated Reports"
-        retention:
-          mode: delete
-        """), [.dataDir, .outputDir, .retentionMode])
-        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: "thresholds:\n  stale_device_days: 30\n"),
-                       [])
-
+    func testAWrittenConfigConfirmsWhatItWroteUnsetKeysIncluded() throws {
         // Onboarding on a Mac joining a shared folder: the written file sets the two folders.
         try writeConfig(outputDir: outside, allowAbsolute: true, retentionMode: "archive")
         _ = check()
-        try ScaffoldService.writeMinimalConfig(
+        let written = try ScaffoldService.writeMinimalConfig(
             to: workspace.appendingPathComponent("config.yaml"), profile: profile)
         let before = Set(check().drifts.map(\.key))
         XCTAssertTrue(before.contains(.outputDir))
         SharedConfigPin.confirmWrittenConfig(
-            at: workspace.appendingPathComponent("config.yaml"), profile: profile,
+            written, at: workspace.appendingPathComponent("config.yaml"), profile: profile,
             appSupport: appSupport)
-        let after = Set(check().drifts.map(\.key))
-        XCTAssertFalse(after.contains(.outputDir))
-        XCTAssertFalse(after.contains(.dataDir))
-        XCTAssertEqual(after, before.subtracting([.outputDir, .dataDir]),
-                       "keys the write did not set stay as they were")
-        XCTAssertFalse(after.isEmpty, "retention, webhook and Protect are not accepted")
+        // A key the file leaves unset reads as its default, which is what was written.
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    /// Beta 2690: a workspace set up fresh under a name used before kept the earlier pin, and
+    /// a key only the old file set (`charts.historical_csv_dir`) read as changed.
+    func testAFreshConfigUnderAReusedNameDoesNotInheritTheOldPin() throws {
+        let url = workspace.appendingPathComponent("config.yaml")
+        try writeConfig(historicalDir: "snapshots")
+        _ = check()
+        try FileManager.default.removeItem(at: url)
+        let written = try ScaffoldService.writeMinimalConfig(to: url, profile: profile)
+        XCTAssertTrue(check().drifts.map(\.key).contains(.historicalDir))
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: url, profile: profile, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    func testAWrittenConfigIsNotConfirmedWhenAPeerReplacedItAfterTheWrite() throws {
+        try writeConfig()
+        _ = check()
+        let url = workspace.appendingPathComponent("config.yaml")
+        let written = try ScaffoldService.writeMinimalConfig(to: url, profile: profile)
+        // A peer swaps in its own folder before the confirm runs.
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: url, profile: profile, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.map(\.key).contains(.outputDir),
+                      "the peer's folder is not confirmed by this Mac's write")
     }
 
     func testTheProfileOfAWorkspaceConfigPath() {
@@ -714,7 +917,8 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(outputDir: outside, allowAbsolute: true)
         _ = check()
         try confirmAll()
-        let pin = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let pin = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         let before = try Data(contentsOf: pin)
         for _ in 0..<50 { _ = try WorkspacePaths.outputDir(for: profile) }
         XCTAssertEqual(try Data(contentsOf: pin), before, "a read never rewrites the pin")
@@ -792,7 +996,8 @@ final class SharedConfigPinTests: XCTestCase {
         for school in [false, true] {
             try writeConfig()
             try? fileManager.removeItem(
-                at: SharedConfigPin.storeURL(profile: profile, appSupport: appSupport))
+                at: try XCTUnwrap(
+                    SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport)))
             _ = check()
             try writeConfig(retentionMode: school ? "archive" : "delete",
                             retentionArchiveDir: school ? "peer" : "")
@@ -804,9 +1009,9 @@ final class SharedConfigPinTests: XCTestCase {
             let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
             let lines = LineBox()
             try await CollectRouter.run(
-                profile: profile, config: config,
-                proCollect: { _, _, _, _, _, _ in .collected },
-                schoolCollect: { _, _, _, _, _ in },
+                workspace: WorkspaceID(validating: profile), config: config,
+                proCollect: { _, _, _, _, _, _, _ in .collected },
+                schoolCollect: { _, _, _, _, _, _ in },
                 onLine: { lines.add($0.text) })
             XCTAssertEqual(
                 lines.all.first,
@@ -862,7 +1067,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAnUnreadablePinOffersOneConfirmAllAndNoPerKeyButton() throws {
         try writeConfig()
         _ = check()
-        let store = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let store = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         try "not json".write(to: store, atomically: true, encoding: .utf8)
         let row = try XCTUnwrap(ConfigDoctorService.sharedConfigRows(
             profile: profile, appSupport: appSupport).first)
@@ -982,7 +1188,8 @@ final class SharedConfigPinTests: XCTestCase {
     func testAPinWrittenBeforeTheHeartbeatKeyPinsItAtFirstSight() throws {
         try writeConfig(heartbeat: true)
         _ = check()
-        let url = SharedConfigPin.storeURL(profile: profile, appSupport: appSupport)
+        let url = try XCTUnwrap(
+            SharedConfigPin.storeURL(workspace: profile, appSupport: appSupport))
         var pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
         pin.notifyHeartbeat = false
         pin.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.notifyHeartbeat.rawValue }
@@ -1044,10 +1251,20 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertFalse(try protectOnSynced())
         let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
         guard case .skip = ProtectBackup.plan(
-            config: config, workspaceProfile: profile, pinAllows: { true },
+            config: config, workspaceProfile: profile, pinAllows: { _ in true },
             sharedStorage: { "in a shared workspace" },
             syncedStorageAllowed: { (try? self.protectOnSynced()) ?? true })
         else { return XCTFail("a drifted opt-in must not run the Protect backup") }
+    }
+
+    /// The caller's read of config.yaml can be stale (a peer flipped it back before `check`
+    /// read it again): its true counts only when the pin holds a confirmed true.
+    func testAStaleTrueFromTheCallerNeedsAConfirmedPin() throws {
+        try writeConfig(protectBackup: "false")
+        _ = check()
+        XCTAssertTrue(check().drifts.isEmpty)
+        XCTAssertFalse(SharedConfigPin.protectBackupOnSyncedStorage(
+            true, profile: profile, appSupport: appSupport))
     }
 
     func testTurningAConfirmedOptInOffAppliesAtOnceAndBackOnNeedsAConfirm() throws {
@@ -1086,8 +1303,8 @@ final class SharedConfigPinTests: XCTestCase {
         try writeConfig(protectBackup: "true")
         _ = check()
         XCTAssertFalse(try protectOnSynced())
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         XCTAssertTrue(try protectOnSynced())
     }
 
@@ -1101,8 +1318,8 @@ final class SharedConfigPinTests: XCTestCase {
         _ = check()
         XCTAssertFalse(try protectOnSynced())
 
-        let report = try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        let report = try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         XCTAssertTrue(try protectOnSynced(), "the switch confirms the value it wrote")
         XCTAssertTrue(check().drifts.isEmpty)
         let backup = try XCTUnwrap(report.backupName)
@@ -1113,8 +1330,8 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(saved.protect?.resolvedProfile, "protect-a", "other protect keys stay")
         XCTAssertTrue(saved.protect?.isEnabled ?? false)
 
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: false, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: false, profile: profile, appSupport: appSupport)
         XCTAssertEqual(try ConfigLoader.load(from: url).protect?.backupOnSyncedStorage, false)
         XCTAssertFalse(try protectOnSynced())
         XCTAssertTrue(check().drifts.isEmpty)
@@ -1132,8 +1349,8 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(rows.first?.severity, .suggest)
         XCTAssertTrue(rows.first?.hint?.contains("protect.backup_on_synced_storage") ?? false)
 
-        try ProtectBackupConfigWriter.save(
-            onSyncedStorage: true, profile: profile, appSupport: appSupport)
+        try BackupChoiceConfigWriter.save(
+            .protect, on: true, profile: profile, appSupport: appSupport)
         let allowed = try XCTUnwrap(ProtectBackup.syncedStorageChoice(
             profile: profile, config: try load(), appSupport: appSupport))
         XCTAssertTrue(allowed.allowed)
@@ -1146,5 +1363,85 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertNil(ProtectBackup.syncedStorageChoice(
             profile: profile, config: try ConfigLoader.load(
                 from: workspace.appendingPathComponent("config.yaml")), appSupport: appSupport))
+    }
+
+    // MARK: - jamf_cli.keep_account_names
+
+    private func namesKept() throws -> Bool {
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        return SharedConfigPin.keepAccountNames(
+            config.jamfCli?.keepsAccountNames ?? false, profile: profile, appSupport: appSupport)
+    }
+
+    func testKeepingNamesAtFirstSightWaitsForAConfirm() throws {
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        XCTAssertFalse(try namesKept(), "a value a peer may have written removes names")
+        try confirmAll()
+        XCTAssertTrue(try namesKept())
+    }
+
+    func testAPeerTurningKeepOnIsDriftAndStillRemovesNames() throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        let row = try XCTUnwrap(ConfigDoctorService.sharedConfigRows(
+            profile: profile, appSupport: appSupport).first)
+        XCTAssertEqual(row.items.count, 1)
+        XCTAssertNotNil(row.items.first?.action, "the row offers a Confirm")
+        XCTAssertFalse(try namesKept())
+    }
+
+    func testTurningKeepOffAppliesAtOnceAndBackOnWaits() throws {
+        try writeConfig(keepNames: "true")
+        try confirmAll()
+        XCTAssertTrue(try namesKept())
+        try writeConfig(keepNames: "false")
+        XCTAssertFalse(try namesKept())
+        XCTAssertTrue(check().drifts.isEmpty, "the safe value is pinned, not shown as drift")
+        try writeConfig(keepNames: "true")
+        XCTAssertFalse(try namesKept())
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+    }
+
+    func testAPinWrittenBeforeTheKeyAdoptsATrueAsUnconfirmed() throws {
+        try writeConfig()
+        _ = check()
+        var pin = try XCTUnwrap(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+        pin.pinnedKeys.removeAll { $0 == SharedConfigPin.Key.keepAccountNames.rawValue }
+        try SharedConfigPin.save(pin, profile: profile, appSupport: appSupport)
+        try writeConfig(keepNames: "true")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+        XCTAssertFalse(try namesKept())
+    }
+
+    func testANonBooleanReadsAsFalseWithoutFailingTheDecode() throws {
+        try writeConfig(keepNames: "\"sometimes\"")
+        XCTAssertFalse(try namesKept())
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    /// `yes` and `1` are not booleans, so they read as false in the decoder and the pin. A quoted
+    /// "true" reads as true everywhere (the reader's rule), so it waits for a Confirm like true.
+    func testNonBooleanSpellingsNeverKeepNames() throws {
+        for typed in ["yes", "1", "\"on\""] {
+            try writeConfig(keepNames: typed)
+            XCTAssertFalse(try namesKept(), typed)
+            let config = try ConfigLoader.load(
+                from: workspace.appendingPathComponent("config.yaml"))
+            XCTAssertFalse(config.jamfCli?.keepsAccountNames ?? false, typed)
+            XCTAssertTrue(check().drifts.isEmpty, "\(typed) pins as false")
+            try fileManager.removeItem(at: appSupport)
+            try fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        }
+        try writeConfig(keepNames: "\"true\"")
+        XCTAssertFalse(try namesKept(), "unconfirmed")
+        XCTAssertEqual(check().drifts.map(\.key), [.keepAccountNames])
+    }
+
+    func testALocalWorkspaceUsesTheFilesValue() throws {
+        try writeConfig(shared: false, keepNames: "true")
+        XCTAssertTrue(try namesKept())
     }
 }

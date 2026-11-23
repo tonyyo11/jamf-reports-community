@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 
 /// Root of the included `jamf-reports` command-line interface (v2.4.0). The same
-/// binary launches the GUI on no-args; `App/main.swift` routes here when
+/// binary launches the GUI on no-args; `runJamfReports()` routes here when
 /// `routesToCLI` accepts the first argument. Each subcommand is a thin shell over
 /// an existing engine entry point. xlsx + HTML only — PDF stays a GUI feature
 /// (WKWebView needs an AppKit run loop a headless CLI lacks).
@@ -18,7 +18,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommands: [
             Generate.self, Collect.self, Html.self, Backup.self, Scaffold.self,
             Check.self, Capabilities.self, DiagnosticBundleCommand.self, Device.self,
-            SchoolCheck.self, Schedules.self,
+            SchoolCheck.self, Schedules.self, Verify.self,
         ]
     )
 
@@ -26,7 +26,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
     /// `isKnownSubcommand`, which is how `routesToCLI` still sends `--help` to the CLI.
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
-        "capabilities", "diagnostic-bundle", "device", "school-check", "schedules",
+        "capabilities", "diagnostic-bundle", "device", "school-check", "schedules", "verify",
     ]
 
     /// `help` is ArgumentParser's built-in subcommand (`jamf-reports help generate`),
@@ -36,7 +36,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommandNames.contains(arg) || ["help", "--help", "-h", "--version"].contains(arg)
     }
 
-    /// `App/main.swift`'s CLI-vs-GUI test for `argv[1]`: a known subcommand or help flag, or
+    /// `runJamfReports()`'s CLI-vs-GUI test for `argv[1]`: a known subcommand or help flag, or
     /// any word that is not a flag, so ArgumentParser rejects a removed or mistyped subcommand
     /// instead of the app opening (#207 G31). Launch Services arguments (`-psn_…`, `-NS…`,
     /// `-Apple…`) start with `-` and still open the GUI.
@@ -100,11 +100,15 @@ enum CLIRun {
     /// it, nothing runs: one line on stderr and exit `TickRunner.queuedExitCode`, the code a
     /// tick turned away by the lock exits with. `fail` exits without unwinding, so a command
     /// that ends with a failure exit returns what it would have exited with and fails after.
+    /// Past the lock's time limit the process ends and `profile`'s Run History says why.
     static func exclusively<T: Sendable>(
+        profile: String,
         lock: TickLock = TickLock(url: TickLock.defaultURL),
+        onGiveUp: (@Sendable () -> Void)? = nil,
         _ body: () async throws -> T
     ) async throws -> T {
-        guard let result = try await lock.holdingForRun(body) else {
+        let giveUp = onGiveUp ?? lockGiveUp(.command, workspaces: { [profile] })
+        guard let result = try await lock.holdingForRun(onGiveUp: giveUp, body) else {
             FileHandle.standardError.write(Data("error: \(TickLock.busyMessage)\n".utf8))
             throw ExitCode(TickRunner.queuedExitCode)
         }
@@ -117,6 +121,23 @@ enum CLIRun {
         exit(code)
     }
 
+    /// Exit unless `profile` is a name the app takes and its workspace folder is its own, before
+    /// any command opens a lock, a run record or a file in it. Every subcommand that names a
+    /// profile calls this first, `generate` and `html` before `loadProfile`.
+    static func requireValidProfile(_ profile: String) {
+        if let refusal = profileRefusal(profile) { fail(refusal) }
+    }
+
+    /// Why `profile` cannot be used here: a name the app does not take (filtered before it is
+    /// printed, since it can hold control characters), or a case variant whose folder is
+    /// another spelling's (`ProfileService.caseVariantRefusal`).
+    static func profileRefusal(_ profile: String) -> String? {
+        guard ProfileService.isValid(profile) else {
+            return "invalid profile '\(ConfigSchema.displayText(profile))'"
+        }
+        return ProfileService.caseVariantRefusal(of: profile)
+    }
+
     /// Reject a user-supplied output path that lands in a sensitive directory
     /// (`~/.ssh`, `~/Library`, …). The GUI applies this deny-list in `CLIBridge`;
     /// the CLI calls the engine directly, so it must guard the path itself —
@@ -124,6 +145,10 @@ enum CLIRun {
     static func requireSafeOutput(_ path: String) {
         if WorkspacePaths.isSensitiveAbsolutePath(URL(fileURLWithPath: path)) {
             fail("refusing to write into a sensitive path: \(path)")
+        }
+        var isFolder: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
+            fail("--output names a folder, not a file: \(path)")
         }
     }
 

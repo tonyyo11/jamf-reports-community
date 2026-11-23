@@ -187,7 +187,7 @@ final class IntegrityEnvelopeTests: XCTestCase {
         let out = dir.appendingPathComponent("r.pdf")
         let lines = DigestLines()
         try await ReportEngine.generatePDF(
-            config: ReportConfig(), dataDir: dir, outputURL: out, profileName: "t",
+            config: ReportConfig(), dataDir: dir, outputURL: out, workspace: WorkspaceID("t"),
             locateJamfCLI: { nil }, onLine: { lines.add($0.text) })
 
         let digestLines = lines.texts.filter { $0.hasPrefix("[ok] sha256: ") }

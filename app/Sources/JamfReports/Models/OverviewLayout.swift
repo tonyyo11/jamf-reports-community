@@ -11,6 +11,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     case managedDevices
     case scoreCards
     case osDistribution
+    case mobileDevices
     case topFailingRules
     case securityAgents
     case recentActivity
@@ -20,14 +21,15 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .managedDevices:  "Managed Devices"
-        case .scoreCards:      "Score Cards"
-        case .aiInsight:       "AI Fleet Insight"
-        case .osDistribution:  "macOS Distribution"
-        case .topFailingRules: "Top Failing Rules"
-        case .securityAgents:  "Security Agents"
-        case .recentActivity:  "Recent Activity"
-        case .workspaceStatus: "Workspace Status"
+        case .managedDevices:  L("Managed Devices")
+        case .scoreCards:      L("Score Cards")
+        case .aiInsight:       L("AI Fleet Insight")
+        case .osDistribution:  L("macOS Distribution")
+        case .mobileDevices:   L("Mobile Devices")
+        case .topFailingRules: L("Top Failing Rules")
+        case .securityAgents:  L("Security Agents")
+        case .recentActivity:  L("Recent Activity")
+        case .workspaceStatus: L("Workspace Status")
         }
     }
 
@@ -36,21 +38,23 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     var summary: String {
         switch self {
         case .managedDevices:
-            "Computers and mobile devices in the latest daily summary."
+            L("Computers and mobile devices in the latest daily summary.")
         case .scoreCards:
-            "The metric tiles you pick below, each with its trend."
+            L("The metric tiles you pick below, each with its trend.")
         case .aiInsight:
-            "A plain-language reading of the latest summary, generated on this Mac."
+            L("A plain-language reading of the latest summary, generated on this Mac.")
         case .osDistribution:
-            "Macs per macOS version, and the share on a current release."
+            L("Macs per macOS version, and the share on a current release.")
+        case .mobileDevices:
+            L("Managed, supervised, passcode, current-OS, stale and jailbroken figures for iPads and iPhones, from the latest daily summary.")
         case .topFailingRules:
-            "Compliance rules failing on the most Macs."
+            L("Compliance rules failing on the most Macs.")
         case .securityAgents:
-            "Coverage of each agent listed under security_agents in Config."
+            L("Coverage of each agent listed under security_agents in Config.")
         case .recentActivity:
-            "The Macs that checked in most recently."
+            L("The Macs that checked in most recently.")
         case .workspaceStatus:
-            "jamf-cli version and how many daily summaries this workspace holds."
+            L("jamf-cli version and how many daily summaries this workspace holds.")
         }
     }
 
@@ -60,6 +64,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
         case .scoreCards:      "square.grid.2x2"
         case .aiInsight:       "sparkles"
         case .osDistribution:  "chart.pie"
+        case .mobileDevices:   "ipad.and.iphone"
         case .topFailingRules: "list.number"
         case .securityAgents:  "shield.lefthalf.filled"
         case .recentActivity:  "clock.arrow.circlepath"
@@ -69,7 +74,37 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
 
     /// Half-width sections share a row with a half-width neighbour.
     var isHalfWidth: Bool {
-        self == .osDistribution || self == .topFailingRules
+        self == .osDistribution || self == .mobileDevices || self == .topFailingRules
+    }
+
+    /// Whether this environment can have anything to show here. A section whose data cannot
+    /// exist is left out, not drawn as an Unavailable notice: a figure that could exist after
+    /// a collect or a setup step is `OverviewUnavailable`'s job instead.
+    func availability(in composition: EnvironmentComposition) -> OverviewAvailability {
+        switch self {
+        case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
+            return composition.allowsMacs ? .shown : .leftOut(L("No Macs in this environment."))
+        case .mobileDevices:
+            switch composition {
+            case .mobileOnly, .mixed: return .shown
+            case .macsOnly: return .leftOut(L("No mobile devices in the latest daily summary."))
+            case .unknown: return .leftOut(L("No daily summary lists mobile devices yet."))
+            }
+        case .aiInsight, .managedDevices, .scoreCards, .workspaceStatus:
+            return .shown
+        }
+    }
+}
+
+enum OverviewAvailability: Equatable, Sendable {
+    case shown
+    /// Not drawn on this Overview, and listed in Customize with this reason.
+    case leftOut(String)
+
+    var isShown: Bool { self == .shown }
+    var reason: String? {
+        if case .leftOut(let why) = self { return why }
+        return nil
     }
 }
 
@@ -178,32 +213,79 @@ struct OverviewUnavailable: Equatable, Sendable {
     var remedy: Tab? = nil
 }
 
+/// Which score cards the Overview draws from the person's saved selection.
+enum OverviewScoreCards {
+    /// What a mobile-only environment shows when none of the saved cards applies to it.
+    static let mobileDefaults: [TrendSeries.Metric] = [
+        .mobileOSCurrent, .mobilePasscode, .mobileSupervised, .mobileDataProtection,
+    ]
+
+    /// The saved cards that are offered, in their saved order. On a mobile-only environment
+    /// where none of a non-empty selection is, the mobile defaults stand in (mobile spec 3.2).
+    /// The selection itself is never rewritten here, so switching back to an environment
+    /// with Macs restores it; an empty selection stays empty, as the person chose.
+    static func shown(
+        selected: [TrendSeries.Metric], composition: EnvironmentComposition,
+        isOffered: (TrendSeries.Metric) -> Bool
+    ) -> [TrendSeries.Metric] {
+        let offered = selected.filter(isOffered)
+        guard offered.isEmpty, !selected.isEmpty, composition == .mobileOnly else {
+            return offered
+        }
+        return mobileDefaults.filter(isOffered)
+    }
+
+    /// True for the only card a mobile-only environment shows. Switching it off would leave the
+    /// saved selection with nothing offered, and the mobile defaults would stand in again, so the
+    /// switch is held on; the Score Cards section's own switch is how to remove them.
+    static func isLastOnMobileOnly(
+        _ metric: TrendSeries.Metric, shown: [TrendSeries.Metric],
+        composition: EnvironmentComposition
+    ) -> Bool {
+        composition == .mobileOnly && shown == [metric]
+    }
+
+    /// The selection with the cards `shown` drew in its place made part of it, for the first
+    /// edit made while the mobile defaults stand in; otherwise the selection unchanged.
+    static func adopting(
+        selected: [TrendSeries.Metric], composition: EnvironmentComposition,
+        isOffered: (TrendSeries.Metric) -> Bool
+    ) -> [TrendSeries.Metric] {
+        guard !selected.contains(where: isOffered) else { return selected }
+        return selected + shown(selected: selected, composition: composition, isOffered: isOffered)
+    }
+}
+
 extension TrendSeries.Metric {
     /// What a profile has to collect before this score card has a value. Shown
     /// on a selected card that has none, and in the customize sheet.
     var dataRequirement: String {
         switch self {
         case .stability:
-            "Needs patch status, jamf-cli's security report, or a compliance EA."
+            L("Needs patch status, jamf-cli's security report, or a compliance EA.")
         case .activeDevices, .stale:
-            "Needs the device-compliance report."
+            L("Needs the device-compliance report.")
         case .compliance:
-            "Needs jamf-cli's security report, or a compliance EA mapped in Config."
+            L("Needs jamf-cli's security report, or a compliance EA mapped in Config.")
         case .fileVault, .securityScore, .sip, .firewall, .gatekeeper:
-            "Needs jamf-cli's security report."
+            L("Needs jamf-cli's security report.")
         case .osCurrent:
-            "Needs the inventory summary and the SOFA feed."
+            L("Needs the inventory summary and the SOFA feed.")
         case .edrAgent, .agent:
-            "Needs a security agent in Config and extension-attribute results."
+            L("Needs a security agent in Config and extension-attribute results.")
         case .patch:
-            "Needs the patch-status report."
+            L("Needs the patch-status report.")
         case .mscpBandTrend:
-            "Needs a compliance baseline mapped in Config."
+            L("Needs a compliance baseline mapped in Config.")
         case .managedDevices:
-            "Needs a collected inventory."
+            L("Needs a collected inventory.")
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
-            "Needs the mobile device inventory."
+            L("Needs the mobile device inventory.")
+        case .protectComputers, .protectMatched, .protectOpenAlerts:
+            L("Needs Jamf Protect collected for this environment.")
+        case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
+            L("Needs Jamf Security Cloud collected for this environment.")
         }
     }
 
@@ -218,10 +300,18 @@ extension TrendSeries.Metric {
         }
     }
 
-    /// False only for a card whose control the policy does not count: there is
-    /// nothing to report on, so the Overview and its editor leave the card out.
-    /// A stored selection naming it is kept, and shows again if the policy changes.
-    func isOffered(under policy: SecurityControlPolicy) -> Bool {
+    /// False for a card whose control the policy does not count, for a Mac card where the
+    /// environment has no Macs, and for a mobile card where it has no mobile devices: there
+    /// is nothing to report on, so the Overview and its editor leave the card out. A stored
+    /// selection naming it is kept, and shows again if the policy or the environment changes.
+    /// The default composition is `.unknown`, which offers every Mac card and no mobile one.
+    func isOffered(
+        under policy: SecurityControlPolicy, in composition: EnvironmentComposition = .unknown
+    ) -> Bool {
+        // WorkspaceStore.isOffered checks the product
+        if isProtect || isSecurityCloud { return true }
+        if isMobile { return composition.allowsMobile }
+        guard composition.allowsMacs else { return false }
         guard let control = securityControl else { return true }
         return policy.level(for: control) != .ignore
     }

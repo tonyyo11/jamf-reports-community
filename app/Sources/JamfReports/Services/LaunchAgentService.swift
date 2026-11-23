@@ -41,7 +41,7 @@ enum LaunchAgentService {
         for label in labels {
             guard includingManaged || !ManagedAutomation.owns(label) else {
                 AppLogger.schedule.warning(
-                    "archiveAndRemove refused managed label \(label, privacy: .public)")
+                    "archiveAndRemove refused managed label \(label, privacy: .private)")
                 rejected.append(label)
                 continue
             }
@@ -61,7 +61,7 @@ enum LaunchAgentService {
                 // bootstrapped this session — and the plist removal below still
                 // retires it. Logged so a genuinely stuck agent is diagnosable.
                 AppLogger.schedule.info(
-                    "bootout \(label, privacy: .public) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
+                    "bootout \(label, privacy: .private) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
             }
             do {
                 try FileManager.default.removeItem(at: url)
@@ -137,7 +137,7 @@ enum LaunchAgentService {
             return true
         } catch {
             AppLogger.schedule.error(
-                "archivePlist failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                "archivePlist failed for \(label, privacy: .private): \(error.englishDescription, privacy: .private)")
             return false
         }
     }
@@ -147,7 +147,7 @@ enum LaunchAgentService {
     /// caller copies it verbatim, preserving behavior for non-secret plists.
     /// Internal (not private) so the redaction is directly unit-testable.
     static func redactedPlistData(at url: URL) -> Data? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let parsed = try? PropertyListSerialization.propertyList(
                   from: data, options: [], format: nil),
               var plist = parsed as? [String: Any],
@@ -199,7 +199,7 @@ enum LaunchAgentService {
     /// Parse one plist into a Schedule. Returns nil if the plist is malformed
     /// or the label doesn't match the expected naming convention.
     static func parse(_ url: URL) -> Schedule? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any],
               let label = plist["Label"] as? String,
@@ -329,11 +329,14 @@ enum LaunchAgentService {
                     profile: schedule.profile)
             }
             let owner = schedule.isMulti ? statusProfile : schedule.profile
+            // A refused run accounts for no fire: were the refusal to clear, the schedule must
+            // read overdue, not covered by the record of a run that never began.
+            let ran = status.flatMap { $0.refused ? nil : $0 }
             return ScheduleHealthInput(
                 label: label, displayName: schedule.name, enabled: schedule.enabled,
                 profile: schedule.profile, isMulti: schedule.isMulti, expectedFire: expected,
-                lastRunFinishedAt: status?.finishedAt, lastRunSuccess: status?.success,
-                lastRunExitCode: status?.exitCode,
+                lastRunFinishedAt: ran?.finishedAt, lastRunSuccess: ran?.success,
+                lastRunExitCode: ran?.exitCode,
                 activeSince: owner.flatMap(workspaceCreationDate(profile:)),
                 refusal: refusal(schedule))
         }
@@ -386,7 +389,7 @@ enum LaunchAgentService {
     }
 
     private static func plistLabel(_ url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = try? BoundedFile.read(url, limit: BoundedFile.documentLimit),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any] else {
             return nil
@@ -490,7 +493,7 @@ enum LaunchAgentService {
     /// Parse `--tiers <csv>` into a `CollectionTier` set (PR-23 T-19).
     ///
     /// Returns `nil` when the flag is absent — pre-PR-23 plists omit it and
-    /// `main.swift` defaults a missing tier set to all tiers.
+    /// `HeadlessRun.swift` defaults a missing tier set to all tiers.
     ///
     /// Unknown tier tokens are dropped with a warning rather than failing
     /// the parse, so a plist written by a newer build still loads on an
@@ -511,7 +514,7 @@ enum LaunchAgentService {
                 result.insert(tier)
             } else {
                 AppLogger.schedule.warning(
-                    "LaunchAgentService.parse: unknown tier '\(trimmed, privacy: .public)' in --tiers; dropped"
+                    "LaunchAgentService.parse: unknown tier '\(trimmed, privacy: .private)' in --tiers; dropped"
                 )
             }
         }
@@ -684,7 +687,7 @@ enum LaunchAgentService {
             case .backup: return "Configuration Backup"
             }
         }
-        return slug.replacingOccurrences(of: "-", with: " ").capitalized
+        return RunHistoryService.displayName(fromSlug: slug)
     }
 
     // MARK: - Run Status
@@ -700,6 +703,8 @@ enum LaunchAgentService {
         /// on an otherwise-successful run. nil for status files written
         /// before this field existed (back-compat, reads as "no failures").
         let sheetFailures: Int?
+        /// The product guard ended the run before it began (exit 0, not a success).
+        let refused: Bool
         let artifacts: [String]
     }
 
@@ -752,6 +757,8 @@ enum LaunchAgentService {
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
             sheetFailures: payload["sheet_failures"] as? Int,
+            // Absent means not refused: only a refused run writes the key.
+            refused: payload["refused"] as? Bool ?? false,
             artifacts: artifactLabels(from: payload, root: root)
         )
     }
@@ -769,6 +776,8 @@ enum LaunchAgentService {
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
             sheetFailures: payload["sheet_failures"] as? Int,
+            // Absent means not refused: only a refused run writes the key.
+            refused: payload["refused"] as? Bool ?? false,
             artifacts: []
         )
     }
@@ -781,8 +790,10 @@ enum LaunchAgentService {
         var best: ParsedRunStatus?
         for profile in ProfileService.discoverLocal().map(\.name) {
             let url = statusFileURL(from: [], profile: profile, label: label)
+            // A refused profile's record is no run of this schedule; skip it so a profile that
+            // ran still counts.
             guard let status = readRunStatus(from: url, profile: profile),
-                  let finished = status.finishedAt else { continue }
+                  !status.refused, let finished = status.finishedAt else { continue }
             if let bestFinished = best?.finishedAt, finished <= bestFinished { continue }
             best = status
         }
@@ -813,10 +824,6 @@ enum LaunchAgentService {
         var hasFailureMarker = false
         var hasPartialMarker = false
 
-        let summaryBasedPartial = urls.first
-            .map { checkSummaryFileForPartialStatus(logURL: $0, profile: profile, isMulti: isMulti) }
-            ?? false
-
         for url in urls {
             let tail = parseLogTail(from: url)
             if exitCode == nil {
@@ -829,7 +836,7 @@ enum LaunchAgentService {
             date: newestDate,
             exitCode: exitCode,
             hasFailureMarker: hasFailureMarker,
-            hasPartialMarker: summaryBasedPartial || hasPartialMarker
+            hasPartialMarker: hasPartialMarker
         )
     }
 
@@ -837,12 +844,15 @@ enum LaunchAgentService {
         from runStatus: ParsedRunStatus?,
         logSummary: ParsedLogSummary
     ) -> Schedule.LastStatus {
+        if runStatus?.refused == true { return .warn }
         if let success = runStatus?.success {
             // A successful run can still have failed to render some sheets —
             // check that BEFORE the ok/fail split so `.partial` is reachable.
             if success, let sheetFailures = runStatus?.sheetFailures, sheetFailures > 0 {
                 return .partial
             }
+            // The log's `[partial]` marker wins over a status file's flag, as in Run History.
+            if success, logSummary.hasPartialMarker { return .partial }
             return success ? .ok : .fail
         }
         if let exitCode = logSummary.exitCode {
@@ -854,51 +864,6 @@ enum LaunchAgentService {
         return logSummary.hasFailureMarker ? .fail : .ok
     }
 
-    /// PR-11 / threat-model T-12: per-LaunchAgent-run summary files
-    /// (`summary_<logFilename>.json`) are now produced by the Python
-    /// `_emit_per_log_summary_json` helper, called from `cmd_generate` when
-    /// `per_log_summary_filename` is passed. Returns false for multi-profile
-    /// logs (no per-run summary in that layout).
-    ///
-    /// **Manifest discipline:** before trusting the `status` field, verify
-    /// the file's SHA-256 against its sibling `manifest.json`. On
-    /// `.mismatch` or `.corrupt`, return false (defer to caller's
-    /// log-marker fallback in `lastStatus`) rather than trusting an
-    /// attacker-modifiable file. On `.absent` / `.omitted` / `.verified`,
-    /// trust the file content as before.
-    private static func checkSummaryFileForPartialStatus(
-        logURL: URL,
-        profile: String,
-        isMulti: Bool
-    ) -> Bool {
-        guard !isMulti else { return false }
-        guard let root = WorkspacePathGuard.root(for: profile) else { return false }
-        let logFilename = logURL.deletingPathExtension().lastPathComponent
-        let summaryURL = root
-            .appendingPathComponent("snapshots")
-            .appendingPathComponent("computers")
-            .appendingPathComponent("summaries")
-            .appendingPathComponent("summary_\(logFilename).json")
-        if FileManager.default.fileExists(atPath: summaryURL.path),
-           let data = try? BoundedFile.read(
-               summaryURL, limit: BoundedFile.documentLimit, followSymlinks: false) {
-            let verification = SnapshotManifest.verify(snapshot: summaryURL, data: data)
-            // Trust only `.verified` or `.absent` (legacy pre-PR-11).
-            // `.mismatch`, `.corrupt`, and `.omitted` all signal an
-            // attacker-modifiable summary (security-reviewer 2nd pass
-            // M-01: `.omitted` is an injection bypass — every legitimate
-            // PR-11 write registers the file in the manifest). Caller's
-            // `lastStatus` performs the log-marker fallback.
-            if verification == .verified || verification == .absent {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let status = json["status"] as? String {
-                    return status == "partial"
-                }
-            }
-        }
-        return false
-    }
-
     private static func artifactLabels(
         from payload: [String: Any],
         root: URL
@@ -908,6 +873,7 @@ enum LaunchAgentService {
         addArtifact("xlsx_report_path", as: "XLSX", from: payload, root: root, labels: &labels, seen: &seen)
         addArtifact("html_report_path", as: "HTML", from: payload, root: root, labels: &labels, seen: &seen)
         addArtifact("inventory_csv_path", as: "CSV", from: payload, root: root, labels: &labels, seen: &seen)
+        addArtifact("csv_folder_path", as: "CSV folder", from: payload, root: root, labels: &labels, seen: &seen)
         if labels.isEmpty {
             addReportArtifact(from: payload["report_path"], root: root, labels: &labels, seen: &seen)
         }
@@ -990,14 +956,7 @@ enum LaunchAgentService {
 
     private static func dateValue(_ raw: Any?) -> Date? {
         guard let text = raw as? String, !text.isEmpty else { return nil }
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFractional.date(from: text) {
-            return date
-        }
-        let standard = ISO8601DateFormatter()
-        standard.formatOptions = [.withInternetDateTime]
-        return standard.date(from: text)
+        return ISO8601Time.parse(text)
     }
 
     static func parseLogTail(
@@ -1019,7 +978,7 @@ enum LaunchAgentService {
                 || lower.contains("[fail]")
                 || lower.contains("error:")
                 || lower.contains("traceback")
-            hasPartialMarker = hasPartialMarker || lower.contains("[partial]")
+            hasPartialMarker = hasPartialMarker || RunHistoryService.isPartialRun(logTailText: line)
             if parsedExitCode == nil {
                 parsedExitCode = exitCode(from: line)
             }
@@ -1070,17 +1029,11 @@ enum LaunchAgentService {
 
     private static func bootout(_ label: String) -> Int32 {
         guard LaunchAgentWriter.isValidLabel(label) else { return -1 }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootout", "gui/\(getuid())/\(label)"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus
-        } catch {
-            return -1
-        }
+        // Bounded and drained like every other child; a launch failure or timeout reads as -1.
+        let result = JamfCLIInstaller.runProcessSync(
+            executable: URL(fileURLWithPath: "/bin/launchctl"),
+            arguments: ["bootout", "gui/\(getuid())/\(label)"],
+            environment: CLIBridge.environmentForJamfCLI(), timeout: 30)
+        return result.timedOut ? -1 : result.exitCode
     }
 }

@@ -2,19 +2,21 @@ import SwiftUI
 import Charts
 
 /// Jamf Protect telemetry dashboard. Surfaces overview KPIs, alerts, computer
-/// agent health, and insights from `jamf-cli protect *` snapshots. Renders a
+/// agent health, and plans from `jamf-cli protect *` snapshots. Renders a
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
-    @State private var connectedProducts = ConnectedProducts.none
+    @State private var environment = EnvironmentProfiles.none
     @State private var showingConnect = false
     @State private var proMatch = ProMatchState.pending
-    @State private var proMatchTask: Task<Void, Never>?
 
     /// The "Jamf Pro match" card ("Jamf School match" on a School workspace): nothing until the
     /// match has run, then either the result or the reason there is none.
@@ -22,11 +24,11 @@ struct ProtectView: View {
         case pending, noInventory(ProtectProCorrelation.Inventory), ready(ProtectProCorrelation)
     }
 
-    /// Protect is connected to this workspace (`protect.enabled` with a profile). Before 2.10
+    /// Protect is connected to this workspace (`EnvironmentProfiles.protect`). Before 2.10
     /// the screen decided from snapshots on disk alone, so an unconnected workspace was told
     /// to run jamf-cli commands that write nothing into it.
     private var protectConnected: Bool {
-        workspace.demoMode || connectedProducts.protectProfile != nil
+        workspace.environmentProducts.has(.protect)
     }
 
     /// The demo shows the deep dive: its data is populated, and a locked card on
@@ -38,49 +40,57 @@ struct ProtectView: View {
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Protect",
-                title: "Jamf Protect",
+                kicker: L("Protect"),
+                title: L("Jamf Protect"),
                 subtitle: subtitle,
                 // The demo dataset is fixed; an age measured from today would grow
                 // for as long as the demo stays open.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate,
-                trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
+                trailing: { if deepDiveEnabled { ExperimentalBadge() } }
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode && protectConnected {
-                StaleDataBanner(source: snapshot.cacheSource)
-                // A tenant that doesn't run Protect at all has no expected
-                // kinds — every one of them would render a false-alarm "never"
-                // chip. Only assert expectations once Protect is detected;
-                // present-kind chips still show either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "protect-overview", "protect-alerts", "protect-computers",
-                        "protect-insights", "protect-plans",
-                    ] : []
-                )
-            }
-
-            if !protectConnected && !snapshot.isDetected {
-                notConnectedState
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("Jamf Protect data"))
             } else {
-                if !deepDiveEnabled { lockedDeepDiveState }
-                if snapshot.isDetected { dataSections } else { emptyState }
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode && protectConnected {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
+                    // A tenant that doesn't run Protect at all has no expected
+                    // kinds — every one of them would render a false-alarm "never"
+                    // chip. Only assert expectations once Protect is detected;
+                    // present-kind chips still show either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "protect-overview", "protect-alerts", "protect-computers",
+                            "protect-plans",
+                        ] : []
+                    )
+                }
+
+                if !snapshot.unreadableKinds.isEmpty { unreadableBanner }
+                if !protectConnected && !snapshot.isDetected && snapshot.unreadableKinds.isEmpty {
+                    notConnectedState
+                } else {
+                    if !deepDiveEnabled { lockedDeepDiveState }
+                    if snapshot.isDetected {
+                        dataSections
+                    } else if snapshot.unreadableKinds.isEmpty {
+                        emptyState
+                    }
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onChange(of: dataSource) { _, _ in
             // The picked device belongs to the old source; a real host name must not outlive it.
             selectedTimelineDevice = nil
-            reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
     }
 
@@ -95,63 +105,71 @@ struct ProtectView: View {
         // than leave the gap to read as missing data.
         let computers = snapshot.totalComputers
         let computersPart: String? = computers == 0 ? nil : (workspace.demoMode
-            ? "Pilot: \(computers) of \(DemoData.totalDevices) Macs"
-            : "\(computers) computer\(computers == 1 ? "" : "s")")
+            ? L("Pilot: \(computers) of \(DemoData.totalDevices) Macs")
+            : (computers == 1 ? L("\(computers) computer") : L("\(computers) computers")))
         let parts: [String] = [
             computersPart,
-            !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" :
+            !snapshot.alerts.isEmpty
+                ? (snapshot.alerts.count == 1 ? L("\(snapshot.alerts.count) alert") : L("\(snapshot.alerts.count) alerts")) :
                 (severityAlertCount > 0 ?
-                 "\(severityAlertCount) alert\(severityAlertCount == 1 ? "" : "s")" : nil),
-            !snapshot.insights.isEmpty ? "\(snapshot.insights.count) insight\(snapshot.insights.count == 1 ? "" : "s")" : nil
+                 (severityAlertCount == 1 ? L("\(severityAlertCount) alert") : L("\(severityAlertCount) alerts")) : nil)
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
-    }
-
-    private func reload() {
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        let profile = workspace.profile
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            environment = .none
+            proMatch = .pending
+        }
         // The demo's rows are drawn by the same code as a live tenant's, and its
         // counts are taken from those rows.
-        snapshot = workspace.demoMode
-            ? DemoData.protectSnapshot
-            : ProtectDashboardService.load(profile: workspace.profile)
-        connectedProducts = workspace.demoMode
-            ? .none : ConnectedProducts.read(profile: workspace.profile)
-        reloadProMatch()
+        if workspace.demoMode {
+            snapshot = DemoData.protectSnapshot
+            environment = .none
+        } else {
+            guard let loaded = await ScreenLoad.paint(
+                stillCurrent: { source == dataSource },
+                read: { (ProtectDashboardService.load(profile: profile),
+                         EnvironmentProfiles.read(workspace: profile)) }
+            ) else { return }
+            snapshot = loaded.0
+            environment = loaded.1
+        }
+        loadedSource = source
+        await loadProMatch(source: source, profile: profile)
     }
 
-    /// Off the main actor: the `computers` snapshot can be about 13 MB.
-    private func reloadProMatch() {
-        proMatchTask?.cancel()
-        proMatch = .pending
-        guard !snapshot.computers.isEmpty else { return }
+    /// The `computers` snapshot can be about 13 MB, so the match runs after the screen paints.
+    private func loadProMatch(source: String, profile: String) async {
+        guard !snapshot.computers.isEmpty else {
+            proMatch = .pending
+            return
+        }
         let protect = snapshot.computers
-        let profile = workspace.profile
         let demo = workspace.demoMode
         let school = workspace.isSchoolWorkspace
-        proMatchTask = Task {
-            let result = await Task.detached {
-                ProtectProCorrelation.load(
-                    protect: protect, profile: profile, demoMode: demo, school: school)
-            }.value
-            guard !Task.isCancelled else { return }
-            proMatch = result.map(ProMatchState.ready)
-                ?? .noInventory(school ? .jamfSchool : .jamfPro)
-        }
+        guard let result = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: { ProtectProCorrelation.load(
+                protect: protect, profile: profile, demoMode: demo, school: school) }
+        ) else { return }
+        proMatch = result.map(ProMatchState.ready)
+            ?? .noInventory(school ? .jamfSchool : .jamfPro)
     }
 
     // MARK: - Sections
 
     @ViewBuilder
     private var dataSections: some View {
-        if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty
-            || !snapshot.insights.isEmpty {
+        if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty {
             kpiGrid
         }
         if !snapshot.alerts.isEmpty {
@@ -171,11 +189,29 @@ struct ProtectView: View {
             computersCard
             proMatchCard
         }
-        if !snapshot.insights.isEmpty {
-            insightsCard
-        }
         if !snapshot.plans.isEmpty {
             plansCard
+        }
+    }
+
+    /// A newest file is there but cannot be read: the rows it would hold are unknown, not zero.
+    private var unreadableBanner: some View {
+        InlineBanner(
+            icon: "exclamationmark.triangle.fill", tone: .warn,
+            action: InlineBannerAction(
+                label: L("Refresh"), icon: "arrow.clockwise",
+                help: L("Collect the Jamf Protect data again.")
+            ) {
+                Task {
+                    await workspace.runTierRefresh([.refresh])
+                    NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+                }
+            }
+        ) {
+            Text("Could not be read: "
+                + snapshot.unreadableKinds.map { $0.replacingOccurrences(of: "protect-", with: "") }
+                    .joined(separator: ", ")
+                + ". Refresh to collect it again; the file is named in Settings › Logging.")
         }
     }
 
@@ -184,9 +220,9 @@ struct ProtectView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "shield.lefthalf.filled",
-                title: "No Jamf Protect data yet",
-                message: "Jamf Protect is connected. Its data arrives with the next collect: "
-                    + "Refresh on the Overview, or the next scheduled run."
+                title: L("No Jamf Protect data yet"),
+                message: L("Jamf Protect is connected. Its data arrives with the next collect: Refresh on the Overview, or the next scheduled run."),
+                primaryAction: workspace.collectEmptyAction(tiers: [.refresh])
             )
         }
     }
@@ -196,17 +232,15 @@ struct ProtectView: View {
             VStack(alignment: .leading, spacing: 12) {
                 EmptyStateView(
                     systemImage: "shield.lefthalf.filled",
-                    title: "Jamf Protect is not connected",
-                    message: "Connect Jamf Protect to this workspace with an API client from "
-                        + "the Protect console. Its alerts, computers and insights are then "
-                        + "collected with the workspace's data."
+                    title: L("Jamf Protect is not connected"),
+                    message: L("Connect Jamf Protect to this workspace with an API client from the Protect console. Its alerts, computers and plans are then collected with the workspace's data.")
                 )
-                PNPButton(title: "Connect Jamf Protect", icon: "link", style: .gold) {
+                PNPButton(title: L("Connect Jamf Protect"), icon: "link", style: .gold) {
                     showingConnect = true
                 }
             }
         }
-        .sheet(isPresented: $showingConnect, onDismiss: reload) {
+        .sheet(isPresented: $showingConnect, onDismiss: { reloads += 1 }) {
             ProductConnectSheetView(profileSlug: workspace.profile)
         }
     }
@@ -242,7 +276,9 @@ struct ProtectView: View {
         let total = buckets.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Kill-Chain Stage")
+                // Every alert, resolved ones too, unlike the open-alert severity card above.
+                SectionHeader(title: L("Kill-Chain Stage"),
+                              trailingTag: L("All alerts, open and resolved"))
                 if total == 0 {
                     Text("No alert event types to bucket.")
                         .font(.caption.monospaced())
@@ -271,7 +307,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -290,7 +326,7 @@ struct ProtectView: View {
             .frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(stage): \(count) of \(total), \(Int(pct)) percent")
+        .accessibilityLabel("\(stage): \(count) of \(total), \(PercentFormat.whole.numberText(pct)) percent")
     }
 
     private var agentVersionCard: some View {
@@ -298,7 +334,7 @@ struct ProtectView: View {
         let total = versions.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Endpoint Agent Versions")
+                SectionHeader(title: L("Endpoint Agent Versions"))
                 if total == 0 {
                     Text("No Protect computers reporting agent version.")
                         .font(.caption.monospaced())
@@ -317,7 +353,7 @@ struct ProtectView: View {
     private var deviceTimelineCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Per-Device Alert Timeline")
+                SectionHeader(title: L("Per-Device Alert Timeline"))
                 let devices = uniqueDeviceIdentifiers
                 if devices.isEmpty {
                     Text("No devices with alert history.")
@@ -371,7 +407,7 @@ struct ProtectView: View {
         EqualHeightTileGrid(minTileWidth: 220) {
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Total Computers",
+                    label: L("Total Computers"),
                     value: "\(snapshot.totalComputers)",
                     fillsHeight: true
                 )
@@ -379,43 +415,35 @@ struct ProtectView: View {
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Web Protection",
+                    label: L("Web Protection"),
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    sub: L("\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Full Disk Access",
+                    label: L("Full Disk Access"),
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    sub: L("\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(PercentFormat.whole.text(snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"),
                     fillsHeight: true
                 )
             }
 
             if snapshot.totalComputers > 0 {
                 StatTile(
-                    label: "Connected",
+                    label: L("Connected"),
                     value: "\(snapshot.connectedCount)",
-                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)",
+                    sub: L("\(snapshot.connectedCount) of \(snapshot.totalComputers)"),
                     fillsHeight: true
                 )
             }
 
             if !snapshot.alerts.isEmpty {
                 StatTile(
-                    label: "High Alerts",
+                    label: L("High Alerts"),
                     value: "\(snapshot.highAlerts)",
-                    fillsHeight: true
-                )
-            }
-
-            if snapshot.failingInsights > 0 {
-                StatTile(
-                    label: "Failing Insights",
-                    value: "\(snapshot.failingInsights)",
                     fillsHeight: true
                 )
             }
@@ -428,10 +456,10 @@ struct ProtectView: View {
                 let totalAlerts = snapshot.highAlerts + snapshot.mediumAlerts
                     + snapshot.lowAlerts + snapshot.informationalAlerts
                 HStack {
-                    SectionHeader(title: "Alerts by Severity")
+                    SectionHeader(title: L("Open Alerts by Severity"))
                     if totalAlerts > 0 {
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -441,20 +469,25 @@ struct ProtectView: View {
                         .help("Save the alerts by severity bar chart as a PNG image")
                     }
                 }
+                if totalAlerts == 0 {
+                    Text("No open alerts. Resolved and AutoResolved alerts are not counted.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
                         if snapshot.highAlerts > 0 {
-                            alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
+                            alertSeverityBar(label: L("High"), count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
                         }
                         if snapshot.mediumAlerts > 0 {
-                            alertSeverityBar(label: "Medium", count: snapshot.mediumAlerts, total: totalAlerts, color: Theme.Severity.medium.inApp)
+                            alertSeverityBar(label: L("Medium"), count: snapshot.mediumAlerts, total: totalAlerts, color: Theme.Severity.medium.inApp)
                         }
                         if snapshot.lowAlerts > 0 {
-                            alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
+                            alertSeverityBar(label: L("Low"), count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
                         }
                         if snapshot.informationalAlerts > 0 {
                             alertSeverityBar(
-                                label: "Informational", count: snapshot.informationalAlerts,
+                                label: L("Informational"), count: snapshot.informationalAlerts,
                                 total: totalAlerts, color: Theme.Severity.informational.inApp
                             )
                         }
@@ -471,10 +504,12 @@ struct ProtectView: View {
         let informational = snapshot.informationalAlerts
         let total = high + medium + low + informational
         let result = DashboardChartExport.run(
-            title: "Alerts by Severity",
+            title: "Open Alerts by Severity",
             subtitle: "Jamf Protect",
-            footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
-            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
+            footnote: "Source: jamf-cli protect alerts · "
+                + "\(total) open alert\(total == 1 ? "" : "s")",
+            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             ProtectAlertsSeverityExport(
                 high: high, medium: medium, low: low, informational: informational
@@ -505,7 +540,7 @@ struct ProtectView: View {
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
-                Text(String(format: "%.0f%%", pct))
+                Text(PercentFormat.whole.text(pct))
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
@@ -526,16 +561,16 @@ struct ProtectView: View {
             .frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label) severity alerts: \(count) of \(total) total, \(Int(pct)) percent")
+        .accessibilityLabel("\(label) severity alerts: \(count) of \(total) total, \(PercentFormat.whole.numberText(pct)) percent")
     }
 
     private var recentAlertsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Recent Alerts",
+                    title: L("Recent Alerts"),
                     trailing: snapshot.alerts.count > 50
-                        ? "Showing 50 of \(snapshot.alerts.count)" : nil)
+                        ? L("Showing 50 of \(snapshot.alerts.count)") : nil)
 
                 let sortedAlerts = snapshot.alerts
                     .sorted { ($0.created ?? "") > ($1.created ?? "") }
@@ -562,7 +597,7 @@ struct ProtectView: View {
                     .frame(width: 124, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(alert.eventType ?? "Unknown")
+                    Text(alert.eventType ?? L("Unknown"))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
@@ -595,7 +630,7 @@ struct ProtectView: View {
     }
 
     private func severityPill(_ severity: String?) -> some View {
-        let text = severity?.capitalized ?? "Unknown"
+        let text = severity?.capitalized ?? L("Unknown")
         let (tone, icon): (Pill.Tone, String) = {
             guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
             if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
@@ -631,12 +666,12 @@ struct ProtectView: View {
     /// ALERT_STATUS values) get a spaced display form; anything else passes
     /// through unchanged; empty/nil is "Unknown".
     nonisolated static func statusLabel(_ status: String?) -> String {
-        guard let status, !status.isEmpty else { return "Unknown" }
+        guard let status, !status.isEmpty else { return L("Unknown") }
         switch status.lowercased() {
-        case "new": return "New"
-        case "inprogress": return "In Progress"
-        case "resolved": return "Resolved"
-        case "autoresolved": return "Auto Resolved"
+        case "new": return L("New")
+        case "inprogress": return L("In Progress")
+        case "resolved": return L("Resolved")
+        case "autoresolved": return L("Auto Resolved")
         default: return status
         }
     }
@@ -655,9 +690,15 @@ struct ProtectView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
-                    title: "Computers",
+                    title: L("Computers"),
                     trailing: snapshot.computers.count > 50
-                        ? "Showing 50 of \(snapshot.computers.count)" : nil)
+                        ? L("Showing 50 of \(snapshot.computers.count)") : nil)
+
+                if let lag = ProtectComputerRow.signatureLag(snapshot.computers) {
+                    Text(L("\(lag.behind) of \(lag.reporting) behind the newest signatures in this tenant"))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
 
                 let displayedComputers = Array(snapshot.computers.prefix(50))
 
@@ -679,12 +720,12 @@ struct ProtectView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(computer.hostName ?? "Unknown")
+                    Text(computer.hostName ?? L("Unknown"))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
-                    Text(computer.osString ?? "Unknown OS")
+                    Text(computer.osString ?? L("Unknown OS"))
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -698,12 +739,12 @@ struct ProtectView: View {
                 // INACTIVE fits the 92 pt column. UNKNOWN, which both columns can show, is wider
                 // than the 56 pt Full Disk Access column and overhangs it; `Pill` is fixed-size,
                 // so nothing truncates.
-                booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
+                booleanPill(computer.webProtectionActive, trueLabel: L("Active"), falseLabel: L("Inactive"))
                     .frame(width: 92, alignment: .center)
                     .accessibilityLabel("Web Protection " + Self.spokenState(
                         computer.webProtectionActive, trueWord: "active", falseWord: "inactive"))
 
-                booleanPill(computer.fullDiskAccess, trueLabel: "Yes", falseLabel: "No")
+                booleanPill(computer.fullDiskAccess, trueLabel: L("Yes"), falseLabel: L("No"))
                     .frame(width: 56, alignment: .center)
                     .accessibilityLabel("Full Disk Access " + Self.spokenState(
                         computer.fullDiskAccess, trueWord: "granted", falseWord: "denied"))
@@ -717,6 +758,20 @@ struct ProtectView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
+
+                Text(computer.signaturesVersionText ?? "—")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .frame(width: 56, alignment: .trailing)
+                    .accessibilityLabel(L("Signatures version"))
+
+                Text(computer.lastDisconnectionReason ?? "—")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: 150, alignment: .leading)
+                    .accessibilityLabel(L("Last disconnection reason"))
             }
             .padding(.vertical, 8)
 
@@ -739,7 +794,7 @@ struct ProtectView: View {
         case .noInventory(let inventory):
             Card {
                 VStack(alignment: .leading, spacing: 8) {
-                    SectionHeader(title: "\(inventory.product) match")
+                    SectionHeader(title: L("\(inventory.product) match"))
                     matchExperimentalNote(inventory)
                     Text(Self.noInventoryText(inventory))
                         .font(.footnote)
@@ -750,7 +805,7 @@ struct ProtectView: View {
             let product = match.inventory.product
             Card {
                 VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "\(product) match")
+                    SectionHeader(title: L("\(product) match"))
                     matchExperimentalNote(match.inventory)
                     Text(Self.matchSummary(match))
                         .font(.footnote.weight(.medium))
@@ -765,14 +820,14 @@ struct ProtectView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                     if !match.notInPro.isEmpty {
                         unmatchedList(
-                            title: "Not in \(product)", total: match.notInPro.count,
+                            title: L("Not in \(product)"), total: match.notInPro.count,
                             rows: match.notInPro.prefix(Self.proMatchRowLimit).map {
-                                ($0.hostName ?? "Unknown", $0.serial ?? "—")
+                                ($0.hostName ?? L("Unknown"), $0.serial ?? "—")
                             })
                     }
                     if !match.proWithoutProtect.isEmpty {
                         unmatchedList(
-                            title: "\(product) Macs without Protect",
+                            title: L("\(product) Macs without Protect"),
                             total: match.proWithoutProtect.count,
                             rows: match.proWithoutProtect.prefix(Self.proMatchRowLimit).map {
                                 ($0.displayName, $0.serial.isEmpty ? "—" : $0.serial)
@@ -789,7 +844,7 @@ struct ProtectView: View {
         VStack(alignment: .leading, spacing: 4) {
             SectionHeader(
                 title: title,
-                trailing: total > rows.count ? "Showing \(rows.count) of \(total)" : nil,
+                trailing: total > rows.count ? L("Showing \(rows.count) of \(total)") : nil,
                 style: .headline)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 12) {
@@ -815,41 +870,44 @@ struct ProtectView: View {
         }
     }
 
-    nonisolated static let schoolMatchExperimentalText =
-        "Experimental: Jamf Protect with Jamf School."
+    nonisolated static var schoolMatchExperimentalText: String {
+        L("Experimental: Jamf Protect with Jamf School.")
+    }
 
     nonisolated static func noInventoryText(
         _ inventory: ProtectProCorrelation.Inventory
     ) -> String {
-        "Collect \(inventory.product) inventory to match Protect computers to "
-            + "\(inventory.product)."
+        L("Collect \(inventory.product) inventory to match Protect computers to \(inventory.product).")
     }
-    nonisolated static let matchFootnote =
-        "Matched by hardware UUID or serial number, never by name."
+    nonisolated static var matchFootnote: String {
+        L("Matched by hardware UUID or serial number, never by name.")
+    }
 
     nonisolated static func matchSummary(_ match: ProtectProCorrelation) -> String {
         let many = match.protectCount != 1
-        return "\(match.matched) of \(match.protectCount) Protect computer\(many ? "s" : "") "
-            + "match\(many ? "" : "es") a \(match.inventory.product) computer."
+        return (many ? L("\(match.matched) of \(match.protectCount) Protect computers match a \(match.inventory.product) computer.") : L("\(match.matched) of \(match.protectCount) Protect computer matches a \(match.inventory.product) computer."))
     }
 
     /// One line per nonzero count, singular or plural.
     nonisolated static func matchNotes(_ match: ProtectProCorrelation) -> [String] {
         func protectLine(_ count: Int, one: String, many: String) -> String? {
-            count == 0 ? nil : "\(count) Protect computer\(count == 1 ? " " + one : "s " + many)"
+            count == 0 ? nil
+                : (count == 1 ? L("\(count) Protect computer \(one)") : L("\(count) Protect computers \(many)"))
         }
         let proCount = match.proWithoutProtect.count
         let product = match.inventory.product
         return [
-            protectLine(match.notInPro.count, one: "has no \(product) record.",
-                        many: "have no \(product) record."),
-            proCount == 0 ? nil : "\(proCount) \(product) Mac\(proCount == 1 ? " has" : "s have") "
-                + "no Protect record.",
+            protectLine(match.notInPro.count, one: L("has no \(product) record."),
+                        many: L("have no \(product) record.")),
+            proCount == 0 ? nil : (proCount == 1 ? L("\(proCount) \(product) Mac has no Protect record.") : L("\(proCount) \(product) Macs have no Protect record.")),
             protectLine(match.ambiguous,
-                        one: "matches more than one \(product) computer and is not counted.",
-                        many: "match more than one \(product) computer and are not counted."),
-            protectLine(match.noIdentifier, one: "reports no UUID or serial.",
-                        many: "report no UUID or serial."),
+                        one: L("matches more than one \(product) computer and is not counted."),
+                        many: L("match more than one \(product) computer and are not counted.")),
+            protectLine(match.duplicates,
+                        one: L("repeats a matched \(product) computer and is counted once."),
+                        many: L("repeat a matched \(product) computer and are counted once.")),
+            protectLine(match.noIdentifier, one: L("reports no UUID or serial."),
+                        many: L("report no UUID or serial.")),
         ].compactMap { $0 }
     }
 
@@ -866,7 +924,7 @@ struct ProtectView: View {
         case true?: return (trueLabel, .teal, "checkmark")
         case false?: return (falseLabel, .muted, "xmark")
         // No icon: the word alone is wider than the narrow Full Disk Access column.
-        case nil: return ("Unknown", .muted, nil)
+        case nil: return (L("Unknown"), .muted, nil)
         }
     }
 
@@ -882,85 +940,10 @@ struct ProtectView: View {
     private func connectionPill(_ status: String?) -> some View {
         let isConnected = ProtectDashboardService.isConnected(status)
         return Pill(
-            text: isConnected ? "Online" : "Offline",
+            text: isConnected ? L("Online") : L("Offline"),
             tone: isConnected ? .teal : .warn
         )
-        .accessibilityLabel("\(isConnected ? "Online" : "Offline") connection status")
-    }
-
-    private var insightsCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Insights")
-
-                VStack(spacing: 8) {
-                    ForEach(Array(snapshot.insights.enumerated()), id: \.offset) { index, insight in
-                        insightRow(insight)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func insightRow(_ insight: ProtectInsightRow) -> some View {
-        let pass = insight.totalPass ?? 0
-        let fail = insight.totalFail ?? 0
-        let total = pass + fail
-
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(insight.label ?? "Unknown Insight")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
-
-                Spacer()
-
-                if let enabled = insight.enabled {
-                    Pill(text: enabled ? "Enabled" : "Disabled", tone: enabled ? .teal : .muted)
-                }
-            }
-
-            if let section = insight.section {
-                Text(section)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-            }
-
-            if total > 0 {
-                HStack(spacing: 4) {
-                    Text("Pass: \(pass)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.teal)
-
-                    Text("•")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.hairlineStrong)
-
-                    Text("Fail: \(fail)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
-
-                    Spacer()
-
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.hairline)
-                                .frame(height: 4)
-
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.teal)
-                                .frame(width: max(2, geometry.size.width * Double(pass) / Double(total)), height: 4)
-                        }
-                    }
-                    .frame(width: 60, height: 4)
-                }
-            }
-        }
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(insight.label ?? "Unknown insight"), \(pass) pass, \(fail) fail")
+        .accessibilityLabel("\(isConnected ? L("Online") : L("Offline")) connection status")
     }
 
     // MARK: - Plans
@@ -969,9 +952,9 @@ struct ProtectView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "Plans")
+                    SectionHeader(title: L("Plans"))
                     Spacer()
-                    Pill(text: "\(snapshot.plans.count) plan\(snapshot.plans.count == 1 ? "" : "s")",
+                    Pill(text: (snapshot.plans.count == 1 ? L("\(snapshot.plans.count) plan") : L("\(snapshot.plans.count) plans")),
                          tone: .muted)
                 }
                 VStack(spacing: 8) {
@@ -987,29 +970,29 @@ struct ProtectView: View {
     private func planRow(_ plan: ProtectPlanRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(plan.name ?? "Unnamed Plan")
+                Text(plan.name ?? L("Unnamed Plan"))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
             }
             HStack(spacing: 10) {
                 if let level = plan.logLevel, !level.isEmpty {
-                    planTag("Log: \(level)")
+                    planTag(L("Log: \(level)"))
                 }
-                planTag(plan.autoUpdate == true ? "Auto-update on" : "Auto-update off")
+                planTag(plan.autoUpdate == true ? L("Auto-update on") : L("Auto-update off"))
                 planTag(Self.telemetryTag(plan.telemetry))
                 Spacer()
             }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(plan.name ?? "Unnamed plan"), \(Self.telemetryTag(plan.telemetry))")
+        .accessibilityLabel("\(plan.name ?? L("Unnamed plan")), \(Self.telemetryTag(plan.telemetry))")
     }
 
     /// Plan card telemetry tag: the assigned configuration's name, or "No telemetry".
     nonisolated static func telemetryTag(_ telemetry: String?) -> String {
-        guard let telemetry, !telemetry.isEmpty else { return "No telemetry" }
-        return "Telemetry: \(telemetry)"
+        guard let telemetry, !telemetry.isEmpty else { return L("No telemetry") }
+        return L("Telemetry: \(telemetry)")
     }
 
     private func planTag(_ text: String) -> some View {
@@ -1021,20 +1004,7 @@ struct ProtectView: View {
     // MARK: - Utilities
 
     private func formatCreatedDate(_ dateString: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        let date: Date
-        if let parsedDate = formatter.date(from: dateString) {
-            date = parsedDate
-        } else {
-            // Fallback for simpler ISO format
-            formatter.formatOptions = [.withInternetDateTime]
-            guard let fallbackDate = formatter.date(from: dateString) else {
-                return "Unknown"
-            }
-            date = fallbackDate
-        }
+        guard let date = ISO8601Time.parse(dateString) else { return L("Unknown") }
 
         // Demo ages are measured from the demo's own "now", not today's date.
         let now = workspace.demoMode ? DemoData.referenceDate : Date()
@@ -1042,16 +1012,29 @@ struct ProtectView: View {
 
         if daysSince >= 60 {
             // For spans ≥60 days, use absolute date
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            return formatter.string(from: date)
+            return Self.dayFormatter.string(from: date)
         } else {
             // For spans <60 days, use relative formatting
-            let relativeFormatter = RelativeDateTimeFormatter()
-            relativeFormatter.unitsStyle = .abbreviated
-            return relativeFormatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: this runs per table row. Each is configured at creation and never mutated
+    // after, so sharing is safe.
+    nonisolated private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 }
 
 // MARK: - Export-only chart
@@ -1061,6 +1044,7 @@ struct ProtectView: View {
 /// in-dashboard view uses Theme tokens which read poorly on the light export
 /// canvas.
 private struct ProtectAlertsSeverityExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let high: Int
     let medium: Int
     let low: Int
@@ -1075,10 +1059,10 @@ private struct ProtectAlertsSeverityExport: View {
 
     private var rows: [Row] {
         [
-            Row(label: "High",          count: high,          color: Theme.Severity.high.export),
-            Row(label: "Medium",        count: medium,        color: Theme.Severity.medium.export),
-            Row(label: "Low",           count: low,           color: Theme.Severity.low.export),
-            Row(label: "Informational", count: informational,
+            Row(label: L("High"),          count: high,          color: Theme.Severity.high.export),
+            Row(label: L("Medium"),        count: medium,        color: Theme.Severity.medium.export),
+            Row(label: L("Low"),           count: low,           color: Theme.Severity.low.export),
+            Row(label: L("Informational"), count: informational,
                 color: Theme.Severity.informational.export)
         ].filter { $0.count > 0 }
     }
@@ -1099,7 +1083,7 @@ private struct ProtectAlertsSeverityExport: View {
                             .font(.caption.monospaced().weight(.semibold))
                             .foregroundStyle(Theme.Chart.textPrimary)
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.caption.monospaced())
                             .foregroundStyle(Theme.Chart.textSecondary)
                             .frame(width: 50, alignment: .trailing)
@@ -1120,7 +1104,7 @@ private struct ProtectAlertsSeverityExport: View {
             if total > 0 {
                 HStack {
                     Spacer()
-                    Text("Total: \(total) alert\(total == 1 ? "" : "s")")
+                    Text(total == 1 ? L("Total: \(total) alert") : L("Total: \(total) alerts"))
                         .font(.caption.monospaced().weight(.semibold))
                         .foregroundStyle(Theme.Chart.textSecondary)
                 }

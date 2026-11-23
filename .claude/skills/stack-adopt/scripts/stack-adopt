@@ -1,0 +1,166 @@
+#!/bin/zsh
+# Adopt finished branches into one gh stack, resolving CHANGELOG-only rebase conflicts.
+# Run it from the main checkout, never from inside a worktree it is about to remove.
+# It never runs `gh stack submit`: pushing and opening PRs stays with the operator.
+#
+# Usage: stack-adopt [--dry-run] BRANCH...     (BRANCH... in stack order, bottom first)
+#   --dry-run  fetch, run the checks and list what would be trashed or removed; change nothing
+#              and print the gh stack commands instead of running them.
+# Needs a current stack (gh stack init first for a new one). Steps: (0) gh stack view must succeed,
+# before anything changes; (1) each local branch head equals origin; (2) trash untracked iCloud
+# duplicates (" 2.swift", " 2.md"); (3) git worktree remove each branch's finished worktree once it
+# is clean (git ignores ignored files in that check, so no --force); (4) gh stack top, gh stack add per branch, gh stack rebase --no-trunk looping
+# through CHANGELOG-only conflicts with changelog-union; (5) gh stack view.
+set -euo pipefail
+
+dry_run=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  dry_run=1
+  shift
+fi
+if (($# < 1)); then
+  print -u2 "usage: stack-adopt [--dry-run] BRANCH..."
+  exit 2
+fi
+branches=()
+for b in "$@"; do branches+=("${b#origin/}"); done
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+union="${script_dir}/../../changelog-union/scripts/changelog_union.py"
+[[ -f "${union}" ]] || {
+  print -u2 "stack-adopt: changelog-union script not found at ${union}"
+  exit 2
+}
+for tool in gh trash python3; do
+  command -v "${tool}" >/dev/null || {
+    print -u2 "stack-adopt: ${tool} is not installed"
+    exit 2
+  }
+done
+gh extension list | grep -q 'gh-stack' || {
+  print -u2 "stack-adopt: the gh-stack extension is missing (gh extension install github/gh-stack)"
+  exit 2
+}
+
+root="$(git rev-parse --show-toplevel)"
+cd "${root}"
+git fetch --quiet origin
+
+print "== 0. current stack"
+if ! gh stack view --short; then
+  print -u2 "stack-adopt: no current stack; run gh stack init (new stack) or gh stack checkout first. Nothing was changed."
+  exit 1
+fi
+
+print "== 1. local head equals origin"
+bad=0
+for b in "${branches[@]}"; do
+  local_sha="$(git rev-parse --verify --quiet "refs/heads/${b}" || true)"
+  remote_sha="$(git rev-parse --verify --quiet "refs/remotes/origin/${b}" || true)"
+  if [[ -z "${local_sha}" || -z "${remote_sha}" ]]; then
+    print -u2 "  ${b}: missing: local=${local_sha:-none} origin=${remote_sha:-none}"
+    bad=1
+  elif [[ "${local_sha}" != "${remote_sha}" ]]; then
+    print -u2 "  ${b}: local ${local_sha:0:10} != origin ${remote_sha:0:10}"
+    bad=1
+  else
+    print "  ${b}: ${local_sha:0:10}"
+  fi
+done
+((bad == 0)) || {
+  print -u2 "stack-adopt: push or reset the branches above first; nothing was changed"
+  exit 1
+}
+
+print "== 2. iCloud duplicates in ${root}"
+dups=()
+while IFS= read -r f; do
+  [[ -n "${f}" ]] && dups+=("${f}")
+done < <(find . \( -path ./.git -o -path ./app/.build -o -path ./.claude/worktrees \) -prune -o \( -name '* 2.swift' -o -name '* 2.md' \) -print)
+for f in "${dups[@]}"; do
+  if git ls-files --error-unmatch -- "${f}" >/dev/null 2>&1; then
+    print "  tracked, left alone: ${f}"
+  elif ((dry_run)); then
+    print "  would trash: ${f}"
+  else
+    trash "${f}"
+    print "  trashed: ${f}"
+  fi
+done
+((${#dups[@]})) || print "  none"
+
+print "== 3. finished worktrees"
+for b in "${branches[@]}"; do
+  wt=""
+  cur=""
+  while IFS= read -r line; do
+    case "${line}" in
+    "worktree "*) cur="${line#worktree }" ;;
+    "branch refs/heads/${b}") wt="${cur}" ;;
+    esac
+  done < <(git worktree list --porcelain)
+  if [[ -z "${wt}" ]]; then
+    print "  ${b}: no worktree"
+  elif [[ "${wt}" == "${root}" ]]; then
+    print "  ${b}: checked out here; leave it"
+  else
+    dirty="$(git -C "${wt}" status --porcelain)"
+    if [[ -n "${dirty}" ]]; then
+      print -u2 "  ${b}: ${wt} has uncommitted or untracked files; commit or discard them, then re-run"
+      print -u2 "${dirty}"
+      exit 1
+    elif ((dry_run)); then
+      print "  would remove: ${wt}"
+    else
+      git worktree remove "${wt}"
+      print "  removed: ${wt}"
+    fi
+  fi
+done
+
+print "== 4. gh stack"
+if ((dry_run)); then
+  print "  would run: gh stack top"
+  for b in "${branches[@]}"; do print "  would run: gh stack add ${b}"; done
+  print "  would run: gh stack rebase --no-trunk (CHANGELOG-only conflicts: changelog_union.py, git add, gh stack rebase --continue; any other conflict stops)"
+  print "  would run: gh stack view"
+  exit 0
+fi
+
+gh stack top
+for b in "${branches[@]}"; do gh stack add "${b}"; done
+
+cmd=(gh stack rebase --no-trunk)
+for ((i = 1; i <= 50; i++)); do
+  if "${cmd[@]}"; then
+    cmd=()
+    break
+  fi
+  conflicted="$(git diff --name-only --diff-filter=U)"
+  if [[ -z "${conflicted}" ]]; then
+    print -u2 "stack-adopt: gh stack rebase failed without a conflict; run gh stack rebase --abort to restore the branches"
+    exit 1
+  fi
+  if [[ "${conflicted}" != "CHANGELOG.md" ]]; then
+    print -u2 "stack-adopt: rebase conflicts in: ${conflicted//$'\n'/ }"
+    print -u2 "Resolve them, git add, gh stack rebase --continue; or gh stack rebase --abort."
+    exit 1
+  fi
+  python3 -I "${union}" CHANGELOG.md || {
+    print -u2 "stack-adopt: CHANGELOG.md checks failed after the union; fix it, git add, gh stack rebase --continue"
+    exit 1
+  }
+  git add CHANGELOG.md
+  cmd=(gh stack rebase --continue)
+done
+((${#cmd[@]} == 0)) || {
+  print -u2 "stack-adopt: still rebasing after 50 rounds; stopping"
+  exit 1
+}
+
+print "== 5. stack"
+gh stack view
+print
+print "Next: run the full suite from a local-disk worktree at the stack tip (tip-test skill),"
+print "then gh stack submit --auto once you approve. If GitHub refuses a base mid-sync, retarget"
+print "that PR by hand: gh pr edit NUMBER --base BRANCH."

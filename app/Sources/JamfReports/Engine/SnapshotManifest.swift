@@ -54,13 +54,12 @@ enum SnapshotManifest {
     static func verify(snapshot: URL, data: Data) -> VerificationResult {
         let manifestURL = snapshot.deletingLastPathComponent()
             .appendingPathComponent(fileName)
-        guard let manifestData = try? BoundedFile.read(
-            manifestURL, limit: maxManifestBytes, followSymlinks: false) else {
+        guard let manifestData = readManifest(manifestURL) else {
             return .absent
         }
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData) else {
             AppLogger.report.warning(
-                "SnapshotManifest: manifest.json present but unparseable for \(snapshot.lastPathComponent, privacy: .public)"
+                "SnapshotManifest: manifest.json present but unparseable for \(snapshot.lastPathComponent, privacy: .private)"
             )
             return .corrupt
         }
@@ -70,11 +69,29 @@ enum SnapshotManifest {
         let actual = sha256Hex(data)
         if actual.lowercased() != expected.lowercased() {
             AppLogger.report.warning(
-                "SnapshotManifest: SHA-256 mismatch for \(snapshot.lastPathComponent, privacy: .public) — expected \(String(expected.prefix(12)), privacy: .public)…, got \(String(actual.prefix(12)), privacy: .public)…"
+                "SnapshotManifest: SHA-256 mismatch for \(snapshot.lastPathComponent, privacy: .private) — expected \(String(expected.prefix(12)), privacy: .private)…, got \(String(actual.prefix(12)), privacy: .private)…"
             )
             return .mismatch
         }
         return .verified
+    }
+
+    /// `manifest.json` read with the folder above its kind folder as the root, so a kind folder
+    /// replaced by a link is refused and its manifest is never trusted.
+    private static func readManifest(_ url: URL) -> Data? {
+        let root = url.deletingLastPathComponent().deletingLastPathComponent()
+        return try? BoundedFile.read(
+            url, limit: maxManifestBytes, followSymlinks: false, inside: root)
+    }
+
+    /// The file-name to SHA-256 entries of `dir`'s `manifest.json`; empty when it is absent or
+    /// does not parse, so a caller that needs one read per folder treats both as "lists nothing".
+    static func entries(in dir: URL) -> [String: String] {
+        guard let data = readManifest(dir.appendingPathComponent(fileName)),
+              let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
+            return [:]
+        }
+        return manifest.files
     }
 
     // MARK: - Writer (2.6 accuracy track)
@@ -91,7 +108,7 @@ enum SnapshotManifest {
     /// the lowercase hex digest. A pre-existing but UNPARSEABLE manifest is
     /// tolerated — it is logged and replaced with a fresh one rather than
     /// aborting the collect (a corrupt manifest must not block data capture).
-    /// The write is atomic (temp file + `replaceItem`) with `0o600` perms.
+    /// The write is atomic (`AtomicInstall`) with `0o600` perms.
     ///
     /// **Concurrency note:** this read-modify-write has no cross-process lock.
     /// If the GUI and a LaunchAgent collect the SAME kind at the same moment,
@@ -104,15 +121,16 @@ enum SnapshotManifest {
     static func record(snapshotFile: URL, data: Data) throws {
         let dir = snapshotFile.deletingLastPathComponent()
         let manifestURL = dir.appendingPathComponent(fileName)
+        // `saveSnapshot` confines the kind folder; a link swapped in since is not written through.
+        if FileManager.isLink(dir) { throw POSIXError(.ELOOP) }
 
         var files: [String: String] = [:]
-        if let existingData = try? BoundedFile.read(
-            manifestURL, limit: maxManifestBytes, followSymlinks: false) {
+        if let existingData = readManifest(manifestURL) {
             if let existing = try? JSONDecoder().decode(Manifest.self, from: existingData) {
                 files = existing.files
             } else {
                 AppLogger.collect.warning(
-                    "SnapshotManifest: existing manifest.json unparseable in \(dir.lastPathComponent, privacy: .public) — starting fresh"
+                    "SnapshotManifest: existing manifest.json unparseable in \(dir.lastPathComponent, privacy: .private) — starting fresh"
                 )
             }
         }
@@ -129,28 +147,10 @@ enum SnapshotManifest {
         try writeAtomically(payload, to: manifestURL)
     }
 
-    /// Atomic manifest write: stage to a sibling temp file with `0o600`, then
-    /// `replaceItem` into place (falling back to `.atomic` write when there is
-    /// no existing file to replace). Keeps a half-written manifest from ever
-    /// being observed by `verify`.
+    /// Atomic manifest write at `0o600`: a half-written manifest is never observed by `verify`,
+    /// and a link at the manifest name is replaced, not written through.
     private static func writeAtomically(_ data: Data, to url: URL) throws {
-        let fm = FileManager.default
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
-        try data.write(to: tmp, options: [.atomic])
-        try? fm.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: tmp.path
-        )
-        if fm.fileExists(atPath: url.path) {
-            _ = try fm.replaceItemAt(url, withItemAt: tmp)
-        } else {
-            try fm.moveItem(at: tmp, to: url)
-        }
-        try? fm.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o600))],
-            ofItemAtPath: url.path
-        )
+        try AtomicInstall.write(data, to: url, mode: 0o600)
     }
 
     // MARK: - Workspace scan (PR-10, T-11)
@@ -198,10 +198,9 @@ enum SnapshotManifest {
 
         for typeDir in typeDirs {
             let isDir = (try? typeDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            guard isDir else { continue }
+            guard isDir, !FileManager.isLink(typeDir) else { continue }
             guard let newest = newestSnapshot(in: typeDir, fm: fm) else { continue }
-            guard let data = try? BoundedFile.read(
-                newest, limit: BoundedFile.snapshotLimit, followSymlinks: false) else { continue }
+            guard let data = BoundedFile.readLogged(newest, inside: dataDir) else { continue }
             switch verify(snapshot: newest, data: data) {
             case .verified: summary.verified += 1
             case .absent:   summary.absent += 1
@@ -234,8 +233,7 @@ enum SnapshotManifest {
             && !$0.lastPathComponent.hasSuffix(fileName)
         }
         for snapshot in candidates {
-            guard let data = try? BoundedFile.read(
-                snapshot, limit: BoundedFile.snapshotLimit, followSymlinks: false) else { continue }
+            guard let data = BoundedFile.readSnapshotLogged(snapshot) else { continue }
             switch verify(snapshot: snapshot, data: data) {
             case .verified: summary.verified += 1
             case .absent:   summary.absent += 1

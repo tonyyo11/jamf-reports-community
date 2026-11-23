@@ -6,8 +6,11 @@ import Foundation
 /// and names cannot become formulas.
 enum PeriodReportEmitter {
 
-    static func emit(model: PeriodReportModel, to url: URL) throws {
-        try workbook(for: model).write(to: url)
+    static func emit(
+        model: PeriodReportModel, to url: URL, percent: PercentFormat = .standard,
+        siteScope: SiteScope = .unknown
+    ) throws {
+        try workbook(for: model, percent: percent, siteScope: siteScope).write(to: url)
     }
 
     /// `ExportNaming` kind carrying the period, so two quarters' reports are
@@ -16,21 +19,26 @@ enum PeriodReportEmitter {
         "period-report-\(stamp(model.period.start.resolved))-\(stamp(model.period.end.resolved))"
     }
 
-    static func workbook(for model: PeriodReportModel) -> Workbook {
-        let wb = Workbook()
-        buildSummary(wb.addSheet("Summary"), model)
+    static func workbook(
+        for model: PeriodReportModel, percent: PercentFormat = .standard,
+        siteScope: SiteScope = .unknown
+    ) -> Workbook {
+        let wb = Workbook(percentFormat: percent)
+        buildSummary(wb.addSheet("Summary"), model, percent)
         buildDaily(wb.addSheet("Daily detail"), model)
         let distributions = model.rows.filter { $0.unit == .distribution }
         if !distributions.isEmpty {
             buildDistributions(wb.addSheet("Value distributions"), distributions)
         }
-        buildAbout(wb.addSheet("About"), model)
+        buildAbout(wb.addSheet("About"), model, siteScope: siteScope)
         return wb
     }
 
     /// The paste-ready block. Deliberately free of caveats and commentary so a
     /// rectangular selection copies straight into another document.
-    private static func buildSummary(_ ws: Worksheet, _ m: PeriodReportModel) {
+    private static func buildSummary(
+        _ ws: Worksheet, _ m: PeriodReportModel, _ percent: PercentFormat
+    ) {
         ws.write("Fleet metrics", row: 0, col: 0, format: .title)
         ws.write("\(dateLabel(m.period.start.resolved)) – \(dateLabel(m.period.end.resolved))"
                  + " · \(m.profile)", row: 1, col: 0, format: .subtitle)
@@ -41,11 +49,14 @@ enum PeriodReportEmitter {
         for (i, row) in m.rows.enumerated() {
             let r = 4 + i
             ws.write(row.label, row: r, col: 0, format: .cell)
-            ws.write(PeriodReportModel.formatValue(row.startValue, unit: row.unit),
-                     row: r, col: 1, format: .cell)
-            ws.write(PeriodReportModel.formatValue(row.endValue, unit: row.unit),
-                     row: r, col: 2, format: .cell)
-            ws.write(PeriodReportModel.formatChange(row.change, unit: row.unit),
+            ws.write(
+                PeriodReportModel.formatValue(row.startValue, unit: row.unit, percent: percent),
+                row: r, col: 1, format: .cell)
+            ws.write(
+                PeriodReportModel.formatValue(row.endValue, unit: row.unit, percent: percent),
+                row: r, col: 2, format: .cell)
+            ws.write(PeriodReportModel.formatChange(shownChange(row, percent), unit: row.unit,
+                                                    percent: percent),
                      row: r, col: 3, format: .cell)
             ws.write(dateLabel(row.startDate), row: r, col: 4, format: .cell)
             ws.write(dateLabel(row.endDate), row: r, col: 5, format: .cell)
@@ -53,6 +64,15 @@ enum PeriodReportEmitter {
         ws.setColumnWidth(0, 0, 34)
         ws.setColumnWidth(1, 5, 14)
         ws.freezePane(row: 4, col: 1)
+    }
+
+    /// A share's change between the figures as printed, so Start, End and Change agree.
+    private static func shownChange(
+        _ row: PeriodReportModel.Row, _ percent: PercentFormat
+    ) -> Double? {
+        guard row.unit == .percent, row.change != nil,
+              let start = row.startValue, let end = row.endValue else { return row.change }
+        return percent.roundedChange(percent.rounded(end) - percent.rounded(start))
     }
 
     private static func buildDaily(_ ws: Worksheet, _ m: PeriodReportModel) {
@@ -105,7 +125,9 @@ enum PeriodReportEmitter {
 
     /// Caveats live here, off the Summary sheet, precisely so Summary stays
     /// paste-ready.
-    private static func buildAbout(_ ws: Worksheet, _ m: PeriodReportModel) {
+    private static func buildAbout(
+        _ ws: Worksheet, _ m: PeriodReportModel, siteScope: SiteScope
+    ) {
         var r = 0
         func line(_ k: String, _ v: String) {
             ws.write(k, row: r, col: 0, format: .header)
@@ -153,6 +175,13 @@ enum PeriodReportEmitter {
                 ws.write(note, row: r, col: 0, format: .cell); r += 1
             }
         }
+        if let summary = siteScope.summary {
+            r += 1
+            ws.write("Scope", row: r, col: 0, format: .title); r += 1
+            ws.write("The login is limited to some sites: this report covers \(summary) "
+                + "in Jamf Pro.", row: r, col: 0, format: .cell)
+            r += 1
+        }
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 52)
     }
@@ -160,7 +189,8 @@ enum PeriodReportEmitter {
     private static func dateLabel(_ d: Date) -> String { format(d, "yyyy-MM-dd") }
     private static func stamp(_ d: Date) -> String { format(d, "yyyyMMdd") }
     private static func format(_ d: Date, _ pattern: String) -> String {
-        let f = DateFormatter(); f.dateFormat = pattern; f.timeZone = .current
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = pattern; f.timeZone = .current
         return f.string(from: d)
     }
 }

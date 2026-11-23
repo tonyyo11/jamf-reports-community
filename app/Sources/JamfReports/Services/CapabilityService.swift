@@ -86,8 +86,7 @@ final class CapabilityService {
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             return .absent
         }
-        // Version lookup is nonisolated+synchronous; safe on any thread.
-        let version = JamfCLIInstaller.installedVersion(at: bin)
+        let version = await JamfCLIInstaller.installedVersionOffMain(at: bin)
         return await buildSnapshot(version: version, executor: executor)
     }
 
@@ -109,7 +108,7 @@ final class CapabilityService {
             return CLICapabilitySnapshot(version: version, availability: availability)
         }
 
-        let text = String(data: helpData, encoding: .utf8) ?? ""
+        let text = String(decoding: helpData, as: UTF8.self)
         let available = parseAvailableCommands(from: text)
         let availability = Dictionary(
             uniqueKeysWithValues: trackedCommands.map { cmd in

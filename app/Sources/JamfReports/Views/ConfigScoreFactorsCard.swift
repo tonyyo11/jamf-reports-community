@@ -45,12 +45,27 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
 /// screen score the same list. A workspace with no list shows the defaults; the first edit
 /// writes the whole list.
 struct ScoreFactorsCard: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var snapshot = ScoreFactorsSnapshot()
+    @State private var read = ScoreFactorsSnapshot()
+    /// The profile `read` was read for.
+    @State private var loadedProfile: String?
     @State private var saveFailure: String?
     /// What a save did not keep (a backup was made), shown while its profile is live.
     @State private var saveNote: ProfileSaveNote?
+
+    /// What was read, only while it is this profile's: the default list below is built from
+    /// it, and an edit writes that whole list.
+    private var snapshot: ScoreFactorsSnapshot {
+        Self.visible(read, loadedProfile: loadedProfile, for: workspace.profile)
+    }
+
+    static func visible(
+        _ read: ScoreFactorsSnapshot, loadedProfile: String?, for profile: String
+    ) -> ScoreFactorsSnapshot {
+        loadedProfile == profile ? read : ScoreFactorsSnapshot()
+    }
 
     private var agentNames: [String] {
         workspace.configState.securityAgents.map(\.name)
@@ -80,7 +95,8 @@ struct ScoreFactorsCard: View {
                 EDRAgentPickerRow(names: agentNames, onFailure: { saveFailure = $0 },
                                   onSaved: noting)
             }
-            .disabled(workspace.demoMode)
+            // An edit before this profile's read lands would write a list built without it.
+            .disabled(workspace.demoMode || loadedProfile != workspace.profile)
             .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
         }
         .accessibilityElement(children: .contain)
@@ -97,7 +113,8 @@ struct ScoreFactorsCard: View {
                     label: factor.label(
                         staleDays: snapshot.staleDays, staleBasis: snapshot.staleBasis),
                     status: Self.status(of: factor, snapshot: snapshot,
-                                        policy: workspace.securityPolicy),
+                                        policy: workspace.securityPolicy,
+                                        format: percentFormat),
                     part: Self.part(factor, of: scoring),
                     weight: Binding(
                         get: { Int(factor.weight) },
@@ -130,7 +147,7 @@ struct ScoreFactorsCard: View {
         do {
             noting(try workspace.saveScoreFactors(factors))
         } catch {
-            saveFailure = "Couldn't save the score factors: \(error.localizedDescription)"
+            saveFailure = L("Couldn't save the score factors: \(error.localizedDescription)")
         }
     }
 
@@ -143,11 +160,13 @@ struct ScoreFactorsCard: View {
     private func reload() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
-        let loaded = await Task.detached(priority: .utility) {
-            ScoreFactorsSnapshot.load(profile: profile)
-        }.value
-        guard profile == workspace.profile else { return }
-        snapshot = loaded
+        if loadedProfile != profile { loadedProfile = nil; read = ScoreFactorsSnapshot() }
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { ScoreFactorsSnapshot.load(profile: profile) }
+        ) else { return }
+        read = loaded
+        loadedProfile = profile
     }
 
     /// Shares do not depend on weights, so only a changed list or profile reloads them.
@@ -157,10 +176,9 @@ struct ScoreFactorsCard: View {
 
     // MARK: Pure helpers
 
-    static let intro = "The Security Score is the weighted share of Macs that pass each factor, "
-        + "on Security Posture, the Overview, Trends, alerts and reports. Weights need not add "
-        + "up to 100: a factor with no data drops out and the rest are rescaled. The list is "
-        + "saved to this workspace's config.yaml (security_policy.score_factors)."
+    static var intro: String {
+        L("The Security Score is the weighted share of Macs that pass each factor, on Security Posture, the Overview, Trends, alerts and reports. Weights need not add up to 100: a factor with no data drops out and the rest are rescaled. The list is saved to this workspace's config.yaml (security_policy.score_factors).")
+    }
 
     /// The factors that score today: counted, with data and a weight above 0.
     static func scoringWeight(
@@ -187,25 +205,25 @@ struct ScoreFactorsCard: View {
     /// Today's share, or why the factor does not score.
     static func status(
         of factor: SecurityScoreFactor, snapshot: ScoreFactorsSnapshot,
-        policy: SecurityControlPolicy
+        policy: SecurityControlPolicy, format: PercentFormat
     ) -> String {
         if let control = factor.kind.control, policy.level(for: control) == .ignore {
-            return "Not counted: \(control.displayName) is set to Ignore above"
+            return L("Not counted: \(control.displayName) is set to Ignore above")
         }
         switch factor.kind {
         case .agent where SecurityControlPolicy.configuredName(
             factor.target, in: snapshot.agents) == nil:
-            return "Not counted: no security agent has this name"
+            return L("Not counted: no security agent has this name")
         case .mscp where snapshot.baselines.isEmpty:
-            return "Not counted: no mSCP baseline is configured"
+            return L("Not counted: no mSCP baseline is configured")
         case .mscp where factor.target != nil && SecurityControlPolicy.configuredName(
             factor.target, in: snapshot.baselines) == nil:
-            return "Not counted: no mSCP baseline has this name"
+            return L("Not counted: no mSCP baseline has this name")
         default:
             break
         }
-        guard let share = snapshot.measures[factor.key]?.share else { return "No data yet" }
-        return String(format: "%.1f%% of Macs pass", share)
+        guard let share = snapshot.measures[factor.key]?.share else { return L("No data yet") }
+        return L("\(format.text(share)) of Macs pass")
     }
 
     static func replacing(
@@ -255,14 +273,14 @@ private struct ScoreFactorsHeader: View {
 
     var body: some View {
         HStack {
-            SectionHeader(title: "Security Score Factors")
+            SectionHeader(title: L("Security Score Factors"))
             Spacer()
-            Pill(text: isDefault ? "Defaults" : "\(count) factors", tone: .teal,
+            Pill(text: isDefault ? L("Defaults") : L("\(count) factors"), tone: .teal,
                  icon: isDefault ? "checkmark" : "slider.horizontal.3")
-            PNPButton(title: "Use defaults", size: .sm, action: onDefaults)
+            PNPButton(title: L("Use defaults"), size: .sm, action: onDefaults)
                 .disabled(demo || isDefault)
                 .help(demo ? DemoData.liveOnlyHelp
-                      : "Remove the list from config.yaml and score the default factors.")
+                      : L("Remove the list from config.yaml and score the default factors."))
         }
     }
 }
@@ -289,7 +307,7 @@ private struct ScoreFactorRow: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             Spacer(minLength: 8)
-            Text(part.map { String(format: "%.0f%% of score", $0) } ?? "—")
+            Text(part.map { L("\(PercentFormat.whole.text($0)) of score") } ?? "—")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(Theme.Text.secondary)
                 .frame(minWidth: 84, alignment: .trailing)
@@ -320,7 +338,7 @@ private struct ScoreFactorAddMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(options.isEmpty)
-        .help(options.isEmpty ? "Every factor is already listed." : "Add a factor to the score.")
+        .help(options.isEmpty ? L("Every factor is already listed.") : L("Add a factor to the score."))
     }
 }
 
@@ -365,7 +383,7 @@ private struct EDRAgentPickerRow: View {
                 do {
                     onSaved(try workspace.saveEDRAgent(name))
                 } catch {
-                    onFailure("Couldn't save the EDR agent: \(error.localizedDescription)")
+                    onFailure(L("Couldn't save the EDR agent: \(error.localizedDescription)"))
                 }
             })
     }

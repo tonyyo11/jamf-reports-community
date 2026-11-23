@@ -44,7 +44,7 @@ enum FleetReportEmitter {
         }
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
         if Int(info.st_size) > maxBytes { _ = ftruncate(fd, 0) }
-        let line = ISO8601DateFormatter().string(from: Date()) + " " + message + "\n"
+        let line = ISO8601Time.string(Date()) + " " + message + "\n"
         // write(contentsOf:), not write(_:): the latter raises on failure, which Swift cannot
         // catch. On a synced workspace the write really can fail.
         try handle.write(contentsOf: Data(line.utf8))
@@ -55,14 +55,25 @@ enum FleetReportEmitter {
     static func csv(for rollup: FleetRollup) -> String {
         var lines = ["Metric,Current,Previous,Delta"]
         for metric in rollup.metrics {
+            // The label is text; the figures are the app's own number formats, which a delta's
+            // sign must not be guarded out of.
             lines.append([
-                metric.label,
+                StaleDeviceService.csvField(metric.label),
                 format(metric.value, unit: metric.unit),
                 format(metric.previous, unit: metric.unit),
                 formatDelta(metric.delta, unit: metric.unit),
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// One line per profile of `profiles` whose persisted verdict is `limited`.
+    static func siteScopeNotes(profiles: [String]) -> [String] {
+        profiles.compactMap { profile in
+            SiteScope.persisted(profile: profile).summary.map {
+                "Note: \(ConfigSchema.displayText(profile)) sees \($0) (site-limited login)"
+            }
+        }
     }
 
     /// Prior-period summary for deltas: the newest summary at least
@@ -100,7 +111,7 @@ enum FleetReportEmitter {
         outputDir: URL? = nil,
         summariesFor: (String) -> [DailySummary] = defaultSummaries
     ) throws -> URL? {
-        let lists = group.profiles.map(summariesFor)
+        let lists = group.workspaces.map(summariesFor)
         guard let rollup = rollup(for: group, summariesByProfile: lists, lookbackDays: lookbackDays) else {
             return nil
         }
@@ -119,22 +130,28 @@ enum FleetReportEmitter {
 
     // MARK: - Formatting
 
-    /// Shared with `FleetWorkbookEmitter` — one Current/Previous formatting rule.
-    static func format(_ value: Double?, unit: FleetRollup.Unit) -> String {
+    /// Shared with `FleetWorkbookEmitter` and the period report — one Current/Previous
+    /// formatting rule. A group report spans workspaces with no one config.yaml, so it keeps
+    /// `.standard`; the period report passes its workspace's format.
+    static func format(
+        _ value: Double?, unit: FleetRollup.Unit, percent: PercentFormat = .standard
+    ) -> String {
         guard let value else { return "—" }
         switch unit {
-        case .count:   return String(Int(value.rounded()))
-        case .percent: return String(format: "%.1f%%", value)
+        case .count:   return wholeInt(value).map(String.init) ?? "—"
+        case .percent: return percent.text(value)
         }
     }
 
     /// Shared with `FleetWorkbookEmitter` — one Δ formatting rule.
-    static func formatDelta(_ delta: Double?, unit: FleetRollup.Unit) -> String {
+    static func formatDelta(
+        _ delta: Double?, unit: FleetRollup.Unit, percent: PercentFormat = .standard
+    ) -> String {
         guard let delta else { return "—" }
         let sign = delta > 0 ? "+" : ""
         switch unit {
-        case .count:   return "\(sign)\(Int(delta.rounded()))"
-        case .percent: return "\(sign)\(String(format: "%.1f", delta))pp"
+        case .count:   return wholeInt(delta).map { "\(sign)\($0)" } ?? "—"
+        case .percent: return "\(sign)\(percent.changeNumberText(delta))pp"
         }
     }
 }

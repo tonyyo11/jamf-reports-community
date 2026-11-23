@@ -11,13 +11,19 @@ struct TrendLineChartDescriptor: AXChartDescriptorRepresentable {
     let dates: [Date]
     let values: [Double]
     let unit: String
+    var percentFormat: PercentFormat = .standard
+
+    /// The number as printed; a "%" unit goes through the workspace's format.
+    private func number(_ value: Double) -> String {
+        unit == "%" ? percentFormat.numberText(value) : String(format: "%.1f", value)
+    }
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let f = SummaryJSONParser.dateFormatter
         let labels = dates.map { f.string(from: $0) }
 
         let xAxis = AXCategoricalDataAxisDescriptor(
-            title: "Snapshot Date",
+            title: L("Snapshot Date"),
             categoryOrder: labels
         )
         let minVal = values.min() ?? 0
@@ -26,7 +32,7 @@ struct TrendLineChartDescriptor: AXChartDescriptorRepresentable {
             title: seriesName,
             range: min(minVal * 0.9, 0.0)...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(String(format: "%.1f", $0))\(self.unit)" }
+        ) { "\(self.number($0))\(self.unit)" }
 
         let series = AXDataSeriesDescriptor(
             name: seriesName,
@@ -46,8 +52,7 @@ struct TrendLineChartDescriptor: AXChartDescriptorRepresentable {
               let firstLabel = labels.first, let lastLabel = labels.last else { return nil }
         let delta = last - first
         let direction = delta > 0 ? "up" : delta < 0 ? "down" : "unchanged"
-        return "\(seriesName) \(direction) from \(String(format: "%.1f", first))\(unit) " +
-               "to \(String(format: "%.1f", last))\(unit), \(firstLabel) through \(lastLabel)"
+        return L("\(seriesName) \(direction) from \(number(first))\(unit) to \(number(last))\(unit), \(firstLabel) through \(lastLabel)")
     }
 }
 
@@ -62,6 +67,7 @@ struct MultiLineChartDescriptor: AXChartDescriptorRepresentable {
     }
     let title: String
     let seriesList: [Series]
+    let percentFormat: PercentFormat
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let f = SummaryJSONParser.dateFormatter
@@ -70,17 +76,17 @@ struct MultiLineChartDescriptor: AXChartDescriptorRepresentable {
         ).sorted()
 
         let xAxis = AXCategoricalDataAxisDescriptor(
-            title: "Snapshot Date",
+            title: L("Snapshot Date"),
             categoryOrder: allDateStrings
         )
         let allValues = seriesList.flatMap(\.values)
         let minVal = allValues.min() ?? 0
         let maxVal = allValues.max() ?? 100
         let yAxis = AXNumericDataAxisDescriptor(
-            title: "Percentage",
+            title: L("Percentage"),
             range: min(minVal * 0.9, 0.0)...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(String(format: "%.1f", $0))%" }
+        ) { percentFormat.text($0) }
 
         let seriesData = seriesList.map { s -> AXDataSeriesDescriptor in
             let sF = SummaryJSONParser.dateFormatter
@@ -110,18 +116,24 @@ struct SectorChartDescriptor: AXChartDescriptorRepresentable {
     let title: String
     let unit: String
     let slices: [Slice]
+    var percentFormat: PercentFormat = .standard
+
+    /// The number as printed; a "%" unit goes through the workspace's format.
+    private func number(_ value: Double) -> String {
+        unit == "%" ? percentFormat.numberText(value) : String(format: "%.1f", value)
+    }
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(
-            title: "Category",
+            title: L("Category"),
             categoryOrder: slices.map(\.label)
         )
         let maxVal = slices.map(\.value).max() ?? 1
         let yAxis = AXNumericDataAxisDescriptor(
-            title: unit.isEmpty ? "Count" : unit,
+            title: unit.isEmpty ? L("Count") : unit,
             range: 0...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(String(format: "%.1f", $0))\(self.unit)" }
+        ) { "\(self.number($0))\(self.unit)" }
 
         let series = AXDataSeriesDescriptor(
             name: title,
@@ -129,7 +141,7 @@ struct SectorChartDescriptor: AXChartDescriptorRepresentable {
             dataPoints: slices.map { AXDataPoint(x: $0.label, y: $0.value) }
         )
         let summary = slices
-            .map { "\($0.label): \(String(format: "%.1f", $0.value))\(unit)" }
+            .map { "\($0.label): \(number($0.value))\(unit)" }
             .joined(separator: "; ")
 
         return AXChartDescriptor(
@@ -154,15 +166,15 @@ struct BarDistributionChartDescriptor: AXChartDescriptorRepresentable {
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(
-            title: "Category",
+            title: L("Category"),
             categoryOrder: bars.map(\.label)
         )
         let maxVal = bars.map(\.value).max() ?? 1
         let yAxis = AXNumericDataAxisDescriptor(
-            title: "Count",
+            title: L("Count"),
             range: 0...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(Int($0.rounded()))\(self.unit)" }
+        ) { (wholeInt($0).map(String.init) ?? "—") + self.unit }
 
         let series = AXDataSeriesDescriptor(
             name: title,
@@ -170,7 +182,7 @@ struct BarDistributionChartDescriptor: AXChartDescriptorRepresentable {
             dataPoints: bars.map { AXDataPoint(x: $0.label, y: $0.value) }
         )
         let summary = bars
-            .map { "\($0.label): \(Int($0.value.rounded()))\(unit)" }
+            .map { "\($0.label): \(wholeInt($0.value).map(String.init) ?? "—")\(unit)" }
             .joined(separator: "; ")
 
         return AXChartDescriptor(
@@ -196,16 +208,16 @@ struct StackedBarChartDescriptor: AXChartDescriptorRepresentable {
 
     func makeChartDescriptor() -> AXChartDescriptor {
         let xAxis = AXCategoricalDataAxisDescriptor(
-            title: "Snapshot Date",
+            title: L("Snapshot Date"),
             categoryOrder: dateLabels
         )
         let allValues = bands.flatMap(\.values).map(Double.init)
         let maxVal = allValues.max() ?? 1
         let yAxis = AXNumericDataAxisDescriptor(
-            title: "Device Count",
+            title: L("Device Count"),
             range: 0...max(maxVal * 1.1, 1.0),
             gridlinePositions: []
-        ) { "\(Int($0.rounded())) devices" }
+        ) { wholeInt($0).map { L("\($0) devices") } ?? "—" }
 
         let seriesData = bands.map { band in
             AXDataSeriesDescriptor(

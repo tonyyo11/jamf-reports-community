@@ -6,8 +6,9 @@ import CoreGraphics
 /// `FleetReportEmitter` (CSV): pure `workbook(for:)` + thin IO `emit`, same
 /// `_fleet-reports/` output dir, same injectable `summariesFor` loader.
 ///
-/// Percentages render as `"%.1f%%"` strings (the `CoreDashboard` convention —
-/// `CellFormat.pct` would multiply a 0–100 value by 100). Cell values route
+/// Percentages render as one-decimal text through `PercentFormat.standard` (the `CoreDashboard`
+/// convention — `CellFormat.pct` would multiply a 0–100 value by 100): a group spans workspaces
+/// with no one `display.percent_decimals`. Cell values route
 /// through `Worksheet.write` → `CellValue.safe`, so profile/baseline names are
 /// formula-injection-safe by construction. nil metrics render "—", never 0.
 enum FleetWorkbookEmitter {
@@ -22,7 +23,7 @@ enum FleetWorkbookEmitter {
         outputDir: URL? = nil,
         summariesFor: (String) -> [DailySummary] = FleetReportEmitter.defaultSummaries
     ) throws -> URL? {
-        let byProfile = group.profiles.map { (profile: $0, summaries: summariesFor($0)) }
+        let byProfile = group.workspaces.map { (profile: $0, summaries: summariesFor($0)) }
         guard let model = FleetWorkbookModel.build(
             groupName: group.name, summariesByProfile: byProfile,
             lookbackDays: lookbackDays, timestamp: timestamp
@@ -32,14 +33,16 @@ enum FleetWorkbookEmitter {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(
             "fleet-\(ExportNaming.sanitize(group.name))-\(timestamp).xlsx")
-        try workbook(for: model).write(to: url)
+        try workbook(
+            for: model, notes: FleetReportEmitter.siteScopeNotes(profiles: group.workspaces)
+        ).write(to: url)
         return url
     }
 
     /// Pure model → workbook assembly (5 sheets). Testable without IO.
-    static func workbook(for model: FleetWorkbookModel) -> Workbook {
+    static func workbook(for model: FleetWorkbookModel, notes: [String] = []) -> Workbook {
         let wb = Workbook()
-        fleetSummarySheet(wb.addSheet("Fleet Summary"), model)
+        fleetSummarySheet(wb.addSheet("Fleet Summary"), model, notes: notes)
         perProfileSheet(wb.addSheet("Per-Profile Breakdown"), model)
         securityPostureSheet(wb.addSheet("Security Posture"), model)
         complianceSheet(wb.addSheet("Compliance"), model)
@@ -49,7 +52,9 @@ enum FleetWorkbookEmitter {
 
     // MARK: - Fleet Summary
 
-    private static func fleetSummarySheet(_ ws: Worksheet, _ model: FleetWorkbookModel) {
+    private static func fleetSummarySheet(
+        _ ws: Worksheet, _ model: FleetWorkbookModel, notes: [String]
+    ) {
         ws.setColumnWidth(0, 0, 22)
         ws.setColumnWidth(1, 3, 14)
         ws.write(model.groupName, row: 0, col: 0, format: .title)
@@ -65,14 +70,19 @@ enum FleetWorkbookEmitter {
             ws.write(FleetReportEmitter.format(m.previous, unit: m.unit), row: r, col: 2, format: .cell)
             ws.write(FleetReportEmitter.formatDelta(m.delta, unit: m.unit), row: r, col: 3, format: .cell)
         }
+        // Below the metric rows, so no figure moves.
+        for (i, note) in notes.enumerated() {
+            ws.write(note, row: head + model.universal.count + 2 + i, col: 0, format: .yellow)
+        }
         let withFV = model.perProfile.filter { $0.fileVaultPct != nil }
         guard !withFV.isEmpty else { return }
         let bar = BarChartData(
             categories: withFV.map(\.profile),
             values: withFV.map { $0.fileVaultPct ?? 0 },
-            colors: withFV.enumerated().map { ChartPalette.color(for: $0.offset) })
-        if let png = ChartRenderer.barChart(data: bar, title: "FileVault % by Profile") {
-            ws.insertImage(row: head + model.universal.count + 3, col: 0,
+            colors: withFV.map { _ in ChartPalette.cgColor(forMetric: .fileVault) })
+        if let png = ChartRenderer.barChart(data: bar, yAxis: .percent,
+                                            title: "FileVault % by Profile", yLabel: "Percent of Macs") {
+            ws.insertImage(row: head + model.universal.count + 3 + notes.count, col: 0,
                            data: png, filename: "fleet-fv-by-profile.png")
         }
     }
@@ -119,10 +129,17 @@ enum FleetWorkbookEmitter {
         let bar = BarChartData(
             categories: present.map(\.label),
             values: present.map { $0.value ?? 0 },
-            colors: present.enumerated().map { ChartPalette.color(for: $0.offset) })
-        if let png = ChartRenderer.barChart(data: bar, title: "Fleet Security Posture") {
+            colors: present.map { controlColor($0.key) })
+        if let png = ChartRenderer.barChart(data: bar, yAxis: .percent,
+                                            title: "Fleet Security Posture", yLabel: "Percent of Macs") {
             ws.insertImage(row: controls.count + 3, col: 0, data: png, filename: "fleet-posture.png")
         }
+    }
+
+    /// A rollup KPI's key is its `TrendSeries.Metric` raw value; any other gets the neutral grey.
+    private static func controlColor(_ key: String) -> CGColor {
+        TrendSeries.Metric(rawValue: key).map { ChartPalette.cgColor(forMetric: $0) }
+            ?? ChartPalette.noDataColor
     }
 
     // MARK: - Compliance (baseline-grouped)
@@ -192,7 +209,7 @@ enum FleetWorkbookEmitter {
                 label: bk.label, color: ChartPalette.complianceBandColors[idx], points: points)
         }
         return ChartRenderer.stackedAreaChart(
-            series: series, title: "\(group.baseline) — Bands Over Time")
+            series: series, title: "\(group.baseline) — Bands Over Time", yLabel: "Macs")
     }
 
     // MARK: - Fleet Trend
@@ -220,27 +237,32 @@ enum FleetWorkbookEmitter {
     }
 
     private static func trendLine(_ model: FleetWorkbookModel) -> Data? {
-        let kpis: [(label: String, value: (FleetWorkbookModel.TrendPoint) -> Double?)] = [
-            ("FileVault %", { $0.fileVaultPct }), ("SIP %", { $0.sipPct }),
-            ("Firewall %", { $0.firewallPct }), ("Gatekeeper %", { $0.gatekeeperPct }),
-            ("Patch %", { $0.patchPct }), ("OS Current %", { $0.osCurrentPct }),
-            ("Security Score", { $0.securityScore })]
-        let series = kpis.enumerated().compactMap { idx, kpi -> ChartSeries? in
+        typealias KPI = (label: String, metric: TrendSeries.Metric,
+                         value: (FleetWorkbookModel.TrendPoint) -> Double?)
+        let kpis: [KPI] = [
+            ("FileVault %", .fileVault, { $0.fileVaultPct }), ("SIP %", .sip, { $0.sipPct }),
+            ("Firewall %", .firewall, { $0.firewallPct }),
+            ("Gatekeeper %", .gatekeeper, { $0.gatekeeperPct }),
+            ("Patch %", .patch, { $0.patchPct }), ("OS Current %", .osCurrent, { $0.osCurrentPct }),
+            ("Security Score", .securityScore, { $0.securityScore })]
+        let series = kpis.compactMap { kpi -> ChartSeries? in
             let points = model.trend.compactMap { tp -> (date: Date, value: Double)? in
                 guard let date = SummaryJSONParser.dateFormatter.date(from: tp.date),
                       let value = kpi.value(tp) else { return nil }
                 return (date: date, value: value)
             }
             return points.isEmpty ? nil
-                : ChartSeries(label: kpi.label, color: ChartPalette.color(for: idx), points: points)
+                : ChartSeries(label: kpi.label,
+                              color: ChartPalette.cgColor(forMetric: kpi.metric), points: points)
         }
-        return series.isEmpty ? nil : ChartRenderer.lineChart(series: series, title: "Fleet Trend")
+        return series.isEmpty ? nil : ChartRenderer.lineChart(series: series, yAxis: .percent,
+                                                               title: "Fleet Trend", yLabel: "Percent, or score out of 100")
     }
 
     // MARK: - Cell formatting
 
     private static func pct(_ value: Double?) -> String {
-        value.map { String(format: "%.1f%%", $0) } ?? "—"
+        PercentFormat.standard.text(value)
     }
 
 }

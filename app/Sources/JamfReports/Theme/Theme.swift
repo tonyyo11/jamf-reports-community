@@ -78,6 +78,12 @@ enum Theme {
             .system(size: size, weight: weight, design: .serif)
         }
 
+        /// Serif page title that follows Dynamic Type: `.largeTitle` is 26 pt on macOS at the
+        /// default size, the old fixed page-title size.
+        static func serifTitle(_ style: Font.TextStyle = .largeTitle) -> Font {
+            .system(style, design: .serif, weight: .bold)
+        }
+
         /// SF default body.
         static func body(_ size: CGFloat = 13, weight: Font.Weight = .regular) -> Font {
             .system(size: size, weight: weight)

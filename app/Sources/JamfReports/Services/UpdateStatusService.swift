@@ -88,7 +88,12 @@ struct UpdateStatusService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
-        return load(
+        return load(dataDir: dir)
+    }
+
+    /// `load(profile:)` over an explicit data directory, so tests need no workspace.
+    static func load(dataDir dir: URL) -> Snapshot {
+        load(
             statusURL: FileManager.newestJSONFile(
                 in: dir.appendingPathComponent("update-status", isDirectory: true)),
             failuresURL: FileManager.newestJSONFile(
@@ -116,12 +121,7 @@ struct UpdateStatusService: Sendable {
 
     /// Test seam: load directly from an arbitrary file URL.
     static func load(from url: URL) -> Snapshot? {
-        guard let data = try? Data(contentsOf: url) else {
-            AppLogger.collect.warning(
-                "UpdateStatusService: could not read update-status file \(url.lastPathComponent, privacy: .public)"
-            )
-            return nil
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url) else { return nil }
 
         // Try UpdateFailuresReport first (has more fields)
         if let failuresReport = try? JSONDecoder()
@@ -136,7 +136,7 @@ struct UpdateStatusService: Sendable {
         }
 
         AppLogger.collect.warning(
-            "UpdateStatusService: failed to decode update-status file \(url.lastPathComponent, privacy: .public)"
+            "UpdateStatusService: failed to decode update-status file \(url.lastPathComponent, privacy: .private)"
         )
         return nil
     }

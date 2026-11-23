@@ -6,86 +6,143 @@ import Charts
 /// inventories from the `pro mobile-devices list` and `classic-mobile-config-profiles`
 /// snapshots.
 struct MobileFleetView: View {
+    @Environment(\.percentFormat) private var percentFormat
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
-    @State private var hasLoaded = false
+    /// The `dataSource` `snapshot` was read for; the content waits for it to match.
+    @State private var loadedSource: String?
+    @State private var reloads = 0
     @State private var selectedDeviceID: String?
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
     @State private var supervisionFilter: MobileFleetService.SupervisionRole?
+    /// Finding the devices table is filtered to (a Health Audit count opens it set); applies
+    /// with `supervisionFilter`, both must hold.
+    @State private var findingFilter: MobileFinding?
+    @State private var findingContext: MobileFinding.Context?
+    /// Devices per finding for `findingContext`; a finding no device reports is absent.
+    @State private var findingCounts: [MobileFinding: Int] = [:]
 
     var body: some View {
         PageScaffold {
             PageHeader(
-                kicker: "Mobile",
-                title: "Mobile Devices",
+                kicker: L("Mobile"),
+                title: L("Mobile Devices"),
                 subtitle: subtitle,
                 // The demo dataset is frozen on purpose; an age warning on it is noise.
                 lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
-            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-            // Suppressed in demo mode (the demo dataset is intentionally static and
-            // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
-                // A Mac-only tenant has no mobile devices at all, so no
-                // expected kinds — every one of them would render a
-                // false-alarm "never" chip. Only assert expectations once
-                // mobile data is detected; present-kind chips still show
-                // either way.
-                FreshnessChipRow(
-                    sourceDates: snapshot.sourceDates,
-                    expectedKinds: snapshot.isDetected ? [
-                        "mobile-devices-list", "classic-ios-profiles",
-                    ] : []
-                )
-            }
-
-            if snapshot.totalDevices == 0 {
-                // Collected and empty reads differently from never collected.
-                if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
-                if !snapshot.profiles.isEmpty { profilesTable }
+            if loadedSource != dataSource {
+                ScreenLoadingCard(what: L("mobile devices"))
             } else {
-                kpiGrid
-                supervisionCard
-                enrollmentMethodCard
-                complianceKpiGrid
-                osDistributionCard
-                devicesTable
-                if let device = selectedRichDevice {
-                    deviceDetailCard(device)
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                    // A Mac-only tenant has no mobile devices at all, so no
+                    // expected kinds — every one of them would render a
+                    // false-alarm "never" chip. Only assert expectations once
+                    // mobile data is detected; present-kind chips still show
+                    // either way.
+                    FreshnessChipRow(
+                        sourceDates: snapshot.sourceDates,
+                        expectedKinds: snapshot.isDetected ? [
+                            "mobile-devices-list", "classic-ios-profiles",
+                        ] : []
+                    )
                 }
-                profilesTable
+
+                if snapshot.totalDevices == 0 {
+                    // Collected and empty reads differently from never collected.
+                    if snapshot.collectedWithNoDevices { noDevicesState } else { emptyState }
+                    if !snapshot.profiles.isEmpty { profilesTable }
+                } else {
+                    kpiGrid
+                    supervisionCard
+                    enrollmentMethodCard
+                    complianceKpiGrid
+                    osDistributionCard
+                    devicesTable
+                    if let device = selectedRichDevice {
+                        deviceDetailCard(device)
+                    }
+                    profilesTable
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
-        .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .task(id: "\(dataSource)|\(reloads)") { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            reload()
+            reloads += 1
         }
+        .onChange(of: workspace.pendingMobileFilter) { applyPendingFilter() }
     }
 
     private var subtitle: String? {
         guard snapshot.totalDevices > 0 else { return nil }
-        return "\(snapshot.totalDevices) mobile device\(snapshot.totalDevices == 1 ? "" : "s") across iOS and iPadOS."
+        return (snapshot.totalDevices == 1 ? L("\(snapshot.totalDevices) mobile device across iOS and iPadOS.") : L("\(snapshot.totalDevices) mobile devices across iOS and iPadOS."))
     }
 
     // MARK: - Data loading
 
-    private func loadIfNeeded() {
-        guard !hasLoaded else { return }
-        hasLoaded = true
-        reload()
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
+    private func load() async {
+        let source = dataSource
+        if loadedSource != source {
+            loadedSource = nil
+            snapshot = .empty
+            findingFilter = nil
+        }
+        guard !workspace.demoMode else {
+            let context = DemoData.mobileFindingContext
+            apply(Self.demoSnapshot, context: context,
+                  counts: Self.demoSnapshot.findingCounts(context), source: source)
+            return
+        }
+        let profile = workspace.profile
+        let staleDays = workspace.configState.staleRule.days
+        guard let loaded = await ScreenLoad.paint(
+            stillCurrent: { source == dataSource },
+            read: {
+                let loaded = MobileFleetService.load(profile: profile)
+                let context = loaded.findingContext(staleDays: staleDays, now: Date())
+                return (loaded, context, loaded.findingCounts(context))
+            }
+        ) else { return }
+        apply(loaded.0, context: loaded.1, counts: loaded.2, source: source)
     }
 
-    private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : MobileFleetService.load(profile: workspace.profile)
+    private func apply(
+        _ loaded: MobileFleetService.Snapshot, context: MobileFinding.Context,
+        counts: [MobileFinding: Int], source: String
+    ) {
+        snapshot = loaded
+        findingContext = context
+        findingCounts = counts
+        // A reload whose data no longer reports the finding must not leave its chip over an
+        // empty table.
+        if let active = findingFilter, counts[active] == nil { findingFilter = nil }
         supervisionFilter = nil
+        loadedSource = source
+        applyPendingFilter()
+    }
+
+    /// Applies the filter a Health Audit count asked for (`MobileFinding.pending`) once the
+    /// snapshot is in, and only for a finding some device reports.
+    private func applyPendingFilter() {
+        guard loadedSource == dataSource, let raw = workspace.pendingMobileFilter else { return }
+        workspace.pendingMobileFilter = nil
+        guard let requested = MobileFinding(rawValue: raw), findingCounts[requested] != nil
+        else { return }
+        findingFilter = requested
+        supervisionFilter = nil
+        selectedDeviceID = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -145,15 +202,14 @@ struct MobileFleetView: View {
             : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
         // Inventoried in the week before the demo's "now", never after it.
         let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
-        let lastUpdate = ISO8601DateFormatter().string(
-            from: DemoData.referenceDate.addingTimeInterval(-age))
+        let lastUpdate = ISO8601Time.string(DemoData.referenceDate.addingTimeInterval(-age))
         let ownership = supervised
             ? "Institutional"
             : (i % 10 == 0 ? "AccountDrivenUserEnrollment" : "UserEnrollment")
         let prestage: MobileDevicePrestage? = supervised
             ? MobileDevicePrestage(
                 mobileDevicePrestageId: isIPad ? "1" : "2",
-                profileName: isIPad ? "Meridian iPad ADE" : "Meridian iPhone ADE")
+                profileName: isIPad ? L("Meridian iPad ADE") : L("Meridian iPhone ADE"))
             : nil
         let general = MobileDeviceGeneral(
             displayName: displayName,
@@ -166,17 +222,17 @@ struct MobileFleetView: View {
             activationLockEnabled: i % 6 != 0,
             passcodeCompliant: i % 8 != 0,
             dataProtectionEnabled: true,
-            jailbreakDetected: "None",
+            jailbreakDetected: L("None"),
             enrollmentMethodPrestage: prestage
         )
         let userLoc = MobileDeviceUserLocation(
             username: owner.user,
-            emailAddress: "\(owner.user)@meridian.health",
+            emailAddress: L("\(owner.user)@meridian.health"),
             department: owner.dept,
-            building: i % 2 == 0 ? "Meridian East" : "HQ"
+            building: i % 2 == 0 ? L("Meridian East") : L("HQ")
         )
         let apps: [MobileDeviceApplication] = (0..<((i * 3) % 12)).map { idx in
-            MobileDeviceApplication(identifier: "com.demo.app\(idx)", name: "Demo App \(idx)")
+            MobileDeviceApplication(identifier: "com.demo.app\(idx)", name: L("Demo App \(idx)"))
         }
         return MobileDeviceInventoryItem(
             mobileDeviceId: "\(1000 + i)",
@@ -199,7 +255,7 @@ struct MobileFleetView: View {
                 id: AnyCodable(tuple.0),
                 name: tuple.1,
                 category: tuple.2,
-                site: "Default",
+                site: L("Default"),
                 description: nil
             )
         }
@@ -211,11 +267,11 @@ struct MobileFleetView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
-                title: "No mobile device data detected",
-                message: "Collect data for this screen with the Collect now banner when it shows, "
-                    + "or run this command.",
+                title: L("No mobile device data detected"),
+                message: L("Collect data for this screen with the Collect now banner when it shows, or run this command."),
                 commands: [EmptyStateView.collectCommand(
-                    profile: workspace.profile, kinds: ["mobile-devices-list", "classic-ios-profiles"])]
+                    profile: workspace.profile, kinds: ["mobile-devices-list", "classic-ios-profiles"])],
+                primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
             )
         }
     }
@@ -229,9 +285,8 @@ struct MobileFleetView: View {
         Card(padding: 24) {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
-                title: "Jamf Pro reports no mobile devices",
-                message: "The latest mobile device collection found none, so there is "
-                    + "nothing to chart here."
+                title: L("Jamf Pro reports no mobile devices"),
+                message: L("The latest mobile device collection found none, so there is nothing to chart here.")
             )
         }
     }
@@ -241,9 +296,9 @@ struct MobileFleetView: View {
     private var kpiGrid: some View {
         EqualHeightTileGrid(minTileWidth: 220) {
             StatTile(
-                label: "Total Mobile Devices",
+                label: L("Total Mobile Devices"),
                 value: "\(snapshot.totalDevices)",
-                sub: "iOS and iPadOS devices",
+                sub: L("iOS and iPadOS devices"),
                 fillsHeight: true
             )
             StatTile(
@@ -266,13 +321,13 @@ struct MobileFleetView: View {
         if !snapshot.richDevices.isEmpty {
             EqualHeightTileGrid(minTileWidth: 220) {
                 StatTile(
-                    label: "Passcode Compliant",
+                    label: L("Passcode Compliant"),
                     value: fleetPercentText(snapshot.passcodeCompliantCount),
                     sub: fleetCountCaption(snapshot.passcodeCompliantCount),
                     fillsHeight: true
                 )
                 StatTile(
-                    label: "Activation Lock",
+                    label: L("Activation Lock"),
                     value: fleetPercentText(snapshot.activationLockEnabledCount),
                     sub: fleetCountCaption(snapshot.activationLockEnabledCount),
                     fillsHeight: true
@@ -284,35 +339,37 @@ struct MobileFleetView: View {
     }
 
     /// Caption for a tile whose field no device in the snapshot carries.
-    private static let notCollectedCaption = "Not in the collected inventory"
+    private static var notCollectedCaption: String { L("Not in the collected inventory") }
 
     /// A count as a share of the fleet, or a dash when the count is unknown.
     private func fleetPercentText(_ count: Int?) -> String {
         guard let count else { return "—" }
-        return String(format: "%.1f%%", pct(count: count, total: snapshot.totalDevices))
+        return percentFormat.text(pct(count: count, total: snapshot.totalDevices))
     }
 
     /// "N of M", or why there is no N.
     private func fleetCountCaption(_ count: Int?) -> String {
         guard let count else { return Self.notCollectedCaption }
-        return "\(count) of \(snapshot.totalDevices)"
+        return L("\(count) of \(snapshot.totalDevices)")
     }
 
     /// "Clean" only when some device actually reported a jailbreak status.
     private var jailbreakTile: StatTile {
         guard let detected = snapshot.jailbreakDetectedCount else {
-            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption,
+            return StatTile(label: L("Jailbreak Status"), value: "—", sub: Self.notCollectedCaption,
                             fillsHeight: true)
         }
         if detected > 0 {
             return StatTile(
-                label: "Jailbreak Detected",
+                label: L("Jailbreak Detected"),
                 value: "\(detected)",
-                sub: "Devices requiring attention",
-                fillsHeight: true
+                sub: L("Devices requiring attention"),
+                fillsHeight: true,
+                action: { setFindingFilter(.jailbreak) },
+                actionHint: L("Filters the devices table to jailbreak detected")
             )
         }
-        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices",
+        return StatTile(label: L("Jailbreak Status"), value: L("Clean"), sub: L("No compromised devices"),
                         fillsHeight: true)
     }
 
@@ -320,14 +377,14 @@ struct MobileFleetView: View {
     private var supervisionCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Supervision", trailing: "Managed posture")
+                SectionHeader(title: L("Supervision"), trailing: L("Managed posture"))
                 if snapshot.richDevices.isEmpty {
                     EmptyStateView(
                         systemImage: "questionmark.circle",
-                        title: "Collect inventory for KPIs",
-                        message: "Supervision and ownership signals come from the full "
-                            + "mobile device inventory.",
-                        commands: [collectInventoryCommand]
+                        title: L("Collect inventory for KPIs"),
+                        message: L("Supervision and ownership signals come from the full mobile device inventory."),
+                        commands: [collectInventoryCommand],
+                        primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
                     )
                 } else {
                     HStack(alignment: .top, spacing: 28) {
@@ -401,8 +458,8 @@ struct MobileFleetView: View {
                 let percentage = total > 0 ? Double(slice.count) / Double(total) * 100 : 0
                 let isActive = supervisionFilter == slice.role
                 let action: String = isActive
-                    ? "Show every device in the table"
-                    : "Show only \(Self.filterNoun(for: slice.role)) in the table"
+                    ? L("Show every device in the table")
+                    : L("Show only \(Self.filterNoun(for: slice.role)) in the table")
                 Button {
                     toggleSupervisionFilter(slice.role)
                 } label: {
@@ -419,7 +476,7 @@ struct MobileFleetView: View {
                             .font(Theme.Fonts.mono(12, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg2)
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", percentage))
+                        Text(percentFormat.text(percentage))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(minWidth: 48, alignment: .trailing)
@@ -463,11 +520,45 @@ struct MobileFleetView: View {
         selectedDeviceID = nil
     }
 
+    private func setFindingFilter(_ finding: MobileFinding?) {
+        findingFilter = finding
+        selectedDeviceID = nil
+    }
+
+    private func findingChipLabel(_ finding: MobileFinding) -> String {
+        "\(finding.filterLabel): \(findingCounts[finding] ?? 0)"
+    }
+
+    /// The Health Audit's findings as table filters, each with its device count. Hidden when
+    /// the snapshot has no inventory sections to judge.
+    @ViewBuilder
+    private var findingMenu: some View {
+        if !findingCounts.isEmpty {
+            Menu {
+                ForEach(MobileFinding.allCases.filter { findingCounts[$0] != nil }) { finding in
+                    Button("\(finding.filterLabel) (\(findingCounts[finding] ?? 0))") {
+                        setFindingFilter(finding)
+                    }
+                }
+                if findingFilter != nil {
+                    Divider()
+                    Button("Show every device") { setFindingFilter(nil) }
+                }
+            } label: {
+                Label("Needs attention", systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Filter devices by a Health Audit finding")
+            .help("Show only the devices behind a Health Audit finding.")
+        }
+    }
+
     /// Blue vs orange stays apart for color-blind readers; warn is a status color, not a series.
     static func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
         switch role {
-        case .supervised: return Theme.ChartPalette.supervised
-        case .unsupervised: return Theme.ChartPalette.unsupervised
+        case .supervised: return Theme.ChartColors.supervised
+        case .unsupervised: return Theme.ChartColors.unsupervised
         // A mid grey rather than a hairline tone: at 12% white the slice
         // almost vanished, and selected it read dimmer than the dimmed ones.
         case .unmanaged: return Theme.Colors.fgMuted
@@ -479,30 +570,31 @@ struct MobileFleetView: View {
     /// unknown, not unsupervised.
     static func supervisionPill(_ supervised: Bool?) -> (text: String, tone: Pill.Tone) {
         switch supervised {
-        case true?: ("Supervised", .teal)
-        case false?: ("Unsupervised", .warn)
-        case nil: ("Unknown", .muted)
+        case true?: (L("Supervised"), .teal)
+        case false?: (L("Unsupervised"), .warn)
+        case nil: (L("Unknown"), .muted)
         }
     }
 
     /// The devices a legend row's filter shows, for its hint.
     private static func filterNoun(for role: MobileFleetService.SupervisionRole) -> String {
         role == .unknown
-            ? "devices with no supervision state"
-            : "\(role.label.lowercased()) devices"
+            ? L("devices with no supervision state")
+            : L("\(role.label.lowercased()) devices")
     }
 
     @ViewBuilder
     private var enrollmentMethodCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Enrollment Method")
+                SectionHeader(title: L("Enrollment Method"))
                 if snapshot.richDevices.isEmpty {
                     EmptyStateView(
                         systemImage: "questionmark.circle",
-                        title: "Collect inventory for KPIs",
-                        message: "Enrollment method comes from the full mobile device inventory.",
-                        commands: [collectInventoryCommand]
+                        title: L("Collect inventory for KPIs"),
+                        message: L("Enrollment method comes from the full mobile device inventory."),
+                        commands: [collectInventoryCommand],
+                        primaryAction: workspace.collectEmptyAction(tiers: [.inventory])
                     )
                 } else if snapshot.enrollmentMethodDistribution.isEmpty {
                     Text("No enrollment method values reported by Jamf Pro for this fleet.")
@@ -526,10 +618,10 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text("\(count) device\(count == 1 ? "" : "s")")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", percentage))
+                Text(percentFormat.text(percentage))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fg)
                     .frame(minWidth: 48, alignment: .trailing)
@@ -547,7 +639,7 @@ struct MobileFleetView: View {
             .frame(height: 4)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(method): \(count) devices, \(String(format: "%.0f", percentage)) percent")
+        .accessibilityLabel("\(method): \(count) devices, \(PercentFormat.whole.numberText(percentage)) percent")
     }
 
     @ViewBuilder
@@ -556,9 +648,9 @@ struct MobileFleetView: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        SectionHeader(title: "iOS/iPadOS Version Distribution")
+                        SectionHeader(title: L("iOS/iPadOS Version Distribution"))
                         PNPButton(
-                            title: "Export PNG",
+                            title: L("Export PNG"),
                             icon: "square.and.arrow.down",
                             style: .neutral,
                             size: .sm,
@@ -567,22 +659,38 @@ struct MobileFleetView: View {
                         .accessibilityLabel("Export iOS/iPadOS version distribution chart as PNG")
                         .help("Save the iOS/iPadOS version distribution bar chart as a PNG image")
                     }
-                    ForEach(snapshot.osDistribution, id: \.osVersion) { item in
-                        osVersionBar(osVersion: item.osVersion, count: item.count)
+                    let all = snapshot.osDistribution
+                    let shown = Array(all.prefix(Self.osVersionsShown))
+                    let colors = Theme.ChartColors.colors(forVersions: shown.map(\.osVersion))
+                    ForEach(Array(shown.enumerated()), id: \.element.osVersion) {
+                        index, item in
+                        osVersionBar(osVersion: item.osVersion, count: item.count,
+                                     color: colors[index])
+                    }
+                    if all.count > shown.count {
+                        Text(L("\(shown.count) of \(all.count) shown"))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }
         }
     }
 
+    /// The most common versions the card draws; the rest are counted, not dropped silently.
+    private static let osVersionsShown = 10
+
     private func exportOSDistribution() {
         let rows = snapshot.osDistribution
         let total = snapshot.totalDevices
+        let cap = MobileFleetOSDistributionExport.displayCap
+        let capped = rows.count > cap ? " · \(cap) of \(rows.count) versions shown" : ""
         let result = DashboardChartExport.run(
             title: "iOS / iPadOS Version Distribution",
             subtitle: "Mobile Devices",
-            footnote: "Source: pro mobile-devices · \(total) mobile devices",
-            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile)
+            footnote: "Source: pro mobile-devices · \(total) mobile devices\(capped)",
+            suggestedFilename: DashboardChartExport.filename(for: "mobile-os-distribution", profile: workspace.profile),
+            percentFormat: percentFormat
         ) {
             MobileFleetOSDistributionExport(rows: rows, totalDevices: total)
         }
@@ -591,7 +699,7 @@ struct MobileFleetView: View {
         }
     }
 
-    private func osVersionBar(osVersion: String, count: Int) -> some View {
+    private func osVersionBar(osVersion: String, count: Int, color: Color) -> some View {
         let total = snapshot.totalDevices
         let percentage = total > 0 ? (Double(count) / Double(total)) * 100 : 0
 
@@ -601,10 +709,10 @@ struct MobileFleetView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                Text("\(count) device\(count == 1 ? "" : "s")")
+                Text(count == 1 ? L("\(count) device") : L("\(count) devices"))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", percentage))
+                Text(percentFormat.text(percentage))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fg)
                     .frame(minWidth: 40, alignment: .trailing)
@@ -615,14 +723,14 @@ struct MobileFleetView: View {
                     .frame(height: 4)
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(Theme.Colors.goldBright)
+                            .fill(color)
                             .frame(width: geo.size.width * (percentage / 100), height: 4)
                     }
             }
             .frame(height: 4)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(osVersion): \(count) devices, \(String(format: "%.0f", percentage)) percent of fleet")
+        .accessibilityLabel("\(osVersion): \(count) devices, \(PercentFormat.whole.numberText(percentage)) percent of fleet")
     }
 
     private var totalMobileDevices: Int {
@@ -633,16 +741,15 @@ struct MobileFleetView: View {
 
     private var devicesTable: some View {
         let listRowsByID = snapshot.lightDevicesByID
-        let matching = tableRows
-        let rows = Array(matching.prefix(50))
-        let total = totalMobileDevices
+        let rows = tableRows
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     SectionHeader(
-                        title: "Mobile Devices",
-                        trailing: supervisionFilter != nil || total > rows.count
-                            ? "\(rows.count) of \(total) shown"
+                        title: L("Mobile Devices"),
+                        // Every matching device is listed; a filter says how many of the fleet.
+                        trailing: supervisionFilter != nil || findingFilter != nil
+                            ? L("\(rows.count) of \(totalMobileDevices) shown")
                             : nil
                     )
                     if let supervisionFilter {
@@ -650,6 +757,13 @@ struct MobileFleetView: View {
                             toggleSupervisionFilter(supervisionFilter)
                         }
                     }
+                    if let findingFilter {
+                        FilterChip(label: findingChipLabel(findingFilter)) {
+                            setFindingFilter(nil)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    findingMenu
                 }
                 Table(rows, selection: $selectedDeviceID) {
                     TableColumn("Name") { device in
@@ -657,35 +771,35 @@ struct MobileFleetView: View {
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
-                    .width(min: 140, ideal: 180)
+                    .width(min: 140, ideal: 140)
 
                     TableColumn("Type") { device in
                         let deviceType = getDeviceType(device, listRowsByID: listRowsByID)
                         Pill(text: deviceType, tone: pillTone(for: deviceType))
                             .accessibilityLabel("\(deviceType) device type")
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Serial") { device in
                         Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 100, ideal: 130)
+                    .width(min: 100, ideal: 100)
 
                     TableColumn("OS") { device in
                         Text(getOSVersion(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     // Always include the Last Inventory column to avoid the
                     // conditional-TableColumn conformance (requires macOS
@@ -694,22 +808,42 @@ struct MobileFleetView: View {
                     TableColumn("Last Inventory") { device in
                         Text(getLastInventoryRelative(device))
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .foregroundStyle(.cellSecondary)
                     }
-                    .width(min: 100, ideal: 120)
+                    .width(min: 100, ideal: 100)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    deviceMenu(ids, rows: rows, listRowsByID: listRowsByID)
                 }
                 .font(.callout)
-                // A Table has no height of its own inside the page's ScrollView; without this
-                // it collapses under the header and shows no rows. Sized to its rows, so a
-                // filtered list does not trail blank striped rows, up to Devices' 430 pt.
-                .frame(height: Self.tableHeight(
-                    rows: rows.count, rowHeight: Self.deviceRowHeight, cap: 430))
-                if matching.count > rows.count {
-                    Text("Generated reports include every mobile device.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
+                // Every matching row, so an Audit count above a screenful can all be seen: the
+                // table takes its rows' height up to the page's and scrolls inside after that.
+                .pageTableHeight(rows: rows.count, rowHeight: Self.deviceRowHeight)
             }
+        }
+    }
+
+    /// Copy and open items for the selected row. The Jamf ID is the inventory row's
+    /// `mobileDeviceId` (the list row's `id`), so the link exists for both row kinds.
+    @ViewBuilder
+    private func deviceMenu(
+        _ ids: Set<String>,
+        rows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>],
+        listRowsByID: [String: MobileDeviceListRow]
+    ) -> some View {
+        if let id = ids.first, let device = rows.first(where: { $0.id == id }) {
+            if let serial = getSerial(device, listRowsByID: listRowsByID), !serial.isEmpty {
+                Button(L("Copy Serial Number")) { SystemActions.copyToClipboard(serial) }
+            }
+            Button(L("Copy Name")) { SystemActions.copyToClipboard(deviceDisplayName(device)) }
+            OpenInJamfProItem(url: jamfID(device).flatMap { workspace.consoleURL(forMobileDeviceID: $0) })
+        }
+    }
+
+    private func jamfID(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String? {
+        switch device {
+        case .left(let light): light.id
+        case .right(let rich): rich.mobileDeviceId
         }
     }
 
@@ -733,7 +867,7 @@ struct MobileFleetView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        SectionHeader(title: device.general?.displayName ?? "Untitled Device")
+                        SectionHeader(title: device.general?.displayName ?? L("Untitled Device"))
                         let listRows = snapshot.lightDevicesByID
                         Mono(
                             text: MobileFleetService.serialNumber(
@@ -748,18 +882,18 @@ struct MobileFleetView: View {
                     let supervision = Self.supervisionPill(device.general?.supervised)
                     Pill(text: supervision.text, tone: supervision.tone)
                 }
-                deviceDetailSection("Management", rows: [
-                    ("Managed", boolLabel(device.general?.managed)),
-                    ("Supervised", boolLabel(device.general?.supervised)),
-                    ("Enrollment", enrollmentLabel(for: device)),
-                    ("Ownership", device.general?.deviceOwnershipType ?? ""),
+                deviceDetailSection(L("Management"), rows: [
+                    (L("Managed"), boolLabel(device.general?.managed)),
+                    (L("Supervised"), boolLabel(device.general?.supervised)),
+                    (L("Enrollment"), enrollmentLabel(for: device)),
+                    (L("Ownership"), device.general?.deviceOwnershipType ?? ""),
                 ])
-                deviceDetailSection("Inventory", rows: [
-                    ("Type", device.deviceType ?? ""),
-                    ("OS", device.general?.osVersion ?? ""),
-                    ("Managed Apps", managedAppsText(for: device)),
-                    ("User", device.userAndLocation?.username ?? ""),
-                    ("Department", device.userAndLocation?.department ?? ""),
+                deviceDetailSection(L("Inventory"), rows: [
+                    (L("Type"), device.deviceType ?? ""),
+                    (L("OS"), device.general?.osVersion ?? ""),
+                    (L("Managed Apps"), managedAppsText(for: device)),
+                    (L("User"), device.userAndLocation?.username ?? ""),
+                    (L("Department"), device.userAndLocation?.department ?? ""),
                 ])
             }
             .textSelection(.enabled)
@@ -793,7 +927,7 @@ struct MobileFleetView: View {
     /// the APPLICATIONS section was collected, which the collect never asks for.
     private func managedAppsText(for device: MobileDeviceInventoryItem) -> String {
         guard let count = snapshot.managedAppCount(for: device) else {
-            return "— (not in the collected inventory)"
+            return L("— (not in the collected inventory)")
         }
         return "\(count)"
     }
@@ -803,15 +937,15 @@ struct MobileFleetView: View {
         guard !raw.isEmpty else { return "" }
         let base = MobileFleetService.Snapshot.enrollmentMethodLabel(for: raw)
         if let prestage = device.general?.enrollmentMethodPrestage?.profileName, !prestage.isEmpty {
-            return "\(base) (Prestage: \(prestage))"
+            return L("\(base) (Prestage: \(prestage))")
         }
         return base
     }
 
     private func boolLabel(_ value: Bool?) -> String {
         switch value {
-        case .some(true): return "Yes"
-        case .some(false): return "No"
+        case .some(true): return L("Yes")
+        case .some(false): return L("No")
         case .none: return ""
         }
     }
@@ -819,7 +953,7 @@ struct MobileFleetView: View {
     private var profilesTable: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Config Profiles", trailingTag: snapshot.profiles.count <= 30 ? nil : "\(min(30, snapshot.profiles.count)) of \(snapshot.profiles.count)")
+                SectionHeader(title: L("Config Profiles"), trailingTag: snapshot.profiles.count <= 30 ? nil : L("\(min(30, snapshot.profiles.count)) of \(snapshot.profiles.count)"))
                 if snapshot.profiles.isEmpty {
                     Text(profilesEmptyMessage)
                         .font(.footnote)
@@ -836,8 +970,8 @@ struct MobileFleetView: View {
     /// loads as no profiles, so the second message must not claim zero.
     private var profilesEmptyMessage: String {
         snapshot.sourceDates["classic-ios-profiles"] == nil
-            ? "Configuration profiles have not been collected yet."
-            : "The collected profiles snapshot lists none, or could not be read."
+            ? L("Configuration profiles have not been collected yet.")
+            : L("The collected profiles snapshot lists none, or could not be read.")
     }
 
     private var profilesTableRows: some View {
@@ -846,7 +980,7 @@ struct MobileFleetView: View {
         }
         return Table(rows) {
             TableColumn("Name") { item in
-                Text(item.profile.name ?? "Untitled Profile")
+                Text(item.profile.name ?? L("Untitled Profile"))
                     .font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
             }
@@ -876,9 +1010,6 @@ struct MobileFleetView: View {
 
     // MARK: - Helpers
 
-    /// Header, its separator and the inset above the first row, measured from
-    /// a screenshot at the default text size.
-    private nonisolated static let tableChromeHeight: CGFloat = 33
     /// The devices table's rows hold a Type pill, which makes them 26 pt.
     nonisolated static let deviceRowHeight: CGFloat = 26
     /// Text-only rows; 24 pt is the table's own row height.
@@ -889,7 +1020,7 @@ struct MobileFleetView: View {
     /// at the rows it has; an empty list keeps one row's height under its
     /// header. Larger text makes rows taller than this, and they scroll.
     nonisolated static func tableHeight(rows: Int, rowHeight: CGFloat, cap: CGFloat) -> CGFloat {
-        min(cap, tableChromeHeight + CGFloat(max(rows, 1)) * rowHeight)
+        min(cap, PageTableMetrics.contentHeight(rows: rows, rowHeight: rowHeight))
     }
 
     /// The rows the devices table can list before its 50-row cap: inventory rows
@@ -898,8 +1029,12 @@ struct MobileFleetView: View {
     /// fleet's first 50 reach the table.
     private var tableRows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>] {
         if !snapshot.richDevices.isEmpty {
-            return MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
-                .map { .right($0) }
+            var matched = MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
+            if let findingFilter, let findingContext {
+                matched = snapshot.devices(
+                    matched, affectedBy: findingFilter, context: findingContext)
+            }
+            return matched.map { .right($0) }
         }
         return snapshot.lightDevices.map { .left($0) }
     }
@@ -907,9 +1042,9 @@ struct MobileFleetView: View {
     private func deviceDisplayName(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String {
         switch device {
         case .left(let light):
-            return light.name ?? "Untitled Device"
+            return light.name ?? L("Untitled Device")
         case .right(let rich):
-            return rich.general?.displayName ?? "Untitled Device"
+            return rich.general?.displayName ?? L("Untitled Device")
         }
     }
 
@@ -967,17 +1102,22 @@ struct MobileFleetView: View {
             return "—"
         case .right(let rich):
             guard let dateString = rich.general?.lastInventoryUpdateDate,
-                  let date = ISO8601DateFormatter().date(from: dateString) else {
+                  let date = ISO8601Time.parse(dateString) else {
                 return "—"
             }
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
             // Demo dates were written against the demo's "now"; measured from
             // today, every one read "1 yr. ago".
             let now = workspace.demoMode ? DemoData.referenceDate : Date()
-            return formatter.localizedString(for: date, relativeTo: now)
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
+
+    // Built once: it runs per table row. Configured at creation, never mutated after.
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     private func pillTone(for deviceType: String) -> Pill.Tone {
         switch deviceType.lowercased() {
@@ -993,7 +1133,7 @@ struct MobileFleetView: View {
     }
 
     private func pctString(count: Int, total: Int) -> String {
-        total > 0 ? String(format: "%.1f%% of fleet", pct(count: count, total: total)) : "—"
+        total > 0 ? L("\(percentFormat.text(pct(count: count, total: total))) of fleet") : "—"
     }
 }
 
@@ -1046,18 +1186,21 @@ private struct ProfileWithIndex: Identifiable {
 /// horizontal bar layout (one bar per OS version) so the export reads at a
 /// glance even with 10+ versions stacked.
 private struct MobileFleetOSDistributionExport: View {
+    @Environment(\.percentFormat) private var percentFormat
     let rows: [(osVersion: String, count: Int)]
     let totalDevices: Int
 
-    private static let displayCap = 12
+    static let displayCap = 8
 
     private var displayRows: [(osVersion: String, count: Int)] {
         Array(rows.prefix(Self.displayCap))
     }
 
     var body: some View {
+        let colors = Theme.ChartColors.colors(
+            forVersions: displayRows.map(\.osVersion), scheme: .light)
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(displayRows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(displayRows.enumerated()), id: \.offset) { offset, row in
                 let pct = totalDevices > 0 ? Double(row.count) / Double(totalDevices) * 100 : 0
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -1069,7 +1212,7 @@ private struct MobileFleetOSDistributionExport: View {
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
-                        Text(String(format: "%.1f%%", pct))
+                        Text(percentFormat.text(pct))
                             .font(.system(size: 10.5, design: .monospaced))
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 52, alignment: .trailing)
@@ -1080,7 +1223,7 @@ private struct MobileFleetOSDistributionExport: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(hex: 0xE2E8F0))
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.ChartPalette.osVersionExport[0]) // Use muted gold export color
+                                .fill(colors[offset])
                                 .frame(width: max(0, geo.size.width * pct / 100))
                         }
                     }

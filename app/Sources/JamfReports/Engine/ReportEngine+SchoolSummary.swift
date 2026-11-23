@@ -25,7 +25,7 @@ extension ReportEngine {
             macOSRows: sofaRows.filter { $0.platform == SOFAFeedService.platformLabels["macos"] },
             osCounts: Dictionary(macVersions.map { ($0, 1) }, uniquingKeysWith: +),
             totalDevices: macs)
-        let iOSRows = sofaRows.filter { $0.platform == SOFAFeedService.platformLabels["ios"] }
+        let maps = SummaryDeviceMaps.schoolFields(snapshot.devices, now: now)
         return DailySummary(
             date: date, totalDevices: macs, fileVaultPct: nil, compliancePct: nil,
             staleCount: macs > 0 ? staleMacs : nil,
@@ -36,8 +36,9 @@ extension ReportEngine {
             collectedByHost: collectedByHost,
             mobile: MobileSummary.build(
                 mobileDevices.map { MobileSummary.device($0) },
-                latestByMajor: SOFAFeedService.latestByMajor(iOSRows),
-                staleDays: staleDays, now: now))
+                latestByMajor: SOFAFeedService.iOSLatestByMajor(sofaRows),
+                staleDays: staleDays, now: now),
+            osMajorCounts: maps.osMajor, lastSeenBuckets: maps.lastSeen)
     }
 
     /// Writes `summary_<day>.json` for a School collect that landed `school-devices`, replacing
@@ -59,7 +60,7 @@ extension ReportEngine {
             collectedByHost: collectingHostLabel(dataDir: dataDir))
         else {
             let msg = "[warn] Jamf School returned 0 devices — summary not written"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             AttentionLog.raise(.schoolZeroDevices, "Jamf School returned 0 devices")
             return .nothingToSummarize
@@ -70,7 +71,7 @@ extension ReportEngine {
                 at: summariesDir, withIntermediateDirectories: true)
         } catch {
             let msg = "\(summaryNotWrittenMarker) the summaries directory could not be created"
-            AppLogger.collect.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return .directoryUnavailable
         }

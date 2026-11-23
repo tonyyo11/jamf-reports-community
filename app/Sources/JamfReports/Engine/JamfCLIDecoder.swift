@@ -51,6 +51,17 @@ struct SecuritySummaryData: Decodable, Sendable {
         case sipEnabled = "sip_enabled"
         case firewallEnabled = "firewall_enabled"
     }
+
+    /// An out-of-range count reads as unreported (nil); see `boundedCountIfPresent`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalDevices = try c.boundedCountIfPresent(forKey: .totalDevices)
+        fileVaultEncrypted = try c.boundedCountIfPresent(forKey: .fileVaultEncrypted)
+        fileVaultEncryptedPct = try c.decodeIfPresent(String.self, forKey: .fileVaultEncryptedPct)
+        gatekeeperEnabled = try c.boundedCountIfPresent(forKey: .gatekeeperEnabled)
+        sipEnabled = try c.boundedCountIfPresent(forKey: .sipEnabled)
+        firewallEnabled = try c.boundedCountIfPresent(forKey: .firewallEnabled)
+    }
 }
 
 /// `section == "os_version"` row from the security report.
@@ -64,6 +75,14 @@ struct SecurityOSVersion: Decodable, Sendable {
         case section
         case osVersion = "os_version"
         case count, pct
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        section = try c.decode(String.self, forKey: .section)
+        osVersion = try c.decode(String.self, forKey: .osVersion)
+        count = try c.boundedCount(forKey: .count)
+        pct = try c.decode(String.self, forKey: .pct)
     }
 }
 
@@ -117,6 +136,20 @@ struct PolicyStatusSummary: Decodable, Sendable {
         case enabled, disabled
         case configFindings = "config_findings"
         case warnings, info
+    }
+}
+
+extension PolicyStatusSummary {
+    /// Counts outside the allowed range refuse the document (`boundedCount`); an extension keeps
+    /// the memberwise initialiser the demo data uses.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalPolicies = try c.boundedCount(forKey: .totalPolicies)
+        enabled = try c.boundedCount(forKey: .enabled)
+        disabled = try c.boundedCount(forKey: .disabled)
+        configFindings = try c.boundedCount(forKey: .configFindings)
+        warnings = try c.boundedCount(forKey: .warnings)
+        info = try c.boundedCount(forKey: .info)
     }
 }
 
@@ -246,16 +279,40 @@ struct UpdateStatusReport: Decodable, Sendable {
         case planTotal = "plan_total"
         case planStateSummary = "plan_state_summary"
     }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        total = try c.boundedCount(forKey: .total)
+        statusSummary = try c.decode([UpdateStatusCount].self, forKey: .statusSummary)
+        planTotal = try c.boundedCountIfPresent(forKey: .planTotal)
+        planStateSummary = try c.decodeIfPresent([UpdateStateCount].self, forKey: .planStateSummary)
+    }
 }
 
 struct UpdateStatusCount: Decodable, Sendable {
     let status: String
     let count: Int
+
+    private enum CodingKeys: String, CodingKey { case status, count }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(String.self, forKey: .status)
+        count = try c.boundedCount(forKey: .count)
+    }
 }
 
 struct UpdateStateCount: Decodable, Sendable {
     let state: String
     let count: Int
+
+    private enum CodingKeys: String, CodingKey { case state, count }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.decode(String.self, forKey: .state)
+        count = try c.boundedCount(forKey: .count)
+    }
 }
 
 // MARK: - Update failures
@@ -290,12 +347,12 @@ struct UpdateFailuresReport: Decodable, Sendable {
                 CodingKeys.failedPlans,
                 .init(codingPath: c.codingPath, debugDescription: "not a --scan-failures document"))
         }
-        total = try c.decode(Int.self, forKey: .total)
+        total = try c.boundedCount(forKey: .total)
         statusSummary = try c.decodeIfPresent(
             [UpdateStatusCount].self, forKey: .statusSummary) ?? []
         errorDevices = try c.decodeIfPresent(
             [UpdateErrorDevice].self, forKey: .errorDevices) ?? []
-        planTotal = try c.decodeIfPresent(Int.self, forKey: .planTotal)
+        planTotal = try c.boundedCountIfPresent(forKey: .planTotal)
         planStateSummary = try c.decodeIfPresent(
             [UpdateStateCount].self, forKey: .planStateSummary)
         failedPlans = try c.decodeIfPresent(
@@ -371,6 +428,19 @@ struct InventorySummaryRow: Decodable, Sendable {
         case osVersion = "os_version"
         case count
     }
+
+    /// A count outside 0...`maxSummaryNumber` (a planted snapshot) refuses the whole list, so
+    /// callers read no inventory summary instead of summing toward overflow.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        osVersion = try c.decode(String.self, forKey: .osVersion)
+        count = try c.boundedCount(forKey: .count)
+    }
+
+    init(osVersion: String, count: Int) {
+        self.osVersion = osVersion
+        self.count = count
+    }
 }
 
 // MARK: - Device compliance
@@ -392,9 +462,19 @@ struct DeviceComplianceRow: Decodable, Sendable {
     let jamfID: String?
     /// The last check-in as jamf-cli wrote it (`last_contact`).
     let lastContact: String?
+    /// `os_version`; blank on a Mac that has never sent inventory.
+    let osVersion: String?
+
+    /// A Mac that has never sent inventory (`NeverInventoried`) and has no check-in date.
+    var isNeverInventoried: Bool {
+        NeverInventoried.isNeverInventoried(osVersion: osVersion)
+            && (lastContact ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+            && daysSinceContact == nil && daysSinceCheckin == nil
+    }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
+        case osVersion = "os_version"
         case daysSinceCheckin = "days_since_checkin"
         case daysSinceContact = "days_since_contact"
         case id, jamfID = "jamf_id", deviceID = "device_id"
@@ -408,6 +488,7 @@ struct DeviceComplianceRow: Decodable, Sendable {
         serial = try c.decodeIfPresent(String.self, forKey: .serial)
         managed = try c.decodeIfPresent(Bool.self, forKey: .managed)
         stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
+        osVersion = (try? c.decodeIfPresent(String.self, forKey: .osVersion)) ?? nil
         // Tolerant int decode: both keys can arrive as String or number across
         // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
         daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
@@ -441,6 +522,9 @@ struct DeviceComplianceRow: Decodable, Sendable {
         _ rule: StaleRule, computers: ComputerDateIndex?
     ) -> StaleInputs {
         var inputs = StaleInputs(checkInDays: resolvedDaysSinceContact, flag: stale == true)
+        // A Mac that never checked in has no date to age: it reads as never, as on Computers,
+        // not as jamf-cli's "not stale".
+        inputs.carriesDates = isNeverInventoried
         guard rule.needsComputers, let match = computers?.match(jamfID: jamfID, serial: serial)
         else { return inputs }
         inputs.checkIn = match.checkIn
@@ -761,6 +845,17 @@ struct ProfileFailureSummary: Decodable, Sendable, Equatable {
     }
 }
 
+extension ProfileFailureSummary {
+    /// Out-of-range counts read as nil (unreported); an extension keeps the memberwise init.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalErrors = try c.boundedCountIfPresent(forKey: .totalErrors)
+        uniqueProfiles = try c.boundedCountIfPresent(forKey: .uniqueProfiles)
+        uniqueDevices = try c.boundedCountIfPresent(forKey: .uniqueDevices)
+        days = try c.boundedCountIfPresent(forKey: .days)
+    }
+}
+
 /// Not Identifiable on purpose: identity is assigned once at load by
 /// `PolicyHealthService` — a per-access computed id aborts SwiftUI Table (#185).
 struct ProfileFailureRow: Decodable, Sendable {
@@ -779,6 +874,16 @@ struct ProfileFailureRow: Decodable, Sendable {
         case errors, devices
         case lastError = "last_error"
         case topError = "top_error"
+    }
+}
+
+/// jamf-cli names a profile or app it could not resolve (a built-in item with a negative id)
+/// by its id, so the row reads "-5" twice. Counted as the errors it carries, shown as unknown.
+enum FailureRowName {
+    static func display(name: String?, id: String?, noun: String) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard trimmed.isEmpty || trimmed == id else { return trimmed }
+        return id.map { "Unknown \(noun) (ID \($0))" } ?? "Unknown \(noun)"
     }
 }
 
@@ -957,6 +1062,9 @@ struct MobileDeviceSecurity: Decodable, Sendable {
     let passcodeCompliant: Bool?
     let dataProtected: Bool?
     let jailBreakDetected: Bool?
+    /// False when no profile requires a passcode, though Jamf then still reports
+    /// `passcodeCompliant: true`. `var` with a default keeps the memberwise init.
+    var passcodePresent: Bool? = nil
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -975,6 +1083,8 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     /// GENERAL's flag for a Shared iPad. `var` with a default keeps the memberwise
     /// initialiser source-compatible.
     var sharedIpad: Bool? = nil
+    /// GENERAL's UDID, for the Security Cloud match (`externalId`).
+    var udid: String? = nil
 }
 
 /// ADE prestage detail attached to mobile devices enrolled via Automated Device
@@ -1080,6 +1190,15 @@ struct ProtectAlertRow: Decodable, Sendable {
         eventType = try? c.decodeIfPresent(String.self, forKey: .eventType)
         hostName = try? c.decodeIfPresent(String.self, forKey: .computer)
     }
+
+    var isOpen: Bool { Self.isOpen(status: status) }
+
+    /// Only Resolved and AutoResolved are closed; a missing status counts as open. AutoResolved can
+    /// reopen to InProgress, so callers read the status from each snapshot and never cache it.
+    static func isOpen(status: String?) -> Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        return s != "resolved" && s != "autoresolved"
+    }
 }
 
 // MARK: - Protect computer
@@ -1098,12 +1217,16 @@ struct ProtectComputerRow: Decodable, Sendable {
     let fullDiskAccess: Bool?
     let connectionStatus: String?
     let lastConnection: String?
-    let insightsStatsFail: Int?
+    /// The threat-signature set the agent holds; a whole number in practice.
+    let signaturesVersion: Double?
+    /// Why the agent last dropped its connection, as Protect words it (`MQTT_KEEP_ALIVE_TIMEOUT`).
+    let lastDisconnectionReason: String?
 
     private enum CodingKeys: String, CodingKey {
+        case signaturesVersion, lastDisconnectionReason
         case uuid, hostname, serial, modelName, osString, plan, version
+        case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
-        case insightsStatsFail
     }
 
     init(from decoder: Decoder) throws {
@@ -1112,7 +1235,11 @@ struct ProtectComputerRow: Decodable, Sendable {
         hostName = try? c.decodeIfPresent(String.self, forKey: .hostname)
         serial = try? c.decodeIfPresent(String.self, forKey: .serial)
         modelName = try? c.decodeIfPresent(String.self, forKey: .modelName)
-        osString = try? c.decodeIfPresent(String.self, forKey: .osString)
+        osString = ProtectComputerRow.osText(
+            major: try? c.decodeIfPresent(Int.self, forKey: .osMajor),
+            minor: try? c.decodeIfPresent(Int.self, forKey: .osMinor),
+            patch: try? c.decodeIfPresent(Int.self, forKey: .osPatch),
+            fallback: try? c.decodeIfPresent(String.self, forKey: .osString))
         planName = try? c.decodeIfPresent(String.self, forKey: .plan)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         webProtectionActive = try? c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
@@ -1120,7 +1247,35 @@ struct ProtectComputerRow: Decodable, Sendable {
         fullDiskAccess = ProtectComputerRow.fullDiskAccessGranted(access)
         connectionStatus = try? c.decodeIfPresent(String.self, forKey: .connectionStatus)
         lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
-        insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
+        // JSON integers decode as Double, so one read takes either form.
+        // A version outside whole-number range is not a version: not reported.
+        signaturesVersion = (try? c.decodeIfPresent(Double.self, forKey: .signaturesVersion))
+            .flatMap { wholeInt($0) == nil ? nil : $0 }
+        lastDisconnectionReason = try? c.decodeIfPresent(
+            String.self, forKey: .lastDisconnectionReason)
+    }
+
+    /// The signatures version as text: no ".0" on a whole number; nil when not reported.
+    var signaturesVersionText: String? {
+        signaturesVersion.flatMap {
+            $0 == $0.rounded() ? wholeInt($0).map(String.init) : String($0)
+        }
+    }
+
+    /// How many of the Macs that report a signatures version hold less than the newest one in
+    /// this tenant. Nil with fewer than two distinct versions, where "behind" has no meaning.
+    static func signatureLag(_ rows: [ProtectComputerRow]) -> (behind: Int, reporting: Int)? {
+        let versions = rows.compactMap(\.signaturesVersion)
+        guard Set(versions).count >= 2, let newest = versions.max() else { return nil }
+        return (versions.filter { $0 < newest }.count, versions.count)
+    }
+
+    /// jamf-cli prints `osMajor`, `osMinor` and `osPatch` and no `osString`: "macOS 15.7.3",
+    /// "macOS 15.7" for patch 0. A missing major falls back to `osString`, else nil.
+    static func osText(major: Int?, minor: Int?, patch: Int?, fallback: String?) -> String? {
+        guard let major else { return fallback }
+        let tail = (patch ?? 0) == 0 ? "" : ".\(patch ?? 0)"
+        return "macOS \(major).\(minor ?? 0)\(tail)"
     }
 
     /// Maps a FULL_DISK_ACCESS_STATUS value; the Protect Computers sheet uses it too.
@@ -1131,30 +1286,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         case "unauthorized": return false
         default: return nil
         }
-    }
-}
-
-// MARK: - Protect insight
-// `jamf-cli protect insights list --output json`: flattenInsight rows.
-
-struct ProtectInsightRow: Decodable, Sendable {
-    let label: String?
-    let section: String?
-    let totalPass: Int?
-    let totalFail: Int?
-    let enabled: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case label, section, totalPass, totalFail, enabled
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        label = try? c.decodeIfPresent(String.self, forKey: .label)
-        section = try? c.decodeIfPresent(String.self, forKey: .section)
-        totalPass = try? c.decodeIfPresent(Int.self, forKey: .totalPass)
-        totalFail = try? c.decodeIfPresent(Int.self, forKey: .totalFail)
-        enabled = try? c.decodeIfPresent(Bool.self, forKey: .enabled)
     }
 }
 
@@ -1295,6 +1426,26 @@ extension KeyedDecodingContainer {
     }
 }
 
+extension KeyedDecodingContainer {
+    /// A count a snapshot carries: 0...`SummaryJSONParser.maxSummaryNumber`, else a
+    /// `DecodingError`, so a planted value refuses the document instead of reaching a sum.
+    func boundedCount(forKey key: Key) throws -> Int {
+        let count = try decode(Int.self, forKey: key)
+        guard (0...SummaryJSONParser.maxSummaryNumber).contains(count) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key, in: self, debugDescription: "count is outside the allowed range")
+        }
+        return count
+    }
+
+    /// The optional twin: absent, null or out of range reads as nil (unreported, never 0).
+    func boundedCountIfPresent(forKey key: Key) throws -> Int? {
+        guard let count = try decodeIfPresent(Int.self, forKey: key),
+              (0...SummaryJSONParser.maxSummaryNumber).contains(count) else { return nil }
+        return count
+    }
+}
+
 /// A list element that does not decode is nil instead of failing the list.
 struct LenientElement<Row: Decodable>: Decodable {
     let row: Row?
@@ -1312,21 +1463,11 @@ struct LenientElement<Row: Decodable>: Decodable {
         return (rows, elements.count - rows.count)
     }
 
-    /// Largest report snapshot `rows(at:)` reads.
-    static var maxSnapshotBytes: Int { 64 * 1024 * 1024 }
-
     /// The rows of the snapshot at `url`, logging a file that is not a list and any element
     /// skipped; nil when the file cannot be read or is not a list.
     static func rows(at url: URL, logging category: AppLogger.Category) -> [Row]? {
         let name = ConfigSchema.displayText(url.lastPathComponent)
-        let data: Data
-        do {
-            data = try BoundedFile.read(url, limit: maxSnapshotBytes, followSymlinks: false)
-        } catch {
-            AppLogger.event(category, .error,
-                            "\(name) not read: a link, not a regular file, or over 64 MB")
-            return nil
-        }
+        guard let data = BoundedFile.readSnapshotLogged(url, category: category) else { return nil }
         guard let result = rows(in: data) else {
             AppLogger.event(category, .error, "\(name) is not a JSON list of rows; nothing read")
             return nil

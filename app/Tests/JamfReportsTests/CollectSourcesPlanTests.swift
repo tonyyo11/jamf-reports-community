@@ -16,16 +16,18 @@ final class CollectSourcesPlanTests: XCTestCase {
         Plan.build(.init(
             product: product, profile: "prod", protectProfile: protect,
             installedVersion: "1.33.0", skipExpensive: skipExpensive, authMethod: auth,
-            tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkip: skip))
+            tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkipList: skip.sorted()))
     }
 
-    /// The one other source is SOFA, which a School collect fetches for OS currency.
+    /// The other sources are SOFA, which a School collect fetches for OS currency, and the
+    /// weekly per-device scan.
     func testASchoolWorkspaceListsSchoolCommandsAndSOFAOnly() {
         let school = plan(.jamfSchool)
         XCTAssertEqual(school.sources.map(\.kind),
-                       ReportEngine.schoolCommandMatrix(profile: "prod").map(\.kind) + ["sofa"])
-        XCTAssertEqual(plan(.jamfSchool, skip: ["sofa"]).sources.last?.skipReason,
-                       "listed in jamf_cli.collect_skip")
+                       ReportEngine.schoolCommandMatrix(profile: "prod").map(\.kind)
+                           + ["sofa", ReportEngine.schoolDeviceDetailKind])
+        XCTAssertEqual(plan(.jamfSchool, skip: ["sofa"]).sources.first { $0.kind == "sofa" }?
+            .skipReason, "listed in jamf_cli.collect_skip")
         XCTAssertEqual(school.sources.filter { $0.product == .platformAPI }.map(\.kind),
                        [ReportEngine.schoolBlueprintsKind])
         XCTAssertTrue(school.sources.filter { $0.product != .platformAPI && $0.kind != "sofa" }
@@ -131,11 +133,66 @@ final class CollectSourcesPlanTests: XCTestCase {
     @MainActor
     func testTheGroupLineAndRowStatusSayWhatRunsAndWhy() {
         let sources = plan().sources(for: .platformAPI)
-        XCTAssertEqual(SourcesView.groupSummary(sources, cachedAt: [:]), "0 run · 4 skipped")
+        XCTAssertEqual(SourcesView.groupSummary(sources, cachedAt: [:]), "0 runs · 4 skipped")
         let pro = plan().sources(for: .jamfPro)
         let one = [pro[0].kind: Date(timeIntervalSince1970: 0)]
         XCTAssertTrue(SourcesView.groupSummary(pro, cachedAt: one).contains("1 cached"))
         XCTAssertEqual(SourcesView.sourceStatus(pro[1], cachedAt: nil), "not cached")
         XCTAssertTrue(SourcesView.sourceStatus(sources[0], cachedAt: nil).hasPrefix("skipped: "))
+    }
+
+    func testTheSourcesPlanNamesTheMissingPlatformProfile() {
+        var inputs = CollectSourcesPlan.Inputs(product: .jamfPro, profile: "ws")
+        inputs.platformUnavailable = EnvironmentProfiles.noPlatformReason
+        let rules = CollectSourcesPlan.build(inputs).sources.first { $0.kind == "compliance-rules" }
+        XCTAssertEqual(rules?.skipReason, EnvironmentProfiles.noPlatformReason)
+    }
+
+    private func resolved(_ method: String) -> ProfileAuthMethod.Resolved {
+        ProfileAuthMethod.Resolved(authMethod: method, isTenantLevel: false)
+    }
+
+    func testPlatformInputsForEachRoute() {
+        var asked: [String] = []
+        let own = resolved("oauth2")
+        let resolve: (String) -> ProfileAuthMethod.Resolved? = {
+            asked.append($0)
+            return self.resolved("platform")
+        }
+        let none = EnvironmentProfiles.platformInputs(
+            route: .workspaceProfile, workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(none.auth?.authMethod, "oauth2")
+        XCTAssertNil(none.unavailable)
+        let other = EnvironmentProfiles.platformInputs(
+            route: .profile("ws-API"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(other.auth?.authMethod, "platform")
+        XCTAssertEqual(asked, ["ws-API"])
+        let same = EnvironmentProfiles.platformInputs(
+            route: .profile("ws"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(same.auth?.authMethod, "oauth2")
+        XCTAssertEqual(asked, ["ws-API"])
+        let orgLevel = EnvironmentProfiles.platformInputs(
+            route: .profile("ws-ORG"), workspace: "ws", workspaceAuth: own,
+            resolve: { _ in
+                ProfileAuthMethod.Resolved(
+                    authMethod: "platform", isTenantLevel: false, isOrganizationLevel: true)
+            })
+        XCTAssertEqual(orgLevel.auth?.authMethod, "oauth2")
+        XCTAssertEqual(orgLevel.unavailable, EnvironmentProfiles.organizationLevelPlatformReason)
+        let gone = EnvironmentProfiles.platformInputs(
+            route: .unavailable("why"), workspace: "ws", workspaceAuth: own, resolve: resolve)
+        XCTAssertEqual(gone.auth?.authMethod, "oauth2")
+        XCTAssertEqual(gone.unavailable, "why")
+        XCTAssertEqual(asked, ["ws-API"])
+    }
+
+    func testASchoolWorkspaceIgnoresThePlatformSlot() {
+        let own = resolved("apikey")
+        let routed = CollectSourcesPlan.routedAuth(
+            product: .jamfSchool, route: .profile("ws-API"), workspace: "ws",
+            workspaceAuth: own,
+            resolve: { _ in XCTFail("School never resolves the slot"); return nil })
+        XCTAssertEqual(routed.auth?.authMethod, "apikey")
+        XCTAssertNil(routed.unavailable)
     }
 }

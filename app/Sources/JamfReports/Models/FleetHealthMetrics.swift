@@ -86,11 +86,11 @@ struct DeviceRisk: Sendable, Equatable {
 
         var displayLabel: String {
             switch self {
-            case .clean:    return "Clean"
-            case .low:      return "Low"
-            case .medium:   return "Medium"
-            case .high:     return "High"
-            case .critical: return "Critical"
+            case .clean:    return L("Clean")
+            case .low:      return L("Low")
+            case .medium:   return L("Medium")
+            case .high:     return L("High")
+            case .critical: return L("Critical")
             }
         }
 
@@ -159,19 +159,19 @@ struct DeviceRisk: Sendable, Equatable {
 
         var displayLabel: String {
             switch self {
-            case .noFileVault:        return "No FileVault Encryption"
-            case .secureBootNone:     return "Secure Boot: No Security"
-            case .sipDisabled:        return "SIP Disabled"
-            case .gatekeeperDisabled: return "Gatekeeper Disabled"
-            case .firewallDisabled:   return "Firewall Disabled"
-            case .mscpHighFailures:   return "mSCP High Failures"
-            case .mscpMediumFailures: return "mSCP Medium Failures"
-            case .noBaseline:         return "No mSCP Baseline (Active)"
-            case .activeCVE:          return "Active CVE With Exploits"
-            case .secureBootMedium:   return "Secure Boot: Medium Security"
-            case .staleOffline:       return "Stale Device (Offline)"
-            case .securityAgentDisconnected: return "Security Agent Disconnected"
-            case .bootstrapMissing:   return "Bootstrap Token Missing"
+            case .noFileVault:        return L("No FileVault Encryption")
+            case .secureBootNone:     return L("Secure Boot: No Security")
+            case .sipDisabled:        return L("SIP Disabled")
+            case .gatekeeperDisabled: return L("Gatekeeper Disabled")
+            case .firewallDisabled:   return L("Firewall Disabled")
+            case .mscpHighFailures:   return L("mSCP High Failures")
+            case .mscpMediumFailures: return L("mSCP Medium Failures")
+            case .noBaseline:         return L("No mSCP Baseline (Active)")
+            case .activeCVE:          return L("Active CVE With Exploits")
+            case .secureBootMedium:   return L("Secure Boot: Medium Security")
+            case .staleOffline:       return L("Stale Device (Offline)")
+            case .securityAgentDisconnected: return L("Security Agent Disconnected")
+            case .bootstrapMissing:   return L("Bootstrap Token Missing")
             }
         }
 
@@ -180,26 +180,26 @@ struct DeviceRisk: Sendable, Equatable {
         /// static label for everything else.
         func displayLabel(agentName: String?) -> String {
             if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
-                return "\(name) Disconnected"
+                return L("\(name) Disconnected")
             }
             return displayLabel
         }
 
         var remediation: String {
             switch self {
-            case .noFileVault:        return "Enable FileVault 2 via configuration profile."
-            case .secureBootNone:     return "Set Secure Boot to Full Security in Startup Utility."
-            case .sipDisabled:        return "Re-enable SIP from Recovery (csrutil enable)."
-            case .gatekeeperDisabled: return "Re-enable Gatekeeper via profile or `spctl --master-enable`."
-            case .firewallDisabled:   return "Deploy firewall configuration profile."
-            case .mscpHighFailures:   return "Investigate failing High-severity mSCP rules."
-            case .mscpMediumFailures: return "Schedule remediation of Medium-severity mSCP rules."
-            case .noBaseline:         return "Assign mSCP baseline via PreStage or scope."
-            case .activeCVE:          return "Apply pending macOS updates to clear active exploit."
-            case .secureBootMedium:   return "Upgrade Secure Boot to Full Security."
-            case .staleOffline:       return "User outreach — locate device, force check-in."
-            case .securityAgentDisconnected: return "Re-link the security agent via its deployment policy."
-            case .bootstrapMissing:   return "Re-enroll device (profiles renew enrollment)."
+            case .noFileVault:        return L("Enable FileVault 2 via configuration profile.")
+            case .secureBootNone:     return L("Set Secure Boot to Full Security in Startup Utility.")
+            case .sipDisabled:        return L("Re-enable SIP from Recovery (csrutil enable).")
+            case .gatekeeperDisabled: return L("Re-enable Gatekeeper via profile or `spctl --master-enable`.")
+            case .firewallDisabled:   return L("Deploy firewall configuration profile.")
+            case .mscpHighFailures:   return L("Investigate failing High-severity mSCP rules.")
+            case .mscpMediumFailures: return L("Schedule remediation of Medium-severity mSCP rules.")
+            case .noBaseline:         return L("Assign mSCP baseline via PreStage or scope.")
+            case .activeCVE:          return L("Apply pending macOS updates to clear active exploit.")
+            case .secureBootMedium:   return L("Upgrade Secure Boot to Full Security.")
+            case .staleOffline:       return L("User outreach — locate device, force check-in.")
+            case .securityAgentDisconnected: return L("Re-link the security agent via its deployment policy.")
+            case .bootstrapMissing:   return L("Re-enroll device (profiles renew enrollment).")
             }
         }
 
@@ -207,7 +207,7 @@ struct DeviceRisk: Sendable, Equatable {
         /// static remediation for everything else.
         func remediation(agentName: String?) -> String {
             if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
-                return "Re-link \(name) via its deployment policy."
+                return L("Re-link \(name) via its deployment policy.")
             }
             return remediation
         }

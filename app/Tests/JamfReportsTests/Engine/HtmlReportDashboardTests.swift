@@ -28,6 +28,7 @@ final class HtmlReportDashboardTests: XCTestCase {
         switch report().dashboardState() {
         case .embedded(let html), .notEmbedded(let html): return (html, nil)
         case .absent(let reason): return ("", reason)
+        case .unreadable(let why): return ("", "unreadable: " + why)
         }
     }
 
@@ -263,4 +264,81 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertTrue(html.contains("id=\"jrc-dashboard-frame\""))
         XCTAssertTrue(FullInstanceTemplate().htmlSections.contains(.jamfDashboard))
     }
+
+    /// A page the bounded read refuses (here a folder at the page's name) is not "not collected
+    /// yet": the appendix says it could not be read, and the run log gets one warning.
+    func testAnUnreadablePageIsNotReportedAsNotCollected() async throws {
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("dashboard_20260925T060000.html"),
+            withIntermediateDirectories: true)
+        guard case .unreadable(let why) = report().dashboardState() else {
+            return XCTFail("an unreadable page must not read as never collected")
+        }
+        XCTAssertTrue(why.hasPrefix("dashboard_20260925T060000.html: "), why)
+
+        let lines = LockedLines()
+        var rep = report()
+        rep.onLine = { lines.append($0.text) }
+        let out = dataDir.appendingPathComponent("report.html")
+        try await rep.generate(
+            outputURL: out, profileName: "p", sections: [.jamfDashboard, .auditAppendix])
+        let html = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertTrue(html.contains("dashboard page could not be read: dashboard_2026"), html)
+        XCTAssertFalse(html.contains("not collected yet"))
+        let warnings = lines.all.filter { $0.contains("dashboard page could not be read") }
+        XCTAssertEqual(warnings.count, 1, "\(lines.all)")
+        XCTAssertTrue(warnings[0].hasPrefix("[warn] "))
+    }
+
+    /// The picker drops a link that resolves outside the folder; the dashboard path still
+    /// says the newest entry could not be read, and the name is filtered of control characters.
+    func testAPlantedLinkIsUnreadableNotAbsent() throws {
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dataDir.appendingPathComponent("elsewhere.html")
+        try "<html></html>".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("dashboard_20260925T060000.html"),
+            withDestinationURL: target)
+        guard case .unreadable(let why) = report().dashboardState() else {
+            return XCTFail("a planted link must not read as never collected")
+        }
+        XCTAssertEqual(why, "dashboard_20260925T060000.html: not a regular file")
+
+        let odd = dir.appendingPathComponent("dashboard\u{7}_20260926T060000.html")
+        try FileManager.default.createSymbolicLink(at: odd, withDestinationURL: target)
+        guard case .unreadable(let oddWhy) = report().dashboardState() else {
+            return XCTFail("a planted link must not read as never collected")
+        }
+        XCTAssertEqual(oddWhy, "dashboard_20260926T060000.html: not a regular file",
+                       "the BEL link is the newest by stamp and its name is filtered")
+    }
+
+    /// A failed dashboard collect names a planted link instead of saying nothing is cached.
+    func testAFailedCollectNamesAPlantedCachedPage() throws {
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dataDir.appendingPathComponent("elsewhere.html")
+        try "<html></html>".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("dashboard_20260925T060000.html"),
+            withDestinationURL: target)
+        let lines = LockedLines()
+        _ = try ReportEngine.recordUnlandedAttempt(
+            kind: ReportEngine.dashboardKind, exitCode: 1, data: Data(), useCachedData: true,
+            dataDir: dataDir, stateStore: nil,
+            collectStart: Date(timeIntervalSince1970: 1_800_000_000),
+            onLine: { lines.append($0.text) })
+        let warn = try XCTUnwrap(lines.all.first { $0.hasPrefix("[warn] dashboard") })
+        XCTAssertTrue(warn.contains("dashboard_20260925T060000.html: not a regular file"), warn)
+        XCTAssertFalse(warn.contains("no cached snapshot available"), warn)
+    }
+}
+
+private final class LockedLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func append(_ line: String) { lock.lock(); lines.append(line); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return lines }
 }

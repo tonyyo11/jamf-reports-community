@@ -7,7 +7,7 @@ organizations that run it treat that data as sensitive. Thank you for helping ke
 
 | Version | Supported |
 |---------|-----------|
-| Latest release (2.10.x) | Yes |
+| Latest release | Yes |
 | Current beta or release candidate | Yes |
 | Older releases | No — please update and confirm the issue still occurs |
 

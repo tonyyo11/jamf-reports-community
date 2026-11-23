@@ -2,10 +2,10 @@ import Foundation
 
 /// The key paths the app's screens write to config.yaml, read off the code that writes them:
 /// `ConfigService.apply` for the Config screen's blocks, and the `apply` of each scoped
-/// writer (`ChartsConfigWriter`, `HTMLReportConfigWriter`, `NotifyConfigWriter`,
-/// `AIConfigWriter`, `SecurityPolicyConfigWriter`, `ProtectBackupConfigWriter`). A key added
-/// to an editor joins the set with no second list to update. A path leaves out list indices
-/// (`custom_eas`, `name`), as `ConfigSchema` does.
+/// writer (`ChartsConfigWriter`, `HTMLReportConfigWriter`, `DisplayConfigWriter`,
+/// `NotifyConfigWriter`, `AIConfigWriter`, `SecurityPolicyConfigWriter`,
+/// `BackupChoiceConfigWriter`, `ProfilesConfigWriter`). A key added to an editor joins the set with no second list to
+/// update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
 enum ConfigEditedKeys {
     static let paths: Set<[String]> = derive()
 
@@ -15,11 +15,16 @@ enum ConfigEditedKeys {
         var root = document.root.mapping ?? .init(entries: [])
         ChartsConfigWriter.apply(.defaults, to: &root)
         HTMLReportConfigWriter.apply(withWorkbook: true, to: &root)
+        DisplayConfigWriter.apply(percentDecimals: 0, to: &root)
         NotifyConfigWriter.apply(
             enabled: false, provider: "teams", url: "", detail: "full", heartbeat: true,
             to: &root)
         AIConfigWriter.apply(AIConfig(), to: &root)
-        ProtectBackupConfigWriter.apply(onSyncedStorage: true, to: &root)
+        BackupChoiceConfigWriter.apply(.protect, on: true, to: &root)
+        BackupChoiceConfigWriter.apply(.pro, on: true, to: &root)
+        for slot in [ProfilesConfigWriter.Slot.platform, .protect] {
+            ProfilesConfigWriter.apply(slot, to: "probe", derived: .none, root: &root)
+        }
         root.set("security_policy", value: .mapping(securityPolicyProbe))
         var found: Set<[String]> = []
         collect(root, under: [], into: &found)

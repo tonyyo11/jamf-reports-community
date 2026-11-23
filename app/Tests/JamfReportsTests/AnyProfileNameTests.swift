@@ -39,10 +39,14 @@ final class AnyProfileNameTests: XCTestCase {
             XCTAssertEqual(flow.statuses[name], .done, name)
             let folder = tempRoot.appendingPathComponent(ProfileName.pathComponent(name))
             let config = folder.appendingPathComponent("config.yaml")
-            XCTAssertEqual(try ConfigLoader.load(from: config).jamfCli?.profile, name,
-                           "config.yaml records the name jamf-cli is called with")
+            // D3: the profiles: block's MDM slot is the name jamf-cli is called with.
+            XCTAssertEqual(EnvironmentProfiles.read(configURL: config, workspace: name).jamfPro,
+                           name, "config.yaml records the name jamf-cli is called with")
         }
+        // `.app-support` is AppSupport under a test root (setup now confirms the config pin);
+        // a workspace folder never starts with a dot (`ProfileName.pathComponent`).
         let folders = try FileManager.default.contentsOfDirectory(atPath: tempRoot.path)
+            .filter { !$0.hasPrefix(".") }
         XCTAssertEqual(folders.count, names.count, "one folder per name, nothing outside the root")
         XCTAssertEqual(
             Set(ProfileService.localOnlyWorkspaces(under: tempRoot, cliNames: [])), Set(names),
@@ -53,7 +57,8 @@ final class AnyProfileNameTests: XCTestCase {
     func testRunHistoryRecordsARunForEveryName() throws {
         for name in names {
             let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: name))
-            let label = CLIRunSignals.cliLabel(profile: name, kind: .collect)
+            let label = CLIRunSignals.cliLabel(
+                workspace: try XCTUnwrap(WorkspaceID(name)), kind: .collect)
             let recorder = try XCTUnwrap(
                 ScheduledRunRecorder(workspace: workspace, label: label), "\(name): \(label)"
             )
@@ -138,7 +143,7 @@ final class AnyProfileNameTests: XCTestCase {
     func testCaseAndAccentVariantsShareOneFolder() {
         XCTAssertEqual(
             ProfileService.unusableProfiles(
-                in: ["Zürich", "zürich"], recordedOwner: { _ in nil }
+                in: ["Zürich", "zürich"], folderNames: { _ in [] }
             ),
             ["Zürich": .sharesFolder(with: "zürich")]
         )

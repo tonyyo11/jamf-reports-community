@@ -50,7 +50,7 @@ final class CollectionTierLookupTests: XCTestCase {
             .first { $0.kind == "computers" }?.args ?? []
         XCTAssertEqual(argv, ["-p", "p", "pro", "computers", "list", "--section",
                               ReportEngine.computerInventorySections, "--output", "json"])
-        for section in ["USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION"] {
+        for section in ["USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION", "PURCHASING"] {
             XCTAssertTrue(ReportEngine.computerInventorySections.contains(section), section)
         }
     }

@@ -159,7 +159,7 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
 
         try await CollectRouter.run(
-            profile: "testpro",
+            workspace: WorkspaceID(validating: "testpro"),
             config: config,
             workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect,
@@ -173,6 +173,25 @@ final class CollectRouterTests: XCTestCase {
         XCTAssertEqual(spy.protectCallCount, 0, "Protect collect must not be called without protect.enabled")
     }
 
+    /// The run's start reaches the engine unchanged, so the collect dates its summary by the
+    /// day the run began, not by whenever the router's product probe finished.
+    func test_router_handsTheRunsStartToTheEngine() async throws {
+        let config = try ConfigLoader.loadFromString("jamf_cli:\n  data_dir: data\n")
+        let seen = RouterDates()
+
+        try await CollectRouter.run(
+            workspace: WorkspaceID(validating: "testpro"),
+            config: config,
+            workspacePaths: WorkspacePaths.self,
+            now: .testNoon,
+            proEngine: { _, _, _, _, _, _, now, _ in seen.add(now); return .collected },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
+            onLine: { _ in }
+        )
+
+        XCTAssertEqual(seen.values, [.testNoon])
+    }
+
     /// For a School profile, only schoolCollect is called; pro and protect are not called.
     func test_router_schoolProfile_callsSchoolCollectOnly() async throws {
         let config = try ConfigLoader.loadFromString("""
@@ -183,7 +202,7 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
 
         try await CollectRouter.run(
-            profile: "testschool",
+            workspace: WorkspaceID(validating: "testschool"),
             config: config,
             workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect,
@@ -212,7 +231,7 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
 
         try await CollectRouter.run(
-            profile: "testpro",
+            workspace: WorkspaceID(validating: "testpro"),
             config: config,
             workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect,
@@ -250,7 +269,7 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
 
         try await CollectRouter.run(
-            profile: profile,
+            workspace: WorkspaceID(validating: profile),
             config: config,
             workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect,
@@ -289,12 +308,12 @@ final class CollectRouterTests: XCTestCase {
 
         // Does not throw despite protectCollect throwing.
         try await CollectRouter.run(
-            profile: profile,
+            workspace: WorkspaceID(validating: profile),
             config: config,
             workspacePaths: WorkspacePaths.self,
-            proCollect: { _, _, _, _, _, _ in .collected },
-            schoolCollect: { _, _, _, _, _ in },
-            protectCollect: { _, _, _ in throw NSError(domain: "test", code: 42) },
+            proCollect: { _, _, _, _, _, _, _ in .collected },
+            schoolCollect: { _, _, _, _, _, _ in },
+            protectCollect: { _, _, _, _ in throw NSError(domain: "test", code: 42) },
             onLine: { line in
                 watcher.observe(line.text)
                 if line.level == .warn, line.text.hasPrefix("[partial] protect collect failed") {
@@ -334,7 +353,8 @@ final class CollectRouterTests: XCTestCase {
             let lines = ProductGuardLines()
             do {
                 try await CollectRouter.run(
-                    profile: "other", config: config, workspacePaths: WorkspacePaths.self,
+                    workspace: WorkspaceID(validating: "other"),
+                    config: config, workspacePaths: WorkspacePaths.self,
                     proCollect: spy.proCollect, schoolCollect: spy.schoolCollect,
                     protectCollect: spy.protectCollect, resolved: resolved(product, org: org),
                     onLine: lines.add)
@@ -357,7 +377,8 @@ final class CollectRouterTests: XCTestCase {
         for answer in answers {
             let spy = RouterSpy()
             try await CollectRouter.run(
-                profile: "fine", config: nil, workspacePaths: WorkspacePaths.self,
+                workspace: WorkspaceID(validating: "fine"),
+                config: nil, workspacePaths: WorkspacePaths.self,
                 proCollect: spy.proCollect, schoolCollect: spy.schoolCollect,
                 protectCollect: spy.protectCollect, resolved: answer, onLine: { _ in })
             XCTAssertEqual(spy.proCallCount, 1)
@@ -371,7 +392,8 @@ final class CollectRouterTests: XCTestCase {
             "school_cli:\n  enabled: true\n  profile: sch\n")
         let spy = RouterSpy()
         try await CollectRouter.run(
-            profile: "sch", config: config, workspacePaths: WorkspacePaths.self,
+            workspace: WorkspaceID(validating: "sch"),
+            config: config, workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect, schoolCollect: spy.schoolCollect,
             protectCollect: spy.protectCollect, resolved: resolved(.school), onLine: { _ in })
         XCTAssertEqual([spy.proCallCount, spy.schoolCallCount], [0, 1])
@@ -382,7 +404,7 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
 
         try await CollectRouter.run(
-            profile: "testnil",
+            workspace: WorkspaceID(validating: "testnil"),
             config: nil,
             workspacePaths: WorkspacePaths.self,
             proCollect: spy.proCollect,
@@ -404,18 +426,18 @@ final class CollectRouterTests: XCTestCase {
         let capturedSkip = RouterValueBox<Bool?>(nil)
 
         try await CollectRouter.run(
-            profile: "testpro",
+            workspace: WorkspaceID(validating: "testpro"),
             skipExpensive: true,
             force: true,
             config: config,
             workspacePaths: WorkspacePaths.self,
-            proCollect: { _, _, _, skipExpensive, force, _ in
+            proCollect: { _, _, _, _, skipExpensive, force, _ in
                 capturedSkip.set(skipExpensive)
                 capturedForce.set(force)
                 return .collected
             },
-            schoolCollect: { _, _, _, _, _ in },
-            protectCollect: { _, _, _ in },
+            schoolCollect: { _, _, _, _, _, _ in },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             onLine: { _ in }
         )
 
@@ -428,9 +450,10 @@ final class CollectRouterTests: XCTestCase {
     /// A Pro collect that stood down for a peer fetched nothing, and the peer holds
     /// the shared-workspace claim: Protect must not collect beside it.
     func test_router_proStoodDown_skipsProtect() async throws {
-        let (spy, lines, _) = try await runProtectEnabledProfile(proReturning: .stoodDown)
+        let (spy, lines, _) = try await runProtectEnabledProfile(
+            gate: { _, _, _, _, _, _ in .stop(.stoodDown) })
 
-        XCTAssertEqual(spy.proCallCount, 1, "Pro collect must still be asked")
+        XCTAssertEqual(spy.proCallCount, 0, "a stand-down stops Jamf Pro")
         XCTAssertEqual(spy.protectCallCount, 0, "Protect must not run after a stand-down")
         XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") },
                       "the skip must be visible in the run log; got: \(lines)")
@@ -438,11 +461,72 @@ final class CollectRouterTests: XCTestCase {
 
     /// The once-per-day guard skipped the Pro collect, so Protect skips with it.
     func test_router_proAlreadyCollected_skipsProtect() async throws {
-        let (spy, lines, _) = try await runProtectEnabledProfile(proReturning: .alreadyCollected)
+        let (spy, lines, _) = try await runProtectEnabledProfile(
+            gate: { _, _, _, _, _, _ in .stop(.alreadyCollected) })
 
-        XCTAssertEqual(spy.proCallCount, 1)
+        XCTAssertEqual(spy.proCallCount, 0, "the day guard stops Jamf Pro")
         XCTAssertEqual(spy.protectCallCount, 0,
                        "Protect must not run when today's Pro collect already ran")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") }, "got: \(lines)")
+    }
+
+    /// R1: the gate covers Jamf School too, and a stop skips Protect with its own line.
+    func test_router_gateStop_stopsSchoolAndProtect() async throws {
+        let (spy, lines, _) = try await runProtectEnabledProfile(
+            school: true, gate: { _, _, _, _, _, _ in .stop(.stoodDown) })
+
+        XCTAssertEqual(spy.schoolCallCount, 0, "a stand-down stops Jamf School")
+        XCTAssertEqual(spy.protectCallCount, 0)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") }, "got: \(lines)")
+    }
+
+    /// A claim the gate took is released when the collect throws.
+    func test_router_claimTakenByGate_isReleasedAfterAThrownCollect() async throws {
+        let (_, _, thrown) = try await runProtectEnabledProfile(
+            proThrowing: ReportEngineError.jamfCLINotFound,
+            gate: { workspace, _, _, _, _, _ in
+                _ = SharedWorkspace.acquire(profile: workspace.name, operation: "collect", ttl: 900)
+                return .proceed(holdsClaim: true, coordinating: true)
+            })
+
+        XCTAssertNotNil(thrown)
+        let name = try XCTUnwrap(
+            try FileManager.default.contentsOfDirectory(
+                atPath: try XCTUnwrap(
+                    ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"])).first)
+        XCTAssertNil(SharedWorkspace.readClaim(profile: name), "the router must release the claim")
+    }
+
+    /// The gate is asked with the caller's `force`, which is how Refresh passes the day guard.
+    func test_router_passesForceToTheGate() async throws {
+        let seen = RouterValueBox<Bool?>(nil)
+        _ = try await runProtectEnabledProfile(force: true, gate: { _, _, _, force, _, _ in
+            seen.set(force)
+            return .proceed(holdsClaim: false, coordinating: false)
+        })
+        XCTAssertEqual(seen.value, true)
+    }
+
+    /// The real gate with today's summary on disk and no force: the day guard stops Jamf Pro
+    /// and Protect.
+    func test_router_realGateDayGuard_stopsProAndProtect() async throws {
+        let (spy, lines, thrown) = try await runProtectEnabledProfile(
+            gate: { workspace, paths, tiers, force, now, onLine in
+                let dir = try? paths.summariesDir(for: workspace.name)
+                let today = SummaryJSONParser.dateFormatter.string(from: now)
+                let body = "{\"date\":\"\(today)\",\"totalDevices\":1,\"source\":\"t\"}"
+                try? dir.map { try FileManager.default.createDirectory(
+                    at: $0, withIntermediateDirectories: true) }
+                try? dir.map { try body.write(
+                    to: $0.appendingPathComponent("summary_\(today).json"),
+                    atomically: true, encoding: .utf8) }
+                return CollectRouter.realGate(workspace, paths, tiers, force, now, onLine)
+            })
+
+        XCTAssertNil(thrown)
+        XCTAssertEqual(spy.proCallCount, 0)
+        XCTAssertEqual(spy.protectCallCount, 0)
+        XCTAssertTrue(lines.contains { $0.contains("already collected today") }, "got: \(lines)")
         XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") }, "got: \(lines)")
     }
 
@@ -477,7 +561,7 @@ final class CollectRouterTests: XCTestCase {
     func test_router_proPreflightThrow_doesNotRunProtect() async throws {
         let errors: [Error] = [
             ReportEngineError.jamfCLINotFound,
-            ReportEngineError.profileMismatch(named: "a", run: "b"),
+            ReportEngineError.invalidProfile("a\nb"),
             CLIBridgeError.tickLockHeld,
             CLIBridgeError.collectInProgress,
         ]
@@ -495,7 +579,8 @@ final class CollectRouterTests: XCTestCase {
         let spy = RouterSpy()
         do {
             try await CollectRouter.run(
-                profile: "other", config: config, workspacePaths: WorkspacePaths.self,
+                workspace: WorkspaceID(validating: "other"),
+                config: config, workspacePaths: WorkspacePaths.self,
                 proCollect: spy.proCollect, schoolCollect: spy.schoolCollect,
                 protectCollect: spy.protectCollect, resolved: resolved(.protect), onLine: { _ in })
             XCTFail("not refused")
@@ -562,7 +647,7 @@ final class CollectRouterTests: XCTestCase {
         return { $0 == "my-protect" ? answer($0) : nil }
     }
 
-    /// A blank name is not a connection (ConnectedProducts says so): one `[warn]`, not a
+    /// A blank name is not a connection (EnvironmentProfiles says so): one `[warn]`, not a
     /// `[partial] protect collect failed` on every run.
     func test_router_blankProtectProfile_skipsWithOneWarn() async throws {
         let (spy, lines, thrown) = try await runProtectEnabledProfile(protectProfile: "")
@@ -603,12 +688,13 @@ final class CollectRouterTests: XCTestCase {
     /// `WorkspacePaths.dataDir(for:)` resolves and a skipped Protect can only come
     /// from the Pro collect's disposition.
     private func runProtectEnabledProfile(
-        proReturning disposition: ReportEngine.CollectDisposition = .collected,
         proThrowing proError: Error? = nil,
         protectThrowing protectError: Error? = nil,
         protectProfile: String = "my-protect",
         resolved: @escaping @Sendable (String) -> ProfileAuthMethod.Resolved? = { _ in nil },
-        school: Bool = false
+        school: Bool = false,
+        force: Bool = false,
+        gate: @escaping CollectRouter.Gate = { _, _, _, _, _, _ in .proceed(holdsClaim: false, coordinating: false) }
     ) async throws -> (spy: RouterSpy, lines: [String], thrown: Error?) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CollectRouterTests-\(UUID().uuidString)", isDirectory: true)
@@ -632,20 +718,22 @@ final class CollectRouterTests: XCTestCase {
         """)
         // A School run throws through the School spy; `proThrowing` names the run's error.
         let spy = RouterSpy(
-            proDisposition: disposition, proError: school ? nil : proError,
+            proError: school ? nil : proError,
             schoolError: school ? proError : nil, protectError: protectError)
         let lines = RouterLineCollector()
 
         var thrown: Error?
         do {
             try await CollectRouter.run(
-                profile: profile,
+                workspace: WorkspaceID(validating: profile),
+                force: force,
                 config: config,
                 workspacePaths: WorkspacePaths.self,
                 proCollect: spy.proCollect,
                 schoolCollect: spy.schoolCollect,
                 protectCollect: spy.protectCollect,
                 resolved: resolved,
+                gate: gate,
                 onLine: { line in lines.append(line.text) }
             )
         } catch {
@@ -684,6 +772,13 @@ private final class RouterLineCollector: @unchecked Sendable {
     func append(_ text: String) { lock.withLock { _texts.append(text) } }
 }
 
+private final class RouterDates: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Date] = []
+    var values: [Date] { lock.withLock { stored } }
+    func add(_ date: Date) { lock.withLock { stored.append(date) } }
+}
+
 private struct RouterSpy {
     let proCounter = RouterCallCounter()
     let schoolCounter = RouterCallCounter()
@@ -703,7 +798,7 @@ private struct RouterSpy {
         let counter = proCounter
         let disposition = proDisposition
         let error = proError
-        return { _, _, _, _, _, _ in
+        return { _, _, _, _, _, _, _ in
             counter.increment()
             if let error { throw error }
             return disposition
@@ -713,7 +808,7 @@ private struct RouterSpy {
     var schoolCollect: CollectRouter.SchoolCollect {
         let counter = schoolCounter
         let error = schoolError
-        return { _, _, _, _, _ in
+        return { _, _, _, _, _, _ in
             counter.increment()
             if let error { throw error }
         }
@@ -722,9 +817,10 @@ private struct RouterSpy {
     var protectCollect: CollectRouter.ProtectCollect {
         let counter = protectCounter
         let error = protectError
-        return { _, _, _ in
+        return { _, _, _, _ in
             counter.increment()
             if let error { throw error }
+            return ["protect-alerts"]
         }
     }
 }
@@ -750,11 +846,11 @@ final class ScheduledCollectForceTests: XCTestCase {
         let seen = LockedForce()
         let mode = Schedule.RunMode.jamfCLIFull
         try await CollectRouter.run(
-            profile: "testschool",
+            workspace: WorkspaceID(validating: "testschool"),
             force: mode.forcesCollect(for: ProfileProductType.detect(from: config, profile: "testschool").type),
             config: config,
-            schoolCollect: { _, _, _, force, _ in seen.set(force) },
-            protectCollect: { _, _, _ in },
+            schoolCollect: { _, _, _, _, force, _ in seen.set(force) },
+            protectCollect: { _, _, _, _ in ["protect-alerts"] },
             onLine: { _ in })
         XCTAssertEqual(seen.value, true)
     }

@@ -259,29 +259,43 @@ final class ProfileProductTests: XCTestCase {
             ["a", "b", "c"])
     }
 
-    func testRunnableProfilesNeverRunAProtectLoginAndNeedAFolderForSchool() {
+    func testRunnableWorkspacesNeverRunAProtectLoginAndNeedAFolder() {
         let all = [
             profile("prod", .pro), profile("prot", .protect), profile("sec", .securityCloud),
             profile("sch", .school), profile("sch2", .school), profile("unk"),
         ]
+        // prot has a folder and is still never run.
         let withFolder: (String) -> Bool = { ["prot", "sch2"].contains($0) }
         XCTAssertEqual(
-            ProfileService.runnableProfiles(
+            ProfileService.runnableWorkspaces(
                 all, excluding: [], hasWorkspace: withFolder).map(\.name),
-            ["prod", "sch2", "unk"])
+            ["sch2"])
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in false }).count, 0,
+            "a Jamf Pro profile with no folder is not run (D24)")
+        XCTAssertEqual(
+            ProfileService.runnableWorkspaces(
+                [profile("prod", .pro)], excluding: [], hasWorkspace: { _ in true }).count, 1)
     }
 
-    func testTheActiveProfileMovesToTheWorkspaceNamingItsProtectLogin() {
+    func testTheActiveProfileMovesToTheWorkspaceNamingItsLogin() {
         let listed = [profile("first", .pro), profile("prod", .pro)]
-        let owner: (String) -> String? = { $0 == "prod" ? "prot" : nil }
+        let owner: (String) -> [String] = { $0 == "prod" ? ["plat", "prot", "sec"] : [] }
+        let none: (String) -> Bool = { _ in false }
+        for login in ["plat", "prot", "sec"] {
+            XCTAssertEqual(
+                WorkspaceStore.activeProfile(
+                    keeping: login, in: listed, hasWorkspace: none, connectedProfiles: owner),
+                "prod", "\(login) is another workspace's login")
+        }
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "prot", in: listed, protectProfile: owner),
-            "prod")
-        XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "gone", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "gone", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first", "an unknown name falls to the first usable profile")
         XCTAssertEqual(
-            WorkspaceStore.activeProfile(keeping: "first", in: listed, protectProfile: owner),
+            WorkspaceStore.activeProfile(
+                keeping: "first", in: listed, hasWorkspace: none, connectedProfiles: owner),
             "first")
     }
 
@@ -294,20 +308,24 @@ final class ProfileProductTests: XCTestCase {
         XCTAssertEqual(flow.selected, ["prod", "sch"])
         XCTAssertNotNil(flow.refusals["prot"])
         var initialized: [String] = []
+        var kinds: [String: ProfilesConfigWriter.NewWorkspace?] = [:]
         var schoolConfigured: [String] = []
         await flow.run(
-            initialize: { initialized.append($0); return 0 },
+            initialize: { name, kind in initialized.append(name); kinds[name] = kind; return 0 },
             configureSchool: { schoolConfigured.append($0) },
             collect: { _, _ in 0 })
         XCTAssertEqual(initialized, ["prod", "sch"])
         XCTAssertEqual(schoolConfigured, ["sch"])
+        // D3: the School workspace's block is written as School, never left to a probe.
+        XCTAssertEqual(kinds["sch"], .some(.init(school: true)))
+        XCTAssertEqual(kinds["prod"], .some(nil))
     }
 
     func testAProtectLoginTickedByHandIsStillNeverRun() async {
         let flow = ExistingCLISetupFlow(profiles: [profile("prot", .protect)])
         flow.selected.insert("prot")
         var initialized: [String] = []
-        await flow.run(initialize: { initialized.append($0); return 0 }, collect: { _, _ in 0 })
+        await flow.run(initialize: { name, _ in initialized.append(name); return 0 }, collect: { _, _ in 0 })
         XCTAssertEqual(initialized, [])
     }
 
@@ -315,7 +333,7 @@ final class ProfileProductTests: XCTestCase {
         struct Boom: Error {}
         let flow = ExistingCLISetupFlow(profiles: [profile("sch", .school)])
         await flow.run(
-            initialize: { _ in 0 }, configureSchool: { _ in throw Boom() },
+            initialize: { _, _ in 0 }, configureSchool: { _ in throw Boom() },
             collect: { _, _ in 0 })
         XCTAssertFalse(flow.canContinue)
         XCTAssertEqual(flow.failureStages["sch"], .workspace)
@@ -346,7 +364,7 @@ final class ProfileProductTests: XCTestCase {
     func testDoctorWarnsWhenProtectProfileIsAnotherProduct() throws {
         let config = try decodeConfig("protect:\n  enabled: true\n  profile: prot\n")
         func rows(_ product: JamfCLIProduct?) -> [DoctorRow] {
-            ConfigDoctorService.protectProfileProductRows(config: config) { _ in
+            ConfigDoctorService.protectProfileProductRows(config: config, workspace: "prod") { _ in
                 product.map {
                     .init(authMethod: "oauth2", isTenantLevel: false, isOrganizationLevel: false,
                           product: $0)
@@ -363,7 +381,21 @@ final class ProfileProductTests: XCTestCase {
 
         let off = try decodeConfig("protect:\n  enabled: false\n  profile: prot\n")
         XCTAssertTrue(ConfigDoctorService.protectProfileProductRows(
-            config: off, resolved: { _ in XCTFail("asked"); return nil }).isEmpty)
+            config: off, workspace: "prod",
+            resolved: { _ in XCTFail("asked"); return nil }).isEmpty)
+    }
+
+    /// One `config list` per row: an unknown answer is not cached, and each ask can take 60 s.
+    func testDoctorProductRowsAskJamfCLIOncePerRow() throws {
+        let config = try decodeConfig("protect:\n  enabled: true\n  profile: prot\n")
+        var asked = 0
+        let rows = ConfigDoctorService.protectProfileProductRows(config: config, workspace: "prod") {
+            _ in
+            asked += 1
+            return .init(authMethod: "oauth2", isTenantLevel: false, product: .pro)
+        }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(asked, 1)
     }
 
     private func decodeConfig(_ yaml: String) throws -> ReportConfig {
