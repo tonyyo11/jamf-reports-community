@@ -772,7 +772,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     ) {
         guard let profile = profile ?? Self.profile(forConfigAt: url),
               let values = current(fromYAML: written) else { return }
-        let drifts = keysSet(inYAML: written).map {
+        // Every key, the ones the file leaves unset too: a pin left by an earlier workspace of
+        // this name would otherwise read a key the old file had as changed (beta 2690). Each is
+        // confirmed only while config.yaml still holds what was written.
+        let drifts = Key.allCases.map {
             Drift(key: $0, pinned: "", current: "", currentToken: $0.token(of: values))
         }
         guard !drifts.isEmpty else { return }

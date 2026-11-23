@@ -4587,8 +4587,9 @@ struct ReportEngine: Sendable {
 
         let configURL = workspace.appendingPathComponent("config.yaml")
         if !fm.fileExists(atPath: configURL.path) {
-            try ScaffoldService.writeMinimalConfig(
+            let written = try ScaffoldService.writeMinimalConfig(
                 to: configURL, profile: profile, workspace: kind ?? .of(profile))
+            SharedConfigPin.confirmWrittenConfig(written, at: configURL, profile: profile)
         }
         onLine(.init(timestamp: Date(), level: .ok,
                      text: "[ok] workspace initialized at \(workspace.path)"))

@@ -29885,6 +29885,46 @@
         }
       }
     },
+    "Another collect is still running. Try again when it finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine andere Erfassung läuft noch. Versuchen Sie es erneut, wenn sie abgeschlossen ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra recopilación sigue en curso. Vuelva a intentarlo cuando termine."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une autre collecte est encore en cours. Réessayez quand elle sera terminée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’altra raccolta è ancora in corso. Riprova al termine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の収集がまだ実行中です。終了してからもう一度お試しください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outra coleta ainda está em andamento. Tente novamente quando ela terminar."
+          }
+        }
+      }
+    },
     "Another line makes the same profile name. Pick another label." : {
       "localizations" : {
         "de" : {

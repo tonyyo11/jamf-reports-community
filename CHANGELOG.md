@@ -20,6 +20,12 @@ versions in this repository map to git tags.
 - The Jamf Protect card in setup and the Add sheet no longer mentions compliance signals or
   insights, which Jamf removed from Protect.
 - The setup output box reads "No output." once a step has finished with nothing printed.
+- Setting up a profile jamf-cli already has, from the Add sheet or the first launch, waits for a
+  background refresh or scheduled run to stop at its next source before the first collect,
+  instead of reporting the first collect as failed.
+- A workspace set up again under a name used before no longer shows "Shared config needs
+  confirming" for settings only the old config.yaml had. Setup now confirms the whole file it
+  writes, settings it leaves unset included.
 - The inventory CSV fills every column again. Computer fields are written as `section.key`
   columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
   ID and UDID blank, and extension attribute values are matched to Macs by name.

@@ -555,7 +555,7 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(check().drifts.map(\.key), [.outputDir])
     }
 
-    func testAWrittenConfigConfirmsExactlyTheKeysItSets() throws {
+    func testAWrittenConfigConfirmsWhatItWroteUnsetKeysIncluded() throws {
         XCTAssertEqual(SharedConfigPin.keysSet(inYAML: """
         jamf_cli:
           data_dir: "jamf-cli-data"
@@ -577,12 +577,22 @@ final class SharedConfigPinTests: XCTestCase {
         SharedConfigPin.confirmWrittenConfig(
             written, at: workspace.appendingPathComponent("config.yaml"), profile: profile,
             appSupport: appSupport)
-        let after = Set(check().drifts.map(\.key))
-        XCTAssertFalse(after.contains(.outputDir))
-        XCTAssertFalse(after.contains(.dataDir))
-        XCTAssertEqual(after, before.subtracting([.outputDir, .dataDir]),
-                       "keys the write did not set stay as they were")
-        XCTAssertFalse(after.isEmpty, "retention, webhook and Protect are not accepted")
+        // A key the file leaves unset reads as its default, which is what was written.
+        XCTAssertTrue(check().drifts.isEmpty)
+    }
+
+    /// Beta 2690: a workspace set up fresh under a name used before kept the earlier pin, and
+    /// a key only the old file set (`charts.historical_csv_dir`) read as changed.
+    func testAFreshConfigUnderAReusedNameDoesNotInheritTheOldPin() throws {
+        let url = workspace.appendingPathComponent("config.yaml")
+        try writeConfig(historicalDir: "snapshots")
+        _ = check()
+        try FileManager.default.removeItem(at: url)
+        let written = try ScaffoldService.writeMinimalConfig(to: url, profile: profile)
+        XCTAssertTrue(check().drifts.map(\.key).contains(.historicalDir))
+        SharedConfigPin.confirmWrittenConfig(
+            written, at: url, profile: profile, appSupport: appSupport)
+        XCTAssertTrue(check().drifts.isEmpty)
     }
 
     func testAWrittenConfigIsNotConfirmedWhenAPeerReplacedItAfterTheWrite() throws {

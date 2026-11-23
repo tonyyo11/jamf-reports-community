@@ -638,7 +638,7 @@ struct AddSheet: View {
         let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
         adoptFlow = flow
         adoptingName = row.name
-        await flow.run()
+        await flow.run(mayCollect: { await workspace.manualCollectMayStart() })
         guard flow.canContinue else {
             errorText = flow.completionText
             return
