@@ -556,17 +556,6 @@ final class SharedConfigPinTests: XCTestCase {
     }
 
     func testAWrittenConfigConfirmsWhatItWroteUnsetKeysIncluded() throws {
-        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: """
-        jamf_cli:
-          data_dir: "jamf-cli-data"
-        output:
-          output_dir: "Generated Reports"
-        retention:
-          mode: delete
-        """), [.dataDir, .outputDir, .retentionMode])
-        XCTAssertEqual(SharedConfigPin.keysSet(inYAML: "thresholds:\n  stale_device_days: 30\n"),
-                       [])
-
         // Onboarding on a Mac joining a shared folder: the written file sets the two folders.
         try writeConfig(outputDir: outside, allowAbsolute: true, retentionMode: "archive")
         _ = check()

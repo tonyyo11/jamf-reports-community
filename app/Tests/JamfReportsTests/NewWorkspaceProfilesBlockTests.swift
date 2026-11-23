@@ -155,8 +155,8 @@ final class NewWorkspaceProfilesBlockTests: XCTestCase {
         let platform = ScaffoldService.minimalConfigYAML(
             profile: "p", eas: [], workspace: .init(platform: true))
         let oauth = ScaffoldService.minimalConfigYAML(profile: "p", eas: [], workspace: .init())
-        XCTAssertTrue(SharedConfigPin.keysSet(inYAML: platform).contains(.platformProfile))
-        XCTAssertFalse(SharedConfigPin.keysSet(inYAML: oauth).contains(.platformProfile))
+        XCTAssertEqual(SharedConfigPin.current(fromYAML: platform)?.platformProfile, "p")
+        XCTAssertEqual(SharedConfigPin.current(fromYAML: oauth)?.platformProfile, "")
     }
 }
 
