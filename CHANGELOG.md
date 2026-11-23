@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- The French Overview subtitle no longer repeats "Référentiel" when no baseline label is set.
 - Five translated strings now use the glossary's word for a tenant: "tenant" in Spanish and
   Brazilian Portuguese, "Mandant" in German.
 - After New workspace from the Add sheet, Open Overview shows the workspace just set up instead
