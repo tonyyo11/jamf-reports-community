@@ -9,6 +9,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Five translated strings now use the glossary's word for a tenant: "tenant" in Spanish and
+  Brazilian Portuguese, "Mandant" in German.
 - After New workspace from the Add sheet, Open Overview shows the workspace just set up instead
   of the one that was open before.
 - Generate on a Jamf School workspace opens on the School template again. It had opened with no
