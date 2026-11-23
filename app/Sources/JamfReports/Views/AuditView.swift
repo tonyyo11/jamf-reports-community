@@ -542,17 +542,17 @@ struct AuditView: View {
                             .motionSafeAnimation(.spring(response: 0.35, dampingFraction: 0.7),
                                        value: newFindingKeys.contains(f.driftKey))
                         }
-                        // The two text columns take the width the fixed ones leave; unsized,
-                        // all five shared it equally and truncated both.
-                        .width(min: 130, ideal: 180)
+                        // The table shares spare width out evenly, so the three middle columns
+                        // are capped and the two text columns take what is left.
+                        .width(min: 130, ideal: 150, max: 260)
                         TableColumn("Severity", value: \.severity) { f in
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
-                        .width(min: 70, ideal: 78, max: 110)
+                        .width(min: 70, ideal: 78, max: 90)
                         TableColumn("Category", value: \.category) { f in
                             Text(LShown(f.category).capitalized).font(.footnote)
                         }
-                        .width(min: 64, ideal: 68, max: 140)
+                        .width(min: 64, ideal: 68, max: 100)
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(
                                 value: f.affected,
@@ -561,20 +561,21 @@ struct AuditView: View {
                                 displayText: f.affectedDisplay
                             )
                         }
-                        .width(min: 80, ideal: 90, max: 180)
+                        .width(min: 80, ideal: 90, max: 120)
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
                                     .font(.footnote)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(1)
+                                    .help(f.recommendation)
                                 Spacer(minLength: 0)
                                 PNPButton(title: L("Details"), icon: "info.circle", size: .sm) {
                                     selectedFinding = f
                                 }
                             }
                         }
-                        .width(min: 130, ideal: 130)
+                        .width(min: 180, ideal: 180)
                     }
                     .pageTableHeight(
                         rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)

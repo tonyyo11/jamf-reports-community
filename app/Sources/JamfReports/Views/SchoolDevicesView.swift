@@ -139,15 +139,15 @@ struct SchoolDevicesView: View {
                               trailing: "\(snapshot.depDevices.count)")
                 Table(snapshot.depDevices) {
                     TableColumn("Serial") { Text($0.serial).font(Theme.Fonts.mono(11)) }
-                        .width(min: 110, ideal: 140)
+                        .width(min: 110, ideal: 110)
                     TableColumn("Name") { Text($0.name.isEmpty ? "—" : $0.name) }
-                        .width(min: 120, ideal: 180)
+                        .width(min: 120, ideal: 120)
                     TableColumn("Model") { Text($0.model.isEmpty ? "—" : $0.model) }
-                        .width(min: 90, ideal: 140)
+                        .width(min: 90, ideal: 90)
                     TableColumn("Status") { Text($0.status.isEmpty ? "—" : $0.status) }
-                        .width(min: 80, ideal: 110)
+                        .width(min: 80, ideal: 80)
                     TableColumn("Profile") { Text($0.profile.isEmpty ? "—" : $0.profile) }
-                        .width(min: 100, ideal: 160)
+                        .width(min: 100, ideal: 100)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let device = snapshot.depDevices.first(where: { $0.id == ids.first }) {
@@ -299,21 +299,21 @@ struct SchoolDevicesTable: View {
             TableColumn("Name") {
                 Text($0.name.isEmpty ? "—" : $0.name).font(.callout.weight(.medium))
             }
-                .width(min: 140, ideal: 200)
+                .width(min: 140, ideal: 140)
             TableColumn("Serial") {
                 Text($0.serial.isEmpty ? "—" : $0.serial)
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
-            .width(min: 110, ideal: 140)
+            .width(min: 110, ideal: 110)
             TableColumn("Model") { Text($0.model.isEmpty ? "—" : $0.model) }
-                .width(min: 90, ideal: 150)
+                .width(min: 90, ideal: 90)
             TableColumn("OS") { Text($0.os.isEmpty ? "—" : $0.os).font(Theme.Fonts.mono(11)) }
-                .width(min: 90, ideal: 120)
+                .width(min: 90, ideal: 90)
             TableColumn("Managed") { Text(Self.yesNo($0.isManaged)) }
-                .width(min: 60, ideal: 80)
+                .width(min: 60, ideal: 60)
             TableColumn("Supervised") { Text(Self.yesNo($0.isSupervised)) }
-                .width(min: 70, ideal: 90)
+                .width(min: 70, ideal: 70)
             TableColumn("Last Check-in") { device in
                 let stale = device.isStale(atDays: staleDays, now: now)
                 // Same icon as the Computers table's stale state.
@@ -331,7 +331,7 @@ struct SchoolDevicesTable: View {
                 .accessibilityLabel("Last Check-in")
                 .accessibilityValue(Self.checkinAccessibilityValue(device, stale: stale, now: now))
             }
-            .width(min: 100, ideal: 130)
+            .width(min: 100, ideal: 100)
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let device = rows.first(where: { $0.id == ids.first }) {

@@ -209,21 +209,21 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Colors.fg)
                             .accessibilityLabel("\(finding.policy), policy name")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Check") { finding in
                         Text(finding.check)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 120, ideal: 150)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Detail") { finding in
                         Text(finding.detail)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 150, ideal: 200)
+                    .width(min: 150, ideal: 150)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let finding = sortedFindings.first(where: { $0.id == ids.first }) {
@@ -336,14 +336,14 @@ struct PolicyProfileView: View {
                             .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Colors.fg)
                             .accessibilityLabel("\(profile.name), profile name")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Device Type") { profile in
                         Text(profile.deviceType)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Errors") { profile in
                         Text("\(profile.errors)")
@@ -352,7 +352,7 @@ struct PolicyProfileView: View {
                             .monospacedDigit()
                             .accessibilityLabel(profile.errors == 1 ? L("\(profile.errors) error") : L("\(profile.errors) errors"))
                     }
-                    .width(min: 60, ideal: 80)
+                    .width(min: 60, ideal: 60)
 
                     TableColumn("Devices") { profile in
                         Text("\(profile.devices)")
@@ -360,14 +360,14 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .monospacedDigit()
                     }
-                    .width(min: 60, ideal: 80)
+                    .width(min: 60, ideal: 60)
 
                     TableColumn("Last Error") { profile in
                         Text(profile.lastError.isEmpty ? "—" : profile.lastError)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Top Error") { profile in
                         Text(profile.topError.isEmpty ? "—" : profile.topError)
@@ -375,7 +375,7 @@ struct PolicyProfileView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .help(profile.topError)
                     }
-                    .width(min: 180, ideal: 260)
+                    .width(min: 180, ideal: 180)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let profile = snapshot.profiles.first(where: { $0.id == ids.first }) {

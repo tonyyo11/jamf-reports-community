@@ -377,31 +377,31 @@ struct UpdatesView: View {
                             .foregroundStyle(Theme.Colors.fg2)
                             .accessibilityLabel("\(plan.name), device name")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Serial") { plan in
                         Mono(text: plan.serial, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("OS Version") { plan in
                         Mono(text: plan.osVersion, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("State") { plan in
                         let state = UpdateStatusService.planStateDisplayName(plan.state)
                         Pill(text: state, tone: pillTone(for: plan.state))
                             .accessibilityLabel("State \(state)")
                     }
-                    .width(min: 118, ideal: 138)
+                    .width(min: 118, ideal: 118)
 
                     TableColumn("Action") { plan in
                         Text(plan.action)
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Error") { plan in
                         Text(truncatedError(plan.error))
@@ -409,7 +409,7 @@ struct UpdatesView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .lineLimit(1)
                     }
-                    .width(min: 150, ideal: 200)
+                    .width(min: 150, ideal: 150)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let plan = snapshot.failedPlans.first(where: { $0.id == ids.first }),
@@ -434,30 +434,30 @@ struct UpdatesView: View {
                             .foregroundStyle(Theme.Colors.fg2)
                             .accessibilityLabel("\(device.name), device name")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Serial") { device in
                         Mono(text: device.serial, size: 11)
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Status") { device in
                         Pill(text: device.status, tone: .danger)
                             .accessibilityLabel("Status \(device.status)")
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Product Key") { device in
                         Mono(text: device.productKey, size: 10.5, color: Theme.Colors.fg2)
                     }
-                    .width(min: 150, ideal: 180)
+                    .width(min: 150, ideal: 150)
 
                     TableColumn("Updated") { device in
                         Text(formatDate(device.updated))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 100, ideal: 120)
+                    .width(min: 100, ideal: 100)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let device = snapshot.errorDevices.first(where: { $0.id == ids.first }),

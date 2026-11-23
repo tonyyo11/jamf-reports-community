@@ -21,6 +21,16 @@ final class TileGridMetricsTests: XCTestCase {
             TileGridMetrics.columns(width: 1400, minTileWidth: 200, spacing: 12, count: 4), 4)
     }
 
+    func testRowsAreFilledEvenlyInsteadOfLeavingOneTileAlone() {
+        // Three fit: four tiles sit two and two, five sit three and two.
+        XCTAssertEqual(
+            TileGridMetrics.columns(width: 684, minTileWidth: 200, spacing: 12, count: 4), 2)
+        XCTAssertEqual(
+            TileGridMetrics.columns(width: 684, minTileWidth: 200, spacing: 12, count: 5), 3)
+        XCTAssertEqual(
+            TileGridMetrics.columns(width: 684, minTileWidth: 200, spacing: 12, count: 6), 3)
+    }
+
     func testColumnsSurviveUnusableWidths() {
         XCTAssertEqual(
             TileGridMetrics.columns(width: 0, minTileWidth: 220, spacing: 12, count: 4), 1)

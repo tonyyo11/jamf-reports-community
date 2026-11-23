@@ -242,14 +242,14 @@ struct PatchView: View {
                             .foregroundStyle(Theme.Colors.fg)
                             .accessibilityLabel("\(title.title), patch title")
                     }
-                    .width(min: 180, ideal: 220)
+                    .width(min: 180, ideal: 180)
 
                     TableColumn("Latest Version") { title in
                         Text(title.latest)
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 120, ideal: 150)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Released") { title in
                         let dateStr = releaseLookup[title.id] ?? ""
@@ -258,7 +258,7 @@ struct PatchView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .accessibilityLabel(dateStr.isEmpty ? L("No release date") : L("Released \(dateStr)"))
                     }
-                    .width(min: 90, ideal: 110)
+                    .width(min: 90, ideal: 90)
 
                     TableColumn("Days Behind") { title in
                         let dateStr = releaseLookup[title.id] ?? ""
@@ -272,7 +272,7 @@ struct PatchView: View {
                             .monospacedDigit()
                             .accessibilityLabel(days.map { L("\($0) days behind the latest release") } ?? L("Days behind unavailable"))
                     }
-                    .width(min: 80, ideal: 100)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("Compliance") { title in
                         let pct = PatchStatusService.parseCompliancePct(title.compliancePct)
@@ -288,7 +288,7 @@ struct PatchView: View {
                         .accessibilityLabel(pct == nil ? L("No data yet")
                                             : L("\(title.compliancePct) compliance rate"))
                     }
-                    .width(min: 80, ideal: 90)
+                    .width(min: 80, ideal: 80)
 
                     TableColumn("On Latest / Total") { title in
                         Text("\(title.onLatest) / \(title.total)")
@@ -297,7 +297,7 @@ struct PatchView: View {
                             .monospacedDigit()
                             .accessibilityLabel("\(title.onLatest) devices on latest version, \(title.total) total devices")
                     }
-                    .width(min: 120, ideal: 140)
+                    .width(min: 120, ideal: 120)
 
                     TableColumn("Failures") { title in
                         // No failure scan read: a dash, not 0 failing devices.
@@ -311,7 +311,7 @@ struct PatchView: View {
                                     : L("\($0) devices with patch failures")
                             } ?? L("No failure scan collected"))
                     }
-                    .width(min: 80, ideal: 90)
+                    .width(min: 80, ideal: 80)
                 }
                 .pageTableHeight(rows: sortedTitles.count)
             }

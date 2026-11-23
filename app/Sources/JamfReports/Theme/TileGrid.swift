@@ -6,12 +6,16 @@ enum TileGridMetrics {
     /// As many columns as fit at `minTileWidth` — the rule
     /// `GridItem(.adaptive(minimum:))` follows — but no more than there are
     /// tiles, so four tiles on a wide window stretch across the row instead
-    /// of leaving empty columns beside them. Never fewer than one.
+    /// of leaving empty columns beside them. The rows that takes are then
+    /// filled evenly, so four tiles where three fit sit two and two rather than
+    /// three and one. Never fewer than one.
     static func columns(width: CGFloat, minTileWidth: CGFloat, spacing: CGFloat,
                         count: Int) -> Int {
         guard width.isFinite, width > 0, minTileWidth > 0 else { return 1 }
         let fit = max(1, Int((width + spacing) / (minTileWidth + spacing)))
-        return min(fit, max(count, 1))
+        let tiles = max(count, 1)
+        let rows = (tiles + fit - 1) / fit
+        return (tiles + rows - 1) / rows
     }
 
     /// An equal share of `width` once the gutters between the columns are taken out.

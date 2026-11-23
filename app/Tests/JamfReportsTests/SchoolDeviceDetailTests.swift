@@ -155,7 +155,7 @@ final class SchoolDeviceDetailTests: XCTestCase {
         try scan([detail(1, ["deviceEnrollType": "dep", "totalCapacity": 64]),
                   detail(2, ["deviceEnrollType": "dep"])])
         let lines = try health().detailLines
-        XCTAssertTrue(lines.contains(L("Enrollment type: dep 2 (of 2 devices reporting)")))
+        XCTAssertTrue(lines.contains(L("Enrollment type: Automated Device Enrollment 2 (of 2 devices reporting)")))
         XCTAssertTrue(lines.contains { $0.contains("(") && $0.hasPrefix(L("Storage:")) })
     }
 }

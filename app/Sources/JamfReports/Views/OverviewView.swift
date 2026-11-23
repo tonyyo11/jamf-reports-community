@@ -1557,32 +1557,32 @@ struct OverviewView: View {
     private func recentTable(minHeight: CGFloat) -> some View {
         let rows = recentRows
         return Table(rows, selection: $activitySelection) {
-            // Minimums sum to about 580 pt, inside the card at PageScaffold.minSupportedWidth;
-            // ideals let a wide window show the full values.
+            // Ideals equal the minimums: the table sizes to their sum and shares any spare
+            // width out, so a larger ideal only made it scroll sideways in a narrow card.
             TableColumn("Device") { d in
                 Text(Self.shownOrDash(d.name)).font(.callout.weight(.semibold)).lineLimit(1)
             }
-            .width(min: 90, ideal: 160)
+            .width(min: 90, ideal: 90)
             TableColumn("Serial") { d in Mono(text: Self.shownOrDash(d.serial)) }
-                .width(min: 80, ideal: 110)
+                .width(min: 80, ideal: 80)
             TableColumn("macOS") { d in Mono(text: Self.shownOrDash(d.os)) }
-                .width(min: 48, ideal: 70)
+                .width(min: 48, ideal: 48)
             TableColumn("User") { d in
                 Text(Self.shownOrDash(d.user)).font(.footnote).foregroundStyle(.cellSecondary)
                     .lineLimit(1)
             }
-            .width(min: 70, ideal: 170)
+            .width(min: 70, ideal: 70)
             TableColumn("Department") { d in Text(d.department ?? "—").font(.footnote) }
-                .width(min: 50, ideal: 100)
+                .width(min: 50, ideal: 50)
             TableColumn("FV") { d in fileVaultMark(d.fileVault) }
                 .width(28)
             TableColumn("Failed Rules") { d in failurePill(d.failedRules) }
-                .width(min: 40, ideal: 90)
+                .width(min: 40, ideal: 40)
             TableColumn("Last Seen") { d in
                 Mono(text: Self.shownOrDash(d.lastSeen),
                      color: d.isStale ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
             }
-            .width(min: 60, ideal: 90)
+            .width(min: 60, ideal: 60)
         }
         .frame(minHeight: minHeight)
         .scrollContentBackground(.hidden)

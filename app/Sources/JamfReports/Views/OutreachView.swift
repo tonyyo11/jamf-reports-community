@@ -218,14 +218,14 @@ struct OutreachView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                                 .accessibilityLabel("\(device.displayName), device name")
                         }
-                        .width(min: 140, ideal: 180)
+                        .width(min: 140, ideal: 140)
 
                         TableColumn("Serial") { device in
                             Text(device.displaySerial)
                                 .font(Theme.Fonts.mono(11))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
-                        .width(min: 110, ideal: 130)
+                        .width(min: 110, ideal: 110)
 
                         TableColumn("User/Manager") { device in
                             let displayUser = device.user.isEmpty ? "—" : device.user
@@ -233,7 +233,7 @@ struct OutreachView: View {
                                 .font(.footnote)
                                 .foregroundStyle(displayUser == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
-                        .width(min: 120, ideal: 150)
+                        .width(min: 120, ideal: 120)
 
                         TableColumn("Email") { device in
                             let displayEmail = device.email.isEmpty ? "—" : device.email
@@ -242,7 +242,7 @@ struct OutreachView: View {
                                 .foregroundStyle(displayEmail == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                                 .accessibilityLabel(displayEmail == "—" ? L("No email") : L("Email \(displayEmail)"))
                         }
-                        .width(min: 140, ideal: 180)
+                        .width(min: 140, ideal: 140)
 
                         TableColumn("Department") { device in
                             let displayDept = device.department.isEmpty ? "—" : device.department
@@ -250,7 +250,7 @@ struct OutreachView: View {
                                 .font(.footnote)
                                 .foregroundStyle(displayDept == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
-                        .width(min: 100, ideal: 120)
+                        .width(min: 100, ideal: 100)
 
                         TableColumn("Days Since") { device in
                             let age = ageText(device)
@@ -261,7 +261,7 @@ struct OutreachView: View {
                                 .accessibilityLabel(
                                     age == "1" ? L("\(age) day since \(staleRule.basisPhrase)") : L("\(age) days since \(staleRule.basisPhrase)"))
                         }
-                        .width(min: 80, ideal: 90)
+                        .width(min: 80, ideal: 80)
 
                         TableColumn("Last Contact") { device in
                             let relative = relativeDate(from: device.lastContact)
@@ -270,7 +270,7 @@ struct OutreachView: View {
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityLabel("Last contact \(relative)")
                         }
-                        .width(min: 100, ideal: 120)
+                        .width(min: 100, ideal: 100)
                     }
                     .pageTableHeight(rows: devices.count)
                     .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { ids in
