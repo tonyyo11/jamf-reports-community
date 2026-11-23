@@ -16327,7 +16327,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld von %lld hinter den neuesten Signaturen dieses Tenants"
+            "value" : "%lld von %lld hinter den neuesten Signaturen dieses Mandanten"
           }
         },
         "en" : {
@@ -20658,7 +20658,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "„%1$@“ ist hier und in „%3$@“ profiles.%2$@. Jede Zusammenfassung zählt diesen Tenant doppelt."
+            "value" : "„%1$@“ ist hier und in „%3$@“ profiles.%2$@. Jede Zusammenfassung zählt diesen Mandanten doppelt."
           }
         },
         "en" : {
@@ -43676,7 +43676,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte un inquilino de Jamf Protect con un cliente de API. Sus alertas, ordenadores y planes se recopilan con este espacio de trabajo."
+            "value" : "Conecte un tenant de Jamf Protect con un cliente de API. Sus alertas, ordenadores y planes se recopilan con este espacio de trabajo."
           }
         },
         "fr" : {
@@ -43700,7 +43700,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte um locatário do Jamf Protect com um cliente de API. Seus alertas, computadores e planos são coletados com este espaço de trabalho."
+            "value" : "Conecte um tenant do Jamf Protect com um cliente de API. Seus alertas, computadores e planos são coletados com este espaço de trabalho."
           }
         }
       }
@@ -133560,7 +133560,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zwei Umgebungen erfassen denselben Tenant"
+            "value" : "Zwei Umgebungen erfassen denselben Mandanten"
           }
         },
         "es" : {
