@@ -7,77 +7,20 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
-### Fixed
-
-- The French Overview subtitle no longer repeats "Référentiel" when no baseline label is set.
-- Five translated strings now use the glossary's word for a tenant: "tenant" in Spanish and
-  Brazilian Portuguese, "Mandant" in German.
-- After New workspace from the Add sheet, Open Overview shows the workspace just set up instead
-  of the one that was open before.
-- Generate on a Jamf School workspace opens on the School template again. It had opened with no
-  template, the Jamf Pro sheet list and a `jamf_report_` file name.
-- A workspace whose jamf-cli profile no longer exists is skipped by the background refresh,
-  self-repair and catch-up, as scheduled runs already skip it, instead of failing every hour. A
-  Refresh you start says jamf-cli has no profile by that name rather than asking you to
-  re-authenticate.
-- The Jamf Protect card in setup and the Add sheet no longer mentions compliance signals or
-  insights, which Jamf removed from Protect.
-- The setup output box reads "No output." once a step has finished with nothing printed.
-- Setting up a profile jamf-cli already has, from the Add sheet or the first launch, waits for a
-  background refresh or scheduled run to stop at its next source before the first collect,
-  instead of reporting the first collect as failed.
-- A workspace set up again under a name used before no longer shows "Shared config needs
-  confirming" for settings only the old config.yaml had. Setup now confirms the whole file it
-  writes, settings it leaves unset included.
-- The inventory CSV fills every column again. Computer fields are written as `section.key`
-  columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
-  ID and UDID blank, and extension attribute values are matched to Macs by name.
-- In the PDF report, a group heading is no longer left alone at the foot of a page with its
-  chart on the next, and the closing integrity note no longer prints by itself on a last page.
-- An app or configuration profile that jamf-cli could not name (shown as its own negative ID)
-  now reads "Unknown app (ID -5)" in the workbook, the HTML report and the Policies screen. It
-  is still counted, since its install errors are real.
-- The Missing Secure Token tab and other Boolean EA tabs show a percentage on the "Other" row as
-  well as on the pass row. The Compliance Posture tab no longer writes an empty "Framework:"
-  line when no framework is set (the row stays, so the table below does not move).
-- The HTML report's Mobile devices group no longer repeats the device count as a tile, and
-  counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
-- A single device now reads "1 device" instead of "1 devices" on the Overview mobile card, the failing-rules list, the Security Agents card, Recent Activity and the unused-groups pill.
-- Run names such as "CLI Generate" keep their acronyms upper case in Reports and Run History.
-- The file prefix example on Config > Output shows the Jamf School name (`<prefix>_school_report_...`) on a School workspace.
-- Check on a Jamf Security Cloud login runs the same read-only `security risk list` the collect runs and reports whether it answered, instead of "Unreachable" (`jamf-cli doctor` has no connection probe for a login without a URL).
-- The "Profiles not in an environment" card no longer shows the "not a workspace" explanation above a Security Cloud login's Add to this environment button.
-- The Security Posture template description in the catalog matches the template again.
-- Overview: the Recent Activity table fits its card at the narrowest window, and a Mac with no inventory shows a dash in every empty cell.
-- Data Sources: the jamf-cli card now takes the full width on a Jamf Pro workspace, so command lines no longer wrap mid-word.
-- Overview: the hover arrow no longer covers the "versions" pill on macOS Distribution or the "View all" pill on Top Failing Rules.
-- Backups: Reveal, Diff Latest and Delete stay reachable at narrow widths (icons alone when the row is tight), and the Created column no longer truncates.
-- Health Audit: the Finding and Recommendation columns use the available width.
-- Data Sources: the Snapshot Archive Families table fits its card and shows every row.
-- Recent Activity, Reports, Computers, Mobile Devices, School Devices, Patch, Policies and
-  Profiles, OS Updates, Groups & Searches and Offline Outreach size their tables from the
-  narrowest column widths and share out the width that is left, so they scroll sideways only when
-  the window is narrower than those columns (before, they scrolled at a 960-point window).
-- Health Audit: the Recommendation column gets the width the fixed columns leave, and its full
-  text shows on hover.
-- Tile rows are filled evenly: four tiles where three fit sit two and two (the Jamf School
-  Overview's Stale tile no longer sits alone on its row).
-- The Jamf School Overview's device health card names the enrollment type ("Automated Device
-  Enrollment", "Manual") instead of School's raw `dep` and `manual`. The workbook keeps School's
-  value.
-
-## [2.12.0] - 2026-11-13
+## [2.12.0] - 2026-11-24
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the
 Platform API, Jamf Protect and Jamf Security Cloud logins that belong to it, named in a new
 `profiles:` block. Jamf Protect can also be an environment of its own. Mobile devices are now
-first-class, with their own daily figures, an Overview card, Health Audit findings and Trends. The
-app runs in English, French, Spanish, German, Brazilian Portuguese, Italian and Japanese, and
-reports stay in English. A report run can write one CSV per workbook tab, and a manifest that
-`jamf-reports verify` checks, optionally timestamped by an RFC 3161 authority. Percentages can be
-whole numbers, and a jamf-cli login that sees only some Jamf Pro sites is noted in every report.
-A review of the whole release fixed what it found and hardened the app against files another Mac
-writes into a shared workspace.
+first-class, with their own daily figures, an Overview card, Health Audit findings and Trends.
+Management health shows the MDM profile, user approval, Jamf binary and enrollment token problems
+Jamf already reports, and a Jamf School workspace gets a device health card and a weekly device
+scan. The app runs in English, French, Spanish, German, Brazilian Portuguese, Italian and
+Japanese, and reports stay in English. A report run can write one CSV per workbook tab, and a
+manifest that `jamf-reports verify` checks, optionally timestamped by an RFC 3161 authority.
+Percentages can be whole numbers, and a jamf-cli login that sees only some Jamf Pro sites is noted
+in every report. A review of the whole release fixed what it found and hardened the app against
+files another Mac writes into a shared workspace.
 
 ### Added
 
@@ -407,6 +350,62 @@ writes into a shared workspace.
 
 ### Fixed
 
+- The French Overview subtitle no longer repeats "Référentiel" when no baseline label is set.
+- Five translated strings now use the glossary's word for a tenant: "tenant" in Spanish and
+  Brazilian Portuguese, "Mandant" in German.
+- After New workspace from the Add sheet, Open Overview shows the workspace just set up instead
+  of the one that was open before.
+- Generate on a Jamf School workspace opens on the School template again. It had opened with no
+  template, the Jamf Pro sheet list and a `jamf_report_` file name.
+- A workspace whose jamf-cli profile no longer exists is skipped by the background refresh,
+  self-repair and catch-up, as scheduled runs already skip it, instead of failing every hour. A
+  Refresh you start says jamf-cli has no profile by that name rather than asking you to
+  re-authenticate.
+- The Jamf Protect card in setup and the Add sheet no longer mentions compliance signals or
+  insights, which Jamf removed from Protect.
+- The setup output box reads "No output." once a step has finished with nothing printed.
+- Setting up a profile jamf-cli already has, from the Add sheet or the first launch, waits for a
+  background refresh or scheduled run to stop at its next source before the first collect,
+  instead of reporting the first collect as failed.
+- A workspace set up again under a name used before no longer shows "Shared config needs
+  confirming" for settings only the old config.yaml had. Setup now confirms the whole file it
+  writes, settings it leaves unset included.
+- The inventory CSV fills every column again. Computer fields are written as `section.key`
+  columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
+  ID and UDID blank, and extension attribute values are matched to Macs by name.
+- In the PDF report, a group heading is no longer left alone at the foot of a page with its
+  chart on the next, and the closing integrity note no longer prints by itself on a last page.
+- An app or configuration profile that jamf-cli could not name (shown as its own negative ID)
+  now reads "Unknown app (ID -5)" in the workbook, the HTML report and the Policies screen. It
+  is still counted, since its install errors are real.
+- The Missing Secure Token tab and other Boolean EA tabs show a percentage on the "Other" row as
+  well as on the pass row. The Compliance Posture tab no longer writes an empty "Framework:"
+  line when no framework is set (the row stays, so the table below does not move).
+- The HTML report's Mobile devices group no longer repeats the device count as a tile, and
+  counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
+- A single device now reads "1 device" instead of "1 devices" on the Overview mobile card, the failing-rules list, the Security Agents card, Recent Activity and the unused-groups pill.
+- Run names such as "CLI Generate" keep their acronyms upper case in Reports and Run History.
+- The file prefix example on Config > Output shows the Jamf School name (`<prefix>_school_report_...`) on a School workspace.
+- Check on a Jamf Security Cloud login runs the same read-only `security risk list` the collect runs and reports whether it answered, instead of "Unreachable" (`jamf-cli doctor` has no connection probe for a login without a URL).
+- The "Profiles not in an environment" card no longer shows the "not a workspace" explanation above a Security Cloud login's Add to this environment button.
+- The Security Posture template description in the catalog matches the template again.
+- Overview: the Recent Activity table fits its card at the narrowest window, and a Mac with no inventory shows a dash in every empty cell.
+- Data Sources: the jamf-cli card now takes the full width on a Jamf Pro workspace, so command lines no longer wrap mid-word.
+- Overview: the hover arrow no longer covers the "versions" pill on macOS Distribution or the "View all" pill on Top Failing Rules.
+- Backups: Reveal, Diff Latest and Delete stay reachable at narrow widths (icons alone when the row is tight), and the Created column no longer truncates.
+- Health Audit: the Finding and Recommendation columns use the available width.
+- Data Sources: the Snapshot Archive Families table fits its card and shows every row.
+- Recent Activity, Reports, Computers, Mobile Devices, School Devices, Patch, Policies and
+  Profiles, OS Updates, Groups & Searches and Offline Outreach size their tables from the
+  narrowest column widths and share out the width that is left, so they scroll sideways only when
+  the window is narrower than those columns (before, they scrolled at a 960-point window).
+- Health Audit: the Recommendation column gets the width the fixed columns leave, and its full
+  text shows on hover.
+- Tile rows are filled evenly: four tiles where three fit sit two and two (the Jamf School
+  Overview's Stale tile no longer sits alone on its row).
+- The Jamf School Overview's device health card names the enrollment type ("Automated Device
+  Enrollment", "Manual") instead of School's raw `dep` and `manual`. The workbook keeps School's
+  value.
 - Right-click menus use one capitalisation everywhere (Copy Name, Copy Serial Number, Copy User Email, Copy Email); Computers, Offline Outreach and Device Lookup used sentence case.
 - A metric's detail page measures Change against the Previous figure shown beside it, as the Overview tiles do, instead of against the first day in the history.
 - Jamf Protect's Kill-Chain Stage card says it counts all alerts, open and resolved, so it no longer reads as disagreeing with the open-alert card above it.
