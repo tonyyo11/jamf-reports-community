@@ -9,14 +9,13 @@ nothing is tracked in two places.
 
 ## Open epics
 
-- [Epic: 2.12 — AI Governance, environment model, mobile devices first-class, and deferred 2.11 audit findings](https://github.com/tonyyo11/jamf-reports-community/issues/305)
 - [Epic: Jamf Pro 11.32–11.34 API — action logs, Apple Vision Pro, and inventory fields not read yet](https://github.com/tonyyo11/jamf-reports-community/issues/390)
 - [Epic: 2.13 — server and admin health, new sources, change and aging views, micro-refresh and Automation](https://github.com/tonyyo11/jamf-reports-community/issues/421)
 
 Closed epics are not listed here — see the
 [closed issues](https://github.com/tonyyo11/jamf-reports-community/issues?q=is%3Aissue+is%3Aclosed+label%3Aenhancement)
-for the worked-off history (#101–#104, #147, #182, #207, #226, #281, #283 and #284, all
-shipped between 2026-05 and 2026-10).
+for the worked-off history (#101–#104, #147, #182, #207, #226, #281, #283, #284 and #305,
+all shipped between 2026-05 and 2026-11).
 
 ## Process
 
