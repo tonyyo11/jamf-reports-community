@@ -803,6 +803,13 @@ extension WorkspaceStore {
     nonisolated static func refusedBeforeAutomaticCollect(
         profile: String, config: ReportConfig?
     ) -> Bool {
+        // Scheduled runs skip a workspace whose jamf-cli profile is gone; so does every
+        // automatic collect, which would otherwise fail on the auth probe every hour.
+        if ProfileAuthMethod.isAbsent(profile: profile) {
+            AppLogger.collect.info(
+                "Automatic collect stood down for \(profile, privacy: .private): no jamf-cli profile")
+            return true
+        }
         guard let refusal = CollectRouter.runRefusal(
             profile: profile, operation: "Automatic collect", config: config) else { return false }
         AppLogger.collect.info(
@@ -990,7 +997,7 @@ extension WorkspaceStore {
 
     /// A profile's decoded config.yaml. Best-effort — nil when the workspace has
     /// no config or it fails to decode.
-    nonisolated private static func loadReportConfig(profile: String) -> ReportConfig? {
+    nonisolated static func loadReportConfig(profile: String) -> ReportConfig? {
         guard ProfileService.isValid(profile),
               let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),

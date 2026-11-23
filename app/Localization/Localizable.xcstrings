@@ -29885,6 +29885,46 @@
         }
       }
     },
+    "Another collect is still running. Try again when it finishes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine andere Erfassung läuft noch. Versuchen Sie es erneut, wenn sie abgeschlossen ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otra recopilación sigue en curso. Vuelva a intentarlo cuando termine."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une autre collecte est encore en cours. Réessayez quand elle sera terminée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’altra raccolta è ancora in corso. Riprova al termine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の収集がまだ実行中です。終了してからもう一度お試しください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outra coleta ainda está em andamento. Tente novamente quando ela terminar."
+          }
+        }
+      }
+    },
     "Another line makes the same profile name. Pick another label." : {
       "localizations" : {
         "de" : {
@@ -43625,42 +43665,42 @@
         }
       }
     },
-    "Connect a Jamf Protect tenant with an API client. Its alerts, computers and insights are collected with this workspace." : {
+    "Connect a Jamf Protect tenant with an API client. Its alerts, computers and plans are collected with this workspace." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbinden Sie einen Jamf Protect-Mandanten mit einem API-Client. Seine Alarme, Computer und Insights werden mit diesem Arbeitsbereich erfasst."
+            "value" : "Verbinden Sie einen Jamf Protect-Mandanten mit einem API-Client. Seine Warnungen, Computer und Pläne werden mit diesem Arbeitsbereich erfasst."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte un tenant de Jamf Protect con un cliente de API. Sus alertas, ordenadores y análisis se recopilan junto con este espacio de trabajo."
+            "value" : "Conecte un inquilino de Jamf Protect con un cliente de API. Sus alertas, ordenadores y planes se recopilan con este espacio de trabajo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connectez un tenant Jamf Protect avec un client API. Ses alertes, ordinateurs et analyses sont collectés avec cet espace de travail."
+            "value" : "Connectez un tenant Jamf Protect avec un client API. Ses alertes, ordinateurs et plans sont collectés avec cet espace de travail."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connettere un tenant Jamf Protect con un client API. I suoi avvisi, computer e insight vengono raccolti insieme a questo spazio di lavoro."
+            "value" : "Collega un tenant Jamf Protect con un client API. I suoi avvisi, computer e piani vengono raccolti con questo spazio di lavoro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APIクライアントを使ってJamf Protectテナントに接続します。アラート、コンピュータ、インサイトは、このワークスペースとともに収集されます。"
+            "value" : "API クライアントで Jamf Protect テナントに接続します。そのアラート、コンピュータ、プランはこのワークスペースで収集されます。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecte um tenant do Jamf Protect com um cliente de API. Os alertas, computadores e insights dele são coletados com este espaço de trabalho."
+            "value" : "Conecte um locatário do Jamf Protect com um cliente de API. Seus alertas, computadores e planos são coletados com este espaço de trabalho."
           }
         }
       }
@@ -56593,42 +56633,42 @@
         }
       }
     },
-    "Endpoint detection, analytics, and compliance signals." : {
+    "Endpoint detection, alerts and analytics." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Endpoint-Erkennung, Analysen und Compliance-Signale."
+            "value" : "Endpoint-Erkennung, Warnungen und Analysen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Señales de detección de puntos finales, análisis y cumplimiento."
+            "value" : "Detección de endpoints, alertas y análisis."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Signaux de détection, d’analyse et de conformité des points de terminaison."
+            "value" : "Détection sur les terminaux, alertes et analyses."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rilevamento degli endpoint, analisi e segnali di conformità."
+            "value" : "Rilevamento degli endpoint, avvisi e analisi."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エンドポイントの検出、分析、コンプライアンスのシグナル。"
+            "value" : "エンドポイントの検出、アラート、分析。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detecção de endpoint, análises e sinais de conformidade."
+            "value" : "Detecção de endpoint, alertas e análises."
           }
         }
       }
@@ -79595,10 +79635,10 @@
     },
     "Manual" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manuelle"
+            "value" : "Manuell"
           }
         },
         "es" : {
@@ -79607,16 +79647,10 @@
             "value" : "Manual"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manuell"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manual"
+            "value" : "Manuelle"
           }
         },
         "it" : {
@@ -79629,6 +79663,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "手動"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual"
           }
         }
       }
@@ -87471,6 +87511,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ainda sem saída."
+          }
+        }
+      }
+    },
+    "No output." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Ausgabe."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin salida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune sortie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun output."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出力はありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem saída."
           }
         }
       }

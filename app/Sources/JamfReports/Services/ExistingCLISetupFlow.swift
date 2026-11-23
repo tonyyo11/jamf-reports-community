@@ -386,6 +386,9 @@ final class ExistingCLISetupFlow {
     /// row, never a failed workspace: the workspace exists and collects its MDM.
     func run(
         connectionRunner: ConnectionCheck.Runner? = ConnectionCheck.liveRunner(),
+        // A background refresh or scheduled run may hold the one collect slot; the GUI passes
+        // `WorkspaceStore.manualCollectMayStart`, which asks it to stop and waits.
+        mayCollect: @escaping () async -> Bool = { true },
         initialize: @escaping (String, ProfilesConfigWriter.NewWorkspace?) async throws -> Int32 = {
             profile, kind in
             try await CLIBridge().initializeWorkspace(
@@ -471,6 +474,11 @@ final class ExistingCLISetupFlow {
                     }
                 }
                 stage = .collect
+                guard await mayCollect() else {
+                    fail(name, L("Another collect is still running. Try again when it finishes."),
+                         at: .collect)
+                    continue
+                }
                 statuses[name] = .collecting
                 progress = CollectProgress()
                 kindStatuses = []

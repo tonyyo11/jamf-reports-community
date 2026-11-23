@@ -319,7 +319,9 @@ struct ExistingCLISetupView: View {
                     ) {
                         guard !flow.isRunning, !flow.selected.isEmpty, flow.proposalResolved
                         else { return }
-                        Task { await flow.run() }
+                        Task {
+                            await flow.run(mayCollect: { await workspace.manualCollectMayStart() })
+                        }
                     }
                     .disabled(flow.isRunning || flow.selected.isEmpty || !flow.proposalResolved)
                     if !flow.proposalResolved {

@@ -298,7 +298,7 @@ struct AddSheet: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Connect a Jamf Protect tenant with an API client. Its alerts, computers and insights are collected with this workspace.")
+                        Text("Connect a Jamf Protect tenant with an API client. Its alerts, computers and plans are collected with this workspace.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -638,7 +638,7 @@ struct AddSheet: View {
         let flow = ExistingCLISetupFlow(profiles: [AddSheetPlan.adoptionProfile(for: row)])
         adoptFlow = flow
         adoptingName = row.name
-        await flow.run()
+        await flow.run(mayCollect: { await workspace.manualCollectMayStart() })
         guard flow.canContinue else {
             errorText = flow.completionText
             return

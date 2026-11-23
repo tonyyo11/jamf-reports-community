@@ -9,6 +9,23 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- After New workspace from the Add sheet, Open Overview shows the workspace just set up instead
+  of the one that was open before.
+- Generate on a Jamf School workspace opens on the School template again. It had opened with no
+  template, the Jamf Pro sheet list and a `jamf_report_` file name.
+- A workspace whose jamf-cli profile no longer exists is skipped by the background refresh,
+  self-repair and catch-up, as scheduled runs already skip it, instead of failing every hour. A
+  Refresh you start says jamf-cli has no profile by that name rather than asking you to
+  re-authenticate.
+- The Jamf Protect card in setup and the Add sheet no longer mentions compliance signals or
+  insights, which Jamf removed from Protect.
+- The setup output box reads "No output." once a step has finished with nothing printed.
+- Setting up a profile jamf-cli already has, from the Add sheet or the first launch, waits for a
+  background refresh or scheduled run to stop at its next source before the first collect,
+  instead of reporting the first collect as failed.
+- A workspace set up again under a name used before no longer shows "Shared config needs
+  confirming" for settings only the old config.yaml had. Setup now confirms the whole file it
+  writes, settings it leaves unset included.
 - The inventory CSV fills every column again. Computer fields are written as `section.key`
   columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
   ID and UDID blank, and extension attribute values are matched to Macs by name.

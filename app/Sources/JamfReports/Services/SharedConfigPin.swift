@@ -744,14 +744,6 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         return keys
     }
 
-    /// The pinned keys a config.yaml text sets, for a write this Mac made (onboarding, scaffold).
-    static func keysSet(inYAML text: String) -> Set<Key> {
-        guard let root = try? ConfigLoader.rawMapping(fromYAML: text) else { return [] }
-        return Set(Key.allCases.filter {
-            ConfigLoader.rawValue(at: $0.rawValue.components(separatedBy: "."), in: root) != nil
-        })
-    }
-
     /// The profile whose workspace config.yaml `url` is, nil for any other file.
     static func profile(forConfigAt url: URL) -> String? {
         guard url.lastPathComponent == "config.yaml" else { return nil }
@@ -772,7 +764,10 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     ) {
         guard let profile = profile ?? Self.profile(forConfigAt: url),
               let values = current(fromYAML: written) else { return }
-        let drifts = keysSet(inYAML: written).map {
+        // Every key, the ones the file leaves unset too: a pin left by an earlier workspace of
+        // this name would otherwise read a key the old file had as changed (beta 2690). Each is
+        // confirmed only while config.yaml still holds what was written.
+        let drifts = Key.allCases.map {
             Drift(key: $0, pinned: "", current: "", currentToken: $0.token(of: values))
         }
         guard !drifts.isEmpty else { return }
