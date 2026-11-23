@@ -1188,6 +1188,12 @@ final class OnboardingFlow {
             workspaceStore.reloadFromDisk()
         }
         guard !workspaceStore.demoMode else { return }
+        // From the Add sheet another workspace is still active; Overview should open on this one.
+        let created = profileName.trimmed
+        if workspaceStore.profile != created,
+           workspaceStore.profiles.contains(where: { $0.name == created }) {
+            workspaceStore.setProfile(created)
+        }
         saveWebhook(in: workspaceStore)
         let base = AutomationPolicy.current()
         guard automation.enabled, !base.isManaged else { return }

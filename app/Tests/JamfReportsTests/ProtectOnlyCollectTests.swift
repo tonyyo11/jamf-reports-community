@@ -521,4 +521,15 @@ final class ProtectOnlyCollectTests: XCTestCase {
         XCTAssertEqual(state.selectedTemplateID, "custom")
         XCTAssertFalse(state.request().runsAudit)
     }
+
+    /// A Jamf School workspace has no Jamf Pro product either; ReportsView sets both flags,
+    /// school first, and the School template must survive the second (beta 2690).
+    @MainActor
+    func testGenerateOnASchoolWorkspaceKeepsTheSchoolTemplate() {
+        let state = GenerateSheetState()
+        state.schoolWorkspace = true
+        state.noJamfPro = true
+        XCTAssertEqual(state.offeredTemplates.map(\.identifier), [SchoolTemplate().identifier])
+        XCTAssertEqual(state.selectedTemplateID, SchoolTemplate().identifier)
+    }
 }

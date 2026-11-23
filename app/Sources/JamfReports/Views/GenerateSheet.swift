@@ -64,9 +64,10 @@ final class GenerateSheetState {
     /// A Protect-only environment (no Jamf Pro): the Jamf Pro templates and `pro audit` have no
     /// data there, so only the Custom template (which can pick the Protect sheets) is offered.
     nonisolated static let customTemplateID = "custom"
+    /// A Jamf School workspace has no Jamf Pro either, but keeps its School template.
     var noJamfPro = false {
         didSet {
-            guard noJamfPro else { return }
+            guard noJamfPro, !schoolWorkspace else { return }
             selectedTemplateID = Self.customTemplateID
         }
     }

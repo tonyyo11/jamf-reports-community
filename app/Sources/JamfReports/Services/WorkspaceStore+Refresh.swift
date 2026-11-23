@@ -47,6 +47,12 @@ extension WorkspaceStore {
     /// `beginCollect` would replace the status line of the collect that is running.
     func runBackgroundRefresh(profile: String, tier: CollectionTier) async throws -> Int32 {
         if let refusal = generateRefusal() { throw refusal }
+        // Exit 0 with the data still stale reads as a failure, so the coordinator backs off.
+        let refused = await Task.detached(priority: .utility) {
+            WorkspaceStore.refusedBeforeAutomaticCollect(
+                profile: profile, config: WorkspaceStore.loadReportConfig(profile: profile))
+        }.value
+        if refused { return 0 }
         beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
         defer { endCollect(for: profile) }
         Self.automaticCollectsRunning.withLock { $0 += 1 }

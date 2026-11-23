@@ -1022,6 +1022,11 @@ try await ReportEngine.schoolGenerateReport(
                 timestamp: Date(), level: .fail,
                 text: "[error] jamf-cli not found — install via Homebrew: brew install jamf-cli"
             ))
+        } else if ProfileAuthMethod.isAbsent(profile: profile) {
+            onLine(.init(
+                timestamp: Date(), level: .fail,
+                text: "[error] " + ReportEngineError.profileNotFound(profile).englishDescription
+            ))
         } else {
             onLine(.init(
                 timestamp: Date(), level: .fail,

@@ -620,7 +620,7 @@ struct OnboardingView: View {
                         Text("Jamf Protect")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Text("Endpoint detection, analytics, and compliance signals.")
+                        Text("Endpoint detection, alerts and analytics.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -1212,7 +1212,7 @@ struct OnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     if lines.isEmpty {
-                        Text("No output yet.")
+                        Text(exitCode == nil ? L("No output yet.") : L("No output."))
                             .font(Theme.Fonts.mono(11.5))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
