@@ -877,6 +877,16 @@ struct ProfileFailureRow: Decodable, Sendable {
     }
 }
 
+/// jamf-cli names a profile or app it could not resolve (a built-in item with a negative id)
+/// by its id, so the row reads "-5" twice. Counted as the errors it carries, shown as unknown.
+enum FailureRowName {
+    static func display(name: String?, id: String?, noun: String) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard trimmed.isEmpty || trimmed == id else { return trimmed }
+        return id.map { "Unknown \(noun) (ID \($0))" } ?? "Unknown \(noun)"
+    }
+}
+
 // MARK: - Duplicate serials
 // `jamf-cli pro report duplicate-serials --output json` (v1.23.0+)
 // Shape (bare array, flat, pre-grouped by serial + ordered by numeric id):

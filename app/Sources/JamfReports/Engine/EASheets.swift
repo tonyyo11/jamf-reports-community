@@ -61,6 +61,9 @@ struct EASheetWriter: Sendable {
         row += 1
         ws.write("Other", row: row, col: 0, format: .cell)
         ws.write(falseCount, row: row, col: 1, format: falseCount > 0 ? .red : .cell)
+        if reported > 0 {
+            ws.write(Double(falseCount) / Double(reported), row: row, col: 2, format: .pct)
+        }
         row += 1
         writeBlankRow(unknownCount, on: ws, row: row)
     }

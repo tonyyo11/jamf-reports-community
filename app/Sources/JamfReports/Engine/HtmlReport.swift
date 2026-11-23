@@ -429,7 +429,7 @@ struct HtmlReport: Sendable {
         let enabled = asInt(summary["enabled"]) ?? 0
         let disabled = asInt(summary["disabled"]) ?? 0
         guard !findings.isEmpty else {
-            return .omitted("no policy findings; \(total) policies, \(enabled) enabled")
+            return .omitted("no policy findings; \(total == 1 ? "1 policy" : "\(total) policies"), \(enabled) enabled")
         }
         func rank(_ finding: [String: Any]) -> Int {
             switch (finding["severity"] as? String ?? "").lowercased() {
@@ -452,7 +452,7 @@ struct HtmlReport: Sendable {
             default: return nil
             }
         }
-        let note = "\(total) policies: \(enabled) enabled, \(disabled) disabled. "
+        let note = "\(total == 1 ? "1 policy" : "\(total) policies"): \(enabled) enabled, \(disabled) disabled. "
             + "\(findings.count) finding\(findings.count == 1 ? "" : "s"), "
             + "\(asInt(summary["warnings"]) ?? 0) of them warnings."
         let body = "<p class=\"block-note\">\(HtmlSectionFormatters.escapeHTML(note))</p>"
@@ -484,7 +484,7 @@ struct HtmlReport: Sendable {
         _ report: FailureReport?, id: String, noun: String, kind: String, total: Int
     ) -> HtmlBlock {
         guard let report else { return .omitted("no \(kind) snapshot") }
-        let window = report.days.map { "the last \($0) days" } ?? "the report window"
+        let window = report.days.map { "the last \(HtmlSectionFormatters.plural($0, "day"))" } ?? "the report window"
         guard !report.failures.isEmpty else {
             return .omitted("no \(noun) reported install errors in \(window)")
         }
@@ -492,15 +492,20 @@ struct HtmlReport: Sendable {
             (asInt($0["errors"]) ?? 0) > (asInt($1["errors"]) ?? 0)
         }
         let rows = ordered.map { item in
-            [item["name"] as? String ?? "", item["device_type"] as? String ?? "",
+            [FailureRowName.display(
+                name: item["name"] as? String,
+                id: item["id"] as? String ?? asInt(item["id"]).map(String.init),
+                noun: noun == "app" ? "app" : "profile"),
+             item["device_type"] as? String ?? "",
              "\(asInt(item["errors"]) ?? 0)", "\(asInt(item["devices"]) ?? 0)",
              item["top_error"] as? String ?? item["last_error"] as? String ?? ""]
         }
         let count = ordered.count
         let healthy = total > count ? " (\(total - count) of \(total) had none)" : ""
         let note = "\(count) \(noun)\(count == 1 ? "" : "s") reported install errors in "
-            + "\(window)\(healthy): \(report.totalErrors) errors on \(report.uniqueDevices) "
-            + "device\(report.uniqueDevices == 1 ? "" : "s")."
+            + "\(window)\(healthy): "
+            + "\(HtmlSectionFormatters.plural(report.totalErrors, "error")) on "
+            + "\(HtmlSectionFormatters.plural(report.uniqueDevices, "device"))."
         let body = "<p class=\"block-note\">\(HtmlSectionFormatters.escapeHTML(note))</p>"
             + HtmlSectionFormatters.renderCappedTable(
                 headers: ["Name", "Device type", "Errors", "Devices", "Top error"],

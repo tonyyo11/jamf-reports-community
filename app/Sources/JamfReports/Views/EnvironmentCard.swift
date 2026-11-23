@@ -261,6 +261,15 @@ struct EnvironmentCard: View {
         actionError = nil
         checking.insert(profile)
         let started = state.workspace
+        if row.slot == .securityCloud {
+            Task {
+                let line = await SecurityCloudCheck.run(profile: profile)
+                checking.remove(profile)
+                guard started == state.workspace else { return }
+                checks[profile] = line ?? L("jamf-cli is not installed.")
+            }
+            return
+        }
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: CLIBridge()))
         Task {
             let outcome = await service.run(profile: profile)
@@ -271,6 +280,10 @@ struct EnvironmentCard: View {
             case .notInstalled: checks[profile] = L("jamf-cli is not installed.")
             case .failed(let reason): checks[profile] = ConfigSchema.displayText(reason)
             case .report(let report):
+                if report.health == .notChecked {
+                    checks[profile] = SourcesView.noConnectionCheckNote
+                    return
+                }
                 checks[profile] = SourcesView.healthPill(report.health).label + " · "
                     + SourcesView.connectivitySummary(report.connectivity)
             }

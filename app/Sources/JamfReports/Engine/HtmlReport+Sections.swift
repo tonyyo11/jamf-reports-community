@@ -1022,7 +1022,7 @@ extension HtmlReport {
         }
         let count = summaries.count
         return .shown(f.block(id: "timeline", title: "Historical trends", body: """
-            <p class="timeline-note">\(count) snapshots &middot; metrics from workspace
+            <p class="timeline-note">\(HtmlSectionFormatters.plural(count, "snapshot")) &middot; metrics from workspace
             summaries</p>
             \(skippedNote)
             \(renderTimelineSVG(summaries: summaries))

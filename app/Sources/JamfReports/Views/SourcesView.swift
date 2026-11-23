@@ -78,7 +78,8 @@ struct SourcesView: View {
                     demo: workspace.demoMode,
                     onChanged: { reloadEnvironment(); reloadSourcesPlan(); reloadUnassigned() })
             }
-            HStack(alignment: .top, spacing: 14) {
+            // Stacked, so the command card keeps the full width its monospace lines need.
+            VStack(alignment: .leading, spacing: 14) {
                 cliCard
                 // Jamf School has no Extension Attributes to adopt.
                 if workspace.environmentProducts.has(.jamfPro) { eaCard }
@@ -566,7 +567,8 @@ struct SourcesView: View {
             doctorRow(L("Server"), report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
             doctorRow(L("Auth method"), report.profile?.authMethod ?? "—")
             doctorRow(L("Credentials"), Self.credentialSummary(report))
-            doctorRow(L("Connectivity"), Self.connectivitySummary(report.connectivity))
+            doctorRow(L("Connectivity"), report.health == .notChecked
+                ? Self.noConnectionCheckNote : Self.connectivitySummary(report.connectivity))
 
             if report.health == .environmentReference {
                 doctorMessageRow(Self.environmentReferenceNote, tone: .warn)
@@ -598,7 +600,7 @@ struct SourcesView: View {
         switch health {
         case .credentialsUnresolved, .unauthorized, .noProfile, .environmentReference:
             return true
-        case .healthy, .unreachable:
+        case .healthy, .unreachable, .notChecked:
             return false
         }
     }
@@ -638,6 +640,8 @@ struct SourcesView: View {
             return (L("Credentials unresolved"), .warn, "key.slash")
         case .unauthorized:
             return (L("Unauthorized"), .danger, "lock.trianglebadge.exclamationmark")
+        case .notChecked:
+            return (L("Not checked"), .muted, "questionmark.circle")
         case .unreachable:
             return (L("Unreachable"), .danger, "wifi.slash")
         case .noProfile:
@@ -652,6 +656,10 @@ struct SourcesView: View {
         guard !creds.isEmpty else { return L("none resolved") }
         let resolved = creds.filter { $0.resolved == true }.count
         return L("\(resolved)/\(creds.count) resolved")
+    }
+
+    static var noConnectionCheckNote: String {
+        L("jamf-cli has no connection check for this login")
     }
 
     static func connectivitySummary(_ c: CLIDoctorReport.Connectivity?) -> String {
@@ -756,19 +764,19 @@ struct SourcesView: View {
                                 .foregroundStyle(Theme.Colors.goldBright)
                                 .lineLimit(1)
                         }
-                        .width(min: 110, ideal: 150, max: 220)
+                        .width(min: 90, ideal: 150, max: 220)
                         TableColumn("Globs") { f in
                             Mono(text: f.glob).lineLimit(1).truncationMode(.middle)
                         }
-                        .width(min: 120, ideal: 170, max: 260)
+                        .width(min: 80, ideal: 170, max: 260)
                         TableColumn("Snapshots") { f in Mono(text: "\(f.snapshotCount)") }
-                            .width(min: 70, ideal: 80, max: 96)
+                            .width(min: 64, ideal: 80, max: 96)
                         TableColumn("Latest") { f in
                             Mono(text: f.latestDate.map(FileDisplay.date) ?? "—")
                         }
-                        .width(min: 96, ideal: 110, max: 140)
+                        .width(min: 84, ideal: 110, max: 140)
                         TableColumn("Storage") { f in Mono(text: FileDisplay.size(f.totalBytes)) }
-                            .width(min: 64, ideal: 76, max: 96)
+                            .width(min: 56, ideal: 76, max: 96)
                         // The one flexible column, so the row's width is always filled and
                         // never overruns into a horizontal scroll bar.
                         TableColumn("Used By") { f in
@@ -778,11 +786,9 @@ struct SourcesView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
-                        .width(min: 120)
+                        .width(min: 80)
                     }
-                    // Sized to the actual rows — a tall fixed frame renders
-                    // empty filler rows that read as missing data.
-                    .frame(height: min(CGFloat(families.count) * 28 + 34, 200))
+                    .pageTableHeight(rows: families.count)
                     .scrollContentBackground(.hidden)
                     Text(isSchoolWorkspace
                         ? "Families appear as snapshot types are archived: summaries (daily trend data: a day's first collect writes it, and each later collect that fetches new data rebuilds it) plus dated Jamf School device, group, and user archives."

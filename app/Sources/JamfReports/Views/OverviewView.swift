@@ -1305,6 +1305,10 @@ struct OverviewView: View {
 
     // MARK: macOS distribution + Top failing rules
 
+    /// Room a card header leaves at its trailing edge for the hover chevron `drillDownChrome`
+    /// draws there (a 26 pt disc 10 pt in, less the card's 18 pt padding).
+    private static let drillChevronRoom: CGFloat = 20
+
     /// Macs per macOS version. Live, from the inventory summary every collect
     /// writes; "current" is judged against the SOFA feed, the same way the On
     /// Current macOS score card is.
@@ -1319,6 +1323,7 @@ struct OverviewView: View {
                         Spacer()
                         Pill(text: L("\(osVersionCount) versions"), tone: .muted)
                     }
+                    .padding(.trailing, Self.drillChevronRoom)
                     HStack(alignment: .center, spacing: 18) {
                         donut
                         VStack(alignment: .leading, spacing: 6) {
@@ -1370,6 +1375,7 @@ struct OverviewView: View {
                         Spacer()
                         Pill(text: L("View all \(failingRuleTotal)"), tone: .gold)
                     }
+                    .padding(.trailing, Self.drillChevronRoom)
                     if failingRules.isEmpty {
                         Text("No rule is failing on any Mac that reported results.")
                             .font(.footnote)
@@ -1544,29 +1550,39 @@ struct OverviewView: View {
 
     private var recentCountLabel: String {
         let fleet = workspace.demoMode ? DemoData.totalDevices : overviewFleetCount
-        return fleet > 0 ? L("\(recentRows.count) of \(fleet)") : L("\(recentRows.count) Macs")
+        return fleet > 0 ? L("\(recentRows.count) of \(fleet)") : (recentRows.count == 1 ? L("\(recentRows.count) Mac") : L("\(recentRows.count) Macs"))
     }
 
     /// Shared by the card and its drill-down.
     private func recentTable(minHeight: CGFloat) -> some View {
         let rows = recentRows
         return Table(rows, selection: $activitySelection) {
+            // Minimums sum to about 580 pt, inside the card at PageScaffold.minSupportedWidth;
+            // ideals let a wide window show the full values.
             TableColumn("Device") { d in
-                Text(d.name).font(.callout.weight(.semibold))
+                Text(Self.shownOrDash(d.name)).font(.callout.weight(.semibold)).lineLimit(1)
             }
-            TableColumn("Serial") { d in Mono(text: d.serial) }
-            TableColumn("macOS") { d in Mono(text: d.os) }
+            .width(min: 90, ideal: 160)
+            TableColumn("Serial") { d in Mono(text: Self.shownOrDash(d.serial)) }
+                .width(min: 80, ideal: 110)
+            TableColumn("macOS") { d in Mono(text: Self.shownOrDash(d.os)) }
+                .width(min: 48, ideal: 70)
             TableColumn("User") { d in
-                Text(d.user).font(.footnote).foregroundStyle(.cellSecondary)
+                Text(Self.shownOrDash(d.user)).font(.footnote).foregroundStyle(.cellSecondary)
+                    .lineLimit(1)
             }
+            .width(min: 70, ideal: 170)
             TableColumn("Department") { d in Text(d.department ?? "—").font(.footnote) }
+                .width(min: 50, ideal: 100)
             TableColumn("FV") { d in fileVaultMark(d.fileVault) }
-                .width(40)
+                .width(28)
             TableColumn("Failed Rules") { d in failurePill(d.failedRules) }
+                .width(min: 40, ideal: 90)
             TableColumn("Last Seen") { d in
-                Mono(text: d.lastSeen,
+                Mono(text: Self.shownOrDash(d.lastSeen),
                      color: d.isStale ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
             }
+            .width(min: 60, ideal: 90)
         }
         .frame(minHeight: minHeight)
         .scrollContentBackground(.hidden)
@@ -1586,6 +1602,11 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    /// A dash for a value the inventory does not carry, so no cell reads blank.
+    private static func shownOrDash(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespaces).isEmpty ? "—" : value
     }
 
     @ViewBuilder
@@ -1780,7 +1801,7 @@ struct OverviewView: View {
                             label: rule.ruleID,
                             value: Double(rule.fails),
                             maxValue: Double(failingRules.map(\.fails).max() ?? 1),
-                            trailing: L("\(rule.fails) devices"),
+                            trailing: rule.fails == 1 ? L("\(rule.fails) device") : L("\(rule.fails) devices"),
                             color: Theme.Colors.gold
                         )
                     }
@@ -2283,7 +2304,9 @@ struct AgentCardView: View {
 /// unknown" (e.g. live mode before any trend snapshot lands) — render the
 /// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return L("\(installed) Macs") }
+    guard fleetCount > 0 else {
+        return installed == 1 ? L("\(installed) Mac") : L("\(installed) Macs")
+    }
     return L("\(installed) of \(fleetCount) Macs")
 }
 

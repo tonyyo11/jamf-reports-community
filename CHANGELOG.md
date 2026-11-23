@@ -7,6 +7,34 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- The inventory CSV fills every column again. Computer fields are written as `section.key`
+  columns (for example `general.name`, `hardware.serialNumber`) instead of leaving all but the
+  ID and UDID blank, and extension attribute values are matched to Macs by name.
+- In the PDF report, a group heading is no longer left alone at the foot of a page with its
+  chart on the next, and the closing integrity note no longer prints by itself on a last page.
+- An app or configuration profile that jamf-cli could not name (shown as its own negative ID)
+  now reads "Unknown app (ID -5)" in the workbook, the HTML report and the Policies screen. It
+  is still counted, since its install errors are real.
+- The Missing Secure Token tab and other Boolean EA tabs show a percentage on the "Other" row as
+  well as on the pass row. The Compliance Posture tab no longer writes an empty "Framework:"
+  line when no framework is set (the row stays, so the table below does not move).
+- The HTML report's Mobile devices group no longer repeats the device count as a tile, and
+  counts of one read "1 policy", "1 snapshot", "1 error" and "1 day".
+- A single device now reads "1 device" instead of "1 devices" on the Overview mobile card, the failing-rules list, the Security Agents card, Recent Activity and the unused-groups pill.
+- Run names such as "CLI Generate" keep their acronyms upper case in Reports and Run History.
+- The file prefix example on Config > Output shows the Jamf School name (`<prefix>_school_report_...`) on a School workspace.
+- Check on a Jamf Security Cloud login runs the same read-only `security risk list` the collect runs and reports whether it answered, instead of "Unreachable" (`jamf-cli doctor` has no connection probe for a login without a URL).
+- The "Profiles not in an environment" card no longer shows the "not a workspace" explanation above a Security Cloud login's Add to this environment button.
+- The Security Posture template description in the catalog matches the template again.
+- Overview: the Recent Activity table fits its card at the narrowest window, and a Mac with no inventory shows a dash in every empty cell.
+- Data Sources: the jamf-cli card now takes the full width on a Jamf Pro workspace, so command lines no longer wrap mid-word.
+- Overview: the hover arrow no longer covers the "versions" pill on macOS Distribution or the "View all" pill on Top Failing Rules.
+- Backups: Reveal, Diff Latest and Delete stay reachable at narrow widths (icons alone when the row is tight), and the Created column no longer truncates.
+- Health Audit: the Finding and Recommendation columns use the available width.
+- Data Sources: the Snapshot Archive Families table fits its card and shows every row.
+
 ## [2.12.0] - 2026-11-13
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the

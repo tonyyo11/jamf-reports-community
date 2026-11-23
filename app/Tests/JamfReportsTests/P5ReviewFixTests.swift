@@ -81,5 +81,27 @@ final class P5ReviewFixTests: XCTestCase {
         let ok = AddSheetPlan.UnassignedProfile(
             name: "x", product: .pro, url: "", use: .newWorkspace, authMethod: "")
         XCTAssertNil(UnassignedProfilesCardText.reason(for: ok))
+        let sec = AddSheetPlan.UnassignedProfile(
+            name: "s", product: .securityCloud, url: "", use: .unavailable(reason), authMethod: "")
+        XCTAssertNil(UnassignedProfilesCardText.reason(
+            for: sec, acceptsSecurityCloud: true, demo: false))
+        XCTAssertEqual(UnassignedProfilesCardText.reason(
+            for: sec, acceptsSecurityCloud: false, demo: false), reason)
+    }
+}
+
+final class RunSlugDisplayNameTests: XCTestCase {
+    func testAcronymsReadUpperCase() {
+        XCTAssertEqual(RunHistoryService.displayName(fromSlug: "cli-generate"), "CLI Generate")
+        XCTAssertEqual(RunHistoryService.displayName(fromSlug: "cli-collect"), "CLI Collect")
+        XCTAssertEqual(RunHistoryService.displayName(fromSlug: "daily"), "Daily")
+        XCTAssertEqual(RunHistoryService.displayName(fromSlug: "mdm-ddm-html"), "MDM DDM HTML")
+    }
+
+    func testSingleDeviceSentences() {
+        var s = MobileSummary(managed: 1, unmanaged: 0)
+        s.passcode = .init(met: 0, of: 1)
+        let tile = s.overviewTiles(format: .standard, formFactors: nil).first { $0.label == "Passcode compliant" }
+        XCTAssertEqual(tile?.caption, "0 of 1 device reporting")
     }
 }

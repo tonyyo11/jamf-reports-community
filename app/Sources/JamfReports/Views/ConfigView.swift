@@ -1007,7 +1007,8 @@ private struct OutputTab: View {
         let typed = ws.configState.filePrefix
         let prefix = ExportNaming.validFilePrefix(typed) ?? ExportNaming.defaultFilePrefix
         let example = ExportNaming.stem(
-            for: .xlsx, profile: ws.profile, schoolMode: false, prefix: prefix)
+            for: .xlsx, profile: ws.profile,
+            schoolMode: ws.environmentProducts.has(.jamfSchool), prefix: prefix)
         return VStack(alignment: .leading, spacing: 4) {
             FieldLabel(label: "file_prefix")
             PNPTextField(
