@@ -43,7 +43,10 @@ final class AnyProfileNameTests: XCTestCase {
             XCTAssertEqual(EnvironmentProfiles.read(configURL: config, workspace: name).jamfPro,
                            name, "config.yaml records the name jamf-cli is called with")
         }
+        // `.app-support` is AppSupport under a test root (setup now confirms the config pin);
+        // a workspace folder never starts with a dot (`ProfileName.pathComponent`).
         let folders = try FileManager.default.contentsOfDirectory(atPath: tempRoot.path)
+            .filter { !$0.hasPrefix(".") }
         XCTAssertEqual(folders.count, names.count, "one folder per name, nothing outside the root")
         XCTAssertEqual(
             Set(ProfileService.localOnlyWorkspaces(under: tempRoot, cliNames: [])), Set(names),
