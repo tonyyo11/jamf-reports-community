@@ -637,9 +637,9 @@ struct OverviewView: View {
         }
 
         if shouldSkipCollect {
-            workspace.globalStatus = "generate from cached snapshots · profile=\(profile)"
+            workspace.globalStatus = "generate from cached snapshots · \(profile)"
         } else {
-            workspace.globalStatus = "collect + generate · profile=\(profile)"
+            workspace.globalStatus = "collect + generate · \(profile)"
         }
 
         // Status-bar race guard — see AuditView.runAudit comment.
@@ -649,7 +649,7 @@ struct OverviewView: View {
             // last manual audit. Failures warn and continue — a stale audit
             // is preferable to no report.
             if includeAuditInGenerate && !workspace.demoMode {
-                workspace.globalStatus = "health audit · profile=\(profile)"
+                workspace.globalStatus = "health audit · \(profile)"
                 do {
                     _ = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
                         Task { @MainActor in

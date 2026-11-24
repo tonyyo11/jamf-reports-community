@@ -52,13 +52,13 @@ final class CollectStatusLineTests: XCTestCase {
             }
         }
         try await waitUntil { started.isSet }
-        XCTAssertEqual(store.statusLine, "refreshing data · profile=\(profile)")
+        XCTAssertEqual(store.statusLine, "refreshing data · \(profile)")
 
         // Another screen sets and clears its own line, as Fleet Overview did on every visit.
         store.globalStatus = "Aggregating multi-profile summaries..."
         XCTAssertEqual(store.statusLine, "Aggregating multi-profile summaries...")
         store.globalStatus = nil
-        XCTAssertEqual(store.statusLine, "refreshing data · profile=\(profile)",
+        XCTAssertEqual(store.statusLine, "refreshing data · \(profile)",
                        "the collect's line is back, not Ready")
 
         finish.set()
@@ -81,8 +81,8 @@ final class CollectStatusLineTests: XCTestCase {
             return 0
         }
         XCTAssertEqual(seen.values, [
-            "refreshing Inventory + Scan data · profile=\(profile)",
-            "collecting jamf-cli data · profile=\(profile)",
+            "refreshing Inventory + Scan data · \(profile)",
+            "collecting jamf-cli data · \(profile)",
         ])
         XCTAssertNil(store.statusLine)
     }
@@ -101,7 +101,7 @@ final class CollectStatusLineTests: XCTestCase {
             seen.record(line)
         }
         XCTAssertTrue(attempted)
-        XCTAssertEqual(seen.values, ["re-collecting stale data · profile=\(profile)"])
+        XCTAssertEqual(seen.values, ["re-collecting stale data · \(profile)"])
         XCTAssertNil(store.statusLine)
     }
 

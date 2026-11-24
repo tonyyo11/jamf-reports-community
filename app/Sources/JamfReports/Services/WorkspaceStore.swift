@@ -731,7 +731,7 @@ final class WorkspaceStore {
         isInitializingWorkspace = true
         defer { isInitializingWorkspace = false }
         workspaceInitMessage = L("Initializing workspace…")
-        globalStatus = "initializing workspace · profile=\(profile)"
+        globalStatus = "initializing workspace · \(profile)"
         let bridge = CLIBridge()
         do {
             let exit = try await bridge.initializeWorkspace(

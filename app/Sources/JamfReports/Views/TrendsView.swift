@@ -1482,7 +1482,7 @@ struct TrendsView: View {
         guard workspaceStore.beginReportRun(for: profile) else { return }
         defer { workspaceStore.clearRunInProgress(for: profile) }
         isArchiving = true
-        workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
+        workspaceStore.globalStatus = "collect + generate · \(profile)"
         // Status-bar race guard — see AuditView.runAudit comment.
         do {
             let exit = try await bridge.collectThenGenerate(profile: profile) { [weak workspaceStore] line in

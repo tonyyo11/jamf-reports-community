@@ -1262,7 +1262,7 @@ struct AuditView: View {
         // against the fictional demo profile.
         guard !workspace.demoMode else { return }
         isRunningAudit = true
-        workspace.globalStatus = "audit · profile=\(workspace.profile)"
+        workspace.globalStatus = "audit · \(workspace.profile)"
         Task {
             let profile = workspace.profile
             // Late-arriving onLine callbacks would otherwise overwrite the
@@ -1299,7 +1299,7 @@ struct AuditView: View {
     private func runHygiene() {
         guard !workspace.demoMode else { return }
         isRunningHygiene = true
-        workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
+        workspace.globalStatus = "group-tools analyze · \(workspace.profile)"
         Task {
             let profile = workspace.profile
             let code: Int32
