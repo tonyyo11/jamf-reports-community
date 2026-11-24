@@ -76,6 +76,18 @@ final class OnboardingStartOverTests: XCTestCase {
         XCTAssertTrue(flow.startOverRemovesSomething)
     }
 
+    /// Leaving the Setup tab keeps a run that saved something, or is still saving; a fresh
+    /// run is dropped as before.
+    func testARunWithWorkOrACommandRunningIsParkedWhenItsTabIsLeft() throws {
+        let flow = try makeFlow()
+        XCTAssertFalse(flow.parksWhenLeft)
+        flow.isRegisteringProfile = true
+        XCTAssertTrue(flow.parksWhenLeft, "a profile may be saved after the tab is gone")
+        flow.isRegisteringProfile = false
+        flow.noteCreatedProfile("acme")
+        XCTAssertTrue(flow.parksWhenLeft)
+    }
+
     func testCreateWorkspaceLeavesAFolderThatExistedUnrecorded() throws {
         try FileManager.default.createDirectory(
             at: workspace("acme"), withIntermediateDirectories: true)

@@ -49,6 +49,8 @@ struct OnboardingView: View {
                 flow = parked.flow
             }
             workspaceStore.parkedOnboarding = nil
+            // A command that was running when the tab was left may have saved something since.
+            workspaceStore.onboardingRunHasWork = flow.startOverRemovesSomething
         }
         .task { await flow.refreshJamfCLIStatus() }
         // The view goes on a tab switch or a new onboarding; its typed secrets are wiped first.
@@ -56,7 +58,7 @@ struct OnboardingView: View {
         // offers Start over; the Add sheet stays refused meanwhile.
         .onDisappear { [flow, workspaceStore, run] in
             flow.clearAllSecrets()
-            if let run, flow.startOverRemovesSomething {
+            if let run, flow.parksWhenLeft {
                 workspaceStore.parkedOnboarding = (run, flow)
             } else {
                 workspaceStore.onboardingRunHasWork = false
@@ -1103,6 +1105,7 @@ struct OnboardingView: View {
                     // In the shell there is no chooser to return to: a fresh setup.
                     flow = OnboardingFlow()
                     workspaceStore.onboardingRunHasWork = false
+                    workspaceStore.reloadFromDisk()
                 }
             } else {
                 flow.lastError = problems.joined(separator: "\n")
