@@ -99,11 +99,11 @@ struct MobileFleetService: Sendable {
     /// ("iOS") and cannot separate iPad from iPhone — that lives in the
     /// hardware model — so form factor is its own axis.
     enum FormFactor: Sendable, Equatable {
-        case iPad, iPhone, appleTV, other
+        case iPad, iPhone, appleTV, visionPro, other
     }
 
     /// Classify a device by hardware model, preferring the precise
-    /// `modelIdentifier` ("iPhone5,2" / "iPad13,1" / "AppleTV5,3"), then the
+    /// `modelIdentifier` ("iPhone5,2" / "iPad13,1" / "AppleTV5,3" / "RealityDevice14,1"), then the
     /// marketing `model` string ("iPhone 5 (CDMA)"), then the OS-family
     /// `deviceType` (only useful for distinguishing tvOS, and for legacy/list
     /// shapes that put the form factor there).
@@ -115,6 +115,7 @@ struct MobileFleetService: Sendable {
         if ident.hasPrefix("iPad") { return .iPad }
         if ident.hasPrefix("iPhone") { return .iPhone }
         if ident.hasPrefix("AppleTV") { return .appleTV }
+        if ident.hasPrefix("RealityDevice") { return .visionPro }
 
         if let m = model?.trimmingCharacters(in: .whitespacesAndNewlines),
            !m.isEmpty {
@@ -122,10 +123,13 @@ struct MobileFleetService: Sendable {
             if m.localizedCaseInsensitiveContains("iPhone") { return .iPhone }
             if m.localizedCaseInsensitiveContains("Apple TV") ||
                m.localizedCaseInsensitiveContains("AppleTV") { return .appleTV }
+            if m.localizedCaseInsensitiveContains("Vision Pro") { return .visionPro }
         }
 
         if let t = deviceType?.trimmingCharacters(in: .whitespacesAndNewlines),
            !t.isEmpty {
+            // Before the "TV" test; Jamf Pro 11.34 names the device type VISION_PRO.
+            if t.localizedCaseInsensitiveContains("vision") { return .visionPro }
             if t.localizedCaseInsensitiveContains("tvOS") ||
                t.localizedCaseInsensitiveContains("AppleTV") ||
                t.localizedCaseInsensitiveContains("TV") { return .appleTV }
@@ -221,6 +225,7 @@ struct MobileFleetService: Sendable {
         case .iPad: return "iPad"
         case .iPhone: return "iPhone"
         case .appleTV: return L("Apple TV")
+        case .visionPro: return L("Apple Vision Pro")
         case .other:
             let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return type.isEmpty ? L("Unknown") : type
@@ -327,6 +332,8 @@ struct MobileFleetService: Sendable {
         var iPhoneCount: Int { formFactorCount(.iPhone) }
 
         var appleTVCount: Int { formFactorCount(.appleTV) }
+
+        var visionProCount: Int { formFactorCount(.visionPro) }
 
         var managedCount: Int {
             richDevices.filter { $0.general?.managed == true }.count

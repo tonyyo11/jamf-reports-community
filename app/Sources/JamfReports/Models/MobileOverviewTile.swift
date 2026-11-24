@@ -59,6 +59,7 @@ extension MobileSummary {
             ("iPad", { $0 == 1 ? L("\($0) iPad") : L("\($0) iPads") }),
             ("iPhone", { $0 == 1 ? L("\($0) iPhone") : L("\($0) iPhones") }),
             ("Apple TV", { $0 == 1 ? L("\($0) Apple TV") : L("\($0) Apple TVs") }),
+            ("Vision Pro", { $0 == 1 ? L("\($0) Vision Pro") : L("\($0) Vision Pros") }),
             ("Other", { $0 == 1 ? L("\($0) other device") : L("\($0) other devices") }),
         ].compactMap { (key: String, text: (Int) -> String) in
             (forms?[key]).flatMap { $0 > 0 ? text($0) : nil }
