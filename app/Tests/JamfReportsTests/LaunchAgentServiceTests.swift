@@ -379,6 +379,48 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertEqual(schedule.lastStatus, .partial)
     }
 
+    /// Store and managed schedules have no plist: their row reads the status file and the
+    /// newest `<label>.<stamp>.log`, so a success status file cannot hide `[partial]` (T-12).
+    func testLastRunsOfAStoreScheduleReadThePartialMarker() throws {
+        let profile = "dummy"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-LastRuns-\(UUID().uuidString)", isDirectory: true)
+        let logs = root.appendingPathComponent("\(profile)/automation/logs", isDirectory: true)
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let label = "\(prefix).\(profile).nightly"
+        let automation = logs.deletingLastPathComponent()
+        try Data(#"{"success":true,"finished_at":"2026-07-27T12:00:00Z"}"#.utf8)
+            .write(to: automation.appendingPathComponent("\(label)_status.json"))
+        try "[info] exit 0 after 5s\n".write(
+            to: logs.appendingPathComponent("\(label).20260726-120000.log"),
+            atomically: true, encoding: .utf8)
+        try "[partial] 1 source(s) did not land\n[info] exit 0 after 5s\n".write(
+            to: logs.appendingPathComponent("\(label).20260727-120000.log"),
+            atomically: true, encoding: .utf8)
+        // Another schedule whose label starts with this one: its log is not read.
+        try "[info] exit 0 after 5s\n".write(
+            to: logs.appendingPathComponent("\(label).weekly.20260728-120000.log"),
+            atomically: true, encoding: .utf8)
+
+        var schedule = Schedule(
+            name: "Nightly", profile: profile, schedule: "Daily 06:00", cadence: "custom",
+            mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok, artifacts: [],
+            enabled: true)
+        schedule.launchAgentLabel = label
+        var never = schedule
+        never.launchAgentLabel = "\(prefix).\(profile).never-ran"
+
+        let runs = LaunchAgentService.lastRuns(schedules: [schedule, never], statusProfile: profile)
+        XCTAssertEqual(runs[label]?.status, .partial)
+        XCTAssertNotNil(runs[label]?.finishedAt)
+        XCTAssertNil(runs[never.launchAgentLabel!], "never ran: no row status")
+    }
+
     func testCleanLogWithSuccessfulStatusFileReadsOk() throws {
         let scaffold = try writeSheetFailuresStatusScaffold(
             success: true, sheetFailures: nil, logText: "[info] exit 0 after 5s\n")

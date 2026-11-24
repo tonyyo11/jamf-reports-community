@@ -473,14 +473,21 @@ struct SchedulesView: View {
                 TableColumn("Next Run") { s in
                     Mono(text: s.next, color: s.enabled ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                 }
-                TableColumn("Last Run") { s in Mono(text: s.last) }
-                TableColumn("Status")   { s in statusPill(for: s.lastStatus) }.width(80)
+                TableColumn("Last Run") { s in Mono(text: lastRun(of: s).last) }
+                TableColumn("Status")   { s in
+                    if let status = lastRun(of: s).status {
+                        statusPill(for: status)
+                    } else {
+                        Text("—").foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                }.width(80)
                 TableColumn("Outputs") { s in
                     HStack(spacing: 4) {
-                        if s.artifacts.isEmpty {
+                        let artifacts = lastRun(of: s).artifacts
+                        if artifacts.isEmpty {
                             Text("—").foregroundStyle(Theme.Text.tertiary(contrast))
                         } else {
-                            ForEach(s.artifacts, id: \.self) { Pill(text: $0, tone: .muted) }
+                            ForEach(artifacts, id: \.self) { Pill(text: $0, tone: .muted) }
                         }
                     }
                 }
@@ -650,6 +657,18 @@ struct SchedulesView: View {
     }
 
     // MARK: - Helpers
+
+    /// A legacy plist row carries its own last run; a store or managed schedule's comes from
+    /// `WorkspaceStore.scheduleLastRuns`, and one that never ran has no status.
+    private func lastRun(
+        of schedule: Schedule
+    ) -> (last: String, status: Schedule.LastStatus?, artifacts: [String]) {
+        if let run = schedule.launchAgentLabel.flatMap({ workspace.scheduleLastRuns[$0] }) {
+            return (run.finishedAt.map(FileDisplay.date) ?? "—", run.status, run.artifacts)
+        }
+        guard schedule.last != "—" else { return ("—", nil, []) }
+        return (schedule.last, schedule.lastStatus, schedule.artifacts)
+    }
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         let pill: Pill

@@ -14,6 +14,8 @@ final class WorkspaceStore {
     private(set) var connections: [Connection] = []
     @ObservationIgnored let connectionStore: ConnectionStore
     var schedules: [Schedule]
+    /// The last run of each store or managed schedule, by label; read with automation health.
+    var scheduleLastRuns: [String: LaunchAgentService.LastRun] = [:]
     var customEAs: [CustomEA]
     var demoMode: Bool
     /// Sidebar device counts by profile, filled by `refreshDeviceCounts()`.
