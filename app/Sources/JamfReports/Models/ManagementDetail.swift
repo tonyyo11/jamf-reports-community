@@ -17,6 +17,21 @@ enum ManagementDetail {
         return words.prefix(1).uppercased() + words.dropFirst()
     }
 
+    /// `displayValue` for a field of any kind (a jamf-cli Detail row, which can hold a name):
+    /// only a value with an underscore or a known status word is rewritten, so a user, site or
+    /// department written in capitals ("JSMITH", "FINANCE") stays as given.
+    static func statusValue(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.contains("_") || statusWords.contains(text) else { return text }
+        return displayValue(text)
+    }
+
+    private static let statusWords: Set<String> = [
+        "ENABLED", "DISABLED", "PENDING", "ACTIVE", "INACTIVE", "UNKNOWN", "NONE", "COMPLETE",
+        "COMPLETED", "FAILED", "ERROR", "ENCRYPTED", "UNENCRYPTED", "ESCROWED", "SUPPORTED",
+        "UNSUPPORTED", "ALLOWED", "DENIED", "TRUE", "FALSE", "YES", "NO",
+    ]
+
     /// Lets a long run-together name such as `InstallEnterpriseApplication` wrap between its
     /// words instead of mid-word, by a zero-width space before each inner capital. Screen only,
     /// and only where the text is not selectable.

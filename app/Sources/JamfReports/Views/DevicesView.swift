@@ -897,7 +897,7 @@ struct DevicesView: View {
                                 .frame(width: Self.detailLabelWidth, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(ManagementDetail.wrappable(
-                                    ManagementDetail.displayValue(item.value)))
+                                    ManagementDetail.statusValue(item.value)))
                                     .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fg2)
                                     .lineLimit(3)

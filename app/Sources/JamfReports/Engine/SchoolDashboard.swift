@@ -174,7 +174,7 @@ struct SchoolDashboard: Sendable {
                        scanned.count, of: scanned.of)
             }
             for value in detail.enrollment.shown {
-                figure("Enrollment type: \(SchoolDeviceHealth.enrollmentName(value.value))", value.count, of: detail.enrollmentReporting)
+                figure("Enrollment type: \(value.value)", value.count, of: detail.enrollmentReporting)
             }
             for value in detail.storage.shown {
                 figure("Storage: \(value.value)", value.count, of: detail.storageReporting)

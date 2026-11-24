@@ -347,7 +347,7 @@ struct DeviceLookupView: View {
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 140, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(ManagementDetail.displayValue(item.value))
+                                    Text(item.value)
                                         .font(.footnote)
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .textSelection(.enabled)

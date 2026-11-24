@@ -257,6 +257,10 @@ final class ManagementDisplayValueTests: XCTestCase {
         XCTAssertEqual(ManagementDetail.displayValue("DISABLED"), "Disabled")
         XCTAssertEqual(ManagementDetail.displayValue("C02XK1ABJG5H"), "C02XK1ABJG5H", "a serial")
         XCTAssertEqual(ManagementDetail.displayValue("MDM"), "MDM", "a short acronym")
+        XCTAssertEqual(ManagementDetail.statusValue("DISABLED"), "Disabled")
+        XCTAssertEqual(ManagementDetail.statusValue("NOT_COLLECTED"), "Not collected")
+        XCTAssertEqual(ManagementDetail.statusValue("JSMITH"), "JSMITH", "a name in capitals")
+        XCTAssertEqual(ManagementDetail.statusValue("FINANCE"), "FINANCE")
         XCTAssertEqual(ManagementDetail.wrappable("InstallEnterpriseApplication"),
                        "Install\u{200B}Enterprise\u{200B}Application")
         XCTAssertEqual(ManagementDetail.wrappable("MDM, DeviceLock"), "MDM, Device\u{200B}Lock")
