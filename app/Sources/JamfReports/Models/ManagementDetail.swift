@@ -5,13 +5,30 @@ import Foundation
 /// status strings are shown as given.
 enum ManagementDetail {
     /// A Jamf status string for the screen only: `ALLOW_BOOTING_FROM_EXTERNAL_MEDIA` reads
-    /// "Allow booting from external media". A value that already has lowercase letters is kept.
-    /// Workbook, HTML and CSV keep the raw value.
+    /// "Allow booting from external media", `DISABLED` "Disabled". Only upper-case letters and
+    /// underscores, four letters or more, are rewritten, so a serial, a version or an acronym
+    /// such as MDM is kept as given. Workbook, HTML and CSV keep the raw value.
     static func displayValue(_ raw: String) -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.contains(where: \.isLowercase) else { return text }
+        guard text.filter(\.isLetter).count >= 4,
+              text.allSatisfy({ ($0.isUppercase && $0.isASCII) || $0 == "_" })
+        else { return text }
         let words = text.lowercased().replacingOccurrences(of: "_", with: " ")
         return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
+    /// Lets a long run-together name such as `InstallEnterpriseApplication` wrap between its
+    /// words instead of mid-word, by a zero-width space before each inner capital. Screen only,
+    /// and only where the text is not selectable.
+    static func wrappable(_ text: String) -> String {
+        var out = ""
+        var previous: Character?
+        for character in text {
+            if let previous, previous.isLowercase, character.isUppercase { out.append("\u{200B}") }
+            out.append(character)
+            previous = character
+        }
+        return out
     }
 
     static func rows(

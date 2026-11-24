@@ -896,12 +896,14 @@ struct DevicesView: View {
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(width: Self.detailLabelWidth, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.value)
+                                Text(ManagementDetail.wrappable(
+                                    ManagementDetail.displayValue(item.value)))
                                     .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fg2)
                                     .lineLimit(3)
                                 if !item.note.isEmpty {
-                                    Mono(text: item.note, size: 10.5, color: Theme.Text.tertiary(contrast))
+                                    Mono(text: ManagementDetail.wrappable(item.note), size: 10.5,
+                                         color: Theme.Text.tertiary(contrast))
                                         .lineLimit(2)
                                 }
                             }
@@ -1269,7 +1271,8 @@ struct DevicesView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Text(line.0).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: Self.detailLabelWidth, alignment: .leading)
-                    Text(line.1).font(.footnote).foregroundStyle(Theme.Colors.fg)
+                    Text(ManagementDetail.wrappable(line.1)).font(.footnote)
+                        .foregroundStyle(Theme.Colors.fg)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
