@@ -7,6 +7,24 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". It counts in the managed, supervised and passcode shares and, like Apple TV, not in "OS current". Vision Pro rows in OS Updates and its failure tables are kept like any other device.
+
+### Changed
+
+- The Jamf School workbook's Device Health tab names the enrollment type in words ("Enrollment type: Automated Device Enrollment" instead of "Enrollment type: dep").
+- The status bar names the workspace without `profile=` ("refreshing data · Example").
+
+### Fixed
+
+- Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
+- The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
+- A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".
+- The schedule list reads each managed and hand-built schedule's last run: its time, its status (Partial when the run log holds a `[partial]` line, even when the status file says success) and its outputs. These rows always showed OK before.
+- The Computers detail panel's jamf-cli Detail and Device Lookup show Jamf's status words as words ("Disabled", not "DISABLED"), and long MDM command names wrap between words.
+- Leaving the Setup tab in the middle of a setup that has already saved a jamf-cli profile or workspace folder keeps it: coming back resumes it, and Start over (now offered in the app as well as on first launch) removes what it saved.
+
 ## [2.12.0] - 2026-11-23
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the
