@@ -9,7 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
-- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". For now it is left out of "OS current", as Apple TV is, and counted in the other mobile shares; this may change before release. Vision Pro rows in OS Updates and its failure tables are kept like any other device.
+- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". It counts in the managed, supervised, passcode and data protection shares and, like Apple TV, not in "OS current" (there is no visionOS release feed). Vision Pro rows in OS Updates and its failure tables are kept like any other device.
 
 ### Changed
 
