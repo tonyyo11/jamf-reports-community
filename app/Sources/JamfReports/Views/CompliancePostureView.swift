@@ -491,7 +491,7 @@ struct CompliancePostureView: View {
                 Text(Self.controlBarCountText(gap))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(percentFormat.text(gap.pct))
+                Text(gap.pct.map { percentFormat.text($0) } ?? "—")
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(barColor(for: gap.pct))
                     .frame(minWidth: 56, alignment: .trailing)
@@ -503,7 +503,7 @@ struct CompliancePostureView: View {
                         .fill(Color.white.opacity(0.06))
                     RoundedRectangle(cornerRadius: 3)
                         .fill(barColor(for: gap.pct))
-                        .frame(width: max(0, min(geo.size.width, geo.size.width * gap.pct / 100)))
+                        .frame(width: max(0, min(geo.size.width, geo.size.width * (gap.pct ?? 0) / 100)))
                 }
             }
             .frame(height: 6)
@@ -514,25 +514,30 @@ struct CompliancePostureView: View {
     }
 
     static func controlBarCountText(_ gap: CompliancePostureService.Snapshot.ControlGap) -> String {
-        let failing = L("\(gap.failingDevices) failing")
-        guard gap.warningDevices > 0 else { return failing }
-        return failing + " · " + warningCount(gap.warningDevices)
+        guard gap.reportedDevices > 0 else { return L("Not reported") }
+        var parts = [L("\(gap.failingDevices) failing")]
+        if gap.warningDevices > 0 { parts.append(warningCount(gap.warningDevices)) }
+        if gap.notReportedDevices > 0 { parts.append(L("not reported: \(gap.notReportedDevices)")) }
+        return parts.joined(separator: " · ")
     }
 
     /// The bar ignores its children for VoiceOver, so the warnings must be in the label.
     static func controlBarAccessibilityLabel(
         _ gap: CompliancePostureService.Snapshot.ControlGap, format: PercentFormat
     ) -> String {
-        let label = L("\(gap.control) control coverage, \(format.numberText(gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
-        guard gap.warningDevices > 0 else { return label }
-        return label + ", " + warningCount(gap.warningDevices)
+        guard let pct = gap.pct else { return L("\(gap.control) control coverage, not reported") }
+        var label = L("\(gap.control) control coverage, \(format.numberText(pct)) percent failing, \(gap.failingDevices) of \(gap.reportedDevices) devices")
+        if gap.warningDevices > 0 { label += ", " + warningCount(gap.warningDevices) }
+        if gap.notReportedDevices > 0 { label += ", " + L("not reported: \(gap.notReportedDevices)") }
+        return label
     }
 
     private static func warningCount(_ count: Int) -> String {
         count == 1 ? L("1 warning") : L("\(count) warnings")
     }
 
-    private func barColor(for pct: Double) -> Color {
+    private func barColor(for pct: Double?) -> Color {
+        guard let pct else { return Theme.Text.tertiary(contrast) }
         switch pct {
         case ..<1:  return Theme.Colors.ok
         case ..<5:  return Theme.Colors.goldBright
@@ -541,7 +546,8 @@ struct CompliancePostureView: View {
         }
     }
 
-    private func controlIcon(for pct: Double) -> String {
+    private func controlIcon(for pct: Double?) -> String {
+        guard let pct else { return "minus.circle" }
         switch pct {
         case ..<1:  return "checkmark.circle.fill"
         case ..<5:  return Theme.Severity.medium.systemImage

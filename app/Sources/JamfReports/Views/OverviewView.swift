@@ -1011,7 +1011,7 @@ struct OverviewView: View {
         guard !workspace.demoMode else { return DemoData.securityAgents }
         return OverviewLiveDataLoader.agents(
             live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
-            edrSeries: trendStore.values(metric: .edrAgent))
+            edrSeries: trendStore.currentPoints(metric: .edrAgent).map(\.value))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1703,7 +1703,9 @@ struct OverviewView: View {
                 kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
                 title: metricDetailTitle(metric),
-                subtitle: MetricDetailFigures.summaryCount(values.count)
+                subtitle: MetricDetailFigures.summaryCount(
+                    values.count,
+                    of: workspace.demoMode ? nil : trendStore.filteredSummaries.count)
                     + " · \(workspace.profile)"
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
@@ -2395,9 +2397,13 @@ struct MetricDetailFigures: Equatable {
             change: delta(latest - previous), hasChange: true)
     }
 
-    /// "1 summary", "0 summaries".
-    static func summaryCount(_ count: Int) -> String {
-        count == 1 ? L("1 summary") : L("\(count) summaries")
+    /// "1 summary", "3 summaries"; "2 of 5 summaries" when some loaded summaries do not
+    /// carry the metric, so a metric no summary has does not read as no summaries at all.
+    static func summaryCount(_ count: Int, of total: Int? = nil) -> String {
+        if let total, total > count {
+            return total == 1 ? L("\(count) of 1 summary") : L("\(count) of \(total) summaries")
+        }
+        return count == 1 ? L("1 summary") : L("\(count) summaries")
     }
 }
 
