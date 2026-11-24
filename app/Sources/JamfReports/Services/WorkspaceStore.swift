@@ -112,6 +112,9 @@ final class WorkspaceStore {
     /// The setup on screen has registered a jamf-cli profile or created a workspace folder and
     /// is not finished; `AddSheetPlan.addRefusal` keeps the Add sheet closed meanwhile.
     var onboardingRunHasWork = false
+    /// That setup's flow while its tab is not shown, by `ContentView`'s onboarding run, so
+    /// leaving the tab and coming back keeps what Start over has to remove.
+    @ObservationIgnored var parkedOnboarding: (run: Int, flow: OnboardingFlow)?
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
