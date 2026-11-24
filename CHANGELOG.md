@@ -9,11 +9,10 @@ versions in this repository map to git tags.
 
 ### Added
 
-- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". It counts in the managed, supervised and passcode shares and, like Apple TV, not in "OS current". Vision Pro rows in OS Updates and its failure tables are kept like any other device.
+- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". For now it is left out of "OS current", as Apple TV is, and counted in the other mobile shares; this may change before release. Vision Pro rows in OS Updates and its failure tables are kept like any other device.
 
 ### Changed
 
-- The Jamf School workbook's Device Health tab names the enrollment type in words ("Enrollment type: Automated Device Enrollment" instead of "Enrollment type: dep").
 - The status bar names the workspace without `profile=` ("refreshing data · Example").
 
 ### Fixed
