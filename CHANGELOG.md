@@ -10,6 +10,7 @@ versions in this repository map to git tags.
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+- Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 
 ## [2.12.0] - 2026-11-23
 
