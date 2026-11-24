@@ -484,11 +484,14 @@ final class WorkspaceStore {
         if !demoMode {
             schedules = Self.loadSchedules(baseProfile: id)
                 .filter { $0.isMulti || $0.profile == id }
+            // A managed schedule's last run is read from the active workspace's status files.
+            scheduleLastRuns = [:]
             Task {
                 do { try await loadConfig() } catch {
                     configError = error.localizedDescription
                 }
                 await refreshAuthStatus()
+                await refreshAutomationHealth()
             }
         }
     }
