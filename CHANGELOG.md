@@ -7,6 +7,10 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+
 ## [2.12.0] - 2026-11-23
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the
