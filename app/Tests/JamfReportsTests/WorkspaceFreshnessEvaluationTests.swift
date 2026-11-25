@@ -188,7 +188,10 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
     func testProtectKindsAreEvaluatedOnlyWhenProtectIsConnected() throws {
         UserDefaults.standard.set(false, forKey: skipExpensiveKey)
         try stateStore().record(.landed, report: "overview", at: now)
-        let protectKinds = Set(DataFreshnessHealth.protectKinds)
+        // The store's cached jamf-cli version is unknown here, so the gated sources are not owed.
+        let protectKinds = Set(DataFreshnessHealth.protectKinds.filter {
+            ReportEngine.minimumJamfCLI[$0] == nil
+        })
 
         XCTAssertTrue(reportedKinds().isDisjoint(with: protectKinds), "no config: no Protect")
         try writeConfig("protect:\n  enabled: true\n")
@@ -219,7 +222,10 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
     func testProtectKindsAreNotExpectedWhereCollectSkipsProtect() throws {
         UserDefaults.standard.set(false, forKey: skipExpensiveKey)
         try writeConfig("protect:\n  enabled: true\n  profile: prot\n")
-        let protectKinds = Set(DataFreshnessHealth.protectKinds)
+        // The store's cached jamf-cli version is unknown here, so the gated sources are not owed.
+        let protectKinds = Set(DataFreshnessHealth.protectKinds.filter {
+            ReportEngine.minimumJamfCLI[$0] == nil
+        })
         func expected(
             resolved: ProfileAuthMethod.Resolved?, pinAllows: Bool = true
         ) -> Set<String> {

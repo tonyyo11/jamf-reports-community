@@ -128,7 +128,7 @@ final class FleetSidesTests: XCTestCase {
     func testForcedRunsSkipTheSideAndSayWhy() {
         var inputs = ReportEngine.CollectPlanInputs(
             tiers: Set(CollectionTier.allCases), force: true, skipExpensive: false,
-            nonPlatformAuth: nil, tenantLevel: false, collectSkip: [], dashboardSupported: true,
+            nonPlatformAuth: nil, tenantLevel: false, collectSkip: [],
             installedVersion: nil, now: now)
         inputs.skippedSides = [.mobile]
         let plan = ReportEngine.planCollect(

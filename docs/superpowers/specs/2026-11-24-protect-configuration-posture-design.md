@@ -83,7 +83,8 @@ no webhook alert can fire on them.
     `protect_signatures_behind_count`, `protect_agent_behind_count` and
     `protect_disconnected_count`.
 4.  **Older jamf-cli is not a failure.** `threat-prevention-versions` needs jamf-cli
-    1.38. Below that version, or when the version is unknown, the source is skipped
+    1.38, and `downloads summary` is gated at 1.35 (the oldest catalog that lists
+    it). Below that version, or when the version is unknown, the source is skipped
     with a `[skip]` line naming the version it needs. Nothing is recorded, the run
     is not Partial, and the source is not expected by the freshness banner.
 5.  **Nothing personal or secret reaches disk.** Each new source is reduced to a
@@ -239,7 +240,7 @@ jamf-cli-data/
 | Kind | Command | Min jamf-cli | Kept fields |
 |---|---|---|---|
 | `protect-signature-versions` | `protect threat-prevention-versions list` | 1.38.0 | `id`, `created` |
-| `protect-installer` | `protect downloads summary` | floor | `installerVersion` |
+| `protect-installer` | `protect downloads summary` | 1.35.0 | `installerVersion` |
 
 Captured shapes (NFR, 2026-11-24, keys and types only):
 
@@ -266,13 +267,14 @@ Today one source has a jamf-cli version gate: the dashboard (1.31,
 This wave adds another, so the gate becomes one table and one skip reason:
 
 *   `ReportEngine.minimumJamfCLI: [String: String]` maps a kind to the version it
-    needs (`dashboard` 1.31.0, `protect-signature-versions` 1.38.0).
+    needs (`dashboard` 1.31.0, `protect-signature-versions` 1.38.0, `protect-installer` 1.35.0,
+    the oldest catalog that lists `protect downloads summary`).
 *   `JamfCLIInstaller.supports(_ required:, installed:)` replaces
     `supportsDashboard`; an unknown or unparseable installed version answers false,
     as today.
 *   `CollectSkipReason.needsJamfCLI(required:installed:)` replaces
     `.dashboardUnsupported`; its `[skip]` line reads
-    `<kind>: needs jamf-cli <required> (installed: <version | unknown>)`. Nothing
+    `<kind>: needs jamf-cli <required> or later (installed: <version | unknown>)`. Nothing
     is recorded, as for every skip reason.
 *   `planCollect` (dashboard), `planAddOn` (Protect), `WorkspaceStore.expectedKinds`
     and `CollectSourcesPlan` all read the table.
@@ -532,7 +534,8 @@ files. Line numbers are as of commit `10ae87db` (the base of `dev/2-13-0` on
     `protect threat-prevention-versions list` → `protect-signature-versions` and
     `protect downloads summary` → `protect-installer`. Add
     `static let minimumJamfCLI: [String: String]` (`dashboard` 1.31.0,
-    `protect-signature-versions` 1.38.0). `protectCollect` reads the version with
+    `protect-signature-versions` 1.38.0, `protect-installer` 1.35.0).
+    `protectCollect` reads the version with
     `JamfCLIInstaller.installedVersionOffMain(at:)` on the `bin` it already
     locates (a `readVersion: (URL) async -> String?` parameter defaulting to it,
     so tests set 1.36 or 1.38 without a real binary) and passes it to `planAddOn`; for the two new kinds it saves
@@ -554,8 +557,8 @@ files. Line numbers are as of commit `10ae87db` (the base of `dev/2-13-0` on
 
 *   **Proposed Changes**: `CollectSkipReason.dashboardUnsupported` becomes
     `.needsJamfCLI(required: String, installed: String?)` with the skip detail
-    `needs jamf-cli <required> (installed: <v | unknown>)` and plan grouping
-    `jamf-cli older than <required>`. `planCollect` checks the table. `planAddOn`
+    `needs jamf-cli <required> or later (installed: <v | unknown>)` and plan grouping
+    `needs jamf-cli <required> or later` (today's dashboard wording). `planCollect` checks the table. `planAddOn`
     gains `installedVersion: String? = nil` and checks in this order: `collectSkip`,
     `needsJamfCLI`, forced, timeout hold, cadence. The default keeps Security
     Cloud's and `RunStopTests`' calls unchanged (Security Cloud has no gated kind).

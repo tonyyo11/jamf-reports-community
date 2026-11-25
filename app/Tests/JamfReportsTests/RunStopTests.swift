@@ -124,7 +124,8 @@ final class RunStopTests: XCTestCase {
             asked.next() > 1 ? .manualRefresh : nil
         }) {
             try await ReportEngine.protectCollect(
-                profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: lines.add)
+                profile: profile, dataDir: data, locateJamfCLI: { stub },
+                readVersion: { _ in "1.38.0" }, onLine: lines.add)
         }
         let first = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
         XCTAssertEqual(landed, [first])

@@ -16,7 +16,8 @@ extension ReportEngine {
         case collectSkip
         /// The fleet has none of this side's devices (`FleetState`).
         case noDevices(FleetSide)
-        case dashboardUnsupported(installedVersion: String?)
+        /// The installed jamf-cli is older than the source needs (`minimumJamfCLI`), or unknown.
+        case needsJamfCLI(required: String, installed: String?)
         case tierNotSelected(CollectionTier)
         case notDue(lastRun: Date?, cadence: Cadence)
         /// Its last failures all timed out; left alone until `retryAfter` unless forced.
@@ -40,9 +41,8 @@ extension ReportEngine {
                 return "listed in jamf_cli.collect_skip"
             case .noDevices(let side):
                 return "\(Self.noDevicesText(side)) (overview); checked again weekly"
-            case .dashboardUnsupported(let installed):
-                return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later "
-                    + "(installed: \(installed ?? "unknown"))"
+            case .needsJamfCLI(let required, let installed):
+                return "needs jamf-cli \(required) or later (installed: \(installed ?? "unknown"))"
             case .tierNotSelected(let tier):
                 return "tier \(tier.rawValue) not selected"
             case .notDue(let lastRun, let cadence):
@@ -65,8 +65,8 @@ extension ReportEngine {
             case .platformUnavailable(let reason): return reason
             case .collectSkip: return "jamf_cli.collect_skip"
             case .noDevices(let side): return Self.noDevicesText(side)
-            case .dashboardUnsupported:
-                return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
+            case .needsJamfCLI(let required, _):
+                return "needs jamf-cli \(required) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
             case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
@@ -99,7 +99,6 @@ extension ReportEngine {
         let nonPlatformAuth: String?
         let tenantLevel: Bool
         let collectSkip: Set<String>
-        let dashboardSupported: Bool
         let installedVersion: String?
         let now: Date
         var platformUnavailable: String?
@@ -241,10 +240,7 @@ extension ReportEngine {
             return .noDevices(side)
         }
         if inputs.collectSkip.contains(kind) { return .collectSkip }
-        if kind == dashboardKind, !inputs.dashboardSupported {
-            return .dashboardUnsupported(installedVersion: inputs.installedVersion)
-        }
-        return nil
+        return jamfCLISkip(kind, installed: inputs.installedVersion)
     }
 
     /// The tier set, then cadence. An unmapped kind has no tier and is always allowed;
@@ -430,9 +426,11 @@ extension ReportEngine {
     /// Unforced (`addOnCollectForced` false), a source waits out the refresh cadence and the
     /// timeout hold like a matrix source, so a run that came for one retried Jamf Pro source
     /// does not collect the whole product again.
+    /// `installedVersion` gates the kinds in `minimumJamfCLI`; a gated kind is skipped even on
+    /// a forced run, since the command does not exist on that jamf-cli.
     static func planAddOn(
         commands: [(args: [String], kind: String)], collectSkip: Set<String> = [],
-        stateStore: StateFileStore?, now: Date = Date()
+        installedVersion: String? = nil, stateStore: StateFileStore?, now: Date = Date()
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return commands.map { args, kind in
@@ -440,6 +438,8 @@ extension ReportEngine {
             let last = stateStore?.lastRun(report: kind)
             if collectSkip.contains(kind) {
                 skip = .collectSkip
+            } else if let gate = jamfCLISkip(kind, installed: installedVersion) {
+                skip = gate
             } else if addOnCollectForced {
                 skip = nil
             } else if let until = stateStore?.timeoutHoldUntil(report: kind, now: now),

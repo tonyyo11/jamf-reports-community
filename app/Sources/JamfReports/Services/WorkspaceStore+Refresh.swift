@@ -699,7 +699,7 @@ extension WorkspaceStore {
 
     /// The kinds `profile` is expected to collect, from the inputs the health
     /// strip reads: the skip-expensive toggle, `jamf_cli.collect_skip`, the
-    /// profile's auth method and the jamf-cli version (for the dashboard). The Protect kinds are
+    /// profile's auth method and the jamf-cli version (for gated sources). The Protect kinds are
     /// expected only where `collect` would run Protect: the pin allows `protect.profile` and
     /// that login is not another product. Off the main actor: resolving can run `config list`.
     nonisolated static func expectedKinds(
@@ -730,7 +730,9 @@ extension WorkspaceStore {
         let collectSkip = SharedConfigPin.collectSkip(
             configured: config?.jamfCli?.collectSkip, profile: profile,
             protectOnly: environment.isConfirmedProtectOnly(workspace: profile), fleet: fleet)
-        let protectKinds = DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) }
+        let protectKinds = DataFreshnessHealth.protectKinds.filter {
+            !collectSkip.contains($0) && ReportEngine.jamfCLIAllows($0, installed: jamfCLIVersion)
+        }
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
             securityCloudPinAllows(profile, $0)
@@ -769,7 +771,7 @@ extension WorkspaceStore {
             authMethod: platform.auth?.authMethod,
             tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: collectSkip,
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
+            jamfCLIVersion: jamfCLIVersion,
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil,

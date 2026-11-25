@@ -352,7 +352,7 @@ final class CollectSkipSwitchTests: XCTestCase {
     func testTheDashboardLeavesProtectOutWhenEveryProtectSourceIsOff() async {
         let lines = SwitchLines()
         let bin = URL(fileURLWithPath: "/nonexistent/stub-cli")
-        let all = Set(DataFreshnessHealth.protectKinds)
+        let all = Set(ReportEngine.protectReportKinds)
         let left = await ReportEngine.dashboardProtect(
             "p", bin: bin, collectSkip: all, onLine: lines.append)
         XCTAssertNil(left)
@@ -394,7 +394,7 @@ final class CollectSkipSwitchTests: XCTestCase {
 
         _ = try await ReportEngine.protectCollect(
             profile: profile, dataDir: data, collectSkip: ["protect-alerts"],
-            locateJamfCLI: { stub }, onLine: seen.append)
+            locateJamfCLI: { stub }, readVersion: { _ in "1.38.0" }, onLine: seen.append)
         _ = try? await ReportEngine.schoolCollect(
             workspace: WorkspaceID(validating: profile), profile: profile,
             workspacePaths: WorkspacePaths.self, force: true, locateJamfCLI: { stub },

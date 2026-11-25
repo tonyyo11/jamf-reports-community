@@ -7,6 +7,10 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Workspaces with Jamf Protect now collect two more Protect sources: the signature versions Protect publishes and the current agent installer version. Only the version numbers and dates are saved. They prepare the signature and agent currency findings coming later in 2.13. On a jamf-cli too old for them (1.38 for signature versions, 1.35 for the installer), they are skipped with a line in the run log, and the run is not marked Partial.
+
 ## [2.12.0] - 2026-11-23
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the

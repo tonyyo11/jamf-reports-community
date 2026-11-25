@@ -2383,7 +2383,6 @@ struct ReportEngine: Sendable {
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
         let (detectedVersion, profileAuth) = try await collectPreflight(
             profile: profile, binary: bin, onLine: onLine)
-        let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let platformRun = Self.resolvePlatformRun(
             environment: routedEnvironment
                 ?? EnvironmentProfiles.resolve(config: loadedConfig, workspace: workspace.name),
@@ -2419,8 +2418,7 @@ struct ReportEngine: Sendable {
         var planInputs = CollectPlanInputs(
             tiers: tiers, force: force, skipExpensive: skipExpensive,
             nonPlatformAuth: platformRun.nonPlatformAuth, tenantLevel: platformRun.tenantLevel,
-            collectSkip: collectSkip, dashboardSupported: dashboardSupported,
-            installedVersion: detectedVersion, now: collectStart)
+            collectSkip: collectSkip, installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
         planInputs.skippedSides = fleet.skipped
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
@@ -3031,6 +3029,10 @@ struct ReportEngine: Sendable {
             (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
             (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
             (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
+            (["-p", profile, "protect", "threat-prevention-versions", "list", "--output", "json"],
+             protectSignatureVersionsKind),
+            (["-p", profile, "protect", "downloads", "summary", "--output", "json"],
+             protectInstallerKind),
         ]
     }
 
@@ -4328,6 +4330,8 @@ struct ReportEngine: Sendable {
     /// - Parameters:
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
+    ///   - readVersion: The installed jamf-cli's version, for the gated sources
+    ///     (`minimumJamfCLI`); asked only when one of them would run. Tests inject it.
     ///   - onLine: Progress callback for log lines.
     /// - Returns: The kinds of the Protect sources that landed.
     @discardableResult
@@ -4336,6 +4340,9 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         collectSkip: Set<String> = [],
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        readVersion: @Sendable (URL) async -> String? = {
+            await JamfCLIInstaller.installedVersionOffMain(at: $0)
+        },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String] {
         guard let bin = locateJamfCLI() else {
@@ -4350,9 +4357,14 @@ struct ReportEngine: Sendable {
             .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
+        let matrix = protectCommandMatrix(profile: profile)
+        let asksVersion = matrix.contains {
+            minimumJamfCLI[$0.kind] != nil && !collectSkip.contains($0.kind)
+        }
+        let installedVersion = asksVersion ? await readVersion(bin) : nil
         let commands = announcing(
             planAddOn(
-                commands: protectCommandMatrix(profile: profile), collectSkip: collectSkip,
+                commands: matrix, collectSkip: collectSkip, installedVersion: installedVersion,
                 stateStore: stateStore, now: collectStart),
             profile: profile, onLine: onLine)
 
@@ -4396,12 +4408,29 @@ struct ReportEngine: Sendable {
                     stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
                     continue
                 }
+                // A reduced kind saves only its keep-list; a payload that cannot be reduced is
+                // not saved on a guess.
+                let saved: Data
+                if reducedProtectKinds[kind] != nil {
+                    guard let reduced = jsonPayload(from: data)
+                            .flatMap({ reducingProtect(kind: kind, data: $0) }) else {
+                        onLine(.init(timestamp: Date(), level: .warn,
+                            text: "[warn] \(kind) not saved: unexpected shape"))
+                        unlanded.append(kind)
+                        stateStore?.record(
+                            .failed(exitCode: exitCode), report: kind, at: collectStart)
+                        continue
+                    }
+                    saved = reduced
+                } else {
+                    saved = data
+                }
                 try saveRecordingFailure(
-                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    saved, kind: kind, dataDir: dataDir, exitCode: exitCode,
                     stateStore: stateStore, at: collectStart, onLine: onLine)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
-                             text: "[ok] \(kind): \(data.count) bytes"))
+                             text: "[ok] \(kind): \(saved.count) bytes"))
             } else {
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
                 let cause = FailureCause.classify(

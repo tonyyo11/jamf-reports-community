@@ -131,7 +131,6 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 skipExpensive: inputs.skipExpensive,
                 nonPlatformAuth: ReportEngine.nonPlatformAuthMethod(inputs.authMethod),
                 tenantLevel: inputs.tenantLevel, collectSkip: inputs.collectSkip,
-                dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
                 installedVersion: inputs.installedVersion, now: Date(),
                 platformUnavailable: inputs.platformUnavailable,
                 skippedSides: inputs.fleet.skipped),
@@ -200,7 +199,9 @@ struct CollectSourcesPlan: Equatable, Sendable {
         guard let profile = inputs.protectProfile else { return [] }
         return ReportEngine.protectCommandMatrix(profile: profile).map {
             Source(product: .protect, kind: $0.kind, command: command($0.args),
-                   skipReason: inputs.protectRefusal ?? skipped($0.kind, inputs))
+                   skipReason: inputs.protectRefusal ?? skipped($0.kind, inputs)
+                       ?? ReportEngine.jamfCLISkip($0.kind, installed: inputs.installedVersion)
+                           .map(text))
         }
     }
 
