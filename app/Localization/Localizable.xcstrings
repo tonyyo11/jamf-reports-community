@@ -20825,6 +20825,52 @@
         }
       }
     },
+    "'%@' only accepts 'below'" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ akzeptiert nur „below“"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "'%@' only accepts 'below'"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» solo acepta «below»"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » n’accepte que « below »"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» accetta solo «below»"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は「below」のみ指定できます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” aceita apenas “below”"
+          }
+        }
+      }
+    },
     "'%@' reaches %@ and '%@' reaches %@, so Platform API reports are skipped. Choose the Platform profile for this Jamf Pro." : {
       "localizations" : {
         "de" : {
@@ -51475,6 +51521,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dias de atraso indisponíveis"
+          }
+        }
+      }
+    },
+    "Days to the soonest server credential expiry" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tage bis zum Ablauf der nächsten Serveranmeldedaten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Días hasta que caduque la próxima credencial del servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jours avant l’expiration du prochain identifiant du serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giorni alla scadenza della prossima credenziale del server"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のサーバー資格情報の期限までの日数"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dias até o vencimento da próxima credencial do servidor"
           }
         }
       }
@@ -83577,6 +83663,46 @@
         }
       }
     },
+    "Needs the server health sources collected for this Jamf Pro server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert, dass die Serverstatus-Quellen für diesen Jamf-Pro-Server erfasst werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere recopilar las fuentes de estado del servidor para este servidor Jamf Pro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte des sources d’état du serveur pour ce serveur Jamf Pro."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta delle origini di stato del server per questo server Jamf Pro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Pro サーバーのサーバー状態ソースの収集が必要です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer a coleta das fontes de integridade do servidor para este servidor Jamf Pro."
+          }
+        }
+      }
+    },
     "Network ID" : {
       "localizations" : {
         "de" : {
@@ -94649,6 +94775,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abra a Auditoria de integridade para ver o contexto do achado e orientações de correção."
+          }
+        }
+      }
+    },
+    "Open Health Audit to see the server and admin health card." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie die Integritätsprüfung, um die Karte „Server- und Administratorstatus“ zu sehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Auditoría de estado para ver la tarjeta de estado del servidor y de administración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez l’audit de santé pour voir la carte d’état du serveur et de l’administration."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Health Audit per vedere la scheda di stato di server e amministrazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ヘルス監査を開くと、サーバーと管理者の状態カードを確認できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra a Auditoria de integridade para ver o cartão de integridade do servidor e da administração."
           }
         }
       }

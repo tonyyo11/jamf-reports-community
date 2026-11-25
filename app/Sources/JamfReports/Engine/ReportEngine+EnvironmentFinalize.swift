@@ -196,9 +196,16 @@ extension ReportEngine {
             dataDir: dataDir, workspace: workspace, landed: landed[.securityCloud] ?? [],
             school: environment.isSchool, hasInventory: environment.mdm != nil,
             maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
-        guard !slots.isEmpty || figures != nil else { return .keptExisting }
+        // Server health is a Jamf Pro matrix source: School and Protect-only environments run none.
+        let serverFigures = environment.jamfPro == nil ? nil : serverHealthSummaryFigures(
+            dataDir: dataDir, landed: landed[.jamfPro] ?? [],
+            maxCacheAgeHours: maxCacheAgeHours, now: day)
+        guard !slots.isEmpty || figures != nil || serverFigures != nil else {
+            return .keptExisting
+        }
         summary = summary.withEnvironment(
-            products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures)
+            products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures,
+            serverHealth: serverFigures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
         // run" line would contradict the [partial] line already logged: drop its [ok] line. A
         // rewrite of a summary already there drops it too: the [info] line below says what it

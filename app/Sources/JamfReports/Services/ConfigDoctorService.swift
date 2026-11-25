@@ -382,14 +382,17 @@ enum ConfigDoctorService {
         guard let metricRaw = nonEmpty(rule.metric) else {
             return L("no metric set — valid keys: \(sampleKeys), … (see config.example.yaml)")
         }
-        guard AlertMetric(rawValue: metricRaw) != nil else {
+        guard let metric = AlertMetric(rawValue: metricRaw) else {
             return L("unknown metric '\(metricRaw)' — valid keys: \(sampleKeys), … (see config.example.yaml)")
         }
         guard let whenRaw = nonEmpty(rule.when) else {
             return L("no 'when' comparison set — valid values: below, above, drops_more_than")
         }
-        guard AlertRule.Comparison(rawValue: whenRaw) != nil else {
+        guard let comparison = AlertRule.Comparison(rawValue: whenRaw) else {
             return L("unknown 'when' comparison '\(whenRaw)' — valid values: below, above, drops_more_than")
+        }
+        guard metric.accepts(comparison) else {
+            return L("'\(metricRaw)' only accepts 'below'")
         }
         guard let threshold = rule.threshold else {
             return L("no threshold set")

@@ -369,7 +369,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
              .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
-             .securityCloudHighRisk:
+             .securityCloudHighRisk, .serverCredentialSoonestDays, .jamfProNotifications:
             return Self.environmentValue(metric, in: summary)
         }
     }
@@ -393,6 +393,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
         case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
         case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)
+        case .serverCredentialSoonestDays: return summary.serverCredentialSoonestDays.map(Double.init)
+        case .jamfProNotifications: return summary.jamfProNotificationCount.map(Double.init)
         default: return nil
         }
     }
@@ -401,7 +403,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+        if metric.isMobile || metric.isProtect || metric.isSecurityCloud || metric.isServerHealth {
             return allSummaries.contains { value(for: metric, in: $0) != nil }
         }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }

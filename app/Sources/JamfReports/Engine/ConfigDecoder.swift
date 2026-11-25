@@ -989,8 +989,9 @@ struct AlertsConfig: Decodable, Sendable {
     /// expects a positive drop) and at most `AlertRule.maxThreshold`.
     var resolvedRules: [AlertRule] {
         (rules ?? []).filter { rule in
-            guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
-                  let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
+            guard let metric = rule.metric, let known = AlertMetric(rawValue: metric),
+                  let when = rule.when, let comparison = AlertRule.Comparison(rawValue: when),
+                  known.accepts(comparison),
                   let threshold = rule.threshold,
                   threshold.isFinite, threshold >= 0,
                   threshold <= AlertRule.maxThreshold else { return false }

@@ -11,6 +11,7 @@ versions in this repository map to git tags.
 
 - The Health Audit has a "Server and admin health" card that shows when the Jamf Pro server's built-in certificate authority expires, from jamf-cli 1.38.0. A login without the privilege, or a server without the feature, is shown as such and checked again weekly, never as a failed run. The HTML report's Needs attention list names an expired or expiring certificate.
 - The same card, the "Server and Admin Health" tab and the HTML report's Needs attention list show the Jamf Pro notifications the login can see, counted by the type Jamf gives them. Jamf filters notifications by user and site, so zero reads "None visible to this login".
+- The daily summary records when the built-in certificate authority and each ADE token expire, and how many Jamf Pro notifications the login sees. An alert rule `server_credential_days_left` with `below` posts one webhook card the first time a credential comes within the threshold and once more when it expires; a renewed credential starts over. A rule `jamf_pro_notification_count` alerts on the count. Trends gains "Days to the soonest server credential expiry" and "Jamf Pro notifications" for a Jamf Pro workspace. A 2.12 Mac sharing the workspace drops the new summary fields when it rewrites a summary.
 
 ### Changed
 

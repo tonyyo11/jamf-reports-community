@@ -378,6 +378,9 @@ notify:
 #   security_cloud_matched_pct   (0–100, Security Cloud devices found in the inventory)
 #   security_cloud_device_count, security_cloud_high_risk_count
 #   (whole-number counts)
+#   Jamf Pro server health (a Jamf Pro workspace on jamf-cli 1.38.0 or later):
+#   server_credential_days_left   (whole days; one alert per credential, `below` only)
+#   jamf_pro_notification_count   (whole-number count)
 # when — one of:
 #   below            fires when the value is below threshold
 #   above            fires when the value is above threshold

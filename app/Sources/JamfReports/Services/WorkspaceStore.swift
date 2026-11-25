@@ -212,7 +212,13 @@ final class WorkspaceStore {
             : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
             + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
             + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+            + (serverHealthMetricsOffered ? TrendSeries.Metric.serverHealthMetrics : [])
             + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
+    }
+
+    /// Server-health series: a Jamf Pro workspace, never demo (no demo history carries them).
+    var serverHealthMetricsOffered: Bool {
+        !demoMode && environmentProducts.has(.jamfPro) && !isSchoolWorkspace
     }
 
     /// An environment with Protect; each demo one has a Protect series.
@@ -223,6 +229,7 @@ final class WorkspaceStore {
         TrendSeries.Metric.mobileMetrics
             + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
             + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+            + (serverHealthMetricsOffered ? TrendSeries.Metric.serverHealthMetrics : [])
     }
 
     /// Likewise for Jamf Security Cloud, which no demo environment has.
@@ -238,6 +245,7 @@ final class WorkspaceStore {
            DemoData.trends(for: profile)[metric] == nil { return false }
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
+        if metric.isServerHealth, !serverHealthMetricsOffered { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }
