@@ -1,7 +1,7 @@
 # Server and admin health
 
 *   **Author:** Tony Young
-*   **Status:** In Review
+*   **Status:** Approved (Tony, 2026-11-24)
 *   **Date:** 2026-11-24
 
 --------------------------------------------------------------------------------
