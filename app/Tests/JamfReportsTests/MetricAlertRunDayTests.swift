@@ -172,10 +172,10 @@ final class MetricAlertCredentialRunTests: XCTestCase {
         let config = try config()
         try writeSummary(day: day(0), expiries: ["ca": 40])
         await run(config, on: day(0))
-        try writeSummary(day: day(1), expiries: ["ca": 41 + 365])
+        try writeSummary(day: day(1), expiries: ["ca": 406])
         await run(config, on: day(1))
         XCTAssertEqual(WebhookCapture.posted.count, 1, "a renewed credential is out of range")
-        try writeSummary(day: day(400), expiries: ["ca": 41 + 365])
+        try writeSummary(day: day(400), expiries: ["ca": 406])
         await run(config, on: day(400))
         XCTAssertEqual(WebhookCapture.posted.count, 2, "the new expiry crossing is a new key")
     }
