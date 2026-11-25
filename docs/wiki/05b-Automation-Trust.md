@@ -254,7 +254,7 @@ workspace that has no such data.
 |---|---|---|
 | Macs | `filevault_pct`, `compliance_pct`, `os_current_pct`, `patch_pct`, `sip_pct`, `firewall_pct`, `gatekeeper_pct`, `secure_boot_pct`, `bootstrap_pct`, `xprotect_pct`, `cve_pct`, `mscp_score_pct`, `security_score` | `stale_count`, `action_items_p0`, `total_devices` |
 | Mobile devices | `mobile_os_current_pct`, `mobile_passcode_pct`, `mobile_supervised_pct`, `mobile_data_protection_pct` | `mobile_stale_count`, `mobile_jailbroken_count` |
-| Jamf Protect | `protect_matched_pct` | `protect_computer_count`, `protect_open_alert_count`, `protect_high_alert_count` |
+| Jamf Protect | `protect_matched_pct` | `protect_computer_count`, `protect_open_alert_count`, `protect_high_alert_count`, `protect_signatures_behind_count`, `protect_agent_behind_count`, `protect_disconnected_count` |
 | Jamf Security Cloud | `security_cloud_matched_pct` | `security_cloud_device_count`, `security_cloud_high_risk_count` |
 
 ### How and when alerts fire

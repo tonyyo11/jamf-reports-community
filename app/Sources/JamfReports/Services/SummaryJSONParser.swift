@@ -71,6 +71,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // Environment model P9: products that landed, Protect figures, aggregate maps.
              products, protectComputerCount, protectMatched, protectOpenAlerts,
              protectAlertCounts, securityCloudDeviceCount, securityCloudMatched,
+             // Wave E: Protect agent currency (`ProtectAgentHealth`).
+             protectSignaturesBehind, protectAgentBehind, protectDisconnected,
              securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
              lastSeenBuckets
     }
@@ -168,6 +170,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var protectMatched: MobileSummary.Share?
     private(set) var protectOpenAlerts: Int?
     private(set) var protectAlertCounts: [String: Int]?
+    /// Protect Macs behind the published signatures, behind the installer, and disconnected
+    /// over a day (`ProtectAgentHealth`); nil when not measured or no Mac could be judged.
+    private(set) var protectSignaturesBehind: MobileSummary.Share?
+    private(set) var protectAgentBehind: MobileSummary.Share?
+    private(set) var protectDisconnected: MobileSummary.Share?
     /// Jamf Security Cloud figures (P12); nil when it is absent or its risk list was not read.
     /// `securityCloudMatched` is rows matched to this environment's inventory over rows with an
     /// `externalId`; `securityCloudRiskCounts` is by lower-cased `riskCategory`.
@@ -252,6 +259,15 @@ struct DailySummary: Codable, Identifiable, Sendable {
             resolved.protectOpenAlerts = alerts.open
             resolved.protectAlertCounts = alerts.counts
         }
+        // Each finding this run measured replaces the earlier one, even when it could not be
+        // judged; one it did not measure keeps the earlier value (as `protectMatched` does).
+        if let agent = protect?.agent {
+            if let measured = agent.signaturesBehind {
+                resolved.protectSignaturesBehind = measured.share
+            }
+            if let measured = agent.agentBehind { resolved.protectAgentBehind = measured.share }
+            if let measured = agent.disconnected { resolved.protectDisconnected = measured.share }
+        }
         if let securityCloud {
             resolved.securityCloudDeviceCount = securityCloud.count
             resolved.securityCloudMatched = securityCloud.matched
@@ -314,6 +330,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
             protectOpenAlerts: protectAlertsFromOlder ? older.protectOpenAlerts : protectOpenAlerts,
             protectAlertCounts: protectAlertsFromOlder
                 ? older.protectAlertCounts : protectAlertCounts,
+            protectSignaturesBehind: protectSignaturesBehind ?? older.protectSignaturesBehind,
+            protectAgentBehind: protectAgentBehind ?? older.protectAgentBehind,
+            protectDisconnected: protectDisconnected ?? older.protectDisconnected,
             securityCloudDeviceCount: securityCloudFromOlder
                 ? older.securityCloudDeviceCount : securityCloudDeviceCount,
             securityCloudMatched: securityCloudMatched ?? older.securityCloudMatched,
@@ -387,6 +406,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         protectMatched: MobileSummary.Share? = nil,
         protectOpenAlerts: Int? = nil,
         protectAlertCounts: [String: Int]? = nil,
+        protectSignaturesBehind: MobileSummary.Share? = nil,
+        protectAgentBehind: MobileSummary.Share? = nil,
+        protectDisconnected: MobileSummary.Share? = nil,
         securityCloudDeviceCount: Int? = nil,
         securityCloudMatched: MobileSummary.Share? = nil,
         securityCloudRiskCounts: [String: Int]? = nil,
@@ -434,6 +456,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.protectMatched = protectMatched
         self.protectOpenAlerts = protectOpenAlerts
         self.protectAlertCounts = protectAlertCounts
+        self.protectSignaturesBehind = protectSignaturesBehind
+        self.protectAgentBehind = protectAgentBehind
+        self.protectDisconnected = protectDisconnected
         self.securityCloudDeviceCount = securityCloudDeviceCount
         self.securityCloudMatched = securityCloudMatched
         self.securityCloudRiskCounts = securityCloudRiskCounts
@@ -492,6 +517,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
         protectOpenAlerts = try container.decodeIfPresent(Int.self, forKey: .protectOpenAlerts)
         protectAlertCounts = try container.decodeIfPresent(
             [String: Int].self, forKey: .protectAlertCounts)
+        protectSignaturesBehind = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .protectSignaturesBehind)
+        protectAgentBehind = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .protectAgentBehind)
+        protectDisconnected = try container.decodeIfPresent(
+            MobileSummary.Share.self, forKey: .protectDisconnected)
         securityCloudDeviceCount = try container.decodeIfPresent(
             Int.self, forKey: .securityCloudDeviceCount)
         securityCloudMatched = try container.decodeIfPresent(
@@ -547,6 +578,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(protectMatched, forKey: .protectMatched)
         try container.encodeIfPresent(protectOpenAlerts, forKey: .protectOpenAlerts)
         try container.encodeIfPresent(protectAlertCounts, forKey: .protectAlertCounts)
+        try container.encodeIfPresent(protectSignaturesBehind, forKey: .protectSignaturesBehind)
+        try container.encodeIfPresent(protectAgentBehind, forKey: .protectAgentBehind)
+        try container.encodeIfPresent(protectDisconnected, forKey: .protectDisconnected)
         try container.encodeIfPresent(securityCloudDeviceCount, forKey: .securityCloudDeviceCount)
         try container.encodeIfPresent(securityCloudMatched, forKey: .securityCloudMatched)
         try container.encodeIfPresent(securityCloudRiskCounts, forKey: .securityCloudRiskCounts)
@@ -588,7 +622,10 @@ extension DailySummary {
             protectAlertCounts, securityCloudRiskCounts, osMajorCounts, modelFamilyCounts,
             mobileFormFactorCounts,
         ].compactMap { $0 }.flatMap { $0.values }
-        let pairs = [protectMatched, securityCloudMatched].compactMap { $0 }
+        let pairs = [
+            protectMatched, securityCloudMatched, protectSignaturesBehind, protectAgentBehind,
+            protectDisconnected,
+        ].compactMap { $0 }
             .flatMap { [$0.met, $0.of] }
         return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount]
             .compactMap { $0 } + maps + pairs
@@ -599,7 +636,8 @@ extension DailySummary {
     /// alerts than the total.
     private var environmentFieldsAreConsistent: Bool {
         if environmentCounts.contains(where: { $0 < 0 }) { return false }
-        if let protectMatched, protectMatched.met < 0 || protectMatched.met > protectMatched.of {
+        for pair in [protectMatched, protectSignaturesBehind, protectAgentBehind,
+                     protectDisconnected].compactMap({ $0 }) where pair.met > pair.of {
             return false
         }
         if let protectOpenAlerts, let protectAlertCounts,

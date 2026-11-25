@@ -1963,7 +1963,8 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             L("Open Mobile Devices to inspect current records.")
-        case .protectComputers, .protectMatched, .protectOpenAlerts:
+        case .protectComputers, .protectMatched, .protectOpenAlerts,
+             .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             L("Open Jamf Protect to inspect current records.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Open Data Sources to see the Jamf Security Cloud collect.")
@@ -2027,7 +2028,8 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             [.init(.mobileFleet)]
-        case .protectComputers, .protectMatched, .protectOpenAlerts:
+        case .protectComputers, .protectMatched, .protectOpenAlerts,
+             .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             [.init(.protectDashboard)]
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             [.init(.sources)]

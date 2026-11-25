@@ -32,9 +32,15 @@ extension DemoData {
         let computers = protectSnapshot.computers
         let matched = ProtectProCorrelation.load(
             protect: computers, profile: workspace, demoMode: true)?.matchedShare
+        let agent = protectSnapshot.agentHealth.map { health in
+            ProtectSummaryFigures.Agent(
+                signaturesBehind: .init(health.signaturesBehind.share),
+                agentBehind: .init(health.agentBehind.share),
+                disconnected: .init(health.disconnected.share))
+        }
         return ProtectSummaryFigures(
             computers: .init(count: computers.count, matched: matched),
-            alerts: ReportEngine.protectAlertFigures(protectSnapshot.alerts))
+            alerts: ReportEngine.protectAlertFigures(protectSnapshot.alerts), agent: agent)
     }
 
     /// The summary fields Protect fills, on the newest day only.
@@ -50,6 +56,9 @@ extension DemoData {
             .protectComputers: (start: 6, jitter: 0.6, isCount: true),
             .protectMatched: (start: 92, jitter: 1.5, isCount: false),
             .protectOpenAlerts: (start: 5, jitter: 1.2, isCount: true),
+            .protectSignaturesBehind: (start: 5, jitter: 1.0, isCount: true),
+            .protectAgentBehind: (start: 6, jitter: 1.0, isCount: true),
+            .protectDisconnected: (start: 2, jitter: 0.8, isCount: true),
         ])
 
     // MARK: - Mobile

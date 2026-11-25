@@ -73255,6 +73255,46 @@
         }
       }
     },
+    "Jamf Protect agents behind the installer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: Agenten älter als das Installationsprogramm"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: agentes por detrás del instalador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect : agents en retard sur le programme d'installation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: agenti in ritardo rispetto al programma di installazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: インストーラより古いエージェント"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: agentes atrás do instalador"
+          }
+        }
+      }
+    },
     "Jamf Protect alerts and analytics beside this workspace's Jamf School data." : {
       "localizations" : {
         "de" : {
@@ -73371,6 +73411,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dados do Jamf Protect"
+          }
+        }
+      }
+    },
+    "Jamf Protect disconnected over a day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: seit über einem Tag getrennt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: desconectados más de un día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect : déconnectés depuis plus d'un jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: disconnessi da più di un giorno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: 1 日以上切断"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: desconectados há mais de um dia"
           }
         }
       }
@@ -73783,6 +73863,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O perfil do Jamf Protect %@ não foi registrado: %@"
+          }
+        }
+      }
+    },
+    "Jamf Protect signatures behind" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: Signaturen im Rückstand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: firmas atrasadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect : signatures en retard"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: firme in ritardo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: シグネチャが古い"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Protect: assinaturas atrasadas"
           }
         }
       }
