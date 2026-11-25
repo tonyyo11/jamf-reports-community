@@ -352,9 +352,10 @@ there but cannot be read gives "Not evaluated: <kind> could not be read", never
 `snapshotFolderEntries`, keeps `isSelectableSnapshot` files that carry a filename
 stamp (`CloudStorage.snapshotTimestamp`; a file with none is skipped, since a sync
 provider rewrites mtimes), clamps a stamp later than `now` to `now`, orders oldest
-first with `isOlderSnapshot`, reads at most 400 files and stops at the first that
-holds the current version. If the cap is reached first, first-seen is the oldest
-file read.
+first with `isOlderSnapshot`, reads the newest 400 files and stops at the first that
+holds the current version (dotted-version equality). When none of them holds it,
+first-seen is unknown and the finding is not evaluated: a guessed older date would start
+the grace early.
 
 ### Daily summary, alerts, Trends
 
@@ -793,7 +794,7 @@ files. Line numbers are as of commit `10ae87db` (the base of `dev/2-13-0` on
 | Installer version went back (older than a previous snapshot's) | first-seen is the oldest snapshot holding the current version |
 | Installer snapshot stamped in the future | stamp clamped to `now`, not evaluated |
 | Installer snapshot with no filename stamp | skipped |
-| More than 400 installer snapshots before the first match | first-seen is the oldest file read |
+| More than 400 installer snapshots, none holding the version | first-seen unknown, not evaluated |
 | Agent `version` empty or unparseable | Mac not in `of` |
 | Agent newer than installer | not behind |
 | Disconnected 2 h / 30 h / no `lastDisconnection` | not met / met / "time unknown" |
