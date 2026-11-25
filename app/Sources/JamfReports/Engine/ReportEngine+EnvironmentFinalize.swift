@@ -28,6 +28,41 @@ final class LandedSources: Sendable {
         set { scanPlan.withLock { $0 = newValue } }
     }
 
+    /// The `computers` snapshot this run saved (wave B2), decoded from the bytes in memory.
+    struct LandedComputers: Sendable {
+        let stamp: String
+        let date: Date
+        let snapshot: ComputerSnapshot
+    }
+
+    private let computers = Mutex<LandedComputers?>(nil)
+    var computerSnapshot: LandedComputers? {
+        get { computers.withLock { $0 } }
+        set { computers.withLock { $0 = newValue } }
+    }
+
+    private let rulesStamp = Mutex<Date?>(nil)
+    /// The stamp of the `compliance-rules` snapshot this run saved.
+    var complianceRulesStamp: Date? {
+        get { rulesStamp.withLock { $0 } }
+        set { rulesStamp.withLock { $0 = newValue } }
+    }
+
+    /// Records what the change counts need from a snapshot this run saved.
+    func noteSaved(kind: String, file: URL, payload: Data) {
+        guard let date = CloudStorage.snapshotTimestamp(of: file) else { return }
+        switch kind {
+        case "computers":
+            guard let snapshot = ComputerDates.decodeComputerSnapshot(payload) else { return }
+            computerSnapshot = LandedComputers(
+                stamp: PatchReleaseDateService.snapshotStamp(of: file) ?? "", date: date, snapshot: snapshot)
+        case "compliance-rules":
+            complianceRulesStamp = date
+        default:
+            break
+        }
+    }
+
     private let unwritten = Mutex(false)
     /// The MDM step logged `summaryNotWrittenMarker` this run.
     var mdmSummaryUnwritten: Bool {

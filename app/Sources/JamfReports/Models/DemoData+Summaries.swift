@@ -220,3 +220,20 @@ extension DemoData {
             sevenDaysOrMore: out["older"], never: out["never"])
     }
 }
+
+extension DemoData {
+    /// The demo fleet's "Since last collect": 523 Macs yesterday, 524 today (2 enrolled,
+    /// 1 removed). `DemoDataOperationsTests` checks these against the demo's own facts.
+    static let fleetChanges = FleetChangeSummary(computers: ComputerChanges(
+        currentStamp: "20261101T060000", baselineStamp: "20261031T060000",
+        currentCount: totalDevices, priorCount: totalDevices - 1,
+        staleDays: 30, staleBasis: [StaleBasis.checkIn.rawValue],
+        joined: 2, left: 1, osChanged: 4, becameStale: 3, noLongerStale: 1,
+        fileVaultOff: 1, fileVaultStoppedReporting: 0, unidentified: 0, ambiguous: 0))
+
+    static var overviewChanges: OverviewChanges {
+        OverviewChanges(
+            day: SummaryJSONParser.dateFormatter.string(from: referenceDate),
+            computers: fleetChanges.computers, benchmarks: nil, agents: [])
+    }
+}

@@ -21,7 +21,8 @@ func successFacts(
     artifact: String?,
     sheetFailures: Int,
     products: String? = nil,
-    scope: String? = nil
+    scope: String? = nil,
+    changes: FleetChangeSummary? = nil
 ) -> [WebhookNotifier.Fact] {
     let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
@@ -36,6 +37,9 @@ func successFacts(
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
     if let products { facts.append(.init(label: "Products", value: products)) }
     if let scope { facts.append(.init(label: "Scope", value: scope)) }
+    if let changes, let text = ScheduledRunSignals.changesText(changes) {
+        facts.append(.init(label: "Changes", value: text))
+    }
     return facts
 }
 
@@ -125,6 +129,39 @@ func scheduledRunEcho(_ line: CLIBridge.LogLine, verbose: Bool) -> String? {
 /// meaning for a single CLI invocation.
 enum ScheduledRunSignals {
 
+    /// Today's change part for the digest: the newest summary, only when it is today's (a
+    /// generate-only run repeats the morning's part, which is still today's news).
+    static func digestChanges(summaries: [DailySummary], today: String) -> FleetChangeSummary? {
+        guard let newest = summaries.max(by: { $0.date < $1.date }), newest.date == today
+        else { return nil }
+        return newest.changes
+    }
+
+    /// The digest's English `Changes` text: counts only, never a device. Nil with no part.
+    static func changesText(_ changes: FleetChangeSummary) -> String? {
+        var parts: [String] = []
+        if let computers = changes.computers {
+            let counts: [(Int?, String)] = [
+                (computers.joined, "enrolled"), (computers.left, "removed"),
+                (computers.becameStale, "went stale"), (computers.noLongerStale, "came back"),
+                (computers.fileVaultOff, "FileVault off"),
+                (computers.fileVaultStoppedReporting, "FileVault not reported"),
+            ]
+            let shown = counts.compactMap { count, label in
+                count.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+            }
+            if computers.baselineUnreadable == true || counts.allSatisfy({ $0.0 == nil }) {
+                parts.append("Changes not measured")
+            } else {
+                parts.append(shown.isEmpty ? "No changes" : shown.joined(separator: ", "))
+            }
+        }
+        if let newly = changes.benchmarks?.newlyFailing {
+            parts.append("\(newly) benchmark rules newly failing")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "; ")
+    }
+
     /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
     /// is enabled with a usable https URL. Best-effort — never affects the run.
     ///
@@ -138,15 +175,22 @@ enum ScheduledRunSignals {
         mode: Schedule.RunMode,
         artifact: String?,
         sheetFailures: Int = 0,
-        recorder: ScheduledRunRecorder?
+        recorder: ScheduledRunRecorder?,
+        now: Date = Date()
     ) async {
         guard let notify = SharedConfigPin.effectiveNotify(config?.notify, profile: profile),
               notify.isUsable else { return }
+        let changes = notify.resolvedDetail == .full
+            ? digestChanges(
+                summaries: TrendStore.readSummaries(profile: profile),
+                today: SummaryJSONParser.dateFormatter.string(from: now))
+            : nil
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
             artifact: artifact, sheetFailures: sheetFailures,
             products: EnvironmentProducts.webhookValue(workspace: profile),
-            scope: SiteScope.persisted(profile: profile).summary
+            scope: SiteScope.persisted(profile: profile).summary,
+            changes: changes
         )
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.send(

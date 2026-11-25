@@ -777,7 +777,9 @@ struct OverviewView: View {
     private var renderedSections: [OverviewSection] {
         let composition = workspace.environmentComposition
         return workspace.overviewLayout.visible.filter { section in
-            guard section.availability(in: composition).isShown else { return false }
+            guard section.availability(
+                in: composition, hasJamfPro: workspace.environmentProducts.has(.jamfPro)
+            ).isShown else { return false }
             switch section {
             case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
@@ -825,6 +827,7 @@ struct OverviewView: View {
         } else {
             switch section {
             case .aiInsight: aiInsightCard
+            case .changes: changesSection
             case .managedDevices: managedDevicesSection
             case .mobileDevices: mobileDevicesSection
             case .scoreCards: statRow
@@ -863,6 +866,11 @@ struct OverviewView: View {
                 : nil
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
             return liveLoaded ? live.unavailable[section] : nil
+        case .changes:
+            return overviewChanges == nil
+                ? OverviewUnavailable(
+                    reason: L("No comparison yet: needs computers collected on two different days."))
+                : nil
         case .scoreCards, .aiInsight, .workspaceStatus:
             return nil
         }
@@ -1067,6 +1075,21 @@ struct OverviewView: View {
     /// The latest summary's mobile figures; the demo fleet's own in demo mode.
     private var mobileSummary: MobileSummary? {
         workspace.demoMode ? DemoData.mobileSummary : trendStore.filteredSummaries.last?.mobile
+    }
+
+    private var overviewChanges: OverviewChanges? {
+        workspace.demoMode ? DemoData.overviewChanges
+            : trendStore.overviewChanges(format: percentFormat)
+    }
+
+    @ViewBuilder
+    private var changesSection: some View {
+        if let changes = overviewChanges {
+            OverviewChangesCard(
+                changes: changes,
+                today: workspace.demoMode
+                    ? changes.day : SummaryJSONParser.dateFormatter.string(from: Date()))
+        }
     }
 
     private var mobileDevicesSection: some View {

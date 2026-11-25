@@ -15,6 +15,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
     }
     private(set) var filteredSummaries: [DailySummary] = []
+
+    /// The Overview's "Since last collect" figures, over every loaded summary.
+    func overviewChanges(format: PercentFormat) -> OverviewChanges? {
+        OverviewChanges.build(summaries: allSummaries, format: format)
+    }
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
     /// Most-recent summary file mtime for the active profile, captured at

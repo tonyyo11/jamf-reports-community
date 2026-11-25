@@ -72,7 +72,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              products, protectComputerCount, protectMatched, protectOpenAlerts,
              protectAlertCounts, securityCloudDeviceCount, securityCloudMatched,
              securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
-             lastSeenBuckets
+             lastSeenBuckets,
+             // Wave B2: what changed since the newest earlier-day snapshot.
+             changes
     }
 
     var id: String { date }
@@ -179,6 +181,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var modelFamilyCounts: [String: Int]?
     private(set) var mobileFormFactorCounts: [String: Int]?
     private(set) var lastSeenBuckets: LastSeenBuckets?
+    /// What changed since the newest earlier-day snapshot (wave B2); nil on a summary no
+    /// routed collect measured it for.
+    var changes: FleetChangeSummary?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -322,7 +327,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
             osMajorCounts: mergedOSMajor(older.osMajorCounts),
             modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
             mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
-            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets)
+            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets),
+            changes: changes.map { $0.filling(from: older.changes) } ?? older.changes
         )
     }
 
@@ -393,8 +399,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
         osMajorCounts: [String: Int]? = nil,
         modelFamilyCounts: [String: Int]? = nil,
         mobileFormFactorCounts: [String: Int]? = nil,
-        lastSeenBuckets: LastSeenBuckets? = nil
+        lastSeenBuckets: LastSeenBuckets? = nil,
+        changes: FleetChangeSummary? = nil
     ) {
+        self.changes = changes
         self.date = date
         parsedDate = Self.day(date)
         self.totalDevices = totalDevices
@@ -505,6 +513,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
             [String: Int].self, forKey: .mobileFormFactorCounts)
         lastSeenBuckets = try container.decodeIfPresent(
             LastSeenBuckets.self, forKey: .lastSeenBuckets)
+        // A malformed part costs that part, never the day.
+        changes = (try? container.decodeIfPresent(FleetChangeSummary.self, forKey: .changes))?
+            .flatMap { $0.validated() }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -554,6 +565,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(modelFamilyCounts, forKey: .modelFamilyCounts)
         try container.encodeIfPresent(mobileFormFactorCounts, forKey: .mobileFormFactorCounts)
         try container.encodeIfPresent(lastSeenBuckets, forKey: .lastSeenBuckets)
+        try container.encodeIfPresent(changes, forKey: .changes)
     }
 }
 

@@ -472,6 +472,7 @@ struct ReportEngine: Sendable {
         provenance: Provenance? = nil,
         liveKinds: Set<String>? = nil,
         day: Date = Date(),
+        changes: FleetChangeSummary? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> SummaryEmitOutcome {
         let fm = FileManager.default
@@ -501,7 +502,8 @@ struct ReportEngine: Sendable {
             // the existing file. The rebuild keeps every value the existing summary had that
             // this run cannot measure, so nothing goes from known to nil.
             if let built = buildSummaryFromCLI(
-                date: today, provenance: provenance, liveKinds: liveKinds),
+                date: today, provenance: provenance, liveKinds: liveKinds
+               ).map({ var summary = $0; summary.changes = changes; return summary }),
                let existing = try? SummaryJSONParser.decode(existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: built) {
                 var fresh = built.filling(from: existing)
@@ -520,7 +522,7 @@ struct ReportEngine: Sendable {
             return .keptExisting
         }
 
-        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds) else {
+        guard var summary = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds) else {
             // buildSummaryFromCLI returns nil when no cached jamf-cli snapshots
             // are available to summarize (fresh workspace, failed/skipped collect).
             // Surface this so operators understand why
@@ -536,6 +538,7 @@ struct ReportEngine: Sendable {
             return .nothingToSummarize
         }
 
+        summary.changes = changes
         return Self.writeSummaryFile(summary, to: summaryFile, onLine: onLine)
             ? .wrote : .writeFailed
     }
@@ -563,6 +566,8 @@ struct ReportEngine: Sendable {
         // A run that read no Macs (their sources absent or past max_cache_age_hours) must not
         // replace a day that counted them with a mobile-only point.
         if fresh.totalDevices == 0, existing.totalDevices > 0 { return false }
+        // A change part this run measured is newer than the morning's.
+        if fresh.changes?.computers != nil || fresh.changes?.benchmarks != nil { return true }
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
@@ -2938,7 +2943,11 @@ struct ReportEngine: Sendable {
                                                 sofaRefreshed: sofaRefreshSucceeded)
             unwritten = engine.emitSummaryJSON(
                 summariesDir: summariesDir, provenance: prov,
-                liveKinds: liveKinds, day: day, onLine: onLine
+                liveKinds: liveKinds, day: day,
+                changes: Self.landedSources.flatMap {
+                    Self.fleetChanges(landed: $0, dataDir: dataDir, config: config)
+                },
+                onLine: onLine
             ).partialReason
         } else if loadedConfig == nil {
             unwritten = "no config.yaml to summarize from"
@@ -3501,10 +3510,11 @@ struct ReportEngine: Sendable {
             saved = stripped
         }
         do {
-            try saveSnapshot(
+            let file = try saveSnapshot(
                 data: saved, kind: kind, dataDir: dataDir,
                 recordManifest: recordManifest, onLine: onLine
             )
+            Self.landedSources?.noteSaved(kind: kind, file: file, payload: saved)
         } catch {
             // The throw aborts the whole collect, so without this the kind
             // that caused it would be the one kind with no record of having
@@ -5130,6 +5140,7 @@ struct ReportEngine: Sendable {
         return Data(trimmed)
     }
 
+    @discardableResult
     static func saveSnapshot(
         data: Data,
         kind: String,
@@ -5137,7 +5148,7 @@ struct ReportEngine: Sendable {
         fileExtension: String = "json",
         recordManifest: Bool = false,
         onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
-    ) throws {
+    ) throws -> URL {
         // A kind folder that is a symlink would send the snapshot wherever a peer pointed it.
         let dir = try WorkspacePaths.confinedFolder([kind], under: dataDir)
         try FileManager.default.createDirectory(
@@ -5178,6 +5189,7 @@ struct ReportEngine: Sendable {
                 ))
             }
         }
+        return file
     }
 
     /// Thrown by `loadLatestSnapshotData` when the newest snapshot for `kind`
