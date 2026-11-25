@@ -470,6 +470,8 @@ Captured 2026-11-24 with jamf-cli 1.38.0 against a Jamf Pro test server; stderr 
 | `pro accounts list` (also with `--page-size 2`: 5 rows over 3 pages) | 0 | rows: `id` str, `username`, `realname`, `email`, `phone`, `distinguishedName` str, `siteId` int, `accessLevel` (FullAccess, SiteAccess), `privilegeLevel` (ADMINISTRATOR, AUDITOR), `failedLoginAttempts` int, `accountStatus` (Enabled), `accountType` (DEFAULT, FEDERATED), `ropfMigrationScope`, `ldapServerId` int, `lastPasswordChange` `yyyy-MM-ddTHH:mm:ss`, `changePasswordOnNextLogin` bool | Read Accounts |
 | `pro api-integrations list` | 0 | rows: `authorizationScopes[str]`, `displayName`, `enabled` bool, `accessTokenLifetimeSeconds` int, `id` int, `appType` (CLIENT_CREDENTIALS), `clientId` | Read API Integrations |
 
+The PR 0 gate cannot be settled on this server: all 92 read-only `pro … list` commands in jamf-cli 1.38.0's catalog (Classic and report commands excluded) were run with the test API client on 2026-11-24, and none printed the 403 line. The only non-zero exits were exit 8 (Platform-only commands) and exit 1 (features not set up), so the client holds every list privilege. The capture needs an API client whose role lacks one Read privilege.
+
 The Jamf Pro API reference confirms `GET /v2/local-admin-password/pending-rotations` needs View Local Admin Password (rows `{lapsUser{clientManagementId, guid, username, userSource}, createdDate}`) and `GET /v2/local-admin-password/settings` needs Read User-Initiated Enrollment and Update Local Admin Password Settings.
 
 --------------------------------------------------------------------------------
