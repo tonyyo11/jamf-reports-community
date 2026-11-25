@@ -441,9 +441,9 @@ extension ReportEngine {
     /// cadence; `force` (Collect now) ignores the cadence. `platformFieldsMissing` skips the
     /// blueprints kind, the one School source that needs the profile's Platform fields. A run
     /// with only the scan tier collects `school-devices`, the device scan's input, and only
-    /// when `scanDue`; otherwise it stays a no-op. Whenever the scan is due, `school-devices`
-    /// ignores its cadence, so an unforced run (a split collect's continuation, a round's daily
-    /// pass) still hands the scan the devices it needs.
+    /// when `scanDue`; otherwise it stays a no-op. Any run with the scan tier ignores
+    /// `school-devices`' cadence while the scan is due, so an unforced one (a split collect's
+    /// continuation) still hands the scan the devices it needs.
     static func planSchoolCollect(
         profile: String, tiers: Set<CollectionTier>, force: Bool,
         collectSkip: Set<String> = [], now: Date = Date(),
@@ -462,7 +462,8 @@ extension ReportEngine {
                 skip = .schoolNoPlatform
             } else if !force, let until = timeoutHold(kind), now < until {
                 skip = .repeatedTimeouts(retryAfter: until)
-            } else if !force, !(scanDue && kind == SchoolFleetService.devicesKind),
+            } else if !force,
+                      !(scanDue && tiers.contains(.scan) && kind == SchoolFleetService.devicesKind),
                       !CadenceResolver.isDue(lastRun: lastRun(kind), cadence: cadence, now: now) {
                 skip = .notDue(lastRun: lastRun(kind), cadence: cadence)
             } else {

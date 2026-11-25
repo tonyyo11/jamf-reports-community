@@ -55,7 +55,7 @@ final class SplitCollectTests: XCTestCase {
     func testADueSchoolScanGetsItsDevicesOnAnUnforcedRun() {
         let now = Date()
         let plan = ReportEngine.planSchoolCollect(
-            profile: "school", tiers: [.refresh, .inventory], force: false, now: now,
+            profile: "school", tiers: Set(CollectionTier.allCases), force: false, now: now,
             scanDue: true, lastRun: { _ in now.addingTimeInterval(-600) })
         let devices = plan.first { $0.kind == SchoolFleetService.devicesKind }
         XCTAssertNotNil(devices)

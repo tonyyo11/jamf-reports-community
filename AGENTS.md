@@ -784,8 +784,8 @@ fallback). `failed` is the label's verdict over every stored outcome. One run's 
 Protect, Security Cloud, the scan) add their leftovers to `left`. A continuation that stops again
 skips the report and success card (`continuesLater`); the day's first run and the run that
 finishes the day send them. A fire or catch-up clears the label's split day; nothing continues
-past midnight. `planSchoolCollect` collects `school-devices` regardless of cadence whenever the
-School scan is due, so a continuation or a round's pass hands the scan its input.
+past midnight. A run with the scan tier collects `school-devices` regardless of its cadence while the School
+scan is due (`planSchoolCollect`), so a continuation hands the scan its input.
 `ManualRefreshRequest` names its workspace and `full`; an older one-line file reads as a full
 refresh of the run's own workspace. The schedule pill reads In progress while a clean split day
 is open (`WorkspaceStore.withLastRuns`, from `RunHistoryService.newestFinishedRuns`, filled by

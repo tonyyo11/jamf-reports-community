@@ -254,8 +254,8 @@ any of this. To spread a collect over smaller runs on purpose, lower `run_budget
 is no separate switch.
 
 - **Jamf School** collects are continued too, without forcing past School's 12-hour cadence, so
-  only what is still due is fetched (the devices list is re-collected whenever the weekly device
-  scan is due, so the scan always has its input).
+  only what is still due is fetched (a run that includes the scan re-collects the devices list while
+  the weekly device scan is due, so the scan has its input).
 - A schedule that collects and writes a report (`jamf-cli-full`) writes it on the day's first run
   and on the run that finishes the day, not on every piece in between.
 - **Jamf Protect on its own** (a Protect-only environment) is not continued: its collect has no

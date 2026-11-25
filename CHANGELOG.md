@@ -21,7 +21,7 @@ versions in this repository map to git tags.
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
-- A Jamf School device scan that was due skipped itself when the run did not re-collect `school-devices` (a round's daily pass, or an unforced run); the devices list is now collected whenever the scan is due.
+- A Jamf School device scan that was due could be skipped by an unforced run that included the scan tier, because `school-devices` had already landed that day; such a run now collects the devices list whenever the scan is due.
 - Jamf Security Cloud's "stopped early" line listed its source as left even after it was collected.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 
