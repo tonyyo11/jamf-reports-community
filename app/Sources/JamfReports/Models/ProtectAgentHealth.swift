@@ -278,3 +278,46 @@ struct ProtectAgentHealth: Sendable, Equatable {
         return false
     }
 }
+
+// MARK: - Report lines
+
+/// The English lines the workbook and the HTML report show; the screen words its own.
+extension ProtectAgentHealth {
+
+    struct ReportRow: Sendable, Equatable {
+        let finding: String
+        let value: String
+        let detail: String
+    }
+
+    var reportRows: [ReportRow] {
+        [("Signatures behind", signaturesBehind), ("Agent behind the installer", agentBehind),
+         ("Disconnected for more than a day", disconnected)].map { title, finding in
+            let value = finding.share.map { "\($0.met) of \($0.of)" } ?? "Not evaluated"
+            let detail = finding.notEvaluated?.englishText
+                ?? finding.baseline.map { "Compared with \($0.englishText)" } ?? ""
+            return ReportRow(finding: title, value: value, detail: detail)
+        }
+    }
+
+    /// Disconnected Macs by Protect's reason, then how many reasons are not listed and how many
+    /// not-connected Macs have no readable time; empty when there is nothing to say.
+    var reportNotes: [String] {
+        var notes = disconnectedReasons.map { "\($0.reason ?? "No reason reported"): \($0.count)" }
+        if distinctReasons > disconnectedReasons.count {
+            notes.append("\(disconnectedReasons.count) of \(distinctReasons) reasons listed")
+        }
+        if disconnectedTimeUnknown > 0 {
+            notes.append("\(disconnectedTimeUnknown) not connected, time of disconnection unknown")
+        }
+        return notes
+    }
+
+    static let heldBackNote =
+        "Agents on a plan with automatic updates off can be held back on purpose."
+
+    /// The held-back note explains the agent finding, so it shows only when that was measured.
+    var reportNotesWithHeldBack: [String] {
+        reportNotes + (agentBehind.share == nil ? [] : [Self.heldBackNote])
+    }
+}

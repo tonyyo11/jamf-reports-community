@@ -182,6 +182,7 @@ extension HtmlReport {
         .patchQueue: "patch-queue", .interventionList: "intervention-list",
         .profileTable: "profile-status", .appTable: "app-status",
         .recentFailures: "recent-failures", .mobileFleet: "mobile-fleet",
+        .protectAgents: "protect-agents",
     ]
 
     /// Where a line about `id` links: its own block when the report has it, else its group
@@ -242,6 +243,9 @@ extension HtmlReport {
         if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
             items.append((token, nil))
         }
+        for text in Self.protectAgentSentences(inputs.protectAgents.health) {
+            add(.protectAgents, .security, text)
+        }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
             add(.securityTiles, .security, p0 == 1
@@ -285,6 +289,28 @@ extension HtmlReport {
             }
         }
         return items
+    }
+
+    /// One sentence per Protect agent finding while its count is above zero.
+    static func protectAgentSentences(_ health: ProtectAgentHealth?) -> [String] {
+        guard let health else { return [] }
+        var lines: [String] = []
+        if let met = health.signaturesBehind.share?.met, met > 0 {
+            lines.append(met == 1
+                ? "1 Mac holds Protect signatures older than the newest published version."
+                : "\(met) Macs hold Protect signatures older than the newest published version.")
+        }
+        if let met = health.agentBehind.share?.met, met > 0 {
+            lines.append(met == 1
+                ? "1 Mac runs a Protect agent older than the current installer."
+                : "\(met) Macs run a Protect agent older than the current installer.")
+        }
+        if let met = health.disconnected.share?.met, met > 0 {
+            lines.append(met == 1
+                ? "1 Mac has been disconnected from Protect for more than a day."
+                : "\(met) Macs have been disconnected from Protect for more than a day.")
+        }
+        return lines
     }
 
     /// The management lines, each only while its count is above zero.

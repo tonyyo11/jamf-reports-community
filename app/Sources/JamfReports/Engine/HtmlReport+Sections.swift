@@ -629,6 +629,34 @@ extension HtmlReport {
             body: parts.joined(separator: "\n")))
     }
 
+    // MARK: - protectAgents
+
+    /// Signatures behind, agent behind the installer and disconnected over a day, each with the
+    /// baseline it was measured against or why it was not evaluated (`ProtectAgentHealth`).
+    func buildProtectAgents(_ input: ProtectAgentsInput) -> HtmlBlock {
+        let f = HtmlSectionFormatters.self
+        let health: ProtectAgentHealth
+        switch input {
+        case .notConfigured:
+            return .omitted("not configured: protect.enabled is off in config.yaml")
+        case .notCollected: return .omitted("no protect-computers snapshot collected")
+        case .unreadable: return .omitted("the newest protect-computers file could not be read")
+        case .noComputers: return .omitted("no Protect computers in the snapshot")
+        case .health(let value): health = value
+        }
+        let rows = health.reportRows.map { line in
+            "<tr><td>\(f.escapeHTML(line.finding))</td><td>\(f.escapeHTML(line.value))</td>"
+                + "<td>\(f.escapeHTML(line.detail))</td></tr>"
+        }
+        let notes = health.reportNotesWithHeldBack
+            .map { "<p class=\"block-note\">\(f.escapeHTML($0))</p>" }
+        return .shown(f.block(
+            id: "protect-agents", title: "Protect agents",
+            body: f.renderCappedRows(
+                headers: ["Finding", "Macs", "Compared with / why not evaluated"],
+                rowHTML: rows, expanded: true) + "\n" + notes.joined(separator: "\n")))
+    }
+
     // MARK: - agentHealth
 
     /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts from the

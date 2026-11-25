@@ -14,9 +14,11 @@ struct ProtectAgentsCard: View {
                 row(L("Agent behind the installer"), health.agentBehind)
                 row(L("Disconnected for more than a day"), health.disconnected)
                 reasons
-                Text(L("Agents on a plan with automatic updates off can be held back on purpose."))
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                if health.agentBehind.share != nil {
+                    Text(Self.heldBackText)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
             }
         }
     }
@@ -65,6 +67,10 @@ struct ProtectAgentsCard: View {
                 }
             }
         }
+    }
+
+    static var heldBackText: String {
+        L("Agents on a plan with automatic updates off can be held back on purpose.")
     }
 
     /// "N of M", or a dash while the finding is not evaluated.

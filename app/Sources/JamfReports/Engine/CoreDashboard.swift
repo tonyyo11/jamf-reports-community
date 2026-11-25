@@ -28,6 +28,8 @@ struct CoreDashboard: Sendable {
     private let computerDateIndex = OnceCache<ComputerDateIndex?>()
     /// Each snapshot read once per report: the sheets read `computers` about seven times.
     private let snapshotData = SnapshotDataCache()
+    /// Protect agent currency, measured once per report on the computers file the tabs read.
+    private let protectAgents = OnceCache<ProtectAgentHealthLoader.Result?>()
 
     init(
         config: ReportConfig,
@@ -2136,9 +2138,19 @@ struct CoreDashboard: Sendable {
     // Rows carry section, resource and value, plus `status` when jamf-cli highlights a line.
 
     func writeProtectOverview() throws {
-        let raw = try loadLatestJSON(names: ["protect-overview"])
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
+        let items: [[String: Any]]
+        var missing: Error?
+        do {
+            items = (try loadLatestJSON(names: ["protect-overview"]) as? [[String: Any]]) ?? []
+        } catch {
+            items = []
+            missing = error
+        }
+        let agents = protectAgentHealth()?.health
+        guard !items.isEmpty || agents != nil else {
+            if let missing { throw missing }
+            return
+        }
         let ws = workbook.addSheet("Protect Overview")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Overview"),
@@ -2157,6 +2169,42 @@ struct CoreDashboard: Sendable {
             ws.write(item["resource"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["value"] as? String ?? "", row: row, col: 2, format: fmt)
             row += 1
+        }
+        if let agents { writeProtectAgentsBlock(agents, on: ws, from: row) }
+    }
+
+    /// The Protect agents findings below the overview rows: one row each, then the reasons.
+    private func writeProtectAgentsBlock(
+        _ agents: ProtectAgentHealth, on ws: Worksheet, from start: Int
+    ) {
+        var row = start + 1
+        ws.write("Protect agents", row: row, col: 0, format: .header)
+        ws.write("Value", row: row, col: 1, format: .header)
+        ws.write("Compared with / why not evaluated", row: row, col: 2, format: .header)
+        row += 1
+        for line in agents.reportRows {
+            ws.write(line.finding, row: row, col: 0, format: .cell)
+            ws.write(line.value, row: row, col: 1, format: .cell)
+            ws.write(line.detail, row: row, col: 2, format: .cell)
+            row += 1
+        }
+        for note in agents.reportNotesWithHeldBack {
+            ws.write(note, row: row, col: 0, format: .cell)
+            row += 1
+        }
+    }
+
+    /// `ProtectAgentHealthLoader` over the `protect-computers` file this report's pickers chose,
+    /// decoded from the same bytes the Protect Computers tab writes from.
+    func protectAgentHealth() -> ProtectAgentHealthLoader.Result? {
+        protectAgents.value {
+            let names = ["protect-computers"]
+            guard let file = FileManager.newestSnapshot(among: snapshotCandidates(names: names)),
+                  let data = try? loadLatestJSONData(names: names),
+                  let rows = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
+            else { return nil }
+            return ProtectAgentHealthLoader.load(
+                dataDir: dataDir, computers: rows, computersFile: file)
         }
     }
 
@@ -2206,7 +2254,7 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Computers")
         let ts = ISO8601Time.string(Date())
         var row = ws.writeSheetHeader(title: t("Protect Computers"),
-                                      subtitle: "Generated: \(ts)", ncols: 10)
+                                      subtitle: "Generated: \(ts)", ncols: 13)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 24)
@@ -2215,11 +2263,17 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(6, 7, 14)
         ws.setColumnWidth(8, 8, 18)
         ws.setColumnWidth(9, 9, 30)
+        ws.setColumnWidth(10, 12, 18)
         let hdrs = ["Host", "Serial", "Plan", "OS", "Status", "Last Connection",
                     "Web Protection", "Full Disk Access", "Signatures Version",
-                    "Last Disconnection Reason"]
+                    "Last Disconnection Reason", "Signatures Behind", "Agent Behind",
+                    "Disconnected Over 24 h"]
+        // Per-row statuses, used only when they line up with these rows (one decode of one file).
+        let macs = protectAgentHealth()?.health.macs
+        let statuses = macs?.count == items.count ? macs : nil
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
+        let firstDataRow = row
         for item in items {
             let osStr: String
             if let maj = asInt(item["osMajor"]), let min = asInt(item["osMinor"]),
@@ -2250,6 +2304,12 @@ struct CoreDashboard: Sendable {
             }
             ws.write(item["lastDisconnectionReason"] as? String ?? "",
                      row: row, col: 9, format: .cell)
+            let status = statuses?[row - firstDataRow]
+            for (offset, state) in [status?.signaturesBehind, status?.agentBehind,
+                                    status?.disconnected].enumerated() {
+                let text = state == .yes ? "Yes" : state == .no ? "No" : ""
+                ws.write(text, row: row, col: 10 + offset, format: state == .yes ? .yellow : .cell)
+            }
             row += 1
         }
     }
@@ -3246,8 +3306,8 @@ struct CoreDashboard: Sendable {
             "Protect Overview": "Jamf Protect instance summary (requires Protect "
                 + "entitlement).",
             "Protect Alerts": "Open Protect alerts with severity and event type.",
-            "Protect Computers": "Protect-enrolled computers with plan, status, and "
-                + "access grants.",
+            "Protect Computers": "Protect-enrolled computers with plan, status, access "
+                + "grants, and whether signatures, agent and connection are current.",
             "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
                 + "Med-Low / Medium / High with count and percent.",
             "Compliance Trend": "Historical band counts per snapshot date for the "

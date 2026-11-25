@@ -1177,8 +1177,18 @@ of the oldest stamped snapshot holding that version (stamps after `now` read as 
 files skipped, at most `maxInstallerFiles` (400) read). `ProtectDashboardService.load(dataDir:)`
 sets `Snapshot.agentHealth` (compared by `==`) and the two kinds' `sourceDates`; the Protect
 screen shows `ProtectAgentsCard`, which words the reasons in the app's language (`englishText`
-is the reports' form); demo data carries a published list and installer. Workbook, HTML and summary
-fields follow in the later slices
+is the reports' form); demo data carries a published list and installer. **Reports (E1c).** The
+workbook measures once per report (`CoreDashboard.protectAgentHealth`, a `OnceCache`) on the
+`protect-computers` file its own picker chose (folder or flat `<kind>_*.json`), decoded from the
+same bytes the tab writes; the Protect Computers tab appends Signatures Behind, Agent Behind and
+Disconnected Over 24 h from `macs`, only when they line up with the rows; Protect Overview appends a
+"Protect agents" block (`reportRows`, `reportNotes`, `heldBackNote`, all English) and is written
+for the block alone when there is no overview snapshot. The HTML report's `SectionID.protectAgents`
+(Security and compliance group, after Protect alerts; Full Instance, Security Posture and a Custom
+report with a Protect sheet) reads `Inputs.protectAgents` (`HtmlReport.loadProtectAgents`, its own
+picker, with not configured, not collected, unreadable and no computers apart), and Needs
+attention gets one sentence per finding above zero (`protectAgentSentences`, anchor
+`protect-agents`). Summary fields, alerts and Trends follow in E1d
 (`docs/superpowers/specs/2026-11-24-protect-configuration-posture-design.md`).
 
 ### notify config (v2.2.0 — opt-in webhook digest)

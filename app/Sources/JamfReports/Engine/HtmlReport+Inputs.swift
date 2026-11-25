@@ -72,6 +72,21 @@ extension HtmlReport {
         var mobile: MobileFleetService.Snapshot?
         /// The collect's persisted site-scope verdict; only `limited` shows anything.
         var siteScope: SiteScope = .unknown
+        /// Protect agent currency over the newest `protect-computers` file, or why there is none.
+        var protectAgents: ProtectAgentsInput = .notConfigured
+    }
+
+    enum ProtectAgentsInput {
+        case notConfigured
+        case notCollected
+        case unreadable
+        case noComputers
+        case health(ProtectAgentHealth)
+
+        var health: ProtectAgentHealth? {
+            if case .health(let health) = self { return health }
+            return nil
+        }
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -116,6 +131,10 @@ extension HtmlReport {
 
         let buildings = rows("Buildings", ["buildings"])
         let departments = rows("Departments", ["departments"])
+        // Read only for a report that shows the section or its Needs attention sentences.
+        if sections.contains(.protectAgents) || sections.contains(.needsAttention) {
+            inputs.protectAgents = loadProtectAgents()
+        }
         inputs.computers = resolvingLocationNames(
             rows("Computers", ["computers", "computers-inventory"]),
             buildings: buildings, departments: departments)
@@ -208,5 +227,20 @@ extension HtmlReport {
             let count = loadJSONList(kinds: names).count
             return count > 0 ? (label, count) : nil
         }
+    }
+}
+
+extension HtmlReport {
+    /// The newest `protect-computers` file through this report's picker, measured once; the
+    /// Protect agents section and the attention sentences both read it.
+    func loadProtectAgents() -> ProtectAgentsInput {
+        guard let dir = protectDir else { return .notConfigured }
+        guard let file = newestSnapshotURL(kind: "protect-computers") else { return .notCollected }
+        guard let data = BoundedFile.readLogged(file, inside: dir),
+              let rows = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
+        else { return .unreadable }
+        guard let result = ProtectAgentHealthLoader.load(
+            dataDir: dir, computers: rows, computersFile: file) else { return .noComputers }
+        return .health(result.health)
     }
 }

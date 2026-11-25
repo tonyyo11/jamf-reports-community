@@ -42,6 +42,7 @@ struct SecurityPostureTemplate: ReportTemplate {
             .jamfDashboard,
             .securityTiles,
             .protectAlerts,
+            .protectAgents,
             .agentHealth,
             .auditEvidence,
             .complianceBands,
@@ -54,7 +55,7 @@ struct SecurityPostureTemplate: ReportTemplate {
 
     /// The security and compliance group starts open: it is what this template is for.
     var htmlOpenSections: [SectionID] {
-        [.securityTiles, .protectAlerts, .agentHealth, .auditEvidence,
+        [.securityTiles, .protectAlerts, .protectAgents, .agentHealth, .auditEvidence,
          .complianceBands, .exceptionList]
     }
 

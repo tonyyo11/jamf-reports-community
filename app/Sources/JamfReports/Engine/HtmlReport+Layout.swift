@@ -32,6 +32,7 @@ extension SectionID {
         case .agentHealth: "Security agent health"
         case .exceptionList: "Exception list"
         case .protectAlerts: "Protect alerts"
+        case .protectAgents: "Protect agents"
         case .auditEvidence: "Audit findings"
         case .patchBar: "Patch compliance chart"
         case .patchQueue: "Patch titles behind"
@@ -77,7 +78,7 @@ enum HtmlDetailGroup: String, CaseIterable {
         switch self {
         case .security:
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
-             .auditEvidence]
+             .protectAgents, .auditEvidence]
         case .patching: [.patchBar, .patchQueue, .osAdoptionChart, .osCurrency]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
@@ -243,6 +244,7 @@ extension HtmlReport {
             return buildAgentHealth(eaRows: inputs.eaRows, fleet: inputs.totalDevices)
         case .exceptionList: return buildExceptionList()
         case .protectAlerts: return buildProtectAlerts(protectDataDir: protectDir)
+        case .protectAgents: return buildProtectAgents(inputs.protectAgents)
         case .auditEvidence: return buildAuditEvidence(auditFindings: inputs.auditFindings)
         case .patchBar:
             return buildPatchChart(patchStatus: inputs.patchStatus)
@@ -282,7 +284,7 @@ extension HtmlReport {
     }
 
     /// Protect's kind directories sit beside every other snapshot; nil when Protect is off.
-    private var protectDir: URL? { EnvironmentProfiles.runsProtect(config) ? dataDir : nil }
+    var protectDir: URL? { EnvironmentProfiles.runsProtect(config) ? dataDir : nil }
 
     // MARK: Group summary lines
 
