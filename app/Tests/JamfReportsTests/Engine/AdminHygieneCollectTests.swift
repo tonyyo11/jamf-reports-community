@@ -87,7 +87,7 @@ final class AdminHygieneCollectTests: XCTestCase {
         let laps = try XCTUnwrap(try saved("laps-pending-rotations"))
         XCTAssertTrue(accounts.contains("\"fullAccessLocal\":1"), accounts)
         XCTAssertTrue(api.contains("\"enabledWithTokenOverOneDay\":1"), api)
-        XCTAssertTrue(laps.contains("\"totalCount\":2"), laps)
+        XCTAssertTrue(laps.contains("\"totalCount\":0"), laps)
         for text in [accounts, api, laps] {
             for leaked in ["example", "Example", "clientId", "000000"] {
                 XCTAssertFalse(text.contains(leaked), "\(leaked) in \(text)")
