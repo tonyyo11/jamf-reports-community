@@ -361,7 +361,7 @@ extension WorkspaceStore {
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
         typealias HealthPass = (
             status: TickerStatus, issues: [AutomationHealthIssue],
-            lastRuns: [String: RunHistoryService.RunSummary])
+            lastRuns: [String: RunHistoryService.RunSummary], splitDay: [String: SplitDay])
         let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
             let status = registrar.status
             // With nothing scheduled an unregistered ticker is not a fault.
@@ -375,13 +375,16 @@ extension WorkspaceStore {
             return (status: status,
                     issues: AutomationHealth.evaluate(
                         inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now),
-                    lastRuns: RunHistoryService.newestFinishedRuns(profile: profile))
+                    lastRuns: RunHistoryService.newestFinishedRuns(profile: profile),
+                    splitDay: TickState.load().splitDay)
         }.value
         // A later request or a profile switch overtook this read: what it found is for
         // something else, and the newer request publishes its own.
         guard request == healthRequests, profile == self.profile else { return }
         tickerStatus = evaluated.status
-        applyLastRuns(evaluated.lastRuns)
+        self.schedules = Self.withLastRuns(
+            self.schedules, evaluated.lastRuns, splitDay: evaluated.splitDay, workspace: profile,
+            now: now)
         // While this process holds the tick lock, and until the wake it turned away has had
         // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
         // the schedule is running. Neither the banner nor the digest calls it overdue.
@@ -395,22 +398,25 @@ extension WorkspaceStore {
         await refreshDataFreshness()
     }
 
-    /// Replaces each schedule's placeholder last run and status with its newest finished run in
-    /// the active workspace's Run History.
-    func applyLastRuns(_ runs: [String: RunHistoryService.RunSummary]) {
-        schedules = Self.withLastRuns(schedules, runs)
-    }
-
+    /// Each schedule's placeholder last run and status replaced with its newest finished run in
+    /// the active workspace's Run History, or In progress while `workspace` has an open split day
+    /// on it that a failure does not stand behind.
     nonisolated static func withLastRuns(
-        _ schedules: [Schedule], _ runs: [String: RunHistoryService.RunSummary]
+        _ schedules: [Schedule], _ runs: [String: RunHistoryService.RunSummary],
+        splitDay: [String: SplitDay] = [:], workspace: String = "", now: Date = Date()
     ) -> [Schedule] {
         schedules.map { schedule in
-            guard let label = schedule.launchAgentLabel, let run = runs[label] else {
-                return schedule
-            }
+            guard let label = schedule.launchAgentLabel else { return schedule }
             var updated = schedule
-            updated.last = FileDisplay.date(run.date)
-            updated.lastStatus = run.status
+            if let run = runs[label] {
+                updated.last = FileDisplay.date(run.date)
+                updated.lastStatus = run.status
+            }
+            let key = schedule.isMulti ? workspace : ""
+            if let split = splitDay[label], split.isOpen(on: now), !split.failed,
+               split.profiles[key] != nil, ![.fail, .partial].contains(updated.lastStatus) {
+                updated.lastStatus = .inProgress
+            }
             return updated
         }
     }

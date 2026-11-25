@@ -658,6 +658,8 @@ struct SchedulesView: View {
         case .warn:    pill = Pill(text: L("WARN"),    tone: .warn,   icon: "exclamationmark")
         case .fail:    pill = Pill(text: L("FAIL"),    tone: .danger, icon: "xmark")
         case .partial: pill = Pill(text: L("PARTIAL"), tone: .warn,   icon: "exclamationmark.triangle.fill")
+        case .inProgress:
+            pill = Pill(text: L("IN PROGRESS"), tone: .muted, icon: "arrow.triangle.2.circlepath")
         }
         return pill.accessibilityLabel(s.accessibilityLabel)
     }

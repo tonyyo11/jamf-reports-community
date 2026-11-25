@@ -15,10 +15,13 @@ struct TickEnvironment: Sendable {
         summaryMissing(for: $0, profiles: $1, now: $2)
     }
     var perform: @Sendable (TickScheduler.DueRun) async -> ScheduleRunOutcome = { run in
-        // A same-day retry must not be answered by the once-a-day collect guard.
-        await ReportEngine.$isSameDayRetry.withValue(run.reason == .retry) {
+        // A same-day retry or continuation must not be answered by the once-a-day collect guard.
+        await ReportEngine.$isSameDayRetry.withValue(
+            run.reason == .retry || run.reason == .continuation
+        ) {
             await runSchedule(
-                run.schedule, verbose: false, skipping: run.skipProfiles)
+                run.schedule, verbose: false, skipping: run.skipProfiles,
+                continuing: run.continuing)
         }
     }
     var heartbeatEvery: Duration = TickLock.heartbeatInterval
@@ -339,7 +342,20 @@ enum TickLoop {
                 ? state.profileOutcomes[label] ?? [] : []
             let outcome = merged.isEmpty
                 ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
-            if scheduled, outcome.endsRetries {
+            let splitChanged = state.noteSplitDay(
+                label, outcome: ran, reason: run.reason, startedAt: startedAt,
+                finishedAt: clock())
+            // A budget stop with no failure is continued, not retried: no retry is counted.
+            let continuing = state.splitDay[label].map {
+                $0.isOpen(on: startedAt) && !$0.failed } ?? false
+            if scheduled, continuing {
+                if splitChanged || outcomesChanged {
+                    do { try save(state) } catch {
+                        AppLogger.schedule.warning(
+                            "tick: \(label, privacy: .private) split collect not recorded")
+                    }
+                }
+            } else if scheduled, outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
                 do {
                     try save(state)
@@ -354,7 +370,7 @@ enum TickLoop {
                 let verdictChanged = state.noteRetry(label, couldHelp: outcome.retryCouldHelp)
                 // Best-effort: unrecorded, the hourly retries run as if a retry could help and
                 // a retry runs every profile.
-                if verdictChanged || outcomesChanged {
+                if verdictChanged || outcomesChanged || splitChanged {
                     do { try save(state) } catch {
                         AppLogger.schedule.warning(
                             "tick: \(label, privacy: .private) retry verdict not recorded")
@@ -375,7 +391,8 @@ enum TickLoop {
 func tickResultLine(
     label: String, reason: TickScheduler.Reason, outcome: ScheduleRunOutcome, retries: Int
 ) -> String {
-    let attempt = reason == .retry ? " retry \(retries)" : ""
+    let attempt = reason == .retry ? " retry \(retries)"
+        : reason == .continuation ? " continuation" : ""
     let verdict = outcome.succeeded ? "" : (outcome.incomplete ? " (incomplete)" : " (failed)")
     return "[info] tick: \(label)\(attempt) exit \(outcome.exitCode)\(verdict)"
 }

@@ -251,7 +251,7 @@ private func scheduledRunSingle(
     honesty: CollectHonestyWatcher,
     retiredCSVAssisted: Bool,
     progress: ReportEngine.RunProgress = ReportEngine.RunProgress(),
-    continuing: Bool = false
+    continuing: SplitDay.ProfileProgress? = nil
 ) async -> Int32 {
     // Its attention items go into the run's status file once the recorder opens it, after
     // the failure card; a run refused before that writes none.
@@ -275,7 +275,7 @@ private func scheduledRunSingleBody(
     honesty: CollectHonestyWatcher,
     retiredCSVAssisted: Bool,
     progress: ReportEngine.RunProgress = ReportEngine.RunProgress(),
-    continuing: Bool = false
+    continuing: SplitDay.ProfileProgress? = nil
 ) async -> Int32 {
     // The run's day for its summary and its metric alerts, however long the collect takes.
     let runStart = Date()
@@ -550,7 +550,12 @@ private func scheduledRunSingleBody(
             progress.protectOnly = EnvironmentProfiles.resolve(
                 config: routingConfig, workspace: profile)
                 .isConfirmedProtectOnly(workspace: profile)
-            let force = !continuing && mode.forcesCollect(
+            if let continuing {
+                let done = continuing.planned.filter { !continuing.left.contains($0) }.count
+                onLine(.init(timestamp: Date(), level: .info, text: "[info] continuing today's "
+                    + "collect: \(done) of \(continuing.planned.count) sources collected so far"))
+            }
+            let force = continuing == nil && mode.forcesCollect(
                 for: ProfileProductType.detect(from: routingConfig, profile: profile).type)
             try await ReportEngine.$runProgress.withValue(progress) {
                 try await ReportEngine.stoppingBetweenSources(profile: profile) {
@@ -812,7 +817,8 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// outcome lists each profile that ran.
 @Sendable
 func runSchedule(
-    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = [], continuing: Bool = false
+    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = [],
+    continuing: SplitDay? = nil
 ) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
     let missing = schedule.mode == .jamfCLIOnly
@@ -828,7 +834,7 @@ func runSchedule(
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
             retiredCSVAssisted: schedule.retiredCSVAssisted, progress: progress,
-            continuing: continuing)
+            continuing: continuing?.profiles[""])
         return ScheduleRunOutcome(
             exitCode: code, incomplete: honesty.incomplete,
             retryCouldHelp: honesty.retryCouldHelp(
@@ -863,8 +869,12 @@ func runSchedule(
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().map(ConfigSchema.displayText).joined(separator: ", "))\n", stderr)
     }
+    // A continuation runs only the profiles its split day has left.
+    let skip = continuing.map { split in
+        Set(profiles.map(\.name)).subtracting(split.profiles.keys) } ?? skipping
     let result = await TickScheduler.runProfiles(
-        names: profiles.map(\.name), skipping: skipping
+        names: profiles.map(\.name), skipping: skip,
+        leftOutNote: continuing == nil ? nil : "continuing only profiles with sources left"
     ) { name in
         if await skippedForMissingProfile(name, missing: missing) { return nil }
         // One watcher per profile: a shared one would carry profile A's
@@ -876,7 +886,7 @@ func runSchedule(
             profile: name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
             retiredCSVAssisted: schedule.retiredCSVAssisted, progress: progress,
-            continuing: continuing)
+            continuing: continuing?.profiles[name])
         return ProfileOutcome(
             profile: name, exitCode: code, incomplete: honesty.incomplete,
             retryCouldHelp: honesty.retryCouldHelp(profile: name, exitCode: code, since: start),

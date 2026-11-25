@@ -230,6 +230,9 @@ struct RunsView: View {
             .accessibilityLabel("Status: Failed")
         case .partial: Pill(text: L("PARTIAL"), tone: .warn,   icon: "exclamationmark.triangle.fill")
             .accessibilityLabel("Status: Partial")
+        case .inProgress:
+            Pill(text: L("IN PROGRESS"), tone: .muted, icon: "arrow.triangle.2.circlepath")
+                .accessibilityLabel("Status: In progress")
         }
     }
 
