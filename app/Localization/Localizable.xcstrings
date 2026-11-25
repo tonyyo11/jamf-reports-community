@@ -85096,6 +85096,46 @@
         }
       }
     },
+    "No Protect computer reports this field" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Protect-Computer meldet dieses Feld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún equipo de Protect informa este campo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun ordinateur Protect ne signale ce champ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun computer Protect segnala questo campo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この項目を報告する Protect コンピュータはありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum computador do Protect informa este campo"
+          }
+        }
+      }
+    },
     "No Protect computers reporting agent version." : {
       "localizations" : {
         "de" : {
@@ -149158,6 +149198,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "jamf-cli · ao vivo"
+          }
+        }
+      }
+    },
+    "jamf-cli's output was not in the form this app reads; update jamf-cli or the app" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Ausgabe von jamf-cli hat nicht die Form, die diese App liest; aktualisieren Sie jamf-cli oder die App"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La salida de jamf-cli no tiene la forma que lee esta app; actualice jamf-cli o la app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sortie de jamf-cli n'a pas la forme que cette app lit ; mettez à jour jamf-cli ou l'app"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'output di jamf-cli non è nel formato che questa app legge; aggiornate jamf-cli o l'app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf-cli の出力がこのアプリで読める形式ではありません。jamf-cli またはアプリを更新してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A saída do jamf-cli não está no formato que este app lê; atualize o jamf-cli ou o app"
           }
         }
       }

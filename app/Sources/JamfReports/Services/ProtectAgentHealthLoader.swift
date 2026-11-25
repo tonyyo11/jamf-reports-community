@@ -13,10 +13,12 @@ enum ProtectAgentHealthLoader {
 
     /// Nil with no computers. `computersFile` is the `protect-computers` file the rows came from.
     static func load(
-        dataDir: URL, computers: [ProtectComputerRow], computersFile: URL?
+        dataDir: URL, computers: [ProtectComputerRow], computersFile: URL?, clock: Date = Date()
     ) -> Result? {
         guard !computers.isEmpty else { return nil }
-        guard let now = computersFile.flatMap({ CloudStorage.snapshotTimestamp(of: $0) }) else {
+        // A peer's fast clock cannot move the 24-hour cutoff past this Mac's own time.
+        guard let now = computersFile.flatMap({ CloudStorage.snapshotTimestamp(of: $0) })
+            .map({ min($0, clock) }) else {
             return Result(
                 health: .notEvaluated(computerCount: computers.count, reason: .noCollectionTime),
                 unreadableKinds: [])

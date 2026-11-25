@@ -2138,18 +2138,24 @@ struct CoreDashboard: Sendable {
     // Rows carry section, resource and value, plus `status` when jamf-cli highlights a line.
 
     func writeProtectOverview() throws {
-        let items: [[String: Any]]
-        var missing: Error?
+        var items: [[String: Any]] = []
+        var failure: Error?
         do {
             items = (try loadLatestJSON(names: ["protect-overview"]) as? [[String: Any]]) ?? []
         } catch {
-            items = []
-            missing = error
+            failure = error
         }
         let agents = protectAgentHealth()?.health
         guard !items.isEmpty || agents != nil else {
-            if let missing { throw missing }
+            if let failure { throw failure }
             return
+        }
+        // Missing or refused by name is already logged by the reader; a file that is there but
+        // not JSON would otherwise vanish behind the agents block.
+        if let failure, !(failure is CoreDashboardError) {
+            onLine?(.init(timestamp: Date(), level: .warn, text:
+                "[warn] Protect Overview: protect-overview could not be read; "
+                    + "the tab holds the Protect agents block only"))
         }
         let ws = workbook.addSheet("Protect Overview")
         let ts = ISO8601Time.string(Date())
@@ -2199,10 +2205,16 @@ struct CoreDashboard: Sendable {
     func protectAgentHealth() -> ProtectAgentHealthLoader.Result? {
         protectAgents.value {
             let names = ["protect-computers"]
-            guard let file = FileManager.newestSnapshot(among: snapshotCandidates(names: names)),
-                  let data = try? loadLatestJSONData(names: names),
-                  let rows = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
+            guard let file = FileManager.newestSnapshot(among: snapshotCandidates(names: names))
             else { return nil }
+            guard let data = try? loadLatestJSONData(names: names),
+                  let rows = try? JSONDecoder().decode([ProtectComputerRow].self, from: data)
+            else {
+                onLine?(.init(timestamp: Date(), level: .warn, text:
+                    "[warn] Protect agents left out of the workbook: the newest "
+                        + "protect-computers file could not be read"))
+                return nil
+            }
             return ProtectAgentHealthLoader.load(
                 dataDir: dataDir, computers: rows, computersFile: file)
         }

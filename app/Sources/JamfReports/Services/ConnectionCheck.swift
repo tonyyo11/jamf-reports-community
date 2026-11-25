@@ -71,7 +71,8 @@ enum ConnectionCheck {
         // checks scope before capability), so the ID is known and holds no Jamf Pro.
         case .missingPermission: return .noJamfPro
         case .edgeBlocked, .notServed, .noDeclarationData, .softwareUpdatePlansOff,
-             .noConfiguredBenchmark, .retiredGateway, .keychainLocked, .other:
+             .noConfiguredBenchmark, .retiredGateway, .keychainLocked, .unexpectedOutput,
+             .other:
             return namesNoTenant(probe.stdout) ? .noJamfPro : .undecided(exitCode: probe.exitCode)
         }
     }

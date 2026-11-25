@@ -179,13 +179,15 @@ extension ReportEngine {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
         let file = summariesDir.appendingPathComponent("summary_\(date).json")
         let protectKinds = landed[.protect] ?? []
+        // A Protect-only day needs a source reports are built on, not only the version metadata.
+        let protectReportLanded = protectKinds.contains(where: protectReportKinds.contains)
         var summary: DailySummary
         var creates = false
         if let data = try? BoundedFile.read(
             file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
            let existing = try? SummaryJSONParser.decode(data) {
             summary = existing
-        } else if environment.isProtectOnly, !protectKinds.isEmpty {
+        } else if environment.isProtectOnly, protectReportLanded {
             do {
                 try FileManager.default.createDirectory(
                     at: summariesDir, withIntermediateDirectories: true)
@@ -202,7 +204,7 @@ extension ReportEngine {
         } else {
             return .nothingToSummarize
         }
-        if environment.isProtectOnly, !protectKinds.isEmpty {
+        if environment.isProtectOnly, protectReportLanded {
             summary.collectionSources = mergedSources(
                 existing: summary.collectionSources,
                 fresh: Dictionary(uniqueKeysWithValues: protectKinds.map { ($0, "live") }))

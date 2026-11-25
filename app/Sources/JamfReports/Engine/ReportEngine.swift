@@ -3444,7 +3444,8 @@ struct ReportEngine: Sendable {
             // Exit 0 with unusable output is a failure for this kind even
             // though the process succeeded — count it, or a renamed command
             // stays permanently invisible behind a green run.
-            stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+            stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart,
+                cause: .unexpectedOutput)
             return KindCollectResult(outcome: outcome, saved: false)
         }
         if payload.count != data.count {
@@ -4195,7 +4196,8 @@ struct ReportEngine: Sendable {
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
                     unlanded.append(kind)
-                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                cause: .unexpectedOutput)
                     continue
                 }
                 try saveRecordingFailure(
@@ -4408,7 +4410,8 @@ struct ReportEngine: Sendable {
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
                     unlanded.append(kind)
-                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                    stateStore?.record(.failed(exitCode: exitCode), report: kind,
+                                       at: collectStart, cause: .unexpectedOutput)
                     continue
                 }
                 // A reduced kind saves only its keep-list; a payload that cannot be reduced is
@@ -4421,7 +4424,8 @@ struct ReportEngine: Sendable {
                             text: "[warn] \(kind) not saved: unexpected shape"))
                         unlanded.append(kind)
                         stateStore?.record(
-                            .failed(exitCode: exitCode), report: kind, at: collectStart)
+                            .failed(exitCode: exitCode), report: kind, at: collectStart,
+                            cause: .unexpectedOutput)
                         continue
                     }
                     saved = reduced

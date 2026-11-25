@@ -34,6 +34,7 @@ struct ProtectAgentHealth: Sendable, Equatable {
         case installerTooNew(version: String, firstSeen: Date)
         case firstSeenUnknown(String)
         case noCollectionTime
+        case noMacReports
 
         var englishText: String {
             switch self {
@@ -50,6 +51,7 @@ struct ProtectAgentHealth: Sendable, Equatable {
             case .firstSeenUnknown(let v):
                 return "no dated snapshot holds installer \(ConfigSchema.displayText(v))"
             case .noCollectionTime: return "the protect-computers snapshot has no collection time"
+            case .noMacReports: return "no Protect computer reports this field"
             }
         }
     }
@@ -133,7 +135,8 @@ struct ProtectAgentHealth: Sendable, Equatable {
             tally(sig, into: &signatures)
             tally(ver, into: &agent)
             tally(dis.state, into: &gone)
-            if dis.timeUnknown { timeUnknown += 1 }
+            // Kept in the count as not over a day; the Mac's own cell stays unjudged.
+            if dis.timeUnknown { timeUnknown += 1; gone.of += 1 }
             if dis.state == .yes {
                 let reason = row.lastDisconnectionReason.map(ConfigSchema.displayText)
                     .flatMap { $0.isEmpty ? nil : $0 }
@@ -147,8 +150,10 @@ struct ProtectAgentHealth: Sendable, Equatable {
             macs: macs,
             signaturesBehind: finding(signatures, baseline: signatureBaseline),
             agentBehind: finding(agent, baseline: agentBaseline),
-            disconnected: Finding(
-                share: .init(met: gone.met, of: gone.of), baseline: nil, notEvaluated: nil),
+            disconnected: gone.of > 0
+                ? Finding(share: .init(met: gone.met, of: gone.of), baseline: nil,
+                          notEvaluated: nil)
+                : .unavailable(.noMacReports),
             disconnectedReasons: Array(sorted.prefix(ManagementHealth.maxShownValues)),
             distinctReasons: sorted.count, disconnectedTimeUnknown: timeUnknown)
     }
@@ -230,7 +235,7 @@ struct ProtectAgentHealth: Sendable, Equatable {
         guard let status = row.connectionStatus else { return (.notEvaluated, false) }
         guard !ProtectDashboardService.isConnected(status) else { return (.no, false) }
         guard let gone = row.lastDisconnection.flatMap(ISO8601Time.parse) else {
-            return (.no, true)
+            return (.notEvaluated, true)
         }
         return (gone < cutoff ? .yes : .no, false)
     }
@@ -247,6 +252,7 @@ struct ProtectAgentHealth: Sendable, Equatable {
         guard baseline.value != nil else {
             return .unavailable(baseline.reason ?? .noCollectionTime)
         }
+        guard counts.of > 0 else { return .unavailable(.noMacReports) }
         return Finding(
             share: .init(met: counts.met, of: counts.of), baseline: baseline.label,
             notEvaluated: nil)

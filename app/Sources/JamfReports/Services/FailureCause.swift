@@ -46,9 +46,15 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// The login keychain is locked (or unreachable in this session, such as over SSH or
         /// before login), so jamf-cli could not read the profile's `keychain:` credentials.
         case keychainLocked
+        /// jamf-cli exited 0 with output this app cannot read (not JSON, or not the shape it
+        /// reduces). Recorded by collect, never classified; a retry gets the same output.
+        case unexpectedOutput
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
+
+    /// Exit 0 with output this app cannot read; see `Kind.unexpectedOutput`.
+    static let unexpectedOutput = FailureCause(kind: .unexpectedOutput, names: [], hint: nil, exitCode: 0)
 
     let kind: Kind
     /// Permission or privilege names parsed from the hint; empty when it names none.
@@ -139,7 +145,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
              .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
-             .retiredGateway: true
+             .retiredGateway, .unexpectedOutput: true
         case .edgeBlocked, .keychainLocked, .other: false
         }
     }
@@ -167,6 +173,8 @@ struct FailureCause: Codable, Equatable, Sendable {
                 ? L("no benchmark in platform.compliance_benchmarks can be collected")
                 : L("no benchmark in platform.compliance_benchmarks can be collected: ")
                     + names.joined(separator: "; ")
+        case .unexpectedOutput:
+            L("jamf-cli's output was not in the form this app reads; update jamf-cli or the app")
         case .other:
             exitCode == CLIBridge.exitCodeTimedOut
                 ? L("timed out and was stopped") : L("exit \(exitCode)")

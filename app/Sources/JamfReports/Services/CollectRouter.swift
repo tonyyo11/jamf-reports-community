@@ -437,9 +437,10 @@ enum CollectRouter {
         let kinds = try await ReportEngine.$addOnCollectForced.withValue(true) {
             try await protectCollect(protectProfile, dataDir, collectSkip, onLine)
         }
-        guard !kinds.isEmpty else {
+        // The signature and installer metadata alone measure nothing a report is built on.
+        guard kinds.contains(where: ReportEngine.protectReportKinds.contains) else {
             throw ReportEngineError.collectDead(
-                profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
+                profile: profile, failedCount: ReportEngine.protectReportKinds.count)
         }
         return kinds
     }

@@ -113,8 +113,22 @@ final class ProtectAgentHealthTests: XCTestCase {
         XCTAssertEqual(health.disconnected.share, .init(met: 1, of: 4))
         XCTAssertEqual(health.disconnectedTimeUnknown, 1)
         XCTAssertEqual(health.disconnectedReasons, [.init(reason: "B", count: 1)])
-        XCTAssertEqual(health.macs.map(\.disconnected), [.no, .yes, .no, .no, .notEvaluated])
+        XCTAssertEqual(health.macs.map(\.disconnected),
+                       [.no, .yes, .notEvaluated, .no, .notEvaluated],
+                       "a disconnected Mac with no time is counted, but its own cell is unjudged")
         XCTAssertEqual(health.macs.count, computers.count)
+    }
+
+    func testAFindingNoMacReportsHasNoShareNeverZeroOfZero() throws {
+        let computers = try rows(#"[{"hostname":"a"},{"hostname":"b"}]"#)
+        let old = now.addingTimeInterval(-3 * 86_400)
+        let health = evaluate(
+            computers, published: .value([.init(id: 101, created: old)]),
+            installer: .value(.init(version: "5.1", firstSeen: old)))
+        XCTAssertNil(health.signaturesBehind.share)
+        XCTAssertEqual(health.signaturesBehind.notEvaluated, .noMacReports)
+        XCTAssertEqual(health.agentBehind.notEvaluated, .noMacReports)
+        XCTAssertEqual(health.disconnected.notEvaluated, .noMacReports)
     }
 
     // MARK: - Loader

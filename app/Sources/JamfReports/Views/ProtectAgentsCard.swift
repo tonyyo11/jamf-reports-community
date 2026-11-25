@@ -104,6 +104,7 @@ struct ProtectAgentsCard: View {
         case .noPublishedVersions: return L("Protect published no signature versions")
         case .noVersionOldEnough: return L("no published signature version is a day old yet")
         case .noInstallerVersion: return L("Protect gave no installer version")
+        case .noMacReports: return L("No Protect computer reports this field")
         case .installerNotAVersion(let v):
             return L("installer version \(ConfigSchema.displayText(v)) is not a version number")
         case .installerTooNew(let v, let firstSeen):

@@ -25,7 +25,7 @@ struct EnvironmentCardState: Equatable, Sendable {
         case .jamfPro: ["computers"]
         case .jamfSchool: ["school-devices"]
         case .platform: ReportEngine.platformOnlyKinds.sorted()
-        case .protect: DataFreshnessHealth.protectKinds
+        case .protect: ReportEngine.protectReportKinds
         case .securityCloud: [ReportEngine.securityRiskKind]
         }
     }

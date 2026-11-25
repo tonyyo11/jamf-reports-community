@@ -1143,7 +1143,10 @@ fixture since 2.13 (`commands-1.38.0.json`, replacing `commands-1.35.0.json`).
 `id` and `created` of each published version and the `installerVersion` alone (the downloads
 summary's one object becomes a one-row array; its URLs and `has*` flags are dropped); `null` or
 `[]` lands an empty snapshot; any other shape is not saved (`[warn] <kind> not saved: unexpected
-shape`, a failed attempt with no cause, not landed). They are optional Protect kinds like the
+shape`, a failed attempt with the permanent `FailureCause.unexpectedOutput`, which every
+"output is not JSON" site records too, not landed). A Protect-only run is dead, and writes no
+summary, unless one of `protectReportKinds` landed; the Environment card dates the Protect row
+from those four. They are optional Protect kinds like the
 others (`DataFreshnessHealth.protectKinds` derives from the matrix) and are not in
 `knownCollectKinds`. **jamf-cli version gate:** `ReportEngine.minimumJamfCLI` is the one table of
 sources an older jamf-cli cannot serve (`dashboard` 1.31.0, `protect-signature-versions` 1.38.0,
@@ -1168,8 +1171,10 @@ an installer that is no version, or a Mac's, is not evaluated); disconnected whe
 `ProtectDashboardService.isConnected` and `lastDisconnection` (now decoded on
 `ProtectComputerRow`) is more than `grace` before `now`, reasons counted over those Macs
 (`ReasonCount`, capped at `ManagementHealth.maxShownValues`), a time that does not parse counted
-in `disconnectedTimeUnknown`. `ProtectAgentHealthLoader.load(dataDir:computers:computersFile:)`
-takes `now` from the `protect-computers` file's filename stamp alone (no stamp: every finding
+in `disconnectedTimeUnknown` (kept in `of`; its own `MacStatus` is not evaluated, so the workbook
+cell is blank). A finding no row reports is `.noMacReports`, never 0 of 0.
+`ProtectAgentHealthLoader.load(dataDir:computers:computersFile:)` takes `now` from the
+`protect-computers` file's filename stamp alone, clamped to this Mac's clock (no stamp: every finding
 `.noCollectionTime`), reads the newest published list and installer through
 `BoundedFile.readSnapshotLogged` (missing is `notCollected`, present but unreadable is
 `unreadable` and joins `unreadableKinds`), and finds the installer's first-seen time as the stamp

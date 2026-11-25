@@ -51,6 +51,15 @@ final class ProtectConfigurationTests: XCTestCase {
         XCTAssertEqual(unread.reportRows[0].1, ProtectConfiguration.unreadableNote)
     }
 
+    func testTheCapturedJamfCLI138PlanShapeReportsAnEmptyPreventList() throws {
+        let rows = try JSONDecoder().decode([ProtectPlanRow].self, from: Data(contentsOf:
+            TestFixtures.dir("protect-wave-e/protect-plans-1.38.json")))
+        XCTAssertEqual(rows.first?.preventListSets, .names(""))
+        let counts = try XCTUnwrap(ProtectConfiguration.counts(plans: rows))
+        XCTAssertEqual(counts.noPreventList, .init(met: 1, of: 1))
+        XCTAssertEqual(counts.noUSBControl, .init(met: 0, of: 1))
+    }
+
     func testAJamfCLIBefore137DoesNotReportPreventLists() throws {
         let rows = try decode(#"[{"name":"A"},{"name":"B","usbControlSet":"Block"}]"#)
         let counts = try XCTUnwrap(ProtectConfiguration.counts(plans: rows))
