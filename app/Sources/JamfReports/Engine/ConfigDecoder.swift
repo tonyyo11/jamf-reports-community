@@ -462,6 +462,9 @@ struct ThresholdsConfig: Decodable, Sendable {
     /// know is skipped and named by Config Doctor.
     var staleBasis: StaleBasisSetting?
     var contactGapDays: WholeNumberSetting?   // key is `contact_gap_days`
+    /// The failed share at which a deployment or patch policy is at warning and at critical.
+    var deploymentFailureWarningPercent: Int?
+    var deploymentFailureCriticalPercent: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case staleDeviceDays = "stale_device_days"
@@ -472,6 +475,8 @@ struct ThresholdsConfig: Decodable, Sendable {
         case profileErrorWarning = "profile_error_warning"
         case staleBasis = "stale_basis"
         case contactGapDays = "contact_gap_days"
+        case deploymentFailureWarningPercent = "deployment_failure_warning_percent"
+        case deploymentFailureCriticalPercent = "deployment_failure_critical_percent"
     }
 
     var resolvedStaleDays: Int { staleDeviceDays ?? 30 }
@@ -489,6 +494,19 @@ struct ThresholdsConfig: Decodable, Sendable {
     }
 
     var staleRule: StaleRule { StaleRule(days: resolvedStaleDays, basis: resolvedStaleBasis) }
+
+    /// Each level outside 1-100 (or absent) takes its own default; then a warning above
+    /// critical takes both defaults. Warning equal to critical is valid (every such row is
+    /// critical). The one reader of the two keys: every surface and Config Doctor use it.
+    var resolvedDeploymentLevels: DeploymentHealth.Levels {
+        let range = 1...100
+        let defaults = DeploymentHealth.Levels.defaults
+        let warning = deploymentFailureWarningPercent.flatMap { range.contains($0) ? $0 : nil }
+            ?? defaults.warning
+        let critical = deploymentFailureCriticalPercent.flatMap { range.contains($0) ? $0 : nil }
+            ?? defaults.critical
+        return warning > critical ? defaults : .init(warning: warning, critical: critical)
+    }
 }
 
 /// `thresholds.stale_basis` as typed: a date or a list of dates. Never throws (the `AlertRule`
@@ -586,6 +604,8 @@ extension ThresholdsConfig {
         profileErrorWarning = c.wholeNumber(.profileErrorWarning)
         staleBasis = try c.decodeIfPresent(StaleBasisSetting.self, forKey: .staleBasis)
         contactGapDays = try c.decodeIfPresent(WholeNumberSetting.self, forKey: .contactGapDays)
+        deploymentFailureWarningPercent = c.wholeNumber(.deploymentFailureWarningPercent)
+        deploymentFailureCriticalPercent = c.wholeNumber(.deploymentFailureCriticalPercent)
     }
 }
 

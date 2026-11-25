@@ -264,6 +264,7 @@ extension ConfigDoctorService {
                 L("warning_disk_percent (\(warn)) is above critical_disk_percent (\(crit)), so the warning band never applies."), L("Set the warning below the critical one."),
                 tag: ".order"))
         }
+        rows += deploymentLevelRows(limits)
         for (index, ea) in (config.customEas ?? []).enumerated() where ea.type == .percentage {
             guard ea.warningThreshold != nil || ea.criticalThreshold != nil else { continue }
             let (eaWarn, eaCrit) = (ea.warningThreshold ?? warn, ea.criticalThreshold ?? crit)
@@ -272,6 +273,37 @@ extension ConfigDoctorService {
                 "custom_eas[\(index)].warning_threshold",
                 L("warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the warning band never applies."), L("Set the warning below the critical one."),
                 tag: ".order"))
+        }
+        return rows
+    }
+
+    /// A deployment failure level the app does not use as typed: out of 1-100, or a pair whose
+    /// warning ends up above critical. The levels named are `resolvedDeploymentLevels`', the
+    /// ones every surface uses.
+    private static func deploymentLevelRows(_ limits: ThresholdsConfig) -> [DoctorRow] {
+        let used = limits.resolvedDeploymentLevels
+        var rows: [DoctorRow] = []
+        for (key, typed) in [
+            ("deployment_failure_warning_percent", limits.deploymentFailureWarningPercent),
+            ("deployment_failure_critical_percent", limits.deploymentFailureCriticalPercent),
+        ] {
+            guard let typed, !(1...100).contains(typed) else { continue }
+            rows.append(valueRow(
+                "thresholds.\(key)",
+                L("\(typed) is not from 1 to 100. The app uses warning \(used.warning)% and critical \(used.critical)%."),
+                L("Set a whole number from 1 to 100, or remove the key for the default.")))
+        }
+        let typedWarning = limits.deploymentFailureWarningPercent.flatMap {
+            (1...100).contains($0) ? $0 : nil
+        } ?? DeploymentHealth.Levels.defaults.warning
+        let typedCritical = limits.deploymentFailureCriticalPercent.flatMap {
+            (1...100).contains($0) ? $0 : nil
+        } ?? DeploymentHealth.Levels.defaults.critical
+        if typedWarning > typedCritical {
+            rows.append(valueRow(
+                "thresholds.deployment_failure_warning_percent",
+                L("The deployment failure warning level (\(typedWarning)%) is above the critical level (\(typedCritical)%). The app uses warning \(used.warning)% and critical \(used.critical)%."),
+                L("Set the warning at or below the critical one."), tag: ".order"))
         }
         return rows
     }
@@ -285,6 +317,8 @@ extension ConfigDoctorService {
         (["thresholds", "critical_disk_percent"], 90),
         (["thresholds", "cert_warning_days"], 90),
         (["thresholds", "profile_error_warning"], 10),
+        (["thresholds", "deployment_failure_warning_percent"], 10),
+        (["thresholds", "deployment_failure_critical_percent"], 25),
         (["output", "keep_latest_runs"], 10),
     ]
 

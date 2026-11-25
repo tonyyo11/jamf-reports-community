@@ -352,13 +352,17 @@ final class CoreDashboardTests: XCTestCase {
                        "Every server-health source is not permitted or not set up on this server")
     }
 
+    /// Server and Admin Health is followed only by Deployment Health (wave C), the last core tab.
     func testTheTabIsLastInTheFullAndOperationalTemplatesAndNotInTheSchoolWorkbook() {
-        XCTAssertEqual(FullInstanceTemplate().includedSheets.last, .serverAdminHealth)
-        XCTAssertEqual(OperationalTemplate().includedSheets.last, .serverAdminHealth)
-        XCTAssertEqual(
-            CoreDashboard(config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
-                          workbook: Workbook()).sheetPlan.last?.name, "Server and Admin Health")
+        for sheets in [FullInstanceTemplate().includedSheets, OperationalTemplate().includedSheets] {
+            XCTAssertEqual(Array(sheets.suffix(2)), [.serverAdminHealth, .deploymentHealth])
+        }
+        let plan = CoreDashboard(
+            config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
+            workbook: Workbook()).sheetPlan.map(\.name)
+        XCTAssertEqual(Array(plan.suffix(2)), ["Server and Admin Health", "Deployment Health"])
         XCTAssertFalse(SchoolDashboard.sheetNames.contains("Server and Admin Health"))
+        XCTAssertFalse(SchoolDashboard.sheetNames.contains("Deployment Health"))
     }
 
     // MARK: - Smart Groups
@@ -685,6 +689,7 @@ final class CoreDashboardTests: XCTestCase {
             "mSCP Compliance", "Compliance Trend",
             // Server and admin health
             "Server and Admin Health",
+            "Deployment Health",
         ]
         for name in expected {
             XCTAssertTrue(names.contains(name), "Sheet plan missing: \(name)")

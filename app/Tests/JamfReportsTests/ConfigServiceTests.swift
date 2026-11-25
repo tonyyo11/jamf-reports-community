@@ -590,6 +590,27 @@ final class ConfigServiceTests: XCTestCase {
             try savedText(profile: profile, root: root).contains("baseline_label: CIS Level 1"))
     }
 
+    func testDeploymentFailureLevelsLoadAndSave() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "config-test-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            "thresholds:\n  deployment_failure_warning_percent: 5\n",
+            profile: profile, root: root)
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.deploymentFailureWarningPercent, "5")
+        XCTAssertEqual(loaded.state.deploymentFailureCriticalPercent, "25", "the default")
+        var state = loaded.state
+        state.deploymentFailureCriticalPercent = "40"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document,
+            workspaceRoot: root)
+        let text = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertTrue(text.contains("deployment_failure_warning_percent: 5"))
+        XCTAssertTrue(text.contains("deployment_failure_critical_percent: 40"))
+    }
+
     private func temporaryWorkspaceRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("JamfReportsTests-\(UUID().uuidString)", isDirectory: true)

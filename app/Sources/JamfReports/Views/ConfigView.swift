@@ -800,6 +800,21 @@ private struct ThresholdsTab: View {
                         value: $ws.configState.criticalDiskPercent, unit: "%",
                         help: L("Red highlight in Disk Usage sheet")
                     )
+
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
+                    SectionHeader(title: L("Deployments and Patch Policies")).padding(.bottom, 14)
+                    thresholdField(
+                        label: L("Deployment failure warning"),
+                        key: "deployment_failure_warning_percent",
+                        value: $ws.configState.deploymentFailureWarningPercent, unit: "%",
+                        help: L("Failed share of a deployment's or patch policy's Macs that needs attention")
+                    )
+                    thresholdField(
+                        label: L("Deployment failure critical"),
+                        key: "deployment_failure_critical_percent",
+                        value: $ws.configState.deploymentFailureCriticalPercent, unit: "%",
+                        help: L("Failed share that reads as critical")
+                    )
                 }
             }
 
