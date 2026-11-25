@@ -36,22 +36,12 @@ final class ProtectSignaturesTests: XCTestCase {
         XCTAssertNil(rows[1].signaturesVersion)
     }
 
-    func testLagCountsMacsBelowTheNewestOverTheMacsThatReport() throws {
+    func testReadsTheTimeOfDisconnectionAsText() throws {
         let rows = try decode("""
-        [{"signaturesVersion":22003},{"signaturesVersion":21999},{"signaturesVersion":21999},
-         {"hostname":"reports-none"}]
+        [{"lastDisconnection":"2026-11-20T10:00:00.123456789Z"},{"lastDisconnection":5}]
         """)
-        let lag = try XCTUnwrap(ProtectComputerRow.signatureLag(rows))
-        XCTAssertEqual(lag.behind, 2)
-        XCTAssertEqual(lag.reporting, 3)
-    }
-
-    func testNoLagLineWithFewerThanTwoDistinctVersionsOrNone() throws {
-        XCTAssertNil(ProtectComputerRow.signatureLag([]))
-        XCTAssertNil(ProtectComputerRow.signatureLag(
-            try decode(#"[{"hostname":"a"},{"hostname":"b"}]"#)))
-        XCTAssertNil(ProtectComputerRow.signatureLag(
-            try decode(#"[{"signaturesVersion":5},{"signaturesVersion":5}]"#)))
+        XCTAssertEqual(rows[0].lastDisconnection, "2026-11-20T10:00:00.123456789Z")
+        XCTAssertNil(rows[1].lastDisconnection, "a wrong type costs the field")
     }
 
     func testTheWorkbookTabEndsWithBothColumns() throws {
@@ -92,7 +82,6 @@ final class ProtectSignaturesTests: XCTestCase {
         XCTAssertNil(rows[0].signaturesVersionText)
         XCTAssertNil(rows[1].signaturesVersionText)
         XCTAssertEqual(rows[2].signaturesVersionText, "22003")
-        XCTAssertNil(ProtectComputerRow.signatureLag(rows))
     }
 
     func testWholeIntRefusesNaNInfinityAndOutOfRange() {

@@ -3382,6 +3382,46 @@
         }
       }
     },
+    "%@ could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n'a pas pu être lu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler %@"
+          }
+        }
+      }
+    },
     "%@ coverage" : {
       "localizations" : {
         "de" : {
@@ -7010,6 +7050,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não indica nenhuma data que o app conta, então %@."
+          }
+        }
+      }
+    },
+    "%@ not collected yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ noch nicht erfasst"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ aún no recopilado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ pas encore collecté"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non ancora raccolto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は未収集"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ainda não coletado"
           }
         }
       }
@@ -15886,6 +15966,46 @@
         }
       }
     },
+    "%lld not connected, time of disconnection unknown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld nicht verbunden, Zeitpunkt der Trennung unbekannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sin conexión, hora de desconexión desconocida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld non connectés, heure de déconnexion inconnue"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld non connessi, ora della disconnessione sconosciuta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 台が未接続、切断時刻は不明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld não conectados, hora da desconexão desconhecida"
+          }
+        }
+      }
+    },
     "%lld not installed" : {
       "localizations" : {
         "de" : {
@@ -16322,52 +16442,6 @@
         }
       }
     },
-    "%lld of %lld behind the newest signatures in this tenant" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld von %lld hinter den neuesten Signaturen dieses Mandanten"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld of %2$lld behind the newest signatures in this tenant"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld de %lld por detrás de las firmas más recientes de este tenant"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sur %lld en retard sur les signatures les plus récentes de ce tenant"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld su %lld indietro rispetto alle firme più recenti di questo tenant"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このテナントの最新シグネチャより古い: %lld / %lld"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld de %lld atrás das assinaturas mais recentes deste tenant"
-          }
-        }
-      }
-    },
     "%lld of %lld device reporting" : {
       "localizations" : {
         "de" : {
@@ -16736,6 +16810,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld de %2$lld dispositivos móveis gerenciados"
+          }
+        }
+      }
+    },
+    "%lld of %lld reasons shown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld Gründen angezeigt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld reasons shown"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld motivos mostrados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld raisons affichées sur %2$lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld di %2$lld motivi mostrati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 件中 %1$lld 件の理由を表示"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld motivos mostrados"
           }
         }
       }
@@ -28685,6 +28805,46 @@
         }
       }
     },
+    "Agent behind the installer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent älter als das Installationsprogramm"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agente por detrás del instalador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent en retard sur le programme d'installation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agente in ritardo rispetto al programma di installazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントがインストーラより古い"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agente atrás do instalador"
+          }
+        }
+      }
+    },
     "Agent the EDR card shows" : {
       "localizations" : {
         "de" : {
@@ -28801,6 +28961,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agentes"
+          }
+        }
+      }
+    },
+    "Agents on a plan with automatic updates off can be held back on purpose." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten in einem Plan mit deaktivierten automatischen Updates können absichtlich zurückgehalten werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los agentes de un plan con las actualizaciones automáticas desactivadas pueden retenerse a propósito."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les agents d'un plan dont les mises à jour automatiques sont désactivées peuvent être retenus volontairement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli agenti di un piano con gli aggiornamenti automatici disattivati possono essere trattenuti di proposito."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動アップデートがオフのプランのエージェントは、意図的に古いままにされている場合があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentes em um plano com atualizações automáticas desativadas podem ser retidos de propósito."
           }
         }
       }
@@ -40615,6 +40815,98 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compare este backup com o mais recente que tem arquivos."
+          }
+        }
+      }
+    },
+    "Compared with installer %@, first seen %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verglichen mit Installationsprogramm %1$@, zuerst gesehen am %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Compared with installer %1$@, first seen %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparado con el instalador %1$@, visto por primera vez el %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparé au programme d'installation %1$@, vu pour la première fois le %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confrontato con il programma di installazione %1$@, visto per la prima volta il %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストーラ %1$@ (%2$@ に初めて確認) と比較"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparado com o instalador %1$@, visto pela primeira vez em %2$@"
+          }
+        }
+      }
+    },
+    "Compared with version %lld, published %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verglichen mit Version %1$lld, veröffentlicht am %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Compared with version %1$lld, published %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparado con la versión %1$lld, publicada el %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparé à la version %1$lld, publiée le %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confrontato con la versione %1$lld, pubblicata il %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン %1$lld (%2$@ 公開) と比較"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparado com a versão %1$lld, publicada em %2$@"
           }
         }
       }
@@ -54389,6 +54681,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desconectar o Jamf Protect?"
+          }
+        }
+      }
+    },
+    "Disconnected for more than a day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seit mehr als einem Tag getrennt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desconectado más de un día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déconnecté depuis plus d'un jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disconnesso da più di un giorno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 日以上切断"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desconectado há mais de um dia"
           }
         }
       }
@@ -87995,6 +88327,46 @@
         }
       }
     },
+    "No reason reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Grund gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se notificó ningún motivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune raison signalée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun motivo riportato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "理由の報告なし"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum motivo reportado"
+          }
+        }
+      }
+    },
     "No recent patch failures recorded." : {
       "localizations" : {
         "de" : {
@@ -89917,6 +90289,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não inscrito via inscrição automática de dispositivos"
+          }
+        }
+      }
+    },
+    "Not evaluated: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht bewertet: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No evaluado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non évalué : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non valutato: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未評価: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não avaliado: %@"
           }
         }
       }
@@ -101689,6 +102101,46 @@
         }
       }
     },
+    "Protect agents" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect-Agenten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentes de Protect"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents Protect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenti Protect"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect エージェント"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentes do Protect"
+          }
+        }
+      }
+    },
     "Protect client secret" : {
       "localizations" : {
         "de" : {
@@ -101729,6 +102181,46 @@
         }
       }
     },
+    "Protect gave no installer version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect hat keine Version des Installationsprogramms angegeben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect no indicó ninguna versión del instalador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect n'a indiqué aucune version de programme d'installation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect non ha indicato alcuna versione del programma di installazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect からインストーラのバージョンが返されませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Protect não informou a versão do instalador"
+          }
+        }
+      }
+    },
     "Protect is on but has no profile; set protect.profile or disconnect Protect first" : {
       "localizations" : {
         "de" : {
@@ -101765,6 +102257,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "O Protect está ativado mas não tem perfil; defina protect.profile ou desconecte o Protect primeiro"
+          }
+        }
+      }
+    },
+    "Protect published no signature versions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect hat keine Signaturversionen veröffentlicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect no publicó ninguna versión de firmas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect n'a publié aucune version de signatures"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect non ha pubblicato versioni delle firme"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect はシグネチャのバージョンを公開していません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Protect não publicou nenhuma versão de assinaturas"
           }
         }
       }
@@ -119947,6 +120479,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajustes de visibilidade da barra lateral"
+          }
+        }
+      }
+    },
+    "Signatures behind" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signaturen im Rückstand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmas atrasadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signatures en retard"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firme in ritardo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シグネチャが古い"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assinaturas atrasadas"
           }
         }
       }
@@ -145932,6 +146504,92 @@
         }
       }
     },
+    "installer %@ first seen %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installationsprogramm %1$@ zuerst gesehen am %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "installer %1$@ first seen %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "instalador %1$@ visto por primera vez el %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "programme d'installation %1$@ vu pour la première fois le %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "programma di installazione %1$@ visto per la prima volta il %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストーラ %1$@ を %2$@ に初めて確認"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "instalador %1$@ visto pela primeira vez em %2$@"
+          }
+        }
+      }
+    },
+    "installer version %@ is not a version number" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "die Version %@ des Installationsprogramms ist keine Versionsnummer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la versión del instalador %@ no es un número de versión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la version de programme d'installation %@ n'est pas un numéro de version"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la versione %@ del programma di installazione non è un numero di versione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストーラのバージョン %@ はバージョン番号ではありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a versão do instalador %@ não é um número de versão"
+          }
+        }
+      }
+    },
     "internal argument error (exit 2) — please report this along with this run's log output. On a Platform API profile, exit 2 is also the retired `apigw.jamf.com` host or an environment/tenant scope conflict — run `jamf-cli config validate`." : {
       "localizations" : {
         "de" : {
@@ -150060,6 +150718,46 @@
         }
       }
     },
+    "no dated snapshot holds installer %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kein datierter Snapshot enthält das Installationsprogramm %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ninguna instantánea con fecha contiene el instalador %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun instantané daté ne contient le programme d'installation %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nessuno snapshot datato contiene il programma di installazione %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストーラ %@ を含む日付付きスナップショットがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nenhum snapshot datado contém o instalador %@"
+          }
+        }
+      }
+    },
     "no deployment counts" : {
       "localizations" : {
         "de" : {
@@ -150216,6 +150914,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "nenhum pendente"
+          }
+        }
+      }
+    },
+    "no published signature version is a day old yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "noch keine veröffentlichte Signaturversion ist einen Tag alt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ninguna versión de firmas publicada tiene aún un día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucune version de signatures publiée n'a encore un jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nessuna versione delle firme pubblicata ha ancora un giorno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公開から 1 日経ったシグネチャのバージョンがまだありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nenhuma versão de assinaturas publicada tem um dia ainda"
           }
         }
       }
@@ -153588,6 +154326,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "não foi possível montar o endereço do GitHub"
+          }
+        }
+      }
+    },
+    "the Protect computers snapshot has no collection time" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "der Snapshot der Protect-Computer hat keine Erfassungszeit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la instantánea de ordenadores de Protect no tiene hora de recopilación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l'instantané des ordinateurs Protect n'a pas d'heure de collecte"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "lo snapshot dei computer Protect non ha un orario di raccolta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect のコンピュータのスナップショットに収集時刻がありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "o snapshot de computadores do Protect não tem horário de coleta"
           }
         }
       }

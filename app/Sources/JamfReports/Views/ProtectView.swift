@@ -172,6 +172,9 @@ struct ProtectView: View {
         if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty {
             kpiGrid
         }
+        if let health = snapshot.agentHealth {
+            ProtectAgentsCard(health: health)
+        }
         if !snapshot.alerts.isEmpty {
             alertsBySeverityCard
             recentAlertsCard
@@ -693,12 +696,6 @@ struct ProtectView: View {
                     title: L("Computers"),
                     trailing: snapshot.computers.count > 50
                         ? L("Showing 50 of \(snapshot.computers.count)") : nil)
-
-                if let lag = ProtectComputerRow.signatureLag(snapshot.computers) {
-                    Text(L("\(lag.behind) of \(lag.reporting) behind the newest signatures in this tenant"))
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
 
                 let displayedComputers = Array(snapshot.computers.prefix(50))
 

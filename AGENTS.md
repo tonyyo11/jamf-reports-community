@@ -1157,8 +1157,29 @@ collect_skip, the gate, forced, hold, cadence), `WorkspaceStore.expectedKinds(ja
 (`readVersion`, default `JamfCLIInstaller.installedVersionOffMain` on the binary it located; tests
 inject it), only when a gated kind would run, so `CollectRouter` is unchanged. The dashboard's
 "every Protect source off" rule reads `ReportEngine.protectReportKinds`, the four original
-kinds. The calculator, screens, reports and summary fields that read these sources follow in the
-later slices (`docs/superpowers/specs/2026-11-24-protect-configuration-posture-design.md`).
+kinds. **Agent health (E1b).** `ProtectAgentHealth` (`Models/ProtectAgentHealth.swift`) is the one
+calculator: `evaluate(computers:published:installer:now:)` gives one `MacStatus` per computer row
+and three `Finding`s (`{met, of}` or a typed `Unavailable` reason, never 0, with a
+`BaselineLabel`): signatures behind the highest published `id` created at least `grace` (24 h)
+before `now` (a `signaturesVersion` that is not whole is left out; no usable list is not
+evaluated, never a fleet comparison: `signatureLag` is gone); agent behind the installer version
+once it was first seen `grace` ago (`dottedVersion` is strict: every dot-separated part digits;
+an installer that is no version, or a Mac's, is not evaluated); disconnected when not
+`ProtectDashboardService.isConnected` and `lastDisconnection` (now decoded on
+`ProtectComputerRow`) is more than `grace` before `now`, reasons counted over those Macs
+(`ReasonCount`, capped at `ManagementHealth.maxShownValues`), a time that does not parse counted
+in `disconnectedTimeUnknown`. `ProtectAgentHealthLoader.load(dataDir:computers:computersFile:)`
+takes `now` from the `protect-computers` file's filename stamp alone (no stamp: every finding
+`.noCollectionTime`), reads the newest published list and installer through
+`BoundedFile.readSnapshotLogged` (missing is `notCollected`, present but unreadable is
+`unreadable` and joins `unreadableKinds`), and finds the installer's first-seen time as the stamp
+of the oldest stamped snapshot holding that version (stamps after `now` read as `now`, unstamped
+files skipped, at most `maxInstallerFiles` (400) read). `ProtectDashboardService.load(dataDir:)`
+sets `Snapshot.agentHealth` (compared by `==`) and the two kinds' `sourceDates`; the Protect
+screen shows `ProtectAgentsCard`, which words the reasons in the app's language (`englishText`
+is the reports' form); demo data carries a published list and installer. Workbook, HTML and summary
+fields follow in the later slices
+(`docs/superpowers/specs/2026-11-24-protect-configuration-posture-design.md`).
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 

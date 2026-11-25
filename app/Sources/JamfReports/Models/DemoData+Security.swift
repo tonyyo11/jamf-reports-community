@@ -588,6 +588,13 @@ extension DemoData {
             ]
             if let version = agent.version {
                 object["version"] = version
+                // An agent behind the installer also holds older signatures.
+                object["signaturesVersion"] = version == demoProtectInstaller
+                    ? demoPublishedSignatures[0].id : 40_212
+            }
+            if !agent.connected {
+                object["lastDisconnection"] = timestamp(minutesBefore: agent.lastSeenMinutes)
+                object["lastDisconnectionReason"] = "MQTT_KEEP_ALIVE_TIMEOUT"
             }
             objects.append(object)
         }
@@ -611,6 +618,17 @@ extension DemoData {
 
     /// The Protect screen's snapshot. Every count is taken from the rows it lists.
     static let protectSnapshot = makeProtectSnapshot()
+
+    /// The newest signature versions Protect published: one three days old, one too new to count.
+    static let demoPublishedSignatures = [
+        ProtectAgentHealth.PublishedSignature(
+            id: 40_215, created: referenceDate.addingTimeInterval(-3 * 86_400)),
+        ProtectAgentHealth.PublishedSignature(
+            id: 40_216, created: referenceDate.addingTimeInterval(-5 * 3_600)),
+    ]
+
+    /// The current installer, first seen four days before the demo's reference date.
+    static let demoProtectInstaller = "4.6.0"
 
     private static func makeProtectSnapshot() -> ProtectDashboardService.Snapshot {
         let computers = protectComputerRows()
@@ -642,7 +660,13 @@ extension DemoData {
             lowAlerts: severity.low,
             informationalAlerts: severity.informational,
             sourceFile: nil,
-            snapshotDate: referenceDate)
+            snapshotDate: referenceDate,
+            agentHealth: ProtectAgentHealth.evaluate(
+                computers: computers, published: .value(demoPublishedSignatures),
+                installer: .value(.init(
+                    version: demoProtectInstaller,
+                    firstSeen: referenceDate.addingTimeInterval(-4 * 86_400))),
+                now: referenceDate))
     }
 
     // MARK: - Security Posture

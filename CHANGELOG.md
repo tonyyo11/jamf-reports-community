@@ -10,6 +10,7 @@ versions in this repository map to git tags.
 ### Added
 
 - Workspaces with Jamf Protect now collect two more Protect sources: the signature versions Protect publishes and the current agent installer version. Only the version numbers and dates are saved. They prepare the signature and agent currency findings coming later in 2.13. On a jamf-cli too old for them (1.38 for signature versions, 1.35 for the installer), they are skipped with a line in the run log, and the run is not marked Partial.
+- The Jamf Protect screen has a Protect agents card: how many Macs hold signatures older than the newest version Protect published at least a day ago, how many run an agent older than the installer Protect has offered for at least a day, and how many have been disconnected for more than a day, with Protect's reasons. A count that cannot be judged yet says why instead of showing 0. It replaces the line that compared signatures only with the newest version seen in the fleet, which read "none behind" when every Mac was behind.
 
 ## [2.12.0] - 2026-11-23
 

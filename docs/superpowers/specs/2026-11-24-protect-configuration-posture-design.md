@@ -642,8 +642,9 @@ files. Line numbers are as of commit `10ae87db` (the base of `dev/2-13-0` on
 
 #### 12. `Sources/JamfReports/Engine/JamfCLIDecoder.swift` (Modify)
 
-*   **Proposed Changes**: `ProtectComputerRow` gains `lastDisconnection` (`Date?`,
-    `ISO8601Time.parse`); `signatureLag` is deleted.
+*   **Proposed Changes**: `ProtectComputerRow` gains `lastDisconnection` (the text as
+    jamf-cli writes it; the calculator parses it with `ISO8601Time.parse`); `signatureLag` is
+    deleted.
 
 #### 13. `Sources/JamfReports/Services/ProtectDashboardService.swift` (Modify)
 

@@ -1221,9 +1221,11 @@ struct ProtectComputerRow: Decodable, Sendable {
     let signaturesVersion: Double?
     /// Why the agent last dropped its connection, as Protect words it (`MQTT_KEEP_ALIVE_TIMEOUT`).
     let lastDisconnectionReason: String?
+    /// When it last dropped it, as Protect writes it; `ProtectAgentHealth` parses it.
+    let lastDisconnection: String?
 
     private enum CodingKeys: String, CodingKey {
-        case signaturesVersion, lastDisconnectionReason
+        case signaturesVersion, lastDisconnectionReason, lastDisconnection
         case uuid, hostname, serial, modelName, osString, plan, version
         case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
@@ -1253,6 +1255,7 @@ struct ProtectComputerRow: Decodable, Sendable {
             .flatMap { wholeInt($0) == nil ? nil : $0 }
         lastDisconnectionReason = try? c.decodeIfPresent(
             String.self, forKey: .lastDisconnectionReason)
+        lastDisconnection = try? c.decodeIfPresent(String.self, forKey: .lastDisconnection)
     }
 
     /// The signatures version as text: no ".0" on a whole number; nil when not reported.
@@ -1260,14 +1263,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         signaturesVersion.flatMap {
             $0 == $0.rounded() ? wholeInt($0).map(String.init) : String($0)
         }
-    }
-
-    /// How many of the Macs that report a signatures version hold less than the newest one in
-    /// this tenant. Nil with fewer than two distinct versions, where "behind" has no meaning.
-    static func signatureLag(_ rows: [ProtectComputerRow]) -> (behind: Int, reporting: Int)? {
-        let versions = rows.compactMap(\.signaturesVersion)
-        guard Set(versions).count >= 2, let newest = versions.max() else { return nil }
-        return (versions.filter { $0 < newest }.count, versions.count)
     }
 
     /// jamf-cli prints `osMajor`, `osMinor` and `osPatch` and no `osString`: "macOS 15.7.3",
