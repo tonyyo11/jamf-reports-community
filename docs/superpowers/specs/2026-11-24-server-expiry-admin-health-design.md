@@ -79,7 +79,7 @@ The proposed solution: add the sources above as typed collect kinds with a reduc
 *   Per-account or per-client lists: the opt-in half is counts only.
 *   Reading values from `pro overview`'s display text.
 *   Workspaces that reach Jamf Pro through a Platform API profile: these kinds are skipped at plan time until a gateway profile is tested.
-*   Fixing anything on the server (no write commands).
+*   Fixing anything on the server (no write commands), and any source whose read needs a create, update or delete privilege on the Jamf server (Tony, 2026-11-24). Every wave A source needs only Read or View privileges (Appendix A); a fixture PR that finds otherwise drops that source.
 
 ## Open Questions
 
