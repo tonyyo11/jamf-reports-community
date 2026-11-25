@@ -141,7 +141,8 @@ struct EnvironmentCard: View {
                   ? EnvironmentProfiles.organizationLevelPlatformReason : help)
         }
         if row.slot == .platform || row.slot == .protect {
-            PNPButton(title: row.profile == nil ? L("Add") : L("Change"),
+            // "Change…" is the verb; the Overview's "Change" tile is the noun.
+            PNPButton(title: row.profile == nil ? L("Add") : L("Change…"),
                       icon: row.profile == nil ? "plus" : "arrow.triangle.2.circlepath",
                       style: .ghost, size: .sm) { add(row) }
                 .disabled(demo).help(help)

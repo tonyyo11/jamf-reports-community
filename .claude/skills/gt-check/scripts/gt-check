@@ -1,0 +1,149 @@
+#!/usr/bin/python3 -I
+"""Second-opinion check of the string catalog against General Translation (GT).
+
+delta     write the keys added or retranslated since REF as a source-only .xcstrings for GT
+glossary  write app/Localization/glossary.md as GT glossary entries (JSON)
+compare   compare GT's translations of the delta with the catalog and write a Markdown report
+
+Reads only the catalog and the glossary; nothing here touches config, logs or snapshots.
+"""
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[4]
+CATALOG = "app/Localization/Localizable.xcstrings"
+GLOSSARY = ROOT / "app/Localization/glossary.md"
+SPEC = re.compile(r"%(?:\d+\$)?(?:@|lld|ld|d|f|%)")
+TICK = re.compile(r"`[^`]+`")
+KEY = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b|\b[a-z_]+\.[a-z_]+(?:\.[a-z_]+)*\b")
+LOCALES = ["fr", "es", "de", "pt-BR", "it", "ja"]
+
+
+def catalog_at(ref):
+    if ref is None:
+        return json.loads((ROOT / CATALOG).read_text(encoding="utf8"))["strings"]
+    out = subprocess.run(["git", "-C", str(ROOT), "show", f"{ref}:{CATALOG}"],
+                         capture_output=True, text=True, check=False)
+    if out.returncode:
+        sys.exit(f"gt-check: cannot read {CATALOG} at {ref}: {out.stderr.strip()}")
+    return json.loads(out.stdout)["strings"]
+
+
+def value(entry, loc):
+    unit = (entry or {}).get("localizations", {}).get(loc, {}).get("stringUnit", {})
+    return unit.get("value")
+
+
+def delta(args):
+    old, new = catalog_at(args.since), catalog_at(None)
+    keys = {}
+    for key, entry in new.items():
+        if entry.get("shouldTranslate") is False:
+            continue
+        before = old.get(key)
+        if before is None or any(value(entry, x) != value(before, x) for x in LOCALES):
+            keys[key] = {"comment": entry["comment"]} if "comment" in entry else {}
+    doc = {"sourceLanguage": "en", "version": "1.0", "strings": keys}
+    text = json.dumps(doc, ensure_ascii=False, indent=2)
+    Path(args.out).write_text(text, encoding="utf8")
+    # GT bills input tokens per target locale; the 2026-11-24 pilot came to 4.6 bytes a token.
+    tokens = round(len(text.encode("utf8")) / 4.6)
+    print(f"{len(keys)} keys changed since {args.since} -> {args.out}")
+    print(f"about {tokens} GT tokens per locale, {tokens * len(LOCALES)} for all {len(LOCALES)}")
+
+
+def glossary_entries():
+    text = GLOSSARY.read_text(encoding="utf8")
+    keep = re.search(r"\*\*Never translate:\*\*(.*?)\n\n", text, re.S).group(1)
+    keep = re.sub(r"\s+", " ", keep).split("config.yaml and")[0]
+    names = [n.strip(" .") for n in keep.split(",") if n.strip(" .")]
+    entries = [{"keyword": n, "definition": "Product or technical name; keep as written.",
+                "translations": {x: {"translation": n} for x in LOCALES}} for n in names]
+    for row in re.findall(r"^\|(.+)\|$", text, re.M):
+        cells = [c.strip() for c in row.split("|")]
+        if len(cells) != 7 or cells[0] in ("English", "") or set(cells[0]) <= set("-"):
+            continue
+        entries.append({"keyword": cells[0],
+                        "translations": {x: {"translation": t} for x, t in zip(LOCALES, cells[1:])}})
+    return entries
+
+
+def glossary(args):
+    entries = glossary_entries()
+    Path(args.out).write_text(json.dumps(entries, ensure_ascii=False, indent=1), encoding="utf8")
+    print(f"{len(entries)} glossary entries -> {args.out}")
+
+
+def problems(src, text, loc, terms, keep):
+    if text is None:
+        return ["missing"]
+    found = []
+    strip = lambda s: Counter(re.sub(r"\d+\$", "", x) for x in SPEC.findall(s))  # noqa: E731
+    if strip(src) != strip(text):
+        found.append("format specifiers differ")
+    found += [f"lost {x}" for x in TICK.findall(src) + KEY.findall(src) if x not in text]
+    # German writes compounds as Jamf-Pro-Login; the name is still there.
+    spaced = text.replace("-", " ")
+    found += [f"lost {k}" for k in keep
+              if re.search(rf"\b{re.escape(k)}\b", src) and k.replace("-", " ") not in spaced]
+    for term in terms:
+        want = term["translations"][loc]["translation"]
+        word = re.sub(r"\s*\(.*\)", "", term["keyword"])
+        if re.search(rf"\b{re.escape(word)}\b", src, re.I) and want.lower()[:5] not in text.lower():
+            found.append(f"glossary: {word} -> {want}")
+    return found
+
+
+def compare(args):
+    strings = catalog_at(None)
+    entries = glossary_entries()
+    keep = [e["keyword"] for e in entries if "definition" in e]
+    terms = [e for e in entries if "definition" not in e]
+    flagged, differ = [], []
+    for pair in args.gt:
+        loc, path = pair.split("=", 1)
+        gt = json.loads(Path(path).read_text(encoding="utf8"))["strings"]
+        for key, entry in gt.items():
+            ours, theirs = value(strings.get(key), loc), value(entry, loc)
+            mine = problems(key, ours, loc, terms, keep)
+            if mine and not problems(key, theirs, loc, terms, keep):
+                flagged.append((loc, key, ours, theirs, mine))
+            elif ours != theirs:
+                differ.append((loc, key, ours, theirs))
+    lines = ["# GT second opinion", "",
+             f"{len(flagged)} strings where ours fails a check GT passes; "
+             f"{len(differ)} where the two differ. Nothing was written to the catalog.", "",
+             "## Ours fails a check GT passes", ""]
+    for loc, key, ours, theirs, why in flagged:
+        lines += [f"- **{loc}** `{key}`", f"  - ours: {ours}", f"  - GT: {theirs}",
+                  f"  - {'; '.join(why)}"]
+    lines += ["", "## Different wording (skim)", "", "| Locale | English | Ours | GT |", "|---|---|---|---|"]
+    cell = lambda s: (s or "").replace("|", "\\|").replace("\n", " ")  # noqa: E731
+    lines += [f"| {x} | {cell(k)} | {cell(o)} | {cell(t)} |" for x, k, o, t in differ]
+    Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf8")
+    print(f"{len(flagged)} flagged, {len(differ)} differ -> {args.out}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("delta")
+    p.add_argument("--since", required=True)
+    p.add_argument("--out", required=True)
+    p = sub.add_parser("glossary")
+    p.add_argument("--out", required=True)
+    p = sub.add_parser("compare")
+    p.add_argument("--gt", action="append", required=True, metavar="LOCALE=FILE")
+    p.add_argument("--out", required=True)
+    args = parser.parse_args()
+    {"delta": delta, "glossary": glossary, "compare": compare}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    main()
