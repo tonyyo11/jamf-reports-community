@@ -92,6 +92,7 @@ struct SchedulesView: View {
             }
             profileFilterStrip
             nextUpCallout
+            SplitCollectCard()
             schedulesTable
             // Notifications apply to any scheduled run — hand-built or managed —
             // so unmanaged-mode operators get the same panel AutomationView shows,

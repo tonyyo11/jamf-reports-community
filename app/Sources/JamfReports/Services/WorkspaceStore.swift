@@ -78,6 +78,9 @@ final class WorkspaceStore {
     private let discoverProfiles: @MainActor () -> [JamfCLIProfile]
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
+    /// The active workspace's collects being continued today (`SplitCollectCard`); refreshed
+    /// with automation health, empty in demo mode and until the new profile's pass after a switch.
+    var splitCollectRows: [SplitCollectRow] = []
     var globalStatus: String? = nil
     /// A Devices filter another screen asked for (`DevicesView.DeviceFilter` raw value),
     /// held until Devices appears and applies it, since the view does not exist when the
@@ -477,6 +480,7 @@ final class WorkspaceStore {
             observeProfileSwitchRefresh(for: id)
         }
         if !demoMode {
+            splitCollectRows = []
             schedules = Self.loadSchedules(baseProfile: id)
                 .filter { $0.isMulti || $0.profile == id }
             Task {
