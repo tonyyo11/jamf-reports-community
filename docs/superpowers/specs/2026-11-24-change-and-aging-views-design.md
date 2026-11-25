@@ -167,12 +167,10 @@ all of that.
         aging) ship hidden ("not measured") until a fixture captured from a tenant with a
         failing patch policy is in the tests.
     *   The maintainer captures it on the NFR server by scoping a patch policy that fails.
-*   **Definitions past 100.** The walk asks for `--page-size 100`. The catalog lists `--all`
-    and `--page` on the definitions command, so B1 first checks on the NFR server whether a
-    title with more than 100 definitions returns them all. If it does not, the walk adds
-    `--all`; the epic's Acrobat Reader example has 175.
-
 Answered:
+
+*   jamf-cli 1.38.0 pages `definitions` on its own (2026-11-25, NFR). Paging on 1.29-1.37 is
+    unverified; a title with exactly 100 definitions reads "the 100 newest versions".
 
 *   `computers` rows carry `general.site.id` and `userAndLocation.departmentId`/`buildingId`
     (2026-11-24). Wave B does not store them (Non-Goals).
@@ -221,8 +219,8 @@ Answered:
 
 ### CUJ 5: Version history for a title (B1)
 
-*   **Given**: daily `patch-status` and dated `patch-release-dates` and
-    `patch-version-dates` snapshots for a title.
+*   **Given**: daily `patch-status` and dated `patch-release-dates` snapshots, and a
+    `patch-version-dates` sidecar, for a title.
 *   **When**: the admin opens the Patch screen.
 *   **Then**:
     *   The Version History card, with the title chosen in its picker, lists every version
@@ -278,7 +276,7 @@ Answered:
       v                               v
  patch-release-dates_<ts>       summary_<day>.json .changes --> Overview, success digest,
  patch-version-dates_<ts>                                        Fleet Drift (appended)
- (same stamp)
+ (written only on a change)
       |
       v
  Patch screen, Version History tab, HTML
@@ -295,23 +293,44 @@ Answered:
 
 **Every definition's release date.** `collectPatchReleaseDates` already holds each title's
 whole definitions list in memory and keeps one entry (`latestDefinitionDate`). From the same
-loop it also writes `patch-version-dates` with the same stamp, one row per definition:
-`{title_id, title, version, release_date, absolute_order_id}`, where `release_date` is null
-when Jamf gives none (so "answered with no date" differs from "not read"). It is written after
-`patch-release-dates` succeeds, through `AtomicInstall.write` with mode 0600, like
-`saveSnapshot`. The existing kind keeps its shape (its writer moves to `AtomicInstall.write`
-too).
+loop it now keeps every definition as a row of `patch-version-dates`:
+`{title_id, title, version, release_date, absolute_order_id}`. The existing kind keeps its
+shape. jamf-cli pages `definitions` on its own (measured on the NFR server with jamf-cli
+1.38.0, 2026-11-25: Acrobat Reader returned 176 rows and Chrome 914 at `--page-size 100`, the
+same as `--all`, as a bare array), so no flag changes. A row is about 220-280 bytes, so Chrome
+alone is about 200 KB.
 
-The new kind is a sidecar of `patch-release-dates`, not a collect kind:
+**Written only when it changes.** Definitions change only when a vendor ships a version, so
+the sidecar is not written on every walk. After `patch-release-dates` is written, a pure
+`patchVersionDatesUpdate` merges this walk's answers with the newest sidecar:
 
-*   It is written only by that walk, and inherits its `collect_skip` entry, timeout hold,
-    tier and stamp.
+*   A title whose definitions call returned a JSON array is answered; `[]` gives one marker
+    row `{title_id, title, no_versions: true}` ("Jamf lists no versions").
+*   A title still in `patch-status` that did not answer (failed call, unsafe ID, a body that
+    is not an array) keeps its earlier rows, marked `stale_since` with the stamp of the file
+    they came from, kept unchanged on later carries. A title gone from `patch-status` is
+    dropped.
+*   Rows are sorted (title ID, order ID as a number, version), encoded with sorted keys and
+    no pretty printing, and compared byte for byte with the newest sidecar. A new file is
+    written, stamped at write time, only when the bytes differ, the newest file is missing
+    or unreadable, or it is older than half the effective `snapshot_keep_days` (7 days at
+    most, and 7 days when retention is off), so a retention sweep never leaves the folder
+    empty.
+*   Nil keys are left out; values are trimmed, and a blank value is nil; a definition with
+    a blank version is dropped.
+
+The sidecar is a sidecar of `patch-release-dates`, not a collect kind:
+
+*   It is written only by that walk, and inherits its `collect_skip` entry, timeout hold and
+    tier. A walk that stops early or where no title answered writes no sidecar.
 *   It is not in `knownCollectKinds`, `CollectionTier` or `expectedKinds`, so Data Freshness
     never reports it.
-*   Each row's title appears only when its definitions call answered. A title that is in the
-    newest `patch-status` and absent from the sidecar reads "release dates not read" on the
-    Patch screen, never "no dates".
-*   A 2.12 Mac on the same workspace ignores the folder (it reads kinds by name).
+*   The Patch screen reads "release dates not read" for a title in `patch-status` with no
+    sidecar rows, "dates from <day>" for carried rows, and "could not be read" for a sidecar
+    that exists but cannot be read, never "no dates".
+*   A peer's sidecar is read like any snapshot; this Mac carries its rows forward under its
+    own stamp. A 2.12 Mac ignores the folder.
+*   Both patch release-date files are written through `AtomicInstall.write`, mode 0600.
 
 **Adoption per version.**
 
@@ -322,29 +341,36 @@ The new kind is a sidecar of `patch-release-dates`, not a collect kind:
     gets a second window. "Newest" means what Jamf reported that day.
 *   Adoption within a window is `on_latest / total` that day, as today. A crossing counts
     only when seen in the series.
-*   Days to 50% and 90% count from the version's release date: the sidecar row matched by
-    `title_id` (else the title name, case-insensitive, as Patch Velocity does today) and the
-    trimmed version string, else the dated `patch-release-dates` row for that version. One
-    lookup is built per read, not per version. With no release date, the version keeps its
-    series but has no days-to figure, and is counted as "no release date".
-*   Each window has its own outcome: **crossed** (reached 90% inside the window), **already
-    at 90%** (its first observed day was at or above 90%, so no crossing was seen),
-    **superseded** (closed below 90%) or **open** (still below 90%).
+*   Days to 50% and 90% count from the version's release date. The lookup key is
+    (`title_id`, else the lower-cased title name) plus the trimmed version. Precedence: an
+    answered sidecar row with a date, then the newest dated `patch-release-dates` row, then a
+    carried sidecar row. One lookup is built per read. Dated `patch-release-dates` files older
+    than 180 days (`releaseFileDays`) are not searched for older versions' dates; the newest
+    file is always read, and the sidecar dates older versions. With no release date, the window keeps
+    its series and has no days-to figure.
+*   A day with the title missing, `total == 0` or a blank `latest` adds no point and does not
+    close a window. A window with no points is dropped.
+*   Each window has its own outcome, from its series alone: **crossed** (a later point reached
+    90%), **already at 90%** (its first point was at or above 90%), **superseded** (closed
+    below 90%) or **open** (still below 90%).
+*   **The velocity card uses the same calculator.** Patch Velocity's release date, days to 50%
+    and 90% and days behind come from each title's latest window (the window of the version
+    on the newest day with a non-blank `latest`). Release dates therefore match by version as
+    well as by title.
 
 **Fleet figure.** Over the last 90 days on every surface:
 
-*   The median and 90th percentile of days to 90% over versions that crossed 90% in the
-    period, each counted from its release date.
-*   They are shown when at least 5 versions crossed, else the count alone.
-*   Three counts sit beside the median, never inside it:
-    *   versions whose window closed below 90% ("superseded before 90%");
-    *   versions still below 90% in an open window ("not yet at 90%");
-    *   versions with no release date ("no release date");
-    *   windows already at 90% when first seen ("already at 90%").
+*   Everything is counted in windows.
+*   The median and 90th percentile of days to 90% over crossed windows that have a release
+    date, placed by crossing date. They are shown when at least 5 crossed, else the count
+    alone.
+*   Four counts sit beside the median, never inside it:
+    *   crossed windows with no release date ("no release date"), placed by crossing date;
+    *   windows that closed below 90% ("superseded before 90%"), placed by close date;
+    *   windows still below 90% ("not yet at 90%"), always counted;
+    *   windows already at 90% when first seen ("already at 90%"), placed by start.
 
-    A window is placed in the period by its crossing date (crossed), its close date
-    (superseded) or its start (already at 90%); open windows always count. Percentiles use
-    the nearest-rank method on whole days, here and in `GapLedger`.
+    Percentiles use the nearest-rank method on whole days, here and in `GapLedger`.
 
 **Jamf School and mobile:** no patch titles, so nothing.
 
@@ -822,47 +848,41 @@ Workbook tabs, HTML text, webhook cards and log lines stay English.
 *   `patchVersionDatesKind = "patch-version-dates"` beside `patchReleaseDatesKind`
     (`ReportEngine+CollectPlan.swift`). Not in `knownCollectKinds`, `CollectionTier` or
     `expectedKinds`.
-*   In `collectPatchReleaseDates`, collect `[[String: Any?]]` rows per answered title from the
-    definitions already decoded: `title_id`, `title`, `version`, `release_date` (string or
-    null), `absolute_order_id`.
-*   After `writePatchReleaseDates` succeeds, `writePatchVersionDates(_:stamp:dataDir:)` writes
-    them with the same `ts`. A failure is one `[warn] patch-version-dates: could not write
-    snapshot — <reason>` and does not change the walk's result.
+*   In `collectPatchReleaseDates`, collect `answered` (title ID to rows) for titles whose body
+    parses as an array, and the walked title IDs. After `writePatchReleaseDates` succeeds,
+    read the newest sidecar, call `PatchReleaseDateService.patchVersionDatesUpdate`, and on
+    `changed` write through `writePatchVersionDates(_:stamp:dataDir:)` with a stamp taken at
+    write time. `refreshAfter` comes from `patchVersionRefreshInterval(_:)` over the effective
+    retention. Log `[info] patch-version-dates: N title(s), unchanged` or `[ok]
+    patch-version-dates: N title(s)`; a failed write is one `[warn]` and does not change the
+    walk's result.
 *   `writePatchReleaseDates` and the new writer both use `AtomicInstall.write(data, to:,
     mode: 0o600)` inside a 0700 folder, as `saveSnapshot` does.
-*   If the NFR check finds a title cut at 100 definitions, add `--all` to
-    `patchDefinitionArguments` in the same PR. Capture the command's `--all` output to a
-    fixture first, parse the shape captured, and refresh the help-contract fixture so
-    `CLIHelpContractTests` sees the flag.
 
 #### 2. `Services/PatchReleaseDateService.swift` (Modify)
 
-*   `struct PatchVersionDate: Decodable { titleId, title, version, releaseDate: String?,
-    absoluteOrderId: String? }`.
-*   `static func versionDates(dataDir: URL) -> [PatchVersionDate]?`: the newest sidecar
-    through `BoundedFile.readSnapshotLogged`; nil when none exists or it cannot be read.
-*   `static func releaseDateLookup(dataDir: URL) -> ReleaseDateLookup`: built once per read.
-    It holds the sidecar rows, then every dated `patch-release-dates` snapshot listed through
-    `TrendStore.datedSnapshots(of:in:)`, newest file winning on a conflict. Dates parse with
-    `SOFAFeedService.parseSOFADate`. `lookup(titleId:title:version:) -> Date?` matches by ID,
-    else by title name (case-insensitive), then by the trimmed version.
+*   `struct PatchVersionDate: Codable` (`title_id`, `title`, `version`, `release_date`,
+    `absolute_order_id`, `stale_since`, `no_versions`; nil keys omitted).
+*   `enum VersionDatesRead { absent, unreadable(String), rows(...) }` and
+    `versionDates(dataDir:)`, the newest sidecar through `BoundedFile.readSnapshotLogged`.
+*   `patchVersionDatesUpdate(...)` and `patchVersionRefreshInterval(_:)`, both pure.
+*   `releaseDateLookup(dataDir:)` (and a test seam over rows), with the key and precedence in
+    the Technical Plan.
 *   Drop the "Python twin" line in the header.
 
 #### 3. `Engine/PatchVelocityBuilder.swift` (Modify)
 
-*   `struct VersionWindow { start: Date; end: Date?; series: [(Date, Double)]; daysTo50: Int?;
-    daysTo90: Int?; outcome: Outcome }` with `enum Outcome { crossed, alreadyAt90, superseded,
-    open }`.
-*   `struct VersionVelocity { titleId; title; version; releaseDate: Date?; windows:
-    [VersionWindow] }`.
-*   `static func versions(days: [DayRows], lookup:, now:) -> [VersionVelocity]` (internal;
-    `DayRows` becomes internal), the seam tests use, and `versions(dataDir:lookup:now:)`,
-    which calls it with `loadDailyRows` (rows already keep `latest`).
-*   `daysToThreshold` becomes internal. Per window it returns nil when the first day is
-    already at or above the threshold, which sets `alreadyAt90`.
-*   `struct FleetVersionSummary { median: Int?; p90: Int?; crossed; superseded; notYet;
-    alreadyAt90; noReleaseDate }` and `static func summary(_:period:now:)`. Placement and the
-    nearest-rank percentile follow the Technical Plan; the median needs at least 5.
+*   `VersionWindow`, `VersionVelocity` and `FleetVersionSummary` (fields in the Technical
+    Plan), `versions(days:lookup:)` (internal; `DayRows` becomes internal) and
+    `summary(_:periodDays:now:)`.
+*   `computeWithVersions(dataDir:releaseRows:now:)` is the one entry point: it reads the
+    sidecar once (before the empty-history check), builds one lookup through
+    `releaseDateLookup(releaseRows:dataDir:versionDates:now:)`, and returns the velocities,
+    the windows and the sidecar read. The workbook (one cached call per run), the HTML report
+    and the Patch screen all call it. `compute(dataDir:releaseRows:now:)` keeps its signature
+    and returns its velocities.
+*   `patchVersionDatesUpdate` takes no stamp: the earlier file's stamp travels in
+    `VersionDatesRead.rows(stamp:)`.
 
 #### 4. Workbook: `Engine/CoreDashboard.swift`, `Engine/Templates/ReportTemplate.swift`, `Engine/Templates/FullInstanceTemplate.swift`, `Models/Models.swift` (Modify)
 

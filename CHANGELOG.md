@@ -7,6 +7,16 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Patch Compliance has a Version History card. Pick a title to see every version Jamf defines with its release date, how far each version got while it was the latest, and its days to 90%. Above the list, the fleet's median and 90th percentile days from release to 90% over the last 90 days, with versions that were superseded first, are not there yet, or have no release date counted apart. The release dates come from the patch definitions the app already reads; nothing new is collected.
+
+### Changed
+
+- Workbooks have a new "Patch Version History" tab after Patch Velocity: one row per version window (Title, Version, Released, Window start, Window end, Days to 50%, Days to 90%, Outcome), then the fleet figure. The HTML report's Patching group has a matching section.
+- Patch Velocity's release date, days behind and days to 50% and 90% now come from the window of each title's current version, measured from that version's release, so the velocity card, the Patch Velocity tab and Version History agree. Titles whose version did not change in the history read as before.
+- The patch release-date files are now readable by your user account only (0600), like every other snapshot.
+
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
