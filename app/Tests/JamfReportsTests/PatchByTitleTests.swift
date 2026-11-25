@@ -251,7 +251,7 @@ final class PatchByTitleTests: XCTestCase {
         // Lets the run reach the walk, then asks it to stop before its first title.
         _ = try? await ReportEngine.$runStop.withValue({
             let text = (try? String(contentsOf: summaryCalls, encoding: .utf8)) ?? ""
-            return text.contains("classic-patch-titles") ? .manualRefresh : nil
+            return text.contains("classic-patch-titles") ? .manualRefresh(sameWorkspaceFull: true) : nil
         }) {
             try await ReportEngine.collect(
                 workspace: WorkspaceID(validating: profile),

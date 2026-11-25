@@ -212,7 +212,7 @@ final class DeviceScanPassesTests: XCTestCase {
         XCTAssertTrue(ReportEngine.passShouldStop(
             passStart: now, now: now.addingTimeInterval(60), budget: 60, runStop: nil))
         XCTAssertTrue(ReportEngine.passShouldStop(
-            passStart: now, now: now, budget: 60, runStop: { .manualRefresh }))
+            passStart: now, now: now, budget: 60, runStop: { .manualRefresh(sameWorkspaceFull: true) }))
     }
 
     // MARK: - The in-progress line

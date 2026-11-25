@@ -2226,6 +2226,8 @@ struct ReportEngine: Sendable {
     /// Asked before each source of a scheduled run: non-nil stops the run there, leaving what
     /// is left due for the next one (`RunStop`). nil outside a scheduled run.
     @TaskLocal static var runStop: (@Sendable () -> RunStop?)?
+    /// Set by a scheduled run around its collect; `collectPlanLines` and `stopsRun` record into it.
+    @TaskLocal static var runProgress: RunProgress?
 
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {

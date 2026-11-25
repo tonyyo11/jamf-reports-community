@@ -87,6 +87,24 @@ struct TickState: Codable, Sendable {
     }
 }
 
+/// Why a collect run stopped before its sources were done, as the tick reads it. Only `budget`
+/// and `otherRefresh` are continued (`SplitCollect.isContinuable`).
+enum SplitStop: String, Codable, Sendable {
+    case budget
+    /// A full manual refresh of the same workspace, which collects everything left.
+    case manualRefresh = "manual_refresh"
+    /// A refresh of another workspace, or of only some tiers.
+    case otherRefresh = "other_refresh"
+
+    init(_ stop: ReportEngine.RunStop) {
+        switch stop {
+        case .budgetUsed: self = .budget
+        case .manualRefresh(let sameWorkspaceFull): self = sameWorkspaceFull
+            ? .manualRefresh : .otherRefresh
+        }
+    }
+}
+
 /// How one profile of a multi-profile run ended, as `retryCouldHelp(profile:exitCode:since:)`
 /// judged it. Stored in `tick-state.json` as `profiles` under the schedule's label.
 struct ProfileOutcome: Codable, Sendable, Equatable {
@@ -96,11 +114,53 @@ struct ProfileOutcome: Codable, Sendable, Equatable {
     let retryCouldHelp: Bool
     let started: Date
     let finished: Date
+    /// Why the run stopped early when it may be continued; nil otherwise.
+    let stop: SplitStop?
+    /// `retryCouldHelp` for failures alone, leaving out a stop.
+    let failureRetryCouldHelp: Bool
+    /// Source names the run planned, and those it left (`ReportEngine.RunProgress`).
+    let planned: [String]
+    let left: [String]
+
+    init(
+        profile: String, exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool,
+        started: Date, finished: Date, stop: SplitStop? = nil,
+        failureRetryCouldHelp: Bool? = nil, planned: [String] = [], left: [String] = []
+    ) {
+        self.profile = profile
+        self.exitCode = exitCode
+        self.incomplete = incomplete
+        self.retryCouldHelp = retryCouldHelp
+        self.started = started
+        self.finished = finished
+        self.stop = stop
+        self.failureRetryCouldHelp = failureRetryCouldHelp ?? retryCouldHelp
+        self.planned = planned
+        self.left = left
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let couldHelp = try c.decode(Bool.self, forKey: .retryCouldHelp)
+        self.init(
+            profile: try c.decode(String.self, forKey: .profile),
+            exitCode: try c.decode(Int32.self, forKey: .exitCode),
+            incomplete: try c.decode(Bool.self, forKey: .incomplete),
+            retryCouldHelp: couldHelp,
+            started: try c.decode(Date.self, forKey: .started),
+            finished: try c.decode(Date.self, forKey: .finished),
+            stop: try? c.decodeIfPresent(SplitStop.self, forKey: .stop),
+            failureRetryCouldHelp: try? c.decodeIfPresent(
+                Bool.self, forKey: .failureRetryCouldHelp),
+            planned: (try? c.decodeIfPresent([String].self, forKey: .planned)) ?? [],
+            left: (try? c.decodeIfPresent([String].self, forKey: .left)) ?? [])
+    }
 
     private enum CodingKeys: String, CodingKey {
-        case profile, incomplete, started, finished
+        case profile, incomplete, started, finished, stop, planned, left
         case exitCode = "exit"
         case retryCouldHelp = "retry_could_help"
+        case failureRetryCouldHelp = "failure_retry_could_help"
     }
 }
 
@@ -159,16 +219,29 @@ struct ScheduleRunOutcome: Sendable {
     /// multi-profile run; nil for a single-profile schedule. Outcomes of any other profile are
     /// stale.
     let considered: Set<String>?
+    /// A single-profile run's continuable stop and source names; a multi-profile run keeps them
+    /// per profile in `profiles`.
+    let stop: SplitStop?
+    let planned: [String]
+    let left: [String]
+    /// `retryCouldHelp` for failures alone: a stop the tick continues is not a failure.
+    let failureRetryCouldHelp: Bool
 
     init(
         exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil,
-        profiles: [ProfileOutcome] = [], considered: Set<String>? = nil
+        profiles: [ProfileOutcome] = [], considered: Set<String>? = nil,
+        stop: SplitStop? = nil, planned: [String] = [], left: [String] = [],
+        failureRetryCouldHelp: Bool? = nil
     ) {
         self.exitCode = exitCode
         self.incomplete = incomplete
         self.retryCouldHelp = retryCouldHelp ?? incomplete
         self.profiles = profiles
         self.considered = considered
+        self.stop = stop
+        self.planned = planned
+        self.left = left
+        self.failureRetryCouldHelp = failureRetryCouldHelp ?? self.retryCouldHelp
     }
 
     /// The schedule's outcome over every profile's latest (`all`), of which this run's
@@ -178,7 +251,8 @@ struct ScheduleRunOutcome: Sendable {
             exitCode: all.contains { $0.exitCode != 0 } ? 1 : 0,
             incomplete: all.contains(where: \.incomplete),
             retryCouldHelp: all.contains(where: \.retryCouldHelp), profiles: ran,
-            considered: considered)
+            considered: considered,
+            failureRetryCouldHelp: all.contains(where: \.failureRetryCouldHelp))
     }
 
     /// Exit 0 with nothing left on the table.

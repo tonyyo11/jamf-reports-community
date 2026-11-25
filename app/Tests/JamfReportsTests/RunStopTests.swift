@@ -43,15 +43,34 @@ final class RunStopTests: XCTestCase {
 
     func testTheDecisionPutsAManualRefreshAheadOfTheBudget() {
         let start = Date(timeIntervalSince1970: 1_790_000_000)
-        func stop(after seconds: TimeInterval, pending: Bool = false) -> ReportEngine.RunStop? {
+        func stop(
+            after seconds: TimeInterval, refresh: ManualRefreshRequest.Pending = .none
+        ) -> ReportEngine.RunStop? {
             ReportEngine.RunStop.evaluate(
-                started: start, budgetMinutes: 45, manualRefreshPending: pending,
+                started: start, budgetMinutes: 45, refresh: refresh, profile: "a",
                 now: start.addingTimeInterval(seconds))
         }
         XCTAssertNil(stop(after: 2_699))
         XCTAssertEqual(stop(after: 2_700), .budgetUsed(minutes: 45))
-        XCTAssertEqual(stop(after: 10, pending: true), .manualRefresh)
-        XCTAssertEqual(stop(after: 9_000, pending: true), .manualRefresh)
+        XCTAssertEqual(stop(after: 10, refresh: .unnamed), .manualRefresh(sameWorkspaceFull: true))
+        XCTAssertEqual(stop(after: 9_000, refresh: .named(workspace: "a", full: true)),
+                       .manualRefresh(sameWorkspaceFull: true))
+        XCTAssertEqual(stop(after: 10, refresh: .named(workspace: "b", full: true)),
+                       .manualRefresh(sameWorkspaceFull: false))
+        XCTAssertEqual(stop(after: 10, refresh: .named(workspace: "a", full: false)),
+                       .manualRefresh(sameWorkspaceFull: false))
+    }
+
+    func testTheRequestNamesItsWorkspaceAndWhetherItIsFull() throws {
+        let support = root.appendingPathComponent("named-support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let now = Date()
+        ManualRefreshRequest.post(workspace: "acme", full: false, now: now, appSupport: support)
+        XCTAssertEqual(ManualRefreshRequest.pending(now: now, appSupport: support),
+                       .named(workspace: "acme", full: false))
+        ManualRefreshRequest.post(now: now, appSupport: support)
+        XCTAssertEqual(ManualRefreshRequest.pending(now: now, appSupport: support), .unnamed)
+        XCTAssertTrue(ManualRefreshRequest.isPending(now: now, appSupport: support))
     }
 
     func testTheBudgetSettingsAreClampedAndAMistypedOneReadsAsTheDefault() throws {
@@ -121,7 +140,7 @@ final class RunStopTests: XCTestCase {
         let asked = Counter()
         let lines = Lines()
         let landed = try await ReportEngine.$runStop.withValue({
-            asked.next() > 1 ? .manualRefresh : nil
+            asked.next() > 1 ? .manualRefresh(sameWorkspaceFull: true) : nil
         }) {
             try await ReportEngine.protectCollect(
                 profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: lines.add)

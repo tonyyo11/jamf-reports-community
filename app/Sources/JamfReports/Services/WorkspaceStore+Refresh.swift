@@ -178,7 +178,8 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard await manualCollectMayStart() else { return }
+        guard await manualCollectMayStart(
+            full: Set(tiers) == Set(CollectionTier.allCases)) else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
@@ -227,7 +228,8 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard await manualCollectMayStart() else { return }
+        guard await manualCollectMayStart(
+            full: tiers == Set(CollectionTier.allCases)) else { return }
         let activeProfile = profile
         beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
@@ -311,7 +313,9 @@ extension WorkspaceStore {
     /// process, or this app's own background refresh, self-repair or catch-up) is asked to
     /// stop at its next source (`ManualRefreshRequest`) and waited for, up to
     /// `manualRefreshWait`. True when the collect may start.
-    func manualCollectMayStart() async -> Bool {
+    /// `workspace` (the active one when nil) and `full` go into the request, so a run stopped for
+    /// a refresh that does not collect everything due in its workspace is continued by the tick.
+    func manualCollectMayStart(workspace: String? = nil, full: Bool = true) async -> Bool {
         let scheduledElsewhere = CLIBridge.collectRefusal() == .tickLockHeld
         let automaticHere = Self.automaticCollectsRunning.withLock { $0 > 0 }
         guard scheduledElsewhere || automaticHere, manualRefreshWait > 0,
@@ -319,7 +323,7 @@ extension WorkspaceStore {
             return !manualCollectMustWait()
         }
         isWaitingForScheduledRun = true
-        ManualRefreshRequest.post()
+        ManualRefreshRequest.post(workspace: workspace ?? profile, full: full)
         globalStatus = L("Waiting for the automatic collect to finish its current source…")
         defer {
             isWaitingForScheduledRun = false

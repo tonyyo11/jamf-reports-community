@@ -630,10 +630,11 @@ final class CollectHonestyWatcher: Sendable {
     /// A stand-down because a peer collected recently is also worth a retry while `profile` has
     /// no summary for today: if that peer is off, a later wake finds its data older than the
     /// window and collects.
-    func retryCouldHelp(profile: String, now: Date = Date()) -> Bool {
+    func retryCouldHelp(profile: String, now: Date = Date(), countingStop: Bool = true) -> Bool {
         // Not Partial, but sources were left for the next run: the background item's retry is
-        // that run.
-        if flags.withLock({ $0.stoppedEarly }) { return true }
+        // that run. `countingStop` false asks only about failures (the tick's continuation
+        // picks up a stop).
+        if countingStop, flags.withLock({ $0.stoppedEarly }) { return true }
         if flags.withLock({ $0.freshnessStandDown }),
            !SummaryJSONParser.hasSummary(profile: profile, on: now) { return true }
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
@@ -648,8 +649,10 @@ final class CollectHonestyWatcher: Sendable {
     /// run that failed outright (a dead collect prints no `[partial]` line) is also worth a retry
     /// unless every source that failed since `start` failed in a way a retry repeats; one that
     /// recorded no failure (no workspace, a config that does not decode) still retries.
-    func retryCouldHelp(profile: String, exitCode: Int32, since start: Date) -> Bool {
-        if retryCouldHelp(profile: profile) { return true }
+    func retryCouldHelp(
+        profile: String, exitCode: Int32, since start: Date, countingStop: Bool = true
+    ) -> Bool {
+        if retryCouldHelp(profile: profile, countingStop: countingStop) { return true }
         guard exitCode != 0, let stateDir = try? WorkspacePaths.stateDir(for: profile) else {
             return exitCode != 0
         }

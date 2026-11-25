@@ -249,7 +249,9 @@ private func scheduledRunSingle(
     verbose: Bool,
     label: String?,
     honesty: CollectHonestyWatcher,
-    retiredCSVAssisted: Bool
+    retiredCSVAssisted: Bool,
+    progress: ReportEngine.RunProgress = ReportEngine.RunProgress(),
+    continuing: Bool = false
 ) async -> Int32 {
     // Its attention items go into the run's status file once the recorder opens it, after
     // the failure card; a run refused before that writes none.
@@ -257,7 +259,8 @@ private func scheduledRunSingle(
         await SharedConfigPin.announcingOnce {
             await scheduledRunSingleBody(
                 profile: profile, mode: mode, tiers: tiers, verbose: verbose,
-                label: label, honesty: honesty, retiredCSVAssisted: retiredCSVAssisted)
+                label: label, honesty: honesty, retiredCSVAssisted: retiredCSVAssisted,
+                progress: progress, continuing: continuing)
         }
     }
 }
@@ -270,7 +273,9 @@ private func scheduledRunSingleBody(
     verbose: Bool,
     label: String?,
     honesty: CollectHonestyWatcher,
-    retiredCSVAssisted: Bool
+    retiredCSVAssisted: Bool,
+    progress: ReportEngine.RunProgress = ReportEngine.RunProgress(),
+    continuing: Bool = false
 ) async -> Int32 {
     // The run's day for its summary and its metric alerts, however long the collect takes.
     let runStart = Date()
@@ -540,17 +545,24 @@ private func scheduledRunSingleBody(
             // collect-then-generate forces past School's 12 h cadence (`forcesCollect`).
             // A scheduled run gives the lock up between sources once its budget is used or
             // someone asks for a refresh in the app; what is left stays due.
-            try await ReportEngine.stoppingBetweenSources(profile: profile) {
-                try await CollectRouter.run(
-                    workspace: try WorkspaceID(validating: profile),
-                    tiers: resolvedTiers,
-                    force: mode.forcesCollect(
-                        for: ProfileProductType.detect(
-                            from: routingConfig, profile: profile).type),
-                    config: routingConfig,
-                    now: runStart,
-                    onLine: onLine
-                )
+            // A continuation of today's split collect is never forced (Jamf School's
+            // collect-then-generate included): it collects only what is still due.
+            progress.protectOnly = EnvironmentProfiles.resolve(
+                config: routingConfig, workspace: profile)
+                .isConfirmedProtectOnly(workspace: profile)
+            let force = !continuing && mode.forcesCollect(
+                for: ProfileProductType.detect(from: routingConfig, profile: profile).type)
+            try await ReportEngine.$runProgress.withValue(progress) {
+                try await ReportEngine.stoppingBetweenSources(profile: profile) {
+                    try await CollectRouter.run(
+                        workspace: try WorkspaceID(validating: profile),
+                        tiers: resolvedTiers,
+                        force: force,
+                        config: routingConfig,
+                        now: runStart,
+                        onLine: onLine
+                    )
+                }
             }
             // Tighten permissions on collected snapshots immediately after
             // collect, before generate, so a crash or early exit still
@@ -800,7 +812,7 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// outcome lists each profile that ran.
 @Sendable
 func runSchedule(
-    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = []
+    _ schedule: Schedule, verbose: Bool, skipping: Set<String> = [], continuing: Bool = false
 ) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
     let missing = schedule.mode == .jamfCLIOnly
@@ -810,15 +822,22 @@ func runSchedule(
             return ScheduleRunOutcome(exitCode: 0, incomplete: false)
         }
         let honesty = CollectHonestyWatcher()
+        let progress = ReportEngine.RunProgress()
         let start = Date()
         let code = await scheduledRunSingle(
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
-            retiredCSVAssisted: schedule.retiredCSVAssisted)
+            retiredCSVAssisted: schedule.retiredCSVAssisted, progress: progress,
+            continuing: continuing)
         return ScheduleRunOutcome(
             exitCode: code, incomplete: honesty.incomplete,
             retryCouldHelp: honesty.retryCouldHelp(
-                profile: schedule.profile, exitCode: code, since: start))
+                profile: schedule.profile, exitCode: code, since: start),
+            stop: SplitCollect.continuableStop(
+                progress.stop, mode: schedule.mode, protectOnly: progress.protectOnly),
+            planned: progress.planned, left: progress.left,
+            failureRetryCouldHelp: honesty.retryCouldHelp(
+                profile: schedule.profile, exitCode: code, since: start, countingStop: false))
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
@@ -851,15 +870,22 @@ func runSchedule(
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
         let honesty = CollectHonestyWatcher()
+        let progress = ReportEngine.RunProgress()
         let start = Date()
         let code = await scheduledRunSingle(
             profile: name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty,
-            retiredCSVAssisted: schedule.retiredCSVAssisted)
+            retiredCSVAssisted: schedule.retiredCSVAssisted, progress: progress,
+            continuing: continuing)
         return ProfileOutcome(
             profile: name, exitCode: code, incomplete: honesty.incomplete,
             retryCouldHelp: honesty.retryCouldHelp(profile: name, exitCode: code, since: start),
-            started: start, finished: Date())
+            started: start, finished: Date(),
+            stop: SplitCollect.continuableStop(
+                progress.stop, mode: schedule.mode, protectOnly: progress.protectOnly),
+            failureRetryCouldHelp: honesty.retryCouldHelp(
+                profile: name, exitCode: code, since: start, countingStop: false),
+            planned: progress.planned, left: progress.left)
     }
     if [.jamfCLIOnly, .jamfCLIFull].contains(schedule.mode) {
         emitConsolidatedReports()
