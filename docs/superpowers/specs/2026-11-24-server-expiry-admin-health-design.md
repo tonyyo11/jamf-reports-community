@@ -18,7 +18,7 @@ Default sources (Jamf Pro, read-only):
 | SSO signing certificate expiry | `pro sso-settings cert get` (`keystoreDetails.expiration`) | Keys live, date format unseen |
 | Volume purchasing token expiry, licence use | `pro volume-purchasing-locations list` | Unverified |
 | ADE sync errors (newest sync per instance) | `pro device-enrollments syncs` | Unverified |
-| Jamf Pro's own notifications | `pro jamf-pro-notifications list` | Unverified |
+| Jamf Pro's own notifications | `pro jamf-pro-notifications list` | Live (one row, public test server) |
 | Devices with push disabled | `pro apns-client-push-status list` | Unverified |
 
 "Shape seen": **Live** means rows were returned on a test server and their keys and types are recorded in Appendix A; **Unverified** means the command answered with no rows, so the row shape is unseen; the fixture is captured before the kind is built.
@@ -481,6 +481,20 @@ Second server, restricted role (2026-11-24): an API client whose role holds only
 | `pro device-enrollments syncs` | 0 | `[]` (no instances) | no |
 | `pro jamf-pro-notifications list` | 0 | `[]` | no |
 | `pro sso-settings cert get`, `pro volume-purchasing-locations list`, `pro local-admin-password pending-rotations`, `pro apns-client-push-status list`, `pro accounts list`, `pro api-integrations list` | 5 | error envelope `{error: permission_denied, exitCode, exitCodeName, hint, message}`; `hint` ends "Required privilege(s): <name>", the catalog privilege in each case | no |
+
+Third server, Jamf's public test server (`dummy.jamfcloud.com`, its published API client), 2026-11-24:
+
+| Command | Exit | Shape |
+|---|---|---|
+| `pro certificate-authority active` | 0 | same keys and types as the first server |
+| `pro sso-settings cert get` | 0 | same keys; `expiration` null again (no SSO certificate) |
+| `pro jamf-pro-notifications list` | 0 | **1 row** `{id str, type str, params {softwareTitleName str, extensionAttributeName str, id str}}`; `type` was `PATCH_EXTENTION_ATTRIBUTE` (Jamf's spelling). `params` names Jamf objects (a patch title, an extension attribute), not people; the reduction still saves `{type}` only. |
+| `pro device-enrollments list`, `pro device-enrollments syncs`, `pro apns-client-push-status list` | 0 | `[]` |
+| `pro local-admin-password pending-rotations` | 0 | `{totalCount int, results []}` |
+| `pro accounts list` | 0 | 2 rows, same keys and types as the first server |
+| `pro volume-purchasing-locations list`, `pro api-integrations list` | 5 | permission-denied envelope (the published client lacks those privileges) |
+
+The notifications shape is now Live (the row shape above); the fixture for PR 3d is taken from it with synthetic values. Still unseen anywhere: volume purchasing rows, ADE sync rows, push-status rows, LAPS pending rows, and the SSO `expiration` format.
 
 On the first server, the PR 0 gate could not be settled: all 92 read-only `pro … list` commands in jamf-cli 1.38.0's catalog (Classic and report commands excluded) were run with the test API client on 2026-11-24, and none printed the 403 line. The only non-zero exits were exit 8 (Platform-only commands) and exit 1 (features not set up), so the client holds every list privilege. The capture needs an API client whose role lacks one Read privilege.
 
