@@ -376,6 +376,21 @@ The sidecar is a sidecar of `patch-release-dates`, not a collect kind:
 
 ### B2: Mac change view
 
+**Stages (2026-11-25).** B2 is built in three stages:
+
+*   **B2a:** the Mac counts, the two Fleet Drift sections, the stored `computers` and
+    `benchmarks` parts and the digest fact. `computerChanges` is built from this run's
+    landed snapshot and the newest earlier-day file.
+*   **B2b:** the patch half (`PatchFailureDrift` and the `patch` part). It waits for a
+    `patch-device-failures` fixture captured from a failing patch policy, so the comparison
+    is tested on a real shape.
+*   **B2c:** opening the Macs behind an Overview count in Computers. CUJ 1's "each count
+    opens Computers" moves here; B2a shows counts only.
+
+The baseline is decoded with the existing `ComputerDates.decodeSnapshot`, with no reduced
+decode. The collect's peak memory is measured on a 20,000-Mac workspace, and a reduced
+decode follows only if the peak passes the target.
+
 **One FileVault reader.** Three places read FileVault today and disagree:
 
 *   `DeviceInventoryService` reads `diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State`,
