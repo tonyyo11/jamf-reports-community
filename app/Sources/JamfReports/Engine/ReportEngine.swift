@@ -1868,6 +1868,8 @@ struct ReportEngine: Sendable {
         "duplicate-serials",
         // Server-health (jamf-cli 1.38.0+): the built-in CA's expiry.
         "certificate-authority",
+        // Server-health: Jamf Pro's own notifications, by type.
+        "jamf-pro-notifications",
         // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
         "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
@@ -1914,7 +1916,9 @@ struct ReportEngine: Sendable {
     }
 
     /// The server-health sources: credentials and server-side processes that fail quietly.
-    static let serverHealthKinds: Set<String> = ["certificate-authority"]
+    static let serverHealthKinds: Set<String> = [
+        "certificate-authority", "jamf-pro-notifications",
+    ]
     /// These calls are small; a hung one must not hold the run for the 60-minute kind limit.
     static let serverHealthTimeout: TimeInterval = 180
 
@@ -3160,6 +3164,8 @@ struct ReportEngine: Sendable {
             // jamf-cli 1.38.0+; `collect` skips it on an older binary.
             (["-p", profile, "pro", "certificate-authority", "active", "--output", "json"],
              "certificate-authority"),
+            (["-p", profile, "pro", "jamf-pro-notifications", "list", "--output", "json"],
+             "jamf-pro-notifications"),
             // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
             // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
             // profile; `collect` skips the row on an older binary. `--output json` only

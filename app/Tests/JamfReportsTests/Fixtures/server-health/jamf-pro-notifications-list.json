@@ -1,0 +1,11 @@
+[
+  {
+    "id": "7",
+    "type": "PATCH_EXTENTION_ATTRIBUTE",
+    "params": {
+      "softwareTitleName": "Example Title",
+      "extensionAttributeName": "Example EA",
+      "id": "12"
+    }
+  }
+]

@@ -78,30 +78,30 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
         "pro-platform": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
         "pro-protect": (
             transcript: """
                 pro ws-golden
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "a6ca2a07423410326058466ba72680202c7a50f2ab03a792932257f995403988"),
+            sha256: "fce848e1fcaab8932b123e43151bb6a78a922cda48308b3390148e6b26dab2d6"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
                 log [warn] Jamf Protect not collected: protect.profile is blank
                 """,
-            sha256: "338a6a0a08207370f069a323ed3eaee8aa587cc170ea8406e09818254e84a001"),
+            sha256: "8dcb01e55642109683825e57438fe6b0aa129e191791f6772e8f5d9658d9fa09"),
         "pro-protect-disabled": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
         "school-primary": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -122,7 +122,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "a6ca2a07423410326058466ba72680202c7a50f2ab03a792932257f995403988"),
+            sha256: "fce848e1fcaab8932b123e43151bb6a78a922cda48308b3390148e6b26dab2d6"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -136,17 +136,17 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
         "jamf-cli-profile-differs": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
         "no-config": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "3e082dbfe8ce9a5d7fdc70339a879ff1b6f6ee6828814a94a6304f984e044cc9"),
+            sha256: "c1e1c4ed484f758b3c5b11dac6e4cfb34430e298b475fb2f3d16dde8eaa85858"),
     ]
 
     func testEveryOldShapeRunsTheSameCommandLines() async throws {

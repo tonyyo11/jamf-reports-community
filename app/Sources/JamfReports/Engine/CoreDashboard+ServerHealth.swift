@@ -11,8 +11,9 @@ extension CoreDashboard {
             ?? ManagementHealth.defaultWarningDays
         let health = ServerHealth.load(dataDir: dataDir, warningDays: warningDays, now: now)
         // A tab of "not permitted" rows would say nothing; the Audit card carries those.
-        guard health.credentials.contains(where: {
-            if case .value = $0.fact { return true }
+        let landed = health.credentials.map(\.fact) + [health.notifications]
+        guard landed.contains(where: {
+            if case .value = $0 { return true }
             return false
         }) else { throw CoreDashboardError.noServerHealthData }
 
@@ -37,6 +38,40 @@ extension CoreDashboard {
         for credential in health.credentials where credential.fact != .notCollected {
             writeCredentialRow(ws, credential, row: row)
             row += 1
+        }
+        if health.notifications != .notCollected {
+            row += 1
+            writeNotifications(ws, health, row: row)
+        }
+    }
+
+    /// Notifications by type as Jamf names them; Jamf filters them by user and site, so zero
+    /// is what this login sees.
+    private func writeNotifications(_ ws: Worksheet, _ health: ServerHealth, row start: Int) {
+        var row = start
+        ws.write("Notifications", row: row, col: 0, format: .header)
+        row += 1
+        guard let (figure, _) = health.notificationFigure else {
+            ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .yellow)
+            return
+        }
+        for (col, header) in ["Type", "Count"].enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+        if figure.total == 0 {
+            ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .cell)
+            return
+        }
+        for entry in figure.shown {
+            ws.write(entry.name, row: row, col: 0, format: .cell)
+            ws.write(entry.count, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        if figure.types.count > figure.shown.count {
+            ws.write(
+                "\(figure.shown.count) of \(figure.types.count) types", row: row, col: 0,
+                format: .cell)
         }
     }
 

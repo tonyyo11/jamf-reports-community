@@ -288,6 +288,23 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNotNil(workbook.sheet(named: "Server and Admin Health"))
     }
 
+    func testServerAdminHealthWritesTheNotificationsSectionByType() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let dir = dataDir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try #"[{"type":"B"},{"type":"A"},{"type":"A"}]"#.write(
+            to: dir.appendingPathComponent("jamf-pro-notifications_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let workbook = Workbook()
+        try CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+            .writeServerAdminHealth()
+        let sheet = try XCTUnwrap(workbook.sheet(named: "Server and Admin Health"))
+        let csv = try XCTUnwrap(sheet.csvText(percentFormat: .standard))
+        XCTAssertTrue(csv.contains("Notifications"), csv)
+        XCTAssertTrue(csv.contains("A,2"), csv)
+        XCTAssertTrue(csv.contains("B,1"), csv)
+    }
+
     func testServerAdminHealthIsSkippedWithNoLandedKind() throws {
         let dataDir = try tempDataDir(copying: [])
         let dash = makeDashboard(dataDir: dataDir)

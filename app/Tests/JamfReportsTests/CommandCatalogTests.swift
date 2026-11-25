@@ -102,6 +102,8 @@ final class CommandCatalogTests: XCTestCase {
         "pro report ddm-status", "pro report blueprint-status",
         // The restricted-role capture read it with no privilege, so none is needed.
         "pro certificate-authority active",
+        // Jamf filters notifications by the caller, so the catalog lists no privilege.
+        "pro jamf-pro-notifications list",
     ]
 
     func testEverySupplementedCommandIsStillUnlistedAndEveryOtherUnlistedOneIsKnown() throws {

@@ -10,6 +10,7 @@ versions in this repository map to git tags.
 ### Added
 
 - The Health Audit has a "Server and admin health" card that shows when the Jamf Pro server's built-in certificate authority expires, from jamf-cli 1.38.0. A login without the privilege, or a server without the feature, is shown as such and checked again weekly, never as a failed run. The HTML report's Needs attention list names an expired or expiring certificate.
+- The same card, the "Server and Admin Health" tab and the HTML report's Needs attention list show the Jamf Pro notifications the login can see, counted by the type Jamf gives them. Jamf filters notifications by user and site, so zero reads "None visible to this login".
 
 ### Changed
 

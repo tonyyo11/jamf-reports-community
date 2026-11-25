@@ -119,6 +119,24 @@ final class ManagementHealthHtmlTests: XCTestCase {
         XCTAssertTrue(text.contains("The Jamf Pro built-in CA expires in 40 days."), "\(text)")
     }
 
+    func testNotificationsGetOneSentenceWhileAboveZero() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let dir = dataDir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("jamf-pro-notifications_20260921T120000.json")
+        try #"[{"type":"B"},{"type":"A"},{"type":"A"}]"#.write(
+            to: file, atomically: true, encoding: .utf8)
+        let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
+        let text = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertTrue(text.contains("Jamf Pro has 3 notifications for this login: A (2), B (1)."),
+                      "\(text)")
+        try "[]".write(to: file, atomically: true, encoding: .utf8)
+        let none = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertFalse(none.contains { $0.contains("notification") }, "\(none)")
+    }
+
     // MARK: - Intervention list
 
     func testTheInterventionListCarriesTheFindingTitleAsTheReason() throws {

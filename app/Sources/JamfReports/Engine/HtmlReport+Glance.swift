@@ -247,6 +247,9 @@ extension HtmlReport {
         for credential in credentials where credential.key != "ade" {
             items.append((Self.credentialSentence(credential), nil))
         }
+        if let figure = inputs.serverHealth?.notificationFigure?.value, figure.total > 0 {
+            items.append((Self.notificationsSentence(figure), nil))
+        }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
             add(.securityTiles, .security, p0 == 1
@@ -292,7 +295,6 @@ extension HtmlReport {
         return items
     }
 
-    /// The management lines, each only while its count is above zero.
     /// One Needs attention sentence for an expired or expiring server credential (English: the
     /// report is never translated).
     static func credentialSentence(_ credential: CredentialExpiry) -> String {
@@ -305,6 +307,16 @@ extension HtmlReport {
         return "\(subject) expires in \(left) day\(left == 1 ? "" : "s")."
     }
 
+    /// The notifications the login sees, by type as Jamf names it (English, like the report).
+    static func notificationsSentence(_ figure: ServerHealth.Notifications) -> String {
+        let list = figure.shown.map { "\($0.name) (\($0.count))" }.joined(separator: ", ")
+        let more = figure.types.count > figure.shown.count
+            ? "; \(figure.shown.count) of \(figure.types.count) types shown" : ""
+        return "Jamf Pro has \(figure.total) notification\(figure.total == 1 ? "" : "s") "
+            + "for this login: \(list)\(more)."
+    }
+
+    /// The management lines, each only while its count is above zero.
     static func managementSentences(_ health: ManagementHealth?) -> [String] {
         let lines: [(ManagementHealth.Finding, String, String)] = [
             (.profileExpired, "has an expired MDM profile and is leaving management",

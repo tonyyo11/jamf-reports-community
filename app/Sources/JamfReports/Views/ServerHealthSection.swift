@@ -15,7 +15,10 @@ struct ServerHealthSection: View {
                     SectionHeader(title: L("Server and admin health")).padding(16)
                     Divider().background(Theme.Colors.hairline)
                     ForEach(health.credentials.filter { $0.fact != .notCollected }, id: \.key) {
-                        rowView($0)
+                        rowView(title: Self.title($0), fact: $0.fact)
+                    }
+                    if health.notifications != .notCollected {
+                        rowView(title: L("Jamf Pro notifications"), fact: health.notifications)
                     }
                     Text(L("ADE tokens: see Management health"))
                         .font(.footnote)
@@ -26,18 +29,18 @@ struct ServerHealthSection: View {
         }
     }
 
-    private func rowView(_ row: ServerHealth.CredentialRow) -> some View {
+    private func rowView(title: String, fact: ServerHealth.FactState) -> some View {
         HStack(spacing: 10) {
-            if Self.pillText(row.fact).isEmpty {
+            if Self.pillText(fact).isEmpty {
                 Color.clear.frame(width: 86, height: 1)
             } else {
-                Pill(text: Self.pillText(row.fact), tone: Self.pillTone(row.fact))
+                Pill(text: Self.pillText(fact), tone: Self.pillTone(fact))
                     .frame(width: 86, alignment: .leading)
             }
-            Text(Self.title(row)).font(.footnote.weight(.semibold))
+            Text(title).font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
             Spacer()
-            Text(ServerHealth.text(for: row.fact)).font(.footnote.monospacedDigit())
+            Text(ServerHealth.text(for: fact)).font(.footnote.monospacedDigit())
                 .foregroundStyle(Theme.Colors.fg2)
                 .textSelection(.enabled)
         }

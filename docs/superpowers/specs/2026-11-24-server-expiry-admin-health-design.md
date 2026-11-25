@@ -503,3 +503,9 @@ The Jamf Pro API reference confirms `GET /v2/local-admin-password/pending-rotati
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*
+
+## Appendix B: capture amendments
+
+Entries here correct or complete Appendix A as captures arrive; the appendix above stays as first written.
+
+**Jamf Pro notifications** (captured 2026-11-24, Jamf's public test server): `pro jamf-pro-notifications list` exits 0 with an array of rows `{"id": string, "type": string, "params": {"softwareTitleName": string, "extensionAttributeName": string, "id": string}}`. The one type seen is `PATCH_EXTENTION_ATTRIBUTE` (Jamf's spelling). The vocabulary beyond it is unknown, so types are shown as Jamf names them (through `ConfigSchema.displayText`) and never folded into the credential rows. `params` names Jamf objects (a patch title, an extension attribute), not people, but is not saved: the reduction keeps `{type}` per row. The fixture is `Fixtures/server-health/jamf-pro-notifications-list.json`, with synthetic values.

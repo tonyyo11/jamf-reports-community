@@ -43,6 +43,42 @@ final class ServerHealthReductionTests: XCTestCase {
         }
     }
 
+    func testNotificationsKeepOnlyTheTypeOfEachRow() throws {
+        let out = try XCTUnwrap(ServerHealthReduction.reduce(
+            kind: "jamf-pro-notifications",
+            payload: fixture("jamf-pro-notifications-list.json")))
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: out) as? [[String: Any]])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0] as? [String: String], ["type": "PATCH_EXTENTION_ATTRIBUTE"])
+        let text = String(decoding: out, as: UTF8.self)
+        XCTAssertFalse(text.contains("Example"), "params and id are not saved")
+    }
+
+    func testNotificationsSaveAnEmptyListAndRefuseAnyOtherShape() throws {
+        for empty in ["[]", "null", #"{"results":[]}"#] {
+            let out = try XCTUnwrap(ServerHealthReduction.reduce(
+                kind: "jamf-pro-notifications", payload: Data(empty.utf8)), empty)
+            XCTAssertEqual(String(decoding: out, as: UTF8.self), "[]", empty)
+        }
+        let odd = try XCTUnwrap(ServerHealthReduction.reduce(
+            kind: "jamf-pro-notifications", payload: Data(#"[{"type":5},"x"]"#.utf8)))
+        XCTAssertEqual(String(decoding: odd, as: UTF8.self), "[{},{}]")
+        for bad in ["\"text\"", "3", #"{"other":1}"#] {
+            XCTAssertNil(ServerHealthReduction.reduce(
+                kind: "jamf-pro-notifications", payload: Data(bad.utf8)), bad)
+        }
+    }
+
+    func testTheNotificationsFixtureKeepsTheCapturedShape() throws {
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: fixture("jamf-pro-notifications-list.json")) as? [[String: Any]])
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(Set(row.keys), ["id", "type", "params"])
+        XCTAssertEqual(row["type"] as? String, "PATCH_EXTENTION_ATTRIBUTE")
+        let params = try XCTUnwrap(row["params"] as? [String: String])
+        XCTAssertEqual(Set(params.keys), ["softwareTitleName", "extensionAttributeName", "id"])
+    }
+
     func testListRowsReadsEveryShapeTheEnrollmentReductionDoes() {
         XCTAssertEqual(ReportEngine.listRows(of: NSNull())?.count, 0)
         XCTAssertEqual(ReportEngine.listRows(of: [1, 2] as [Any])?.count, 2)

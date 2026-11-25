@@ -141,6 +141,8 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "duplicate-serials":              .inventory,
         // Server-health: the built-in CA's expiry, one tiny call; changes about yearly.
         "certificate-authority":          .inventory,
+        // Notifications change as the server raises them; one small call.
+        "jamf-pro-notifications":         .refresh,
         // jamf-cli's HTML dashboard (1.31.0+): about 22 requests plus one per 500
         // computers, the inventory sweep again with no per-device fan-out.
         "dashboard":                      .inventory,

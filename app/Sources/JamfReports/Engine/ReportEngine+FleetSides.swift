@@ -124,6 +124,7 @@ extension ReportEngine {
         "policies": .mac, "scripts": .mac, "packages": .mac, "smart-computer-groups": .mac,
         "classic-computer-groups": .mac, "duplicate-serials": .mac,
         "certificate-authority": .both,
+        "jamf-pro-notifications": .both,
         ddmDeviceStatusKind: .mac, mdmCommandHealthKind: .mac,
     ]
 

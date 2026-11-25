@@ -153,4 +153,50 @@ final class ServerHealthTests: XCTestCase {
             .isEmpty)
         XCTAssertFalse(SchoolDashboard.sheetNames.contains(SheetID.serverAdminHealth.rawValue))
     }
+
+    // MARK: - Notifications
+
+    private func notifications(_ json: String) throws -> ServerHealth {
+        let notices = dir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: notices, withIntermediateDirectories: true)
+        try json.write(
+            to: notices.appendingPathComponent("jamf-pro-notifications_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        return ServerHealth.load(dataDir: dir, warningDays: 90, now: now)
+    }
+
+    func testZeroNotificationsReadNoneVisibleToThisLogin() throws {
+        let health = try notifications("[]")
+        XCTAssertEqual(health.notificationFigure?.value.total, 0)
+        XCTAssertEqual(ServerHealth.text(for: health.notifications), "None visible to this login")
+        XCTAssertTrue(health.hasAttempt)
+    }
+
+    func testTypesAreCountedSortedAndCappedAtFiveWithNOfM() throws {
+        let types = ["B", "B", "A", "C", "C", "C", "D", "E", "F", "G"]
+            .map { #"{"type":"\#($0)"}"# }.joined(separator: ",")
+        let health = try notifications("[\(types)]")
+        let figure = try XCTUnwrap(health.notificationFigure?.value)
+        XCTAssertEqual(figure.total, 10)
+        XCTAssertEqual(figure.shown.map(\.name), ["C", "B", "A", "D", "E"])
+        XCTAssertEqual(figure.types.count, 7)
+        XCTAssertEqual(ServerHealth.text(for: health.notifications),
+                       "10 (C: 3, B: 2, A: 1, D: 1, E: 1) · 5 of 7 types")
+    }
+
+    func testATypeIsShownAsJamfNamesItAndAMissingOneIsUnknown() throws {
+        let health = try notifications(#"[{"type":"PATCH_EXTENTION_ATTRIBUTE"},{}]"#)
+        XCTAssertEqual(health.notificationFigure?.value.types.map(\.name),
+                       ["PATCH_EXTENTION_ATTRIBUTE", "Unknown type"])
+        XCTAssertTrue(health.expiringCredentials.isEmpty, "never folded into the credentials")
+    }
+
+    func testANotificationsRefusalIsNotPermittedAndABadSnapshotIsUnreadable() throws {
+        store.record(.failed(exitCode: 5), report: "jamf-pro-notifications", at: now,
+                     cause: FailureCause(kind: .missingPermission, names: [], hint: nil,
+                                         exitCode: 5))
+        XCTAssertEqual(ServerHealth.load(dataDir: dir, warningDays: 90, now: now).notifications,
+                       .notPermitted([]))
+        XCTAssertEqual(try notifications(#"{"other":1}"#).notifications, .unreadable)
+    }
 }

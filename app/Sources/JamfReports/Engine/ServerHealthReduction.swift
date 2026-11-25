@@ -11,6 +11,7 @@ enum ServerHealthReduction {
             with: payload, options: [.fragmentsAllowed]) else { return nil }
         switch kind {
         case "certificate-authority": return certificateAuthority(object)
+        case "jamf-pro-notifications": return notifications(object)
         default: return nil
         }
     }
@@ -24,6 +25,17 @@ enum ServerHealthReduction {
         var kept: [String: Any] = [:]
         if let number = row["notAfter"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
             kept["notAfter"] = number
+        }
+        return try? JSONSerialization.data(withJSONObject: kept)
+    }
+
+    /// One `{type}` per notification: `params` names Jamf objects and `id` is the server's, and
+    /// neither is shown. An empty list is a real zero and is saved as `[]`.
+    private static func notifications(_ object: Any) -> Data? {
+        guard let rows = ReportEngine.listRows(of: object) else { return nil }
+        let kept: [[String: Any]] = rows.map { row in
+            guard let type = (row as? [String: Any])?["type"] as? String else { return [:] }
+            return ["type": type]
         }
         return try? JSONSerialization.data(withJSONObject: kept)
     }
