@@ -86,3 +86,22 @@ struct SplitCollectCard: View {
         }
     }
 }
+
+#if DEBUG
+#Preview {
+    let workspace = WorkspaceStore(demoMode: false)
+    workspace.splitCollectRows = [
+        SplitCollectRow(label: "a", name: "Managed freshness", done: 19, of: 31, left: 12,
+                        retrying: false),
+        SplitCollectRow(label: "b", name: "Nightly full collect", done: nil, of: nil, left: 4,
+                        retrying: false),
+        SplitCollectRow(label: "c", name: "School collect", done: 7, of: 12, left: 5,
+                        retrying: true),
+    ]
+    return SplitCollectCard()
+        .environment(workspace)
+        .padding()
+        .preferredColorScheme(.dark)
+        .frame(width: PageScaffold<EmptyView>.minSupportedWidth)
+}
+#endif
