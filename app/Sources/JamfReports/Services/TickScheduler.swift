@@ -96,7 +96,7 @@ struct TickState: Codable, Sendable {
 }
 
 /// Why a collect run stopped before its sources were done, as the tick reads it. Only `budget`
-/// and `otherRefresh` are continued (`SplitCollect.isContinuable`).
+/// and `otherRefresh` are continued (`SplitCollect.continuableStop`).
 enum SplitStop: String, Codable, Sendable {
     case budget
     /// A full manual refresh of the same workspace, which collects everything left.
@@ -199,16 +199,22 @@ struct SplitDay: Codable, Sendable, Equatable {
 extension TickState {
     /// Folds a run's outcome into the label's split day. A continuable stop opens or updates a
     /// profile's entry, anything else closes it; a run started on another day starts over. A
-    /// plain Run now records nothing. True when the split day changed.
+    /// profile the run no longer answers for (removed, excluded, no jamf-cli profile) loses its
+    /// entry, as in `noteProfileOutcomes`. `failed` is the label's failure verdict over every
+    /// profile's stored outcome, not only those that ran. A plain Run now records nothing. True
+    /// when the split day changed.
     mutating func noteSplitDay(
-        _ label: String, outcome: ScheduleRunOutcome, reason: TickScheduler.Reason,
-        startedAt: Date, finishedAt: Date
+        _ label: String, outcome: ScheduleRunOutcome, failed: Bool,
+        reason: TickScheduler.Reason, startedAt: Date, finishedAt: Date
     ) -> Bool {
         guard reason != .runNow else { return false }
         let before = splitDay[label]
         var day = before.flatMap {
             Calendar.current.isDate($0.day, inSameDayAs: startedAt) ? $0 : nil
         } ?? SplitDay(day: Calendar.current.startOfDay(for: startedAt), profiles: [:], failed: false)
+        if let considered = outcome.considered {
+            day.profiles = day.profiles.filter { considered.contains($0.key) }
+        }
         let ran: [(String, SplitStop?, [String], [String])] = outcome.considered == nil
             ? [("", outcome.stop, outcome.planned, outcome.left)]
             : outcome.profiles.map { ($0.profile, $0.stop, $0.planned, $0.left) }
@@ -219,7 +225,7 @@ extension TickState {
                 planned: earlier + planned.filter { !earlier.contains($0) },
                 left: left, lastFinished: finishedAt)
         }
-        day.failed = outcome.failureRetryCouldHelp
+        day.failed = failed
         splitDay[label] = day.profiles.isEmpty ? nil : day
         return splitDay[label] != before
     }

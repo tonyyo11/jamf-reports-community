@@ -458,7 +458,7 @@ non-file, or a config.yaml cannot be read. One rule for every copy area (snapsho
 SOFA, reports, `automation/logs` and `*_status.json`; backups copy the whole folders the target lacks, only the scheduled ones the target's prune would keep of both folders together, since copying every one would make its next scheduled backup remove its own oldest):
 the target lacks the name, so copy; same name and same SHA-256, so skip; same name with other bytes,
 so keep the target's and copy the source's into the archive. A copied `*_status.json` loses its open attention items (`attention`, `attention_at`), since `AttentionLog` reads the newest file's set and would replace the target's. Of the source's run logs, only those
-among the newest `ScheduledRunRecorder.maxRunLogs` of both folders together (by mtime) are copied,
+among the newest `ScheduledRunRecorder.maxWorkspaceRunLogs` (200) of both folders together (by mtime) are copied,
 since the recorder would prune the rest at the target's next run; the others stay in the moved
 source folder. Snapshots are never renamed (a suffix would fail `CloudStorage.snapshotTimestamp`). A
 day's summary both sides hold is the target's filled from the source's
@@ -778,7 +778,14 @@ retry and stamps no success. `TickScheduler.due` adds one `.continuation` when n
 open split day runs as `.continuation`, and `retryIsDue` is false for a clean open split day, so
 a continuation is never turned into a retry. A continuation stamps `lastStarted` only, runs with
 `isSameDayRetry`, unforced (Jamf School's `jamf-cli-full` included) and only for the split day's
-profiles. A fire or catch-up clears the label's split day; nothing continues past midnight.
+profiles; a profile the run no longer answers for (`considered`) leaves the split day, and a
+continuation whose profiles are all gone runs nothing (never `profilesToRun`'s run-everything
+fallback). `failed` is the label's verdict over every stored outcome. One run's phases (Jamf Pro,
+Protect, Security Cloud, the scan) add their leftovers to `left`. A continuation that stops again
+skips the report and success card (`continuesLater`); the day's first run and the run that
+finishes the day send them. A fire or catch-up clears the label's split day; nothing continues
+past midnight. `planSchoolCollect` collects `school-devices` regardless of cadence whenever the
+School scan is due, so a continuation or a round's pass hands the scan its input.
 `ManualRefreshRequest` names its workspace and `full`; an older one-line file reads as a full
 refresh of the run's own workspace. The schedule pill reads In progress while a clean split day
 is open (`WorkspaceStore.withLastRuns`, from `RunHistoryService.newestFinishedRuns`, filled by
@@ -1021,7 +1028,7 @@ the watcher (`Self.observing(_:then:)`), `LogBuffer` and a `ScheduledRunRecorder
 `appCollectRunLabel`, `<prefix>.manual-collect`. That label has no profile part, so no
 schedule label equals it and no schedule's status file, overdue check or retry reads it;
 Run History names it "Manual collect". `keptAppCollectRuns` (20) bounds its logs per
-workspace so schedule runs stay inside the recorder's 50. A collect the tick lock refuses
+workspace (the recorder keeps 50 per label and 200 per workspace). A collect the tick lock refuses
 (`manualCollectMustWait` or `CLIBridgeError.tickLockHeld`) records nothing:
 `ScheduledRunRecorder.discard()` removes the log and leaves the last status file alone. The "Report
 generated successfully" toasts on Overview and Reports still read as success when

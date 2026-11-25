@@ -343,8 +343,8 @@ enum TickLoop {
             let outcome = merged.isEmpty
                 ? ran : ScheduleRunOutcome(over: merged, ran: ran.profiles)
             let splitChanged = state.noteSplitDay(
-                label, outcome: ran, reason: run.reason, startedAt: startedAt,
-                finishedAt: clock())
+                label, outcome: ran, failed: outcome.failureRetryCouldHelp, reason: run.reason,
+                startedAt: startedAt, finishedAt: clock())
             // A budget stop with no failure is continued, not retried: no retry is counted.
             let continuing = state.splitDay[label].map {
                 $0.isOpen(on: startedAt) && !$0.failed } ?? false

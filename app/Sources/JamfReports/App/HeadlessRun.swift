@@ -574,6 +574,11 @@ private func scheduledRunSingleBody(
             // leaves collected files at 0600. Mirrors the GUI's tightenOnSuccess.
             await WorkspacePermissionHardener.tightenOffMain(profile: profile)
         }
+        // A continuation that stopped at its budget again is not the end of today's collect: its
+        // report and success card wait for the run that finishes the day (the day's first run
+        // still sends its own, as before the split collect).
+        let continuesLater = continuing != nil && SplitCollect.continuableStop(
+            progress.stop, mode: mode, protectOnly: progress.protectOnly) != nil
         // snapshot-only stops after collect; summary.json is already written.
         // Only Jamf Pro collect (via ReportEngine.collect) writes summary.json;
         // School collect does not — avoid a false "Trends updated" claim for School.
@@ -602,7 +607,7 @@ private func scheduledRunSingleBody(
             // standing down is the coordination working, and the `[partial]`
             // line already downgrades the run in Run History. The failure-card
             // path is unchanged: a run that threw never gets here.
-            if honesty.producedFreshSnapshot {
+            if honesty.producedFreshSnapshot, !continuesLater {
                 await ScheduledRunSignals.notifyScheduledRun(
                     config: routingConfig, profile: profile, mode: mode,
                     artifact: nil, recorder: recorder
@@ -617,6 +622,13 @@ private func scheduledRunSingleBody(
             return 0
         }
 
+        if continuesLater {
+            let line = "[info] report not generated: today's collect is still being continued"
+            print(line)
+            recorder?.record(line)
+            recorder?.finish(exitCode: 0)
+            return 0
+        }
         let config = try routingConfig ?? ConfigLoader.load(from: configURL)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
 
@@ -869,9 +881,15 @@ func runSchedule(
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().map(ConfigSchema.displayText).joined(separator: ", "))\n", stderr)
     }
-    // A continuation runs only the profiles its split day has left.
+    // A continuation runs only the profiles its split day has left, and none when those have
+    // gone (removed, excluded): never the run-everything fallback of `profilesToRun`.
+    let names = profiles.map(\.name)
+    if let continuing, !names.contains(where: { continuing.profiles.keys.contains($0) }) {
+        fputs("[info] \(label ?? "all-profiles"): no profile left to continue\n", stderr)
+        return ScheduleRunOutcome(exitCode: 0, incomplete: false, considered: Set(names))
+    }
     let skip = continuing.map { split in
-        Set(profiles.map(\.name)).subtracting(split.profiles.keys) } ?? skipping
+        Set(names).subtracting(split.profiles.keys) } ?? skipping
     let result = await TickScheduler.runProfiles(
         names: profiles.map(\.name), skipping: skip,
         leftOutNote: continuing == nil ? nil : "continuing only profiles with sources left"

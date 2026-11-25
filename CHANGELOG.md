@@ -9,7 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
-- A large fleet's collect that stops at its run budget is now continued through the day. The background item picks up the rest at its next free wake (within about five minutes), collecting only what is still due, until everything has landed or midnight. Jamf School collects are continued too; a Jamf Protect-only workspace is not. The Automation screen shows "N of M sources collected today" with Continue now, and the schedule reads In progress until the day's collect is done. A fleet whose collect fits in the budget sees no change; lower `jamf_cli.run_budget_minutes` to spread a collect over smaller runs.
+- A large fleet's collect that stops at its run budget is now continued through the day. The background item picks up the rest at its next free wake (within about five minutes), collecting only what is still due, until everything has landed or midnight. Jamf School collects are continued too; a Jamf Protect-only workspace is not. The Automation screen shows "N of M sources done today" with Continue now, and the schedule reads In progress until the day's collect is done. A collect-and-report schedule writes its report on the day's first run and on the run that finishes the day, not on every piece in between. A fleet whose collect fits in the budget sees no change; lower `jamf_cli.run_budget_minutes` to spread a collect over smaller runs.
 
 ### Changed
 
@@ -21,6 +21,7 @@ versions in this repository map to git tags.
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+- A Jamf School device scan that was due skipped itself when the run did not re-collect `school-devices` (a round's daily pass, or an unforced run); the devices list is now collected whenever the scan is due.
 - Jamf Security Cloud's "stopped early" line listed its source as left even after it was collected.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 

@@ -248,13 +248,16 @@ one, whatever the budget. If a source also failed, those retries run first; once
 the continuations pick up the rest of the day.
 
 The Automation screen (and the schedule builder) shows a **Continuing today's collect** card with
-"N of M sources collected today" and **Continue now**, and the schedule's status reads **In
+"N of M sources done today" and **Continue now**, and the schedule's status reads **In
 progress** until the day's collect is done. A fleet whose collect fits in the budget never sees
 any of this. To spread a collect over smaller runs on purpose, lower `run_budget_minutes`; there
 is no separate switch.
 
 - **Jamf School** collects are continued too, without forcing past School's 12-hour cadence, so
-  only what is still due is fetched.
+  only what is still due is fetched (the devices list is re-collected whenever the weekly device
+  scan is due, so the scan always has its input).
+- A schedule that collects and writes a report (`jamf-cli-full`) writes it on the day's first run
+  and on the run that finishes the day, not on every piece in between.
 - **Jamf Protect on its own** (a Protect-only environment) is not continued: its collect has no
   cadence to skip what already landed, so a stopped run keeps the 1, 2, 4 hour retries.
 - **Refresh in the app** still stops whatever scheduled run holds the lock, between sources. A

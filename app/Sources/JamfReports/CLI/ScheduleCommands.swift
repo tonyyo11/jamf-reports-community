@@ -16,18 +16,27 @@ struct Schedules: AsyncParsableCommand {
         func run() async throws {
             let records = ScheduleStore().load()
             if records.isEmpty { print("no hand-built schedules"); return }
+            let discovered = records.contains(where: \.allWorkspaces)
+                ? ProfileService.discoverLocal() : []
+            let state = TickState.load()
             var runsByWorkspace: [String: [String: RunHistoryService.RunSummary]] = [:]
             for r in records {
                 let workspace = r.allWorkspaces
                     ? (ProfileService.runnableWorkspaces(
-                        ProfileService.discoverLocal(),
-                        excluding: Set(r.excludedWorkspaces)).first?.name ?? r.workspace)
+                        discovered, excluding: Set(r.excludedWorkspaces)).first?.name
+                        ?? r.workspace)
                     : r.workspace
                 if runsByWorkspace[workspace] == nil {
                     runsByWorkspace[workspace] = RunHistoryService.newestFinishedRuns(
                         profile: workspace)
                 }
-                print(Self.line(for: r, status: runsByWorkspace[workspace]?[r.label]?.status))
+                // The GUI's rule (In progress on an open split day), not a second one.
+                let status = WorkspaceStore.withLastRuns(
+                    [r.toSchedule()], runsByWorkspace[workspace] ?? [:],
+                    splitDay: state.splitDay, workspace: workspace).first?.lastStatus
+                let finished = runsByWorkspace[workspace]?[r.label] != nil
+                    || status == .inProgress
+                print(Self.line(for: r, status: finished ? status : nil))
             }
         }
 

@@ -91,7 +91,7 @@ What is true today (2.12), from the code:
 *   **Why a run stopped is lost.** `RunStop` tells a budget stop from a stop for a manual refresh,
     but the outcome the tick keeps records neither.
 *   **Nothing shows progress.** The operator sees `stopped early` in a run log, not "18 of 31
-    sources collected today, next pickup at about 10:05".
+    sources done today, next pickup at about 10:05".
 *   **The status pill lies.** The schedule list shows `.ok` for every schedule, whatever its last run
     did. Five places build a `Schedule` with `lastStatus: .ok` as a placeholder
     (`ManagedAutomation.makeSchedule`, `ScheduleRecord.toSchedule` in `ScheduleStore`,
@@ -139,7 +139,7 @@ Improvements) and wait on the measurement gate.
     past the once-a-day full collect guard, and holds the lock at most for the budget plus one
     source.
 5.  The Automation screen shows, per schedule with an open split day for the active workspace,
-    "N of M sources collected today" (or "K sources left" when the counts no longer line up) and
+    "N of M sources done today" (or "K sources left" when the counts no longer line up) and
     "next pickup within about five minutes, once the lock is free".
 6.  "Continue now" on that line runs the same unforced continuation immediately, under the same
     lock and budget.
@@ -182,7 +182,7 @@ Improvements) and wait on the measurement gate.
     minutes); 12 sources left for the next run: …`.
 *   **Then**: The next tick wake with the lock free (within about five minutes) runs a continuation,
     unforced, collecting only what is still due; so do later wakes until every source has landed.
-    The retry count stays 0. The Automation screen reads "19 of 31 sources collected today, next
+    The retry count stays 0. The Automation screen reads "19 of 31 sources done today, next
     pickup within about five minutes, once the lock is free", and the schedule list's pill reads
     "In progress" until the day's plan is done, then OK. With `run_budget_minutes` 90 the
     continuations are two hours apart and are still continuations, never retries.
@@ -357,7 +357,7 @@ active workspace, `WorkspaceStore.splitCollectRows` (a stored property, cleared 
 and demo toggle), built by the pure `SplitCollectRow.rows(state:schedules:workspace:now:)`:
 
 *   `SplitCollectRow { label, displayName, done, of, left, failed }`.
-*   While `left ⊆ planned`: "N of M sources collected today" with M = `planned.count` and N = M −
+*   While `left ⊆ planned`: "N of M sources done today" with M = `planned.count` and N = M −
     `left.count`. Otherwise "K sources left" (sources came due again after 12 hours). Never clamped.
 *   "Next pickup within about five minutes, once the lock is free", or, when `failed` and the
     backoffs are not spent, "retrying after a failure".

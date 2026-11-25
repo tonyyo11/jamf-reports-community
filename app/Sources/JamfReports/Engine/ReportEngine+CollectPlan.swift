@@ -215,10 +215,12 @@ extension ReportEngine {
         }
 
         /// Anything left was planned, the device scan included (its plan line is not a source list).
+        /// One run can stop in several phases (Jamf Pro, then Protect, Security Cloud and the
+        /// scan, each at its first source), so each phase's leftovers are added, not replaced.
         func recordStop(_ stop: RunStop, left: [String]) {
             state.withLock { s in
-                s.stop = stop
-                s.left = left
+                s.stop = s.stop ?? stop
+                s.left += left.filter { !s.left.contains($0) }
                 s.planned += left.filter { !s.planned.contains($0) }
             }
         }
@@ -439,7 +441,9 @@ extension ReportEngine {
     /// cadence; `force` (Collect now) ignores the cadence. `platformFieldsMissing` skips the
     /// blueprints kind, the one School source that needs the profile's Platform fields. A run
     /// with only the scan tier collects `school-devices`, the device scan's input, and only
-    /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
+    /// when `scanDue`; otherwise it stays a no-op. Whenever the scan is due, `school-devices`
+    /// ignores its cadence, so an unforced run (a split collect's continuation, a round's daily
+    /// pass) still hands the scan the devices it needs.
     static func planSchoolCollect(
         profile: String, tiers: Set<CollectionTier>, force: Bool,
         collectSkip: Set<String> = [], now: Date = Date(),
@@ -458,8 +462,8 @@ extension ReportEngine {
                 skip = .schoolNoPlatform
             } else if !force, let until = timeoutHold(kind), now < until {
                 skip = .repeatedTimeouts(retryAfter: until)
-            } else if !force, !CadenceResolver.isDue(
-                lastRun: lastRun(kind), cadence: cadence, now: now) {
+            } else if !force, !(scanDue && kind == SchoolFleetService.devicesKind),
+                      !CadenceResolver.isDue(lastRun: lastRun(kind), cadence: cadence, now: now) {
                 skip = .notDue(lastRun: lastRun(kind), cadence: cadence)
             } else {
                 skip = nil

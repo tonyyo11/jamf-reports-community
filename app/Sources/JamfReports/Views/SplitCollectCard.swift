@@ -5,8 +5,9 @@ struct SplitCollectRow: Identifiable, Equatable, Sendable {
     var id: String { label }
     let label: String
     let name: String
-    /// Sources landed so far and the day's plan; nil when the names stopped lining up (sources
-    /// came due again after 12 hours), so the row says how many are left instead.
+    /// Sources done so far (landed, or skipped as not due) and the day's plan; nil when the names
+    /// stopped lining up (sources came due again after 12 hours), so the row says how many are
+    /// left instead.
     let done: Int?
     let of: Int?
     let left: Int
@@ -32,7 +33,10 @@ struct SplitCollectRow: Identifiable, Equatable, Sendable {
     }
 
     var progressText: String {
-        if let done, let of { return L("\(done) of \(of) sources collected today") }
+        if let done, let of {
+            return of == 1 ? L("\(done) of 1 source done today")
+                : L("\(done) of \(of) sources done today")
+        }
         return left == 1 ? L("1 source left today") : L("\(left) sources left today")
     }
 
@@ -75,7 +79,11 @@ struct SplitCollectCard: View {
             Button(L("Continue now")) {
                 starting.insert(row.label)
                 Task {
-                    _ = await workspace.runNowFromHealthRow(label: row.label)
+                    if !(await workspace.runNowFromHealthRow(label: row.label)) {
+                        workspace.toast = Toast(
+                            message: L("Continue now could not start the background item."),
+                            style: .warning)
+                    }
                     await workspace.refreshAutomationHealth()
                     starting.remove(row.label)
                 }

@@ -32,7 +32,7 @@ final class SplitCollectCardTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0].done, 2)
         XCTAssertEqual(rows[0].of, 3)
-        XCTAssertEqual(rows[0].progressText, "2 of 3 sources collected today")
+        XCTAssertEqual(rows[0].progressText, "2 of 3 sources done today")
         XCTAssertFalse(rows[0].retrying)
     }
 

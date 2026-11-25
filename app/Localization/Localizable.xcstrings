@@ -16786,48 +16786,48 @@
         }
       }
     },
-    "%lld of %lld sources collected today" : {
+    "%lld of %lld sources done today" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld von %lld Quellen heute erfasst"
+            "value" : "%lld von %lld Quellen heute erledigt"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld of %2$lld sources collected today"
+            "value" : "%1$lld of %2$lld sources done today"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld de %lld fuentes recopiladas hoy"
+            "value" : "%lld de %lld fuentes listas hoy"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld sources collectées sur %lld aujourd’hui"
+            "value" : "%lld sources traitées sur %lld aujourd’hui"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld di %lld origini raccolte oggi"
+            "value" : "%lld di %lld origini completate oggi"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本日%2$lld件中%1$lld件のソースを収集済み"
+            "value" : "本日%2$lld件中%1$lld件のソースが完了"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld de %lld fontes coletadas hoje"
+            "value" : "%lld de %lld fontes concluídas hoje"
           }
         }
       }
@@ -16954,6 +16954,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de 1 dispositivo móvel gerenciado"
+          }
+        }
+      }
+    },
+    "%lld of 1 source done today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von 1 Quelle heute erledigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 fuente lista hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld source traitée sur 1 aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di 1 origine completata oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日1件中%lld件のソースが完了"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 fonte concluída hoje"
           }
         }
       }
@@ -44966,6 +45006,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continuar agora"
+          }
+        }
+      }
+    },
+    "Continue now could not start the background item." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„Jetzt fortsetzen“ konnte das Hintergrundobjekt nicht starten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Continuar ahora» no pudo iniciar el elemento en segundo plano."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« Continuer maintenant » n’a pas pu lancer l’élément en arrière-plan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Continua ora» non è riuscito ad avviare l’elemento in background."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「今すぐ続行」でバックグラウンド項目を開始できませんでした。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Continuar agora” não conseguiu iniciar o item em segundo plano."
           }
         }
       }

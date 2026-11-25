@@ -39,6 +39,30 @@ final class SplitCollectTests: XCTestCase {
         XCTAssertTrue(lines.first?.hasPrefix(ReportEngine.stoppedEarlyMarker) == true)
     }
 
+    func testEveryPhaseOfOneRunKeepsItsLeftovers() async {
+        let progress = ReportEngine.RunProgress()
+        await ReportEngine.$runProgress.withValue(progress) {
+            await ReportEngine.$runStop.withValue({ .budgetUsed(minutes: 45) }) {
+                _ = ReportEngine.stopsRun(left: ["computers", "ea-results"], onLine: { _ in })
+                _ = ReportEngine.stopsRun(left: ["protect-alerts"], onLine: { _ in })
+                _ = ReportEngine.stopsRun(left: ["device scan"], onLine: { _ in })
+            }
+        }
+        XCTAssertEqual(progress.left, ["computers", "ea-results", "protect-alerts", "device scan"])
+        XCTAssertEqual(progress.stop, .budgetUsed(minutes: 45))
+    }
+
+    func testADueSchoolScanGetsItsDevicesOnAnUnforcedRun() {
+        let now = Date()
+        let plan = ReportEngine.planSchoolCollect(
+            profile: "school", tiers: [.refresh, .inventory], force: false, now: now,
+            scanDue: true, lastRun: { _ in now.addingTimeInterval(-600) })
+        let devices = plan.first { $0.kind == SchoolFleetService.devicesKind }
+        XCTAssertNotNil(devices)
+        XCTAssertNil(devices?.skip, "the scan's input is collected although it landed today")
+        XCTAssertNotNil(plan.first { $0.kind != SchoolFleetService.devicesKind }?.skip)
+    }
+
     func testAPlanOutsideAScheduledRunRecordsNothing() {
         XCTAssertNil(ReportEngine.runProgress)
         _ = ReportEngine.collectPlanLines(profile: "p", running: ["overview"])

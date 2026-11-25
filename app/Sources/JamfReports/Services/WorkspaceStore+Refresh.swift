@@ -279,7 +279,8 @@ extension WorkspaceStore {
             toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
-        guard await manualCollectMayStart() else { return }
+        // Every tier, forced, of the active workspace: a full refresh.
+        guard await manualCollectMayStart(full: true) else { return }
         let activeProfile = profile
         beginCollect(
             for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
@@ -315,7 +316,8 @@ extension WorkspaceStore {
     /// `manualRefreshWait`. True when the collect may start.
     /// `workspace` (the active one when nil) and `full` go into the request, so a run stopped for
     /// a refresh that does not collect everything due in its workspace is continued by the tick.
-    func manualCollectMayStart(workspace: String? = nil, full: Bool = true) async -> Bool {
+    /// `full` has no default: only a forced collect of every tier of that workspace is full.
+    func manualCollectMayStart(workspace: String? = nil, full: Bool) async -> Bool {
         let scheduledElsewhere = CLIBridge.collectRefusal() == .tickLockHeld
         let automaticHere = Self.automaticCollectsRunning.withLock { $0 > 0 }
         guard scheduledElsewhere || automaticHere, manualRefreshWait > 0,

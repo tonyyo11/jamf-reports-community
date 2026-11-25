@@ -166,7 +166,7 @@ final class RunStopTests: XCTestCase {
             jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
         store.manualRefreshWait = 5
         store.manualRefreshPoll = 0.05
-        let idle = await store.manualCollectMayStart()
+        let idle = await store.manualCollectMayStart(full: true)
         XCTAssertTrue(idle, "nothing is running")
 
         WorkspaceStore.automaticCollectsRunning.withLock { $0 += 1 }
@@ -175,7 +175,7 @@ final class RunStopTests: XCTestCase {
             XCTAssertTrue(ManualRefreshRequest.pending() != .none, "the automatic collect is asked to stop")
             WorkspaceStore.automaticCollectsRunning.withLock { $0 -= 1 }
         }
-        let mayStart = await store.manualCollectMayStart()
+        let mayStart = await store.manualCollectMayStart(full: true)
         await finishing.value
         XCTAssertTrue(mayStart)
         XCTAssertFalse(ManualRefreshRequest.pending() != .none, "the request is withdrawn")

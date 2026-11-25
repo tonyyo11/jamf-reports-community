@@ -142,6 +142,49 @@ final class TickSchedulerContinuationTests: XCTestCase {
         XCTAssertEqual(due.first.map { Set($0.continuing?.profiles.keys ?? [:].keys) }, ["a"])
     }
 
+    func testAProfileThatNoLongerRunsLeavesTheSplitDay() async {
+        let fleet = schedule("fleet", multi: true)
+        let label = fleet.launchAgentLabel!
+        let a = ProfileOutcome(
+            profile: "a", exitCode: 0, incomplete: false, retryCouldHelp: true,
+            started: at(6), finished: at(6.75), stop: .budget, failureRetryCouldHelp: false,
+            planned: ["x", "y"], left: ["y"])
+        var state = await tick(
+            .init(schedule: fleet, reason: .fire), from: TickState(), at: at(6),
+            outcome: ScheduleRunOutcome(over: [a], ran: [a], considered: ["a"]))
+        XCTAssertNotNil(state.splitDay[label])
+
+        // "a" was excluded since: the continuation runs nothing and answers for "b" only.
+        let due = TickScheduler.due(schedules: [fleet], state: state, runNowLabels: [], now: at(7))
+        state = await tick(due[0], from: state, at: at(7), outcome: ScheduleRunOutcome(
+            exitCode: 0, incomplete: false, considered: ["b"]))
+        XCTAssertNil(state.splitDay[label], "the gone profile's entry is dropped")
+        XCTAssertTrue(TickScheduler.due(
+            schedules: [fleet], state: state, runNowLabels: [], now: at(7.2)).isEmpty,
+            "no continuation every wake until midnight")
+    }
+
+    func testAStandingFailureOfAProfileThatDidNotRunStillBlocksContinuing() async {
+        let fleet = schedule("fleet", multi: true)
+        let label = fleet.launchAgentLabel!
+        let a = ProfileOutcome(
+            profile: "a", exitCode: 0, incomplete: false, retryCouldHelp: true,
+            started: at(6), finished: at(6.75), stop: .budget, failureRetryCouldHelp: false,
+            planned: ["x", "y"], left: ["y"])
+        let c = ProfileOutcome(
+            profile: "c", exitCode: 1, incomplete: true, retryCouldHelp: true,
+            started: at(6.75), finished: at(6.8))
+        var state = await tick(
+            .init(schedule: fleet, reason: .fire), from: TickState(), at: at(6),
+            outcome: ScheduleRunOutcome(over: [a, c], ran: [a, c], considered: ["a", "c"]))
+        XCTAssertEqual(state.splitDay[label]?.failed, true)
+        // A run of "a" alone stops cleanly again; "c"'s stored failure still stands.
+        state = await tick(
+            .init(schedule: fleet, reason: .retry), from: state, at: at(7),
+            outcome: ScheduleRunOutcome(over: [a], ran: [a], considered: ["a", "c"]))
+        XCTAssertEqual(state.splitDay[label]?.failed, true)
+    }
+
     func testAnUnreadableSplitDayCostsNoOtherStamp() throws {
         let json = """
         {"lastStarted":{"x":"2026-11-25T06:00:00Z"},"splitDay":{"x":{"day":42}}}
