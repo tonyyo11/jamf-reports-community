@@ -235,6 +235,57 @@ final class ServerHealthTests: XCTestCase {
                 + " · Password over a year old: 1 · Password age unknown: 0")
     }
 
+    func testAHygieneCountThatIsNegativeFractionalOrHugeIsUnreadable() throws {
+        for bad in ["-3", "2.7", "1e30"] {
+            try hygiene("laps-pending-rotations", "{\"totalCount\":\(bad)}")
+            let health = ServerHealth.load(
+                dataDir: dir, warningDays: 90, now: now, optIn: ["laps-pending-rotations"])
+            XCTAssertEqual(health.adminHygiene.first?.fact, .unreadable, bad)
+            XCTAssertNil(health.lapsPendingFigure, bad)
+        }
+    }
+
+    func testARefusalOfAnOptedOutKindRaisesNoDoctorRow() {
+        let laps = ServerHealth.lapsKind
+        let cause = FailureCause(kind: .missingPermission, names: ["X"], hint: nil, exitCode: 5)
+        let refused = [laps: cause, kind: cause]
+        let off = ConfigDoctorService.standingRefusals(refused, optedIn: [])
+        XCTAssertEqual(Set(off.keys), [kind], "refused while on, then switched off")
+        XCTAssertEqual(
+            Set(ConfigDoctorService.standingRefusals(refused, optedIn: [laps]).keys), [laps, kind])
+        XCTAssertTrue(ConfigDoctorService.serverHealthRows(refused: [:]).isEmpty)
+    }
+
+    func testAStaleNotificationFigureIsNotAnHtmlWarningAndTheTabSaysAsOf() throws {
+        let stale = Date(timeIntervalSince1970: 1_780_000_000)
+        func inputs(_ stale: Date?, _ report: HtmlReport) -> HtmlReport.Inputs {
+            var inputs = report.loadInputs(for: [])
+            inputs.serverHealth = ServerHealth(
+                credentials: [],
+                notifications: .value(.notifications(.init(types: ["A", "A"])), stale: stale))
+            return inputs
+        }
+        let report = HtmlReport(config: ReportConfig(), dataDir: dir)
+        XCTAssertFalse(report.attentionItems(inputs(stale, report), shown: [])
+            .contains { $0.text.contains("notification") })
+        XCTAssertTrue(report.attentionItems(inputs(nil, report), shown: [])
+            .contains { $0.text.contains("notification") })
+
+        let folder = dir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try #"[{"type":"A"}]"#.write(
+            to: folder.appendingPathComponent("jamf-pro-notifications_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        store.record(.landed, report: "jamf-pro-notifications", at: now)
+        store.record(.failed(exitCode: 1), report: "jamf-pro-notifications", at: now)
+        let workbook = Workbook()
+        try CoreDashboard(config: ReportConfig(), dataDir: dir, workbook: workbook)
+            .writeServerAdminHealth()
+        let csv = try XCTUnwrap(workbook.sheet(named: "Server and Admin Health")?
+            .csvText(percentFormat: .standard))
+        XCTAssertTrue(csv.contains("no longer measured"), csv)
+    }
+
     func testAZeroLAPSCountSaysNonePendingAndAnUnreadableSnapshotSaysSo() throws {
         try hygiene("laps-pending-rotations", #"{"totalCount":0}"#)
         try hygiene("api-integrations", #"{"total":"many"}"#)

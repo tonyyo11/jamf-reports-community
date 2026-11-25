@@ -49,7 +49,7 @@ extension ReportEngine {
     /// `max_cache_age_hours`, the summary builder's own rule.
     static func protectSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
-        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168, now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
     ) -> ProtectSummaryFigures? {
         func readable(_ kind: String) -> Bool {
@@ -61,7 +61,7 @@ extension ReportEngine {
         if readable("protect-computers"), !snapshot.unreadableKinds.contains("protect-computers") {
             let stale = hasInventory ? staleInventoryKind(
                 dataDir: dataDir, kinds: [school ? "school-devices" : "computers"],
-                maxCacheAgeHours: maxCacheAgeHours) : nil
+                maxCacheAgeHours: maxCacheAgeHours, now: now) : nil
             if let stale {
                 logMatchLeftOut("Jamf Protect", kind: stale, hours: maxCacheAgeHours, onLine)
             }
@@ -91,12 +91,12 @@ extension ReportEngine {
     /// none is. An absent or unreadable one is left to the match's own loader, which returns
     /// nil for it.
     private static func staleInventoryKind(
-        dataDir: URL, kinds: [String], maxCacheAgeHours: Int
+        dataDir: URL, kinds: [String], maxCacheAgeHours: Int, now: Date
     ) -> String? {
         for kind in kinds {
             do {
                 _ = try latestSnapshotURL(
-                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours, now: now)
             } catch is SnapshotCacheExpired {
                 return kind
             } catch {}
@@ -122,7 +122,7 @@ extension ReportEngine {
     /// near 0 of N.
     static func securityCloudSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
-        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168, now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
     ) -> SecurityCloudSummaryFigures? {
         guard landed.contains(securityRiskKind),
@@ -133,7 +133,8 @@ extension ReportEngine {
             let mobile = MobileFleetService.load(dataDir: dataDir)
             let kinds = ["computers"] + [mobile.inventoryKind].compactMap { $0 }
             if let stale = staleInventoryKind(
-                dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours) {
+                dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours,
+                now: now) {
                 logMatchLeftOut("Security Cloud", kind: stale, hours: maxCacheAgeHours, onLine)
             } else {
                 correlation = SecurityCloudCorrelation.load(
@@ -191,11 +192,11 @@ extension ReportEngine {
             ? nil : protectSummaryFigures(
                 dataDir: dataDir, workspace: workspace, landed: protectKinds,
                 school: environment.isSchool, hasInventory: environment.mdm != nil,
-                maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
+                maxCacheAgeHours: maxCacheAgeHours, now: day, onLine: onLine)
         let securityFigures = securityCloudSummaryFigures(
             dataDir: dataDir, workspace: workspace, landed: landed[.securityCloud] ?? [],
             school: environment.isSchool, hasInventory: environment.mdm != nil,
-            maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
+            maxCacheAgeHours: maxCacheAgeHours, now: day, onLine: onLine)
         // Server health is a Jamf Pro matrix source: School and Protect-only environments run none.
         let serverFigures = environment.jamfPro == nil ? nil : serverHealthSummaryFigures(
             dataDir: dataDir, landed: landed[.jamfPro] ?? [],

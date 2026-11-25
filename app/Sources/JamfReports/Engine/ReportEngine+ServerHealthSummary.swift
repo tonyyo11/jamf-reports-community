@@ -12,7 +12,7 @@ extension ReportEngine {
     ) -> ServerHealthSummaryFigures? {
         func asOf(_ kind: String) -> String? {
             guard let url = try? latestSnapshotURL(
-                kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+                kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours, now: now)
             else { return nil }
             return SummaryJSONParser.dateFormatter.string(
                 from: MSCPChartDataBuilder.dateFromSnapshotFilename(url))
@@ -30,7 +30,9 @@ extension ReportEngine {
             let tokens = EnrollmentTokenSnapshot.load(
                 dataDir: dataDir, warningDays: ManagementHealth.defaultWarningDays, now: now,
                 calendar: calendar).tokens
-            for token in tokens.prefix(maxADEInstances) {
+            // Soonest first, so the cap never drops the token about to expire.
+            let soonest = tokens.sorted { ($0.expiryDay ?? "\u{10FFFF}") < ($1.expiryDay ?? "\u{10FFFF}") }
+            for token in soonest.prefix(maxADEInstances) {
                 // The id comes from a snapshot a peer can write and becomes part of a key.
                 guard let id = token.id, let expires = token.expiryDay, isSafeKeyPart(id)
                 else { continue }

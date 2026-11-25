@@ -40,15 +40,19 @@ final class ServerHealthSummaryTests: XCTestCase {
             base, to: dir.appendingPathComponent("summary_\(Self.day).json"), onLine: nil)
     }
 
+    /// Stamped off the test clock, never the wall clock, since the run's age check uses the run's.
+    private static func stamp(hoursBefore: Double = 0) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: Date.testNoon.addingTimeInterval(-hoursBefore * 3600))
+    }
+
     private func save(_ text: String, _ kind: String, stamp: String? = nil) throws {
-        let dir = try dataDir()
-        if let stamp {
-            let folder = dir.appendingPathComponent(kind, isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try Data(text.utf8).write(to: folder.appendingPathComponent("\(kind)_\(stamp).json"))
-        } else {
-            try ReportEngine.saveSnapshot(data: Data(text.utf8), kind: kind, dataDir: dir)
-        }
+        let folder = try dataDir().appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = "\(kind)_\(stamp ?? Self.stamp()).json"
+        try Data(text.utf8).write(to: folder.appendingPathComponent(name))
     }
 
     /// A CA expiring `days` after `Date.testNoon`, as the reduction saves it.
@@ -96,6 +100,52 @@ final class ServerHealthSummaryTests: XCTestCase {
         try writeMDMSummary()
         try finalize(landed: [.jamfPro: ["computers"]])
         XCTAssertNil(try summary().serverCredentialExpiries)
+    }
+
+    func testTheAgeCheckUsesTheRunClockNotTheWallClock() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        // 10 hours old on the run's clock, months old on the wall clock.
+        try ca(days: 40, stamp: Self.stamp(hoursBefore: 10))
+        try finalize(landed: [.jamfPro: ["computers"]], maxAge: 24)
+        XCTAssertNotNil(try summary().serverCredentialExpiries?["ca"])
+        // 30 hours old on the run's clock is past a 24-hour limit.
+        try FileManager.default.removeItem(
+            at: try dataDir().appendingPathComponent("certificate-authority"))
+        try ca(days: 40, stamp: Self.stamp(hoursBefore: 30))
+        try FileManager.default.removeItem(at: try WorkspacePaths.summariesDir(for: ws))
+        try writeMDMSummary()
+        try finalize(landed: [.jamfPro: ["computers"]], maxAge: 24)
+        XCTAssertNil(try summary().serverCredentialExpiries)
+    }
+
+    func testTheSoonestADETokenSurvivesTheCapWhateverTheFileOrder() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        var rows = (1...25).map {
+            #"{"id":"t\#($0)","tokenExpirationDate":"2028-01-\#(String(format: "%02d", $0))"}"#
+        }
+        rows.append(#"{"id":"soon","tokenExpirationDate":"2026-07-01"}"#)
+        try save("[" + rows.joined(separator: ",") + "]", "device-enrollment-instances")
+        try finalize(landed: [.jamfPro: ["device-enrollment-instances"]])
+        let keys = try XCTUnwrap(try summary().serverCredentialExpiries)
+        XCTAssertEqual(keys.count, 20)
+        XCTAssertNotNil(keys["ade:soon"])
+    }
+
+    func testARebuildThatMeasuresOnlyTheCAKeepsTheEarlierADEEntries() {
+        let older = DailySummary(
+            date: Self.day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli",
+            serverCredentialExpiries: [
+                "ca": .init(expires: "2027-01-01T00:00:00Z", asOf: Self.day),
+                "ade:1": .init(expires: "2027-03-01", asOf: Self.day)])
+        let merged = older.withEnvironment(products: nil, protect: nil, serverHealth: .init(
+            expiries: ["ca": .init(expires: "2027-02-01T00:00:00Z", asOf: Self.day)],
+            notificationCount: nil))
+        XCTAssertEqual(merged.serverCredentialExpiries?["ade:1"]?.expires, "2027-03-01")
+        XCTAssertEqual(merged.serverCredentialExpiries?["ca"]?.expires, "2027-02-01T00:00:00Z")
     }
 
     func testNothingLandedStillWritesExpiriesFromTheNewestSnapshot() throws {

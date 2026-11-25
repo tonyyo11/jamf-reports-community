@@ -575,6 +575,18 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         XCTAssertEqual(hits.first?.message, "ADE token expired 3 days ago", "kind only, no ID")
     }
 
+    func testTwoRulesAndOneExpiredCredentialGiveOneExpiredLine() {
+        let rules = [below45, AlertRule(
+            metric: "server_credential_days_left", when: "below", threshold: 10)]
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: rules, current: credentialSummary(["ca": (-3, "")]), now: now)
+        XCTAssertEqual(hits.map(\.credentialState), ["expired"])
+        // A live credential inside both thresholds still hits once per rule.
+        let live = MetricAlertEvaluator.evaluateCredentials(
+            rules: rules, current: credentialSummary(["ca": (5, "")]), now: now)
+        XCTAssertEqual(live.map(\.credentialState), ["hit", "hit"])
+    }
+
     func testTheKeyCarriesTheExpiryAndStateSoARenewalIsANewKey() {
         let old = MetricAlertEvaluator.evaluateCredentials(
             rules: [below45], current: credentialSummary(["ca": (40, "")]), now: now)[0]

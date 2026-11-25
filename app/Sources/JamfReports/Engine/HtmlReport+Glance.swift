@@ -242,12 +242,13 @@ extension HtmlReport {
         if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
             items.append((token, nil))
         }
-        // ADE tokens are stated once, by the sentence above.
         let credentials = inputs.serverHealth?.expiringCredentials ?? []
-        for credential in credentials where credential.key != "ade" {
+        for credential in credentials {
             items.append((Self.credentialSentence(credential), nil))
         }
-        if let figure = inputs.serverHealth?.notificationFigure?.value, figure.total > 0 {
+        // A figure no longer measured is not a current warning; the tab says "as of".
+        if let (figure, stale) = inputs.serverHealth?.notificationFigure, stale == nil,
+           figure.total > 0 {
             items.append((Self.notificationsSentence(figure), nil))
         }
         let p0 = inputs.p0 ?? 0

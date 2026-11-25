@@ -199,6 +199,8 @@ enum MetricAlertEvaluator {
     ) -> [MetricAlertHit] {
         let entries = (current.serverCredentialExpiries ?? [:]).sorted { $0.key < $1.key }
         var hits: [MetricAlertHit] = []
+        // An expired credential is one line however many rules cover it.
+        var expiredSeen: Set<String> = []
         for rule in rules where rule.resolvedMetric == .serverCredentialDaysLeft {
             guard rule.resolvedComparison == .below, let threshold = rule.threshold else { continue }
             for (key, entry) in entries {
@@ -210,6 +212,7 @@ enum MetricAlertEvaluator {
                 }
                 let expired = credential.state == .expired
                 guard expired || Double(left) < threshold else { continue }
+                if expired, !expiredSeen.insert("\(key)|\(entry.expires)").inserted { continue }
                 hits.append(MetricAlertHit(
                     metricLabel: AlertMetric.serverCredentialDaysLeft.label,
                     ruleDescription: "below \(trim(threshold))",
@@ -226,8 +229,6 @@ enum MetricAlertEvaluator {
     static func credentialName(_ key: String) -> String {
         switch key.split(separator: ":").first.map(String.init) ?? key {
         case "ca": return "Built-in CA"
-        case "sso": return "SSO certificate"
-        case "vpp": return "Volume purchasing token"
         case "ade": return "ADE token"
         default: return "Server credential"
         }

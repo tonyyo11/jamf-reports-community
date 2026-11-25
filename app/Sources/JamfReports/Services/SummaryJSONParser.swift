@@ -266,7 +266,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
             resolved.securityCloudMatched = securityCloud.matched
             resolved.securityCloudRiskCounts = securityCloud.riskCounts
         }
-        if let expiries = serverHealth?.expiries { resolved.serverCredentialExpiries = expiries }
+        if let expiries = serverHealth?.expiries {
+            resolved.serverCredentialExpiries = (resolved.serverCredentialExpiries ?? [:])
+                .merging(expiries) { $1 }
+        }
         if let count = serverHealth?.notificationCount { resolved.jamfProNotificationCount = count }
         if let count = serverHealth?.lapsPendingCount { resolved.lapsPendingCount = count }
         return resolved

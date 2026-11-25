@@ -88,9 +88,16 @@ extension CoreDashboard {
         var row = start
         ws.write("Notifications", row: row, col: 0, format: .header)
         row += 1
-        guard let (figure, _) = health.notificationFigure else {
+        guard let (figure, stale) = health.notificationFigure else {
             ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .yellow)
             return row + 1
+        }
+        // A kind that has failed since: the figure is the last one landed, not today's.
+        if let stale {
+            ws.write(
+                "As of \(ServerHealth.day(stale)), no longer measured", row: row, col: 0,
+                format: .yellow)
+            row += 1
         }
         for (col, header) in ["Type", "Count"].enumerated() {
             ws.write(header, row: row, col: col, format: .header)
@@ -117,7 +124,7 @@ extension CoreDashboard {
     private func writeCredentialRow(
         _ ws: Worksheet, _ row: ServerHealth.CredentialRow, row line: Int
     ) {
-        guard case .value(.credential(let credential), _) = row.fact else {
+        guard case .value(.credential(let credential), let stale) = row.fact else {
             ws.write(row.label, row: line, col: 0, format: .cell)
             ws.write(ServerHealth.text(for: row.fact), row: line, col: 3, format: .yellow)
             return
@@ -127,7 +134,9 @@ extension CoreDashboard {
         ws.write(row.label, row: line, col: 0, format: format)
         ws.write(ServerHealth.expiryDay(credential) ?? "", row: line, col: 1, format: format)
         if let left = credential.daysLeft { ws.write(left, row: line, col: 2, format: format) }
-        ws.write(ManagementReport.stateText(credential.state), row: line, col: 3, format: format)
+        let state = ManagementReport.stateText(credential.state)
+        let note = stale.map { " (as of \(ServerHealth.day($0)), no longer measured)" } ?? ""
+        ws.write(state + note, row: line, col: 3, format: format)
         if let asOf = row.asOf {
             ws.write(ISO8601Time.string(asOf), row: line, col: 4, format: .cell)
         }

@@ -5233,7 +5233,8 @@ struct ReportEngine: Sendable {
     static func latestSnapshotURL(
         kind: String,
         dataDir: URL,
-        maxCacheAgeHours: Int = 0
+        maxCacheAgeHours: Int = 0,
+        now: Date = Date()
     ) throws -> URL {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
@@ -5263,7 +5264,7 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.snapshotParseError(kind)
         }
         if maxCacheAgeHours > 0 {
-            let ageHours = Int(Date().timeIntervalSince(snapshotDate(url)) / 3600)
+            let ageHours = Int(now.timeIntervalSince(snapshotDate(url)) / 3600)
             if ageHours > maxCacheAgeHours {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }

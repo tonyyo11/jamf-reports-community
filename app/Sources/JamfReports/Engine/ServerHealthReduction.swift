@@ -22,12 +22,17 @@ enum ServerHealthReduction {
     /// `{notAfter}` as epoch seconds; `{}` when the answer carries none (read as "expiry not
     /// reported"). One object, or a list of one.
     private static func certificateAuthority(_ object: Any) -> Data? {
-        let row = (object as? [String: Any]) ?? (ReportEngine.listRows(of: object)?.first
-            as? [String: Any])
+        // An envelope with no `notAfter` of its own may hold the row in `results`.
+        let dict = object as? [String: Any]
+        let row = dict.flatMap { $0["notAfter"] != nil ? $0 : nil }
+            ?? (ReportEngine.listRows(of: object)?.first as? [String: Any]) ?? dict
         guard let row else { return nil }
         var kept: [String: Any] = [:]
         if let number = row["notAfter"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
             kept["notAfter"] = number
+        } else if let text = row["notAfter"] as? String,
+                  CredentialExpiry.parse(text) != nil {
+            kept["notAfter"] = text
         }
         return try? JSONSerialization.data(withJSONObject: kept)
     }
@@ -51,8 +56,8 @@ extension ServerHealthReduction {
     /// `{totalCount}`: the rotations waiting, from the envelope's own count or its rows.
     fileprivate static func lapsPending(_ object: Any) -> Data? {
         let count = int((object as? [String: Any])?["totalCount"])
-            ?? (object as? [String: Any]).flatMap { ($0["results"] as? [Any])?.count }
-        guard let count, count >= 0 else { return nil }
+            ?? ReportEngine.listRows(of: object)?.count
+        guard let count else { return nil }
         return try? JSONSerialization.data(withJSONObject: ["totalCount": count])
     }
 
@@ -105,11 +110,7 @@ extension ServerHealthReduction {
         return formatter.date(from: text)
     }
 
-    private static func int(_ value: Any?) -> Int? {
-        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID()
-        else { return nil }
-        return number.intValue
-    }
+    private static func int(_ value: Any?) -> Int? { wholeCount(value) }
 
     private static func bool(_ value: Any?) -> Bool? {
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID()

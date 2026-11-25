@@ -185,11 +185,7 @@ struct ServerHealth: Sendable, Equatable {
 
     private static func hygieneFact(kind: String, object: Any) -> Fact? {
         guard let counts = object as? [String: Any] else { return nil }
-        func count(_ key: String) -> Int? {
-            guard let number = counts[key] as? NSNumber,
-                  CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-            return number.intValue
-        }
+        func count(_ key: String) -> Int? { wholeCount(counts[key]) }
         switch kind {
         case lapsKind: return count("totalCount").map(Fact.lapsPending)
         case accountsKind:
@@ -319,5 +315,5 @@ extension ServerHealth {
         }
     }
 
-    private static func day(_ date: Date) -> String { String(ISO8601Time.string(date).prefix(10)) }
+    static func day(_ date: Date) -> String { String(ISO8601Time.string(date).prefix(10)) }
 }

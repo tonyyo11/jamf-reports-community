@@ -43,6 +43,30 @@ final class ServerHealthReductionTests: XCTestCase {
         }
     }
 
+    func testTheCAReadsAnEnvelopeRowAndKeepsATextExpiry() throws {
+        let envelope = Data(#"{"results":[{"notAfter":1893456000}]}"#.utf8)
+        XCTAssertEqual(try reduced("certificate-authority", envelope)?["notAfter"] as? Int,
+                       1_893_456_000)
+        let text = Data(#"{"notAfter":"2030-01-01T00:00:00Z"}"#.utf8)
+        XCTAssertEqual(try reduced("certificate-authority", text)?["notAfter"] as? String,
+                       "2030-01-01T00:00:00Z")
+    }
+
+    func testLAPSFallsBackToTheRowsOfABareListOrNull() throws {
+        XCTAssertEqual(try reduced("laps-pending-rotations", Data("[{},{}]".utf8))?["totalCount"]
+            as? Int, 2)
+        XCTAssertEqual(try reduced("laps-pending-rotations", Data("null".utf8))?["totalCount"]
+            as? Int, 0)
+        XCTAssertEqual(try reduced("laps-pending-rotations", Data("[]".utf8))?["totalCount"]
+            as? Int, 0)
+        XCTAssertNil(ServerHealthReduction.reduce(
+            kind: "laps-pending-rotations", payload: Data("-3".utf8)))
+        XCTAssertNil(ServerHealthReduction.reduce(
+            kind: "laps-pending-rotations", payload: Data(#"{"totalCount":-3}"#.utf8)))
+        XCTAssertNil(ServerHealthReduction.reduce(
+            kind: "laps-pending-rotations", payload: Data(#"{"totalCount":2.7}"#.utf8)))
+    }
+
     func testNotificationsKeepOnlyTheTypeOfEachRow() throws {
         let out = try XCTUnwrap(ServerHealthReduction.reduce(
             kind: "jamf-pro-notifications",
@@ -215,7 +239,8 @@ final class ServerHealthReductionTests: XCTestCase {
                        fixture("laps-pending-rotations-list.json")), ["totalCount": 2])
         XCTAssertEqual(try counts("laps-pending-rotations", Data(#"{"results":[1,2,3]}"#.utf8)),
                        ["totalCount": 3])
-        for bad in ["[]", "\"x\"", #"{"totalCount":"2"}"#, #"{"totalCount":-1}"#, "{}"] {
+        // A bare list or null counts its rows, so `[]` is a measured zero (see the fallback test).
+        for bad in ["\"x\"", #"{"totalCount":"2"}"#, #"{"totalCount":-1}"#, "{}"] {
             XCTAssertNil(ServerHealthReduction.reduce(
                 kind: "laps-pending-rotations", payload: Data(bad.utf8), now: now), bad)
         }
@@ -254,5 +279,29 @@ final class ServerHealthReductionTests: XCTestCase {
         let laps = try XCTUnwrap(JSONSerialization.jsonObject(
             with: fixture("laps-pending-rotations-list.json")) as? [String: Any])
         XCTAssertEqual(Set(laps.keys), ["totalCount", "results"])
+    }
+
+    func testAMalformedAccountsPayloadIsNotSavedAndRecordsAFailure() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shr-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let store = StateFileStore(directory: dataDir.appendingPathComponent("state"))
+        final class Lines: @unchecked Sendable {
+            let lock = NSLock()
+            var texts: [String] = []
+            func add(_ line: CLIBridge.LogLine) { lock.lock(); texts.append(line.text); lock.unlock() }
+        }
+        let lines = Lines()
+        let kind = ServerHealth.accountsKind
+        let result = try ReportEngine.saveCollectedPayload(
+            kind: kind, data: Data(#"{"oops":true}"#.utf8),
+            outcome: ReportEngine.CollectOutcome(kind: kind, exitCode: 0),
+            isPartialFailure: false, dataDir: dataDir, recordManifest: false,
+            stateStore: store, collectStart: Date(), onLine: lines.add)
+        XCTAssertFalse(result.saved)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent(kind).path))
+        XCTAssertNotNil(store.failures(report: kind), "a failure is recorded")
+        XCTAssertTrue(lines.texts.contains { $0.contains("unexpected payload shape") })
     }
 }

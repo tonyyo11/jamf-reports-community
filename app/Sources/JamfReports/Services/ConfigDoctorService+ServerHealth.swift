@@ -23,13 +23,26 @@ extension ConfigDoctorService {
         )]
     }
 
+    /// The refusals of the default sources and of the opt-in ones still switched on.
+    static func standingRefusals(
+        _ refused: [String: FailureCause], optedIn: Set<String>
+    ) -> [String: FailureCause] {
+        let allowed = ReportEngine.serverHealthKinds
+            .subtracting(ReportEngine.serverHealthOptInKinds).union(optedIn)
+        return refused.filter { allowed.contains($0.key) }
+    }
+
     /// Reads the state folder only; a Jamf School or Protect-only workspace runs none of them.
     static func serverHealthRows(profile: String, config: ReportConfig) -> [DoctorRow] {
         let environment = EnvironmentProfiles.resolve(config: config, workspace: profile)
         guard !environment.isProtectOnly,
               ProfileProductType.detect(from: config, profile: profile).type == .jamfPro
         else { return [] }
-        return serverHealthRows(refused: StateFileStore.advisoryCauses(profile: profile))
+        // A refusal recorded while an opt-in source was on says nothing once it is switched off.
+        let optedIn = SharedConfigPin.collectOptIn(
+            configured: config.jamfCli?.collectOptIn, profile: profile)
+        return serverHealthRows(refused: standingRefusals(
+            StateFileStore.advisoryCauses(profile: profile), optedIn: optedIn))
             + optInRows(profile: profile, config: config)
     }
 
