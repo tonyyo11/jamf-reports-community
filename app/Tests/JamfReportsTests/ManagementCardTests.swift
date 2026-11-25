@@ -261,9 +261,6 @@ final class ManagementDisplayValueTests: XCTestCase {
         XCTAssertEqual(ManagementDetail.statusValue("NOT_COLLECTED"), "Not collected")
         XCTAssertEqual(ManagementDetail.statusValue("JSMITH"), "JSMITH", "a name in capitals")
         XCTAssertEqual(ManagementDetail.statusValue("FINANCE"), "FINANCE")
-        XCTAssertEqual(ManagementDetail.wrappable("InstallEnterpriseApplication"),
-                       "Install\u{200B}Enterprise\u{200B}Application")
-        XCTAssertEqual(ManagementDetail.wrappable("MDM, DeviceLock"), "MDM, Device\u{200B}Lock")
     }
 
     func testTimestampTextKeepsWhatItCannotParse() {

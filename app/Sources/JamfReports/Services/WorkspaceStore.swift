@@ -115,6 +115,25 @@ final class WorkspaceStore {
     /// That setup's flow while its tab is not shown, by `ContentView`'s onboarding run, so
     /// leaving the tab and coming back keeps what Start over has to remove.
     @ObservationIgnored var parkedOnboarding: (run: Int, flow: OnboardingFlow)?
+
+    /// The flow parked for `run`, removed from the store; a flow parked for another run is
+    /// dropped, since that run has ended.
+    func takeParkedOnboarding(run: Int?) -> OnboardingFlow? {
+        defer { parkedOnboarding = nil }
+        guard let run, let parked = parkedOnboarding, parked.run == run else { return nil }
+        return parked.flow
+    }
+
+    /// Parks a run that has saved something or is running a command (which may save a profile
+    /// after the tab is gone), and keeps the Add sheet refused while it is parked.
+    func leaveOnboarding(run: Int?, flow: OnboardingFlow) {
+        if let run, flow.parksWhenLeft {
+            parkedOnboarding = (run, flow)
+            onboardingRunHasWork = true
+        } else {
+            onboardingRunHasWork = false
+        }
+    }
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.

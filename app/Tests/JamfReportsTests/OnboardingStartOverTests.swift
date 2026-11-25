@@ -88,6 +88,28 @@ final class OnboardingStartOverTests: XCTestCase {
         XCTAssertTrue(flow.parksWhenLeft)
     }
 
+    func testALeftRunIsParkedRestoredOnceAndDroppedForANewRun() throws {
+        let store = WorkspaceStore(demoMode: true)
+        let idle = try makeFlow()
+        store.leaveOnboarding(run: 1, flow: idle)
+        XCTAssertNil(store.parkedOnboarding, "a run with nothing to keep is dropped")
+        XCTAssertFalse(store.onboardingRunHasWork)
+
+        let busy = try makeFlow()
+        busy.isRegisteringProfile = true
+        store.leaveOnboarding(run: 1, flow: busy)
+        XCTAssertTrue(store.onboardingRunHasWork, "a running command may save a profile")
+        XCTAssertTrue(store.takeParkedOnboarding(run: 1) === busy)
+        XCTAssertNil(store.takeParkedOnboarding(run: 1), "a parked flow is taken once")
+
+        let worked = try makeFlow()
+        worked.noteCreatedProfile("acme")
+        store.leaveOnboarding(run: 1, flow: worked)
+        XCTAssertNil(store.takeParkedOnboarding(run: 2), "a new run never adopts the old flow")
+        XCTAssertNil(store.parkedOnboarding)
+        XCTAssertNil(store.takeParkedOnboarding(run: nil))
+    }
+
     func testCreateWorkspaceLeavesAFolderThatExistedUnrecorded() throws {
         try FileManager.default.createDirectory(
             at: workspace("acme"), withIntermediateDirectories: true)

@@ -387,7 +387,8 @@ enum LaunchAgentService {
         guard let dir = try? WorkspacePaths.runHistoryDir(for: profile),
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
         else { return nil }
-        // The stamp sorts as text.
+        // The stamp sorts as text. `parseLogTail` reads through `BoundedFile.readTail`, which
+        // refuses a link or anything but a regular file at the name.
         return names
             .filter { ScheduledRunRecorder.isLogName($0, of: label) }
             .max()

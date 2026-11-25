@@ -29,22 +29,8 @@ enum ManagementDetail {
     private static let statusWords: Set<String> = [
         "ENABLED", "DISABLED", "PENDING", "ACTIVE", "INACTIVE", "UNKNOWN", "NONE", "COMPLETE",
         "COMPLETED", "FAILED", "ERROR", "ENCRYPTED", "UNENCRYPTED", "ESCROWED", "SUPPORTED",
-        "UNSUPPORTED", "ALLOWED", "DENIED", "TRUE", "FALSE", "YES", "NO",
+        "UNSUPPORTED", "ALLOWED", "DENIED", "TRUE", "FALSE",
     ]
-
-    /// Lets a long run-together name such as `InstallEnterpriseApplication` wrap between its
-    /// words instead of mid-word, by a zero-width space before each inner capital. Screen only,
-    /// and only where the text is not selectable.
-    static func wrappable(_ text: String) -> String {
-        var out = ""
-        var previous: Character?
-        for character in text {
-            if let previous, previous.isLowercase, character.isUppercase { out.append("\u{200B}") }
-            out.append(character)
-            previous = character
-        }
-        return out
-    }
 
     static func rows(
         _ facts: ManagementFacts, now: Date, calendar: Calendar = .current

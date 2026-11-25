@@ -45,10 +45,7 @@ struct OnboardingView: View {
         // The jamf-cli probe waits on child processes, so it starts here and runs off the main
         // actor, never from `OnboardingFlow.init()` while this view is being built.
         .onAppear {
-            if let run, let parked = workspaceStore.parkedOnboarding, parked.run == run {
-                flow = parked.flow
-            }
-            workspaceStore.parkedOnboarding = nil
+            if let parked = workspaceStore.takeParkedOnboarding(run: run) { flow = parked }
             // A command that was running when the tab was left may have saved something since.
             workspaceStore.onboardingRunHasWork = flow.startOverRemovesSomething
         }
@@ -58,11 +55,7 @@ struct OnboardingView: View {
         // offers Start over; the Add sheet stays refused meanwhile.
         .onDisappear { [flow, workspaceStore, run] in
             flow.clearAllSecrets()
-            if let run, flow.parksWhenLeft {
-                workspaceStore.parkedOnboarding = (run, flow)
-            } else {
-                workspaceStore.onboardingRunHasWork = false
-            }
+            workspaceStore.leaveOnboarding(run: run, flow: flow)
         }
         .onChange(of: flow.startOverRemovesSomething) { _, hasWork in
             workspaceStore.onboardingRunHasWork = hasWork
@@ -1106,6 +1099,7 @@ struct OnboardingView: View {
                     flow = OnboardingFlow()
                     workspaceStore.onboardingRunHasWork = false
                     workspaceStore.reloadFromDisk()
+                    await flow.refreshJamfCLIStatus()
                 }
             } else {
                 flow.lastError = problems.joined(separator: "\n")
