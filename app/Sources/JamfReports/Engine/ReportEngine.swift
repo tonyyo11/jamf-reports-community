@@ -3736,8 +3736,11 @@ struct ReportEngine: Sendable {
             guard let definitions = try? JSONSerialization.jsonObject(with: data)
                     as? [[String: Any]]
             else { continue }
-            versionRows[titleId] = PatchReleaseDateService.versionRows(
+            // Definitions with no usable version are not an answer of "no versions": the
+            // title keeps its earlier rows. Only a literal `[]` is.
+            let rows = PatchReleaseDateService.versionRows(
                 fromDefinitions: definitions, titleId: titleId, title: patchItem.title)
+            if definitions.isEmpty || !rows.isEmpty { versionRows[titleId] = rows }
             let (version, releaseDate) = PatchReleaseDateService.latestDefinitionDate(
                 definitions: definitions, latestVersion: patchItem.latest)
             guard !releaseDate.isEmpty else { continue }

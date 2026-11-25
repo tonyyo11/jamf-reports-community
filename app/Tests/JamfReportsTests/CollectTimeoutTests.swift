@@ -330,6 +330,18 @@ final class CollectTimeoutTests: XCTestCase {
         XCTAssertNil(rows.first { $0.titleId == "4" }?.staleSince)
     }
 
+    func testDefinitionsWithNoUsableVersionCarryTheEarlierRows() async throws {
+        _ = try await runDefinitionWalk(Self.oneDefinition)
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+        _ = try await runDefinitionWalk(
+            #"printf '%s' '[{"version":" ","releaseDate":"2026-01-01T00:00:00Z"}]'; exit 0"#)
+        let rows = try JSONDecoder().decode(
+            [PatchVersionDate].self, from: try XCTUnwrap(try newestVersionDates()).data)
+        XCTAssertFalse(rows.contains { $0.noVersions == true }, "Jamf did list definitions")
+        XCTAssertEqual(rows.first { $0.titleId == "1" }?.version, "1.0")
+        XCTAssertNotNil(rows.first { $0.titleId == "1" }?.staleSince)
+    }
+
     func testAStoppedWalkLeavesTheSidecarAsItWas() async throws {
         _ = try await runDefinitionWalk(Self.oneDefinition)
         let before = try XCTUnwrap(try newestVersionDates())

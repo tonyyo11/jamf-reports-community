@@ -119,7 +119,17 @@ enum PatchVelocityBuilder {
         let lookup = PatchReleaseDateService.releaseDateLookup(
             releaseRows: releaseRows, dataDir: dataDir, versionDates: versionDates, now: now)
         let allVersions = versions(days: daily, lookup: lookup)
+        // The latest window counts only when it is the version Jamf named on the newest day
+        // that named one; when that version has no points, the whole series stands.
+        var newestNamed: [String: String] = [:]
+        for day in daily.sorted(by: { $0.date < $1.date }) {
+            for row in day.rows {
+                let latest = row.latest.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !latest.isEmpty { newestNamed[row.id] = latest }
+            }
+        }
         let latestWindows = latestWindowByTitle(allVersions)
+            .filter { newestNamed[$0.key] == $0.value.version }
 
         let velocities: [TitleVelocity] = byTitle.values.map { acc in
             let adoptionPct = acc.series.last?.adoptionPct
@@ -316,14 +326,14 @@ enum PatchVelocityBuilder {
     /// Jamf named on the newest day with a non-blank `latest`.
     static func latestWindowByTitle(
         _ versions: [VersionVelocity]
-    ) -> [String: (window: VersionWindow, releaseDate: Date?)] {
-        var latest: [String: (window: VersionWindow, releaseDate: Date?)] = [:]
+    ) -> [String: (window: VersionWindow, releaseDate: Date?, version: String)] {
+        var latest: [String: (window: VersionWindow, releaseDate: Date?, version: String)] = [:]
         for version in versions {
             for window in version.windows {
                 if let seen = latest[version.titleId], seen.window.start >= window.start {
                     continue
                 }
-                latest[version.titleId] = (window, version.releaseDate)
+                latest[version.titleId] = (window, version.releaseDate, version.version)
             }
         }
         return latest

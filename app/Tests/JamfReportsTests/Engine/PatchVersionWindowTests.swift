@@ -131,6 +131,33 @@ final class PatchVersionWindowTests: XCTestCase {
         XCTAssertEqual(latest?.window.start, day(2))
     }
 
+    /// When the newest named version has no measured day, its window is dropped and Patch
+    /// Velocity falls back to the whole series rather than reporting the older version's.
+    func testComputeIgnoresAnOlderVersionsWindowWhenTheNewestHasNoPoints() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pvn-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = dir.appendingPathComponent("patch-status")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for (offset, latest, on, total) in [(0, "A", 10, 100), (1, "A", 95, 100), (2, "B", 0, 0)] {
+            let json = #"[{"title":"T","id":"1","on_latest":\#(on),"on_other":0,"#
+                + #""total":\#(total),"latest":"\#(latest)","compliance_pct":""}]"#
+            try Data(json.utf8).write(to: folder.appendingPathComponent(
+                "patch-status_\(formatter.string(from: day(offset))).json"))
+        }
+        let release = PatchReleaseDateService.Row(
+            titleId: "1", title: "T", latestVersion: "A",
+            releaseDate: ISO8601DateFormatter().string(from: day(0)))
+        let velocity = try XCTUnwrap(PatchVelocityBuilder.computeWithVersions(
+            dataDir: dir, releaseRows: [release], now: day(5)).velocities.first)
+        // The whole series (A's two days) against the title's newest release row: 1 day to 90%.
+        XCTAssertEqual(velocity.daysTo90, 1)
+        XCTAssertEqual(velocity.releaseDate, day(0))
+    }
+
     /// Patch Velocity reads its days-to figures from the latest window, so the velocity card
     /// and Version History agree.
     func testComputeMatchesTheLatestWindow() throws {

@@ -250,13 +250,16 @@ extension PatchReleaseDateService {
     ) -> ReleaseDateLookup {
         var versionRows: [PatchVersionDate] = []
         if case .rows(let rows, _, _) = read { versionRows = rows }
-        // The walk lands this file on every collect; the newest `releaseFileDays` of them cover
-        // the 90-day fleet figure and long windows, and the sidecar dates older versions.
+        // The walk lands this file on every collect; the newest of each local day over the last
+        // `releaseFileDays` cover the 90-day fleet figure and long windows at any collect rate,
+        // and the sidecar dates older versions.
         let since = now.addingTimeInterval(-Double(releaseFileDays) * 86_400)
-        let files = TrendStore.datedSnapshots(of: "patch-release-dates", in: dataDir)
-            .filter { $0.date >= since }
-            .reversed()
-            .map { load(from: $0.url) }
+        var newestPerDay: [Date: URL] = [:]
+        for file in TrendStore.datedSnapshots(of: "patch-release-dates", in: dataDir)
+        where file.date >= since {
+            newestPerDay[Calendar.current.startOfDay(for: file.date)] = file.url  // ascending
+        }
+        let files = newestPerDay.sorted { $0.key > $1.key }.map { load(from: $0.value) }
         return ReleaseDateLookup(
             versionRows: versionRows, releaseFilesNewestFirst: [releaseRows] + files)
     }

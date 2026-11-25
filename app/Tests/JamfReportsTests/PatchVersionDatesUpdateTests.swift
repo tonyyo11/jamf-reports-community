@@ -246,6 +246,44 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
         XCTAssertNil(today.versions.first?.releaseDate, "past the cap from today")
     }
 
+    /// Only the newest release-date file of each local day is read.
+    func testOnlyTheNewestFileOfEachDayIsRead() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("perday-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let morning = Calendar.current.startOfDay(for: now).addingTimeInterval(-86_400 + 3_600)
+        try ReportEngine.writePatchReleaseDates(
+            [["title_id": "1", "title": "T", "latest_version": "0.9",
+              "release_date": "2026-01-01T00:00:00Z"]],
+            stamp: stamp(morning), dataDir: dir)
+        try ReportEngine.writePatchReleaseDates(
+            [["title_id": "1", "title": "T", "latest_version": "1.0",
+              "release_date": "2026-02-01T00:00:00Z"]],
+            stamp: stamp(morning.addingTimeInterval(3_600)), dataDir: dir)
+        let lookup = PatchReleaseDateService.releaseDateLookup(
+            releaseRows: [], dataDir: dir, versionDates: .absent, now: now)
+        XCTAssertNotNil(lookup.date(titleId: "1", title: "T", version: "1.0"))
+        XCTAssertNil(lookup.date(titleId: "1", title: "T", version: "0.9"),
+                     "the earlier file of the same day is not read")
+    }
+
+    func testACarriedRowIsUsedWhenNothingElseDatesTheVersion() {
+        var carried = row("1", "1.0", order: "0", date: "2026-01-01T00:00:00Z")
+        carried.staleSince = "20260101T000000"
+        let lookup = ReleaseDateLookup(versionRows: [carried], releaseFilesNewestFirst: [])
+        XCTAssertEqual(lookup.date(titleId: "1", title: "Title 1", version: "1.0"),
+                       SOFAFeedService.parseSOFADate("2026-01-01T00:00:00Z"))
+    }
+
+    func testTheTitleLevelDateIsTheNewestFilesRowWhateverItsVersion() {
+        let released = PatchReleaseDateService.Row(
+            titleId: "1", title: "T", latestVersion: "1.0.0", releaseDate: "2026-03-01T00:00:00Z")
+        let lookup = ReleaseDateLookup(versionRows: [], releaseFilesNewestFirst: [[released]])
+        XCTAssertNil(lookup.date(titleId: "1", title: "T", version: "1.0"))
+        XCTAssertEqual(lookup.latestReleaseDate(titleId: "1", title: "T"),
+                       SOFAFeedService.parseSOFADate("2026-03-01T00:00:00Z"))
+    }
+
     func testTheNewestReleaseFileWins() {
         let newer = PatchReleaseDateService.Row(titleId: "1", title: "T", latestVersion: "1.0",
                                                 releaseDate: "2026-03-01T00:00:00Z")
