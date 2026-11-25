@@ -13060,6 +13060,46 @@
         }
       }
     },
+    "%lld days to 90%%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Tage bis 90 %%"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld días hasta el 90 %%"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld jours jusqu’à 90 %%"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld giorni fino al 90%%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90%%まで%lld日"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld dias até 90%%"
+          }
+        }
+      }
+    },
     "%lld days, since grace_days is a whole number from 0 to 365" : {
       "localizations" : {
         "de" : {
@@ -22286,6 +22326,46 @@
         }
       }
     },
+    "1 day to 90%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Tag bis 90 %"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 día hasta el 90 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 jour jusqu’à 90 %"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 giorno fino al 90%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90%まで1日"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 dia até 90%"
+          }
+        }
+      }
+    },
     "1 family" : {
       "localizations" : {
         "de" : {
@@ -29404,6 +29484,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos · %lld"
+          }
+        }
+      }
+    },
+    "Already at 90%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereits bei 90 %"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya al 90 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déjà à 90 %"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Già al 90%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すでに90%"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Já em 90%"
           }
         }
       }
@@ -50933,6 +51053,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Data da última atualização de software"
+          }
+        }
+      }
+    },
+    "Dates from %@; this title did not answer since." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten vom %@; dieser Titel hat seitdem nicht geantwortet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fechas del %@; este título no ha respondido desde entonces."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dates du %@ ; ce titre n’a pas répondu depuis."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date del %@; questo titolo non ha più risposto da allora."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@時点の日付です。このタイトルはそれ以降応答していません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datas de %@; este título não respondeu desde então."
           }
         }
       }
@@ -74385,6 +74545,46 @@
         }
       }
     },
+    "Jamf lists no versions for this title." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf listet für diesen Titel keine Versionen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf no muestra ninguna versión para este título."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf ne liste aucune version pour ce titre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf non elenca alcuna versione per questo titolo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamfはこのタイトルのバージョンを表示していません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Jamf não lista nenhuma versão para este título."
+          }
+        }
+      }
+    },
     "JamfReports is not allowed to run in the background" : {
       "localizations" : {
         "de" : {
@@ -74902,6 +75102,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rótulo de %@"
+          }
+        }
+      }
+    },
+    "Last 90 days: %lld windows reached 90%%, too few for a median." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 90 Tage: %lld Zeiträume erreichten 90 %%, zu wenige für einen Median."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 días: %lld periodos llegaron al 90 %%, demasiado pocos para una mediana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 derniers jours : %lld périodes ont atteint 90 %%, trop peu pour une médiane."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimi 90 giorni: %lld periodi hanno raggiunto il 90%%, troppo pochi per una mediana."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去90日間：90%%に達した期間は%lld件で、中央値を出すには足りません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 dias: %lld períodos atingiram 90%%, poucos demais para uma mediana."
+          }
+        }
+      }
+    },
+    "Last 90 days: 1 window reached 90%, too few for a median." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 90 Tage: 1 Zeitraum erreichte 90 %, zu wenige für einen Median."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 días: 1 periodo llegó al 90 %, demasiado pocos para una mediana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 derniers jours : 1 période a atteint 90 %, trop peu pour une médiane."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimi 90 giorni: 1 periodo ha raggiunto il 90%, troppo pochi per una mediana."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去90日間：90%に達した期間は1件で、中央値を出すには足りません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 dias: 1 período atingiu 90%, poucos demais para uma mediana."
+          }
+        }
+      }
+    },
+    "Last 90 days: median %lld days from release to 90%%, 90th percentile %lld, over %lld windows." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte 90 Tage: Median %1$lld Tage von der Veröffentlichung bis 90 %%, 90. Perzentil %2$lld, über %3$lld Zeiträume."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last 90 days: median %1$lld days from release to 90%%, 90th percentile %2$lld, over %3$lld windows."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 días: mediana de %1$lld días desde la publicación hasta el 90 %%, percentil 90 de %2$lld, en %3$lld periodos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 derniers jours : médiane de %1$lld jours entre la publication et 90 %%, 90e centile %2$lld, sur %3$lld périodes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimi 90 giorni: mediana di %1$lld giorni dal rilascio al 90%%, 90° percentile %2$lld, su %3$lld periodi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "過去90日間：リリースから90%%までの中央値は%1$lld日、90パーセンタイルは%2$lld日（%3$lld件の期間）。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Últimos 90 dias: mediana de %1$lld dias do lançamento até 90%%, percentil 90 de %2$lld, em %3$lld períodos."
           }
         }
       }
@@ -77792,6 +78118,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Carregando histórico de tendências…"
+          }
+        }
+      }
+    },
+    "Loading version history…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionsverlauf wird geladen…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando el historial de versiones…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chargement de l’historique des versions…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caricamento della cronologia versioni…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン履歴を読み込み中…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carregando o histórico de versões…"
           }
         }
       }
@@ -83112,6 +83478,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nunca sincronizado"
+          }
+        }
+      }
+    },
+    "Never the latest in this history" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In diesem Verlauf nie die neueste"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca fue la más reciente en este historial"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamais la plus récente dans cet historique"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mai la più recente in questa cronologia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この履歴では最新になったことがありません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca foi a mais recente neste histórico"
           }
         }
       }
@@ -90865,6 +91271,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ainda não"
+          }
+        }
+      }
+    },
+    "Not yet at 90%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht bei 90 %"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no al 90 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas encore à 90 %"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non ancora al 90%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ90%未満"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ainda não em 90%"
           }
         }
       }
@@ -103052,6 +103498,46 @@
         }
       }
     },
+    "Reached 90%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 % erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llegó al 90 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 % atteint"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raggiunto il 90%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90%に到達"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atingiu 90%"
+          }
+        }
+      }
+    },
     "Read only. Lists the settings no screen in the app edits. Reload re-reads this list; the other tabs keep what they loaded." : {
       "localizations" : {
         "de" : {
@@ -105029,6 +105515,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A versão %@ não publica um arquivo de checksums; instalação do recurso não verificado recusada."
+          }
+        }
+      }
+    },
+    "Release dates could not be read." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Veröffentlichungsdaten konnten nicht gelesen werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han podido leer las fechas de publicación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les dates de publication n’ont pas pu être lues."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere le date di rilascio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リリース日を読み取れませんでした。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler as datas de lançamento."
+          }
+        }
+      }
+    },
+    "Release dates not read for this title." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veröffentlichungsdaten für diesen Titel nicht gelesen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han leído las fechas de publicación de este título."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dates de publication non lues pour ce titre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date di rilascio non lette per questo titolo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このタイトルのリリース日はまだ読み取られていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datas de lançamento não lidas para este título."
+          }
+        }
+      }
+    },
+    "Release dates not read yet: the patch definitions have not been collected." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veröffentlichungsdaten noch nicht gelesen: Die Patch-Definitionen wurden nicht erfasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se han leído las fechas de publicación: no se han recopilado las definiciones de parches."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dates de publication pas encore lues : les définitions de correctifs n’ont pas été collectées."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date di rilascio non ancora lette: le definizioni delle patch non sono state raccolte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リリース日はまだ読み取られていません：パッチ定義が収集されていません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datas de lançamento ainda não lidas: as definições de patch não foram coletadas."
           }
         }
       }
@@ -124004,6 +124610,92 @@
         }
       }
     },
+    "Superseded before 90%" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor 90 % ersetzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazada antes del 90 %"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacée avant 90 %"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sostituita prima del 90%"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90%前に置き換え"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substituída antes de 90%"
+          }
+        }
+      }
+    },
+    "Superseded before 90%%: %lld · Not yet at 90%%: %lld · Already at 90%% when first seen: %lld · No release date: %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor 90 %% ersetzt: %1$lld · Noch nicht bei 90 %%: %2$lld · Beim ersten Erfassen bereits bei 90 %%: %3$lld · Ohne Veröffentlichungsdatum: %4$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Superseded before 90%%: %1$lld · Not yet at 90%%: %2$lld · Already at 90%% when first seen: %3$lld · No release date: %4$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazadas antes del 90 %%: %1$lld · Aún no al 90 %%: %2$lld · Ya al 90 %% al detectarse: %3$lld · Sin fecha de publicación: %4$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacées avant 90 %% : %1$lld · Pas encore à 90 %% : %2$lld · Déjà à 90 %% au premier relevé : %3$lld · Sans date de publication : %4$lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sostituite prima del 90%%: %1$lld · Non ancora al 90%%: %2$lld · Già al 90%% alla prima rilevazione: %3$lld · Senza data di rilascio: %4$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90%%前に置き換え：%1$lld · まだ90%%未満：%2$lld · 初回時点で90%%：%3$lld · リリース日なし：%4$lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substituídas antes de 90%%: %1$lld · Ainda não em 90%%: %2$lld · Já em 90%% ao aparecer: %3$lld · Sem data de lançamento: %4$lld"
+          }
+        }
+      }
+    },
     "Supervised" : {
       "localizations" : {
         "de" : {
@@ -125687,6 +126379,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Os %lld Macs que fizeram check-in mais recentemente"
+          }
+        }
+      }
+    },
+    "The 100 newest versions." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die 100 neuesten Versionen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las 100 versiones más recientes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les 100 versions les plus récentes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le 100 versioni più recenti."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新の100件のバージョン。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As 100 versões mais recentes."
           }
         }
       }
@@ -137717,6 +138449,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Versão %@"
+          }
+        }
+      }
+    },
+    "Version History" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionsverlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial de versiones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique des versions"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cronologia versioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン履歴"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Histórico de versões"
+          }
+        }
+      }
+    },
+    "Version history appears after a few days of collected patch history." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Versionsverlauf erscheint nach einigen Tagen erfasster Patch-Daten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El historial de versiones aparece tras unos días de historial de parches recopilado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique des versions apparaît après quelques jours d’historique de correctifs collecté."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cronologia versioni compare dopo alcuni giorni di cronologia delle patch raccolta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン履歴は、パッチ履歴を数日分収集すると表示されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O histórico de versões aparece após alguns dias de histórico de patches coletado."
           }
         }
       }

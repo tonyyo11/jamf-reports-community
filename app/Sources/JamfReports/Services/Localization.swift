@@ -31,6 +31,8 @@ private let shownKeys = [
     LK("Managed"), LK("Unmanaged"), LK("Stale"), LK("Devices"), LK("Name"), LK("Platform API"),
     LK("Other sources"), LK("Up"), LK("Down"), LK("Flat"), LK("Stable"), LK("Supervised"),
     LK("Unsupervised"), LK("Unknown"), LK("CSV folder"),
+    // Patch version window outcomes (`VersionWindow.Outcome`), English in the reports.
+    LK("Reached 90%"), LK("Already at 90%"), LK("Superseded before 90%"), LK("Not yet at 90%"),
     // Report templates: reports print these in English, so they stay English on the template.
     LK("Full Instance Report"),
     LK("Complete instance report with every available section — all sheets, all HTML sections, full detail."),

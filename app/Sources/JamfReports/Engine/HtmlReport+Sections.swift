@@ -349,6 +349,49 @@ extension HtmlReport {
                 rows: tableRows, expanded: expandAll)))
     }
 
+    // MARK: - patchVersionHistory
+
+    /// The fleet figure for the last 90 days, then the windows that reached 90% in the period,
+    /// slowest first. A missing or unreadable release-dates file is named, never shown as
+    /// counts; the section is left out only when the file was read and no window reached 90%.
+    func buildPatchVersionHistory(
+        _ versions: [VersionVelocity], dates: VersionDatesRead
+    ) -> HtmlBlock {
+        guard !versions.isEmpty else { return .omitted("no patch-status history") }
+        let now = Date()
+        let summary = PatchVelocityBuilder.summary(versions, now: now)
+        var note = ""
+        switch dates {
+        case .absent:
+            note = "Release dates not read: the patch definitions have not been collected yet."
+        case .unreadable: note = "Release dates could not be read."
+        case .rows:
+            guard summary.crossed + summary.noReleaseDate > 0 else {
+                return .omitted("no version window reached 90% in the last 90 days")
+            }
+        }
+        let since = now.addingTimeInterval(-90 * 86_400)
+        let slow = versions.flatMap { version in
+            version.windows.compactMap { window -> (VersionVelocity, Int)? in
+                guard window.outcome == .crossed, let days = window.daysTo90,
+                      let crossed = window.crossedAt90, crossed >= since else { return nil }
+                return (version, days)
+            }
+        }
+        .sorted { $0.1 > $1.1 }
+        let lines = ([note].filter { !$0.isEmpty } + CoreDashboard.fleetVersionLines(summary))
+            .map { "<p>\(HtmlSectionFormatters.escapeHTML($0))</p>" }
+            .joined()
+        // The house capped table shows ten, then "Show all"; a PDF (`expandAll`) prints all.
+        let table = slow.isEmpty ? "" : "<h3>Slowest to 90% in the last 90 days "
+            + "(\(slow.count))</h3>"
+            + HtmlSectionFormatters.renderCappedTable(
+                headers: ["Title", "Version", "Days to 90%"],
+                rows: slow.map { [$0.0.title, $0.0.version, "\($0.1)"] }, expanded: expandAll)
+        return .shown(HtmlSectionFormatters.block(
+            id: "patch-version-history", title: "Patch version history", body: lines + table))
+    }
+
     // MARK: - auditEvidence
 
     /// Audit findings grouped by severity. A finding is `{name, category, severity, affected,

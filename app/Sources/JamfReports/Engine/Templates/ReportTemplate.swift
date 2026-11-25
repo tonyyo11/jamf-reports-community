@@ -43,6 +43,7 @@ enum SheetID: String, Sendable, CaseIterable {
     case smartGroups         = "Smart Groups"
     case patchSummaryDashboard = "Patch Summary Dashboard"
     case patchVelocity       = "Patch Velocity"
+    case patchVersionHistory = "Patch Version History"
     // Device security & supervision detail
     case deviceSecurityState = "Device Security State"
     case mobileSupervisionStatus = "Mobile Supervision Status"
@@ -97,6 +98,8 @@ enum SectionID: String, Sendable, CaseIterable {
     case recentFailures  = "recent_failures"
     case interventionList = "intervention_list"
     case patchQueue      = "patch_queue"
+    /// Each version's adoption window and days to 90% across titles (`patch-status` history).
+    case patchVersionHistory = "patch_version_history"
     case purchaseCohorts = "purchase_cohorts"
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"

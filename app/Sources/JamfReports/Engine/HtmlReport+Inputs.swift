@@ -39,6 +39,8 @@ extension HtmlReport {
         /// `computers list`, with building and department names filled from their snapshots.
         var computers: [[String: Any]] = []
         var patchFailures: [[String: Any]] = []
+        var patchVersions: [VersionVelocity] = []
+        var patchVersionDates: VersionDatesRead = .absent
         var updateFailures: [[String: Any]] = []
         var auditFindings: [[String: Any]] = []
         var eaRows: [EAResultRow]?
@@ -148,6 +150,12 @@ extension HtmlReport {
                 label: "Daily summaries", kind: "snapshots/summaries", date: latest.parsedDate))
         }
         if sections.contains(.orgInfo) { inputs.catalogCounts = catalogCounts() }
+        if sections.contains(.patchVersionHistory) {
+            let history = PatchVelocityBuilder.computeWithVersions(
+                dataDir: dataDir, releaseRows: PatchReleaseDateService.load(dataDir: dataDir))
+            inputs.patchVersions = history.versions
+            inputs.patchVersionDates = history.versionDates
+        }
         if sections.contains(.mobileFleet) {
             let mobile = MobileFleetService.load(dataDir: dataDir)
             inputs.mobile = mobile
