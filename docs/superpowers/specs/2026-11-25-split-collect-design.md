@@ -460,7 +460,8 @@ lock time that keeps a server busy past the operators' working day opens the Q1 
 *   **Pros**: Fresher tiles and alerts mid-day from small calls.
 *   **Cons**: Adds lock time on every fleet to fix a cost no one has reported; the 2026-11-16
     concern was lock contention.
-*   **Reason for Rejection**: Rejected by author (decision 1).
+*   **Reason for Rejection**: Rejected by author (decision 1) for this step. Tony later took it back
+    as wave D's follow-up step D2 (see Follow-ups).
 
 ### Alternative G: Store progress in the workspace (like `device-scan.round`)
 
@@ -519,6 +520,21 @@ lock time that keeps a server busy past the operators' working day opens the Q1 
 *   Shared workspace: continuations take the claim with `checkFreshness: false`; activity is stamped
     when the day's plan is done; a peer continues after the starting Mac's claim expires.
 *   A floor between continuations, if Q1 shows server load.
+
+## Follow-ups
+
+*   **D2: micro-refresh (epic #421 "Micro-refresh").** Tony, 2026-11-25: "add the micro-refresh
+    items to wave D later". It starts after this PR is reviewed and stacked, and has its own spec.
+    *   Light fleet-level sources run between the daily collects.
+    *   Configurable from the Automation screen and from config: on or off, the interval, and
+        which sources run. Off by default.
+    *   The same honesty rules as any collect: the tick lock, timeouts, standing down on a shared
+        workspace, no `[partial]` for a skipped source, and a Data Freshness cadence of its own.
+    *   Candidate sources: `pro inventory-information list` (the subcommand is `list`, not `get`),
+        `pro health-check health-status`, and wave A's notifications, LAPS pending and push
+        status. The row shapes of the first two were captured on 2026-11-25 in the planning
+        session's notes (`2-13-0-pr-reviews/captured-shapes-2026-11-25.md`). Check them again
+        when D2 starts.
 
 --------------------------------------------------------------------------------
 
