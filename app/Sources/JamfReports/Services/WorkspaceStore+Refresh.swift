@@ -776,7 +776,9 @@ extension WorkspaceStore {
             skippedSides: fleet.skipped,
             serverHealthSupported: JamfCLIInstaller.supportsServerHealth(jamfCLIVersion),
             workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
-            advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys)
+            advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys),
+            optIn: SharedConfigPin.collectOptIn(
+                configured: config?.jamfCli?.collectOptIn, profile: profile)
         )
     }
 

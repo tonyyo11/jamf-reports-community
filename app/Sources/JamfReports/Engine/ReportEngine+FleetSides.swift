@@ -125,6 +125,7 @@ extension ReportEngine {
         "classic-computer-groups": .mac, "duplicate-serials": .mac,
         "certificate-authority": .both,
         "jamf-pro-notifications": .both,
+        "laps-pending-rotations": .both, "admin-accounts": .both, "api-integrations": .both,
         ddmDeviceStatusKind: .mac, mdmCommandHealthKind: .mac,
     ]
 

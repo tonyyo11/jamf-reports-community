@@ -116,7 +116,10 @@ final class CollectSourcesPlanTests: XCTestCase {
     func testATenantLevelProfileSkipsTheEnvironmentLevelReports() {
         let skipped = plan(auth: "platform", tenantLevel: true).sources
             .filter { $0.skipReason != nil }.map(\.kind)
-        XCTAssertEqual(Set(skipped), ReportEngine.environmentLevelKinds)
+        // The admin-hygiene sources are skipped too: they are off until opted in.
+        XCTAssertEqual(
+            Set(skipped),
+            ReportEngine.environmentLevelKinds.union(ReportEngine.serverHealthOptInKinds))
     }
 
     func testProtectIsListedOnlyWhenConnected() {
@@ -218,5 +221,43 @@ final class CollectSourcesPlanTests: XCTestCase {
             resolve: { _ in XCTFail("School never resolves the slot"); return nil })
         XCTAssertEqual(routed.auth?.authMethod, "apikey")
         XCTAssertNil(routed.unavailable)
+    }
+
+    func testAdminHygieneRowsAreOffUntilOptedInAndCarryTheirSwitch() {
+        func state(_ kind: String, optIn: [String] = [], drifted: Bool = false)
+            -> (reason: String?, control: Plan.SourceSwitch, changed: Bool) {
+            var inputs = Plan.Inputs(product: .jamfPro, profile: "prod")
+            inputs.installedVersion = "1.38.0"
+            inputs.optInList = optIn
+            inputs.optInDrifted = drifted
+            let built = Plan.build(inputs)
+            let source = built.sources.first { $0.kind == kind }!
+            let switchState = built.switchState(for: source)
+            return (source.skipReason, switchState.control, switchState.changedOnAnotherMac)
+        }
+        for kind in ReportEngine.serverHealthOptInKinds.sorted() {
+            let off = state(kind)
+            XCTAssertEqual(off.reason, "off until turned on (jamf_cli.collect_opt_in)", kind)
+            XCTAssertEqual(off.control, .optIn(on: false), kind)
+            let on = state(kind, optIn: [kind])
+            XCTAssertNil(on.reason, kind)
+            XCTAssertEqual(on.control, .optIn(on: true), kind)
+            XCTAssertTrue(state(kind, drifted: true).changed, "a peer's addition waits")
+        }
+        XCTAssertFalse(state("certificate-authority", drifted: true).changed)
+        XCTAssertEqual(state("certificate-authority").control, .on)
+        var drifted = Plan.Inputs(product: .jamfPro, profile: "prod")
+        drifted.optInDrifted = true
+        XCTAssertTrue(Plan.build(drifted).changedOnAnotherMac)
+    }
+
+    func testAnUnsupportedJamfCLIIsTheReasonShownEvenForAnOptInSource() {
+        var inputs = Plan.Inputs(product: .jamfPro, profile: "prod")
+        inputs.installedVersion = "1.37.0"
+        let built = Plan.build(inputs)
+        let source = built.sources.first { $0.kind == "admin-accounts" }!
+        XCTAssertEqual(source.skipReason, "needs jamf-cli 1.38.0 or later")
+        XCTAssertEqual(built.switchState(for: source).control, .optIn(on: false),
+                       "the switch stays so it can be turned on once jamf-cli is current")
     }
 }

@@ -136,7 +136,11 @@ extension HtmlReport {
             now: Date())
         inputs.enrollmentTokens = EnrollmentTokenSnapshot.load(
             dataDir: dataDir, warningDays: warningDays)
-        inputs.serverHealth = ServerHealth.load(dataDir: dataDir, warningDays: warningDays)
+        let optIn = workspace.map {
+            SharedConfigPin.collectOptIn(configured: config.jamfCli?.collectOptIn, profile: $0.name)
+        } ?? []
+        inputs.serverHealth = ServerHealth.load(
+            dataDir: dataDir, warningDays: warningDays, optIn: optIn)
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),

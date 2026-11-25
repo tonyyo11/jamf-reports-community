@@ -199,4 +199,58 @@ final class ServerHealthTests: XCTestCase {
                        .notPermitted([]))
         XCTAssertEqual(try notifications(#"{"other":1}"#).notifications, .unreadable)
     }
+
+    // MARK: - Admin hygiene (opt-in)
+
+    private func hygiene(_ kind: String, _ json: String) throws {
+        let folder = dir.appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try json.write(to: folder.appendingPathComponent("\(kind)_20260921T120000.json"),
+                       atomically: true, encoding: .utf8)
+    }
+
+    func testAnOptedInSourceReadsItsCountsAndAnotherIsHidden() throws {
+        try hygiene("laps-pending-rotations", #"{"totalCount":3}"#)
+        try hygiene("admin-accounts", #"{"total":4,"fullAccessLocal":1,"fullAccessFederated":0,"#
+            + #""withFailedLogins":2,"passwordOlderThanYear":1,"passwordAgeUnknown":0}"#)
+        let none = ServerHealth.load(dataDir: dir, warningDays: 90, now: now)
+        XCTAssertTrue(none.adminHygiene.isEmpty, "opted out: the snapshot on disk is not shown")
+        XCTAssertFalse(none.hasAttempt)
+        let health = ServerHealth.load(
+            dataDir: dir, warningDays: 90, now: now,
+            optIn: ["laps-pending-rotations", "admin-accounts", "api-integrations"])
+        XCTAssertEqual(health.adminHygiene.map(\.kind),
+                       ["laps-pending-rotations", "admin-accounts", "api-integrations"])
+        XCTAssertEqual(health.lapsPendingFigure, 3)
+        XCTAssertTrue(health.hasAttempt)
+        guard case .value(.accounts(let accounts), _) = health.adminHygiene[1].fact else {
+            return XCTFail("expected accounts")
+        }
+        XCTAssertEqual(accounts.withFailedLogins, 2)
+        XCTAssertEqual(health.adminHygiene[2].fact, .notCollected, "listed, never attempted")
+        XCTAssertEqual(ServerHealth.text(for: health.adminHygiene[0].fact), "3")
+        XCTAssertEqual(
+            ServerHealth.text(for: health.adminHygiene[1].fact),
+            "Total: 4 · Full access, local: 1 · Full access, federated: 0 · With failed logins: 2"
+                + " · Password over a year old: 1 · Password age unknown: 0")
+    }
+
+    func testAZeroLAPSCountSaysNonePendingAndAnUnreadableSnapshotSaysSo() throws {
+        try hygiene("laps-pending-rotations", #"{"totalCount":0}"#)
+        try hygiene("api-integrations", #"{"total":"many"}"#)
+        let health = ServerHealth.load(
+            dataDir: dir, warningDays: 90, now: now,
+            optIn: ["laps-pending-rotations", "api-integrations"])
+        XCTAssertEqual(ServerHealth.text(for: health.adminHygiene[0].fact), "None pending")
+        XCTAssertEqual(health.adminHygiene[1].fact, .unreadable)
+    }
+
+    func testARefusedOptInSourceIsAdviceNotAFailure() throws {
+        store.record(.failed(exitCode: 5), report: "laps-pending-rotations", at: now,
+                     cause: FailureCause(kind: .missingPermission,
+                                         names: ["View Local Admin Password"], hint: nil, exitCode: 5))
+        let health = ServerHealth.load(
+            dataDir: dir, warningDays: 90, now: now, optIn: ["laps-pending-rotations"])
+        XCTAssertEqual(health.adminHygiene[0].fact, .notPermitted(["View Local Admin Password"]))
+    }
 }

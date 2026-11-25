@@ -65,6 +65,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     /// `jamf_cli.collect_skip` as every typed name, normalized, sorted and comma-joined; narrowed
     /// to the optional kinds only when read, so a change to the kinds or the core set is no drift.
     var collectSkip: String = ""
+    /// `jamf_cli.collect_opt_in` in the same form. Pinned as the CONFIRMED set: a source is on
+    /// only while the file lists it and this holds it, so an addition waits for a Confirm.
+    var collectOptIn: String = ""
 
     /// One pinned key, named as it is written in config.yaml.
     enum Key: String, CaseIterable, Sendable {
@@ -90,6 +93,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case keepAccountNames = "jamf_cli.keep_account_names"
         case timestampAuthority = "output.timestamp_authority"
         case collectSkip = "jamf_cli.collect_skip"
+        case collectOptIn = "jamf_cli.collect_opt_in"
 
         /// `text(of:)` with everything a comparison needs: a URL's full hash.
         fileprivate func token(of pin: SharedConfigPin) -> String {
@@ -135,6 +139,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .proBackupOnSyncedStorage: String(pin.proBackupOnSyncedStorage)
             case .keepAccountNames: String(pin.keepAccountNames)
             case .collectSkip: pin.collectSkip
+            case .collectOptIn: pin.collectOptIn
             case .notifyURL: Self.urlText(pin.notifyURLHost, pin.notifyURLHash)
             case .timestampAuthority:
                 Self.urlText(pin.timestampAuthorityHost, pin.timestampAuthorityHash)
@@ -170,6 +175,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 pin.proBackupOnSyncedStorage = source.proBackupOnSyncedStorage
             case .keepAccountNames: pin.keepAccountNames = source.keepAccountNames
             case .collectSkip: pin.collectSkip = source.collectSkip
+            case .collectOptIn: pin.collectOptIn = source.collectOptIn
             case .notifyURL:
                 pin.notifyURLHost = source.notifyURLHost
                 pin.notifyURLHash = source.notifyURLHash
@@ -227,6 +233,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         current: SharedConfigPin, workspace: URL, profile: String
     ) -> SharedConfigPin {
         var pin = current
+        // Nothing is opted in until a Confirm, whatever the shared file already lists.
+        pin.collectOptIn = ""
         pin.pinnedKeys = Key.allCases.map(\.rawValue)
         pin.unconfirmed = unconfirmedKeys(
             current: current, workspace: workspace, profile: profile,
@@ -258,6 +266,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         if current.protectBackupOnSyncedStorage { waiting.append(.protectBackupOnSyncedStorage) }
         if current.proBackupOnSyncedStorage { waiting.append(.proBackupOnSyncedStorage) }
         if current.keepAccountNames { waiting.append(.keepAccountNames) }
+        if !current.collectOptIn.isEmpty { waiting.append(.collectOptIn) }
         // An address this Mac would send to is never taken on first sight.
         if !current.timestampAuthorityHash.isEmpty { waiting.append(.timestampAuthority) }
         // D18: a Platform profile other than the workspace's own is held until confirmed.
@@ -291,6 +300,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             upgraded.collectSkip = collectSkipText(
                 collectSkipNames(current.collectSkip).filter(legacyCollectSkipKinds.contains))
         }
+        if missing.contains(.collectOptIn) { upgraded.collectOptIn = "" }
         upgraded.unconfirmed += unconfirmedKeys(
             current: current, workspace: workspace, profile: profile, among: missing
         ).map(\.rawValue)
@@ -365,11 +375,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 .trimmingCharacters(in: .whitespaces),
             securityCloudProfile: (ConfigLoader.textValue(securityCloudProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces),
-            collectSkip: collectSkipText(raw("jamf_cli", "collect_skip"))
+            collectSkip: collectSkipText(raw("jamf_cli", "collect_skip")),
+            collectOptIn: collectSkipText(raw("jamf_cli", "collect_opt_in"))
         )
     }
 
-    /// The pinned form of a `collect_skip` value: every typed name normalized, sorted, joined.
+    /// The pinned form of a `collect_skip` or `collect_opt_in` value: every typed name
+    /// normalized, sorted, joined.
     static func collectSkipText(_ raw: Any?) -> String {
         let names = (raw as? [Any])?.compactMap { $0 as? String } ?? []
         return Set(names.map(ReportEngine.normalizedKind).filter { !$0.isEmpty })
@@ -532,8 +544,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     }
 
     /// Re-pins the opt-ins (`protect.backup_on_synced_storage`, `backup.pro_on_synced_storage`,
-    /// `jamf_cli.keep_account_names`) to false when config.yaml no longer says true: moving to
-    /// the safe value needs no Confirm, and a later true is then drift again.
+    /// `jamf_cli.keep_account_names`) to false when config.yaml no longer says true, and drops
+    /// from `collect_opt_in` what the file no longer lists: moving to the safe value needs no
+    /// Confirm, and a later true is then drift again.
     private static func repinningBackupOptOuts(
         _ pin: inout SharedConfigPin, current: SharedConfigPin
     ) -> Bool {
@@ -543,6 +556,18 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             (.keepAccountNames, \.keepAccountNames),
         ]
         var changed = false
+        // A removal from collect_opt_in leaves the confirmed set at once, with no Confirm; an
+        // addition stays drift. A first-sight hold ends when nothing is listed any more.
+        let listed = Set(collectSkipNames(current.collectOptIn))
+        let kept = collectSkipNames(pin.collectOptIn).filter(listed.contains)
+        if kept != collectSkipNames(pin.collectOptIn) {
+            pin.collectOptIn = kept.joined(separator: ", ")
+            changed = true
+        }
+        if current.collectOptIn.isEmpty, pin.unconfirmed.contains(Key.collectOptIn.rawValue) {
+            pin.unconfirmed.removeAll { $0 == Key.collectOptIn.rawValue }
+            changed = true
+        }
         for (key, field) in optIns {
             guard !current[keyPath: field],
                   pin[keyPath: field] || pin.unconfirmed.contains(key.rawValue) else { continue }
@@ -934,6 +959,43 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                 pin.collectSkip)
     }
 
+    /// `jamf_cli.collect_opt_in` as the list this Mac may collect by: the sources the file lists
+    /// AND this Mac confirmed. On a local workspace the file's list. `drifted` is a listed
+    /// source awaiting a Confirm (another Mac added it); `pinnedText` is nil when not pinned.
+    static func collectOptInList(
+        configured: [String]?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> (effective: [String], drifted: Bool, pinnedText: String?) {
+        let listed = collectSkipNames(collectSkipText(configured ?? []))
+        let result = check(profile: profile, appSupport: appSupport)
+        if result.isLocal { return (listed, false, nil) }
+        guard let pin = result.pinned ?? read(profile: profile, appSupport: appSupport).pin else {
+            return ([], true, "")
+        }
+        let confirmed = Set(collectSkipNames(pin.collectOptIn))
+        return (listed.filter(confirmed.contains), result.isDrifted(.collectOptIn),
+                pin.collectOptIn)
+    }
+
+    /// The opt-in sources this Mac collects, narrowed to the ones that exist.
+    static func collectOptIn(
+        configured: [String]?, profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Set<String> {
+        ReportEngine.listedOptInKinds(
+            collectOptInList(configured: configured, profile: profile, appSupport: appSupport)
+                .effective)
+    }
+
+    /// `collectOptIn` for a screen that holds only the workspace's name.
+    static func collectOptIn(
+        profile: String, appSupport: URL = AppSupport.directory()
+    ) -> Set<String> {
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        return collectOptIn(
+            configured: config?.jamfCli?.collectOptIn, profile: profile, appSupport: appSupport)
+    }
+
     /// The kinds `collect_skip` turns off on this Mac (`collectSkipList`, then the dependents).
     static func collectSkip(
         configured: [String]?, profile: String, protectOnly: Bool = false,
@@ -1222,5 +1284,6 @@ extension SharedConfigPin {
         timestampAuthorityHash = try c.decodeIfPresent(
             String.self, forKey: .timestampAuthorityHash) ?? ""
         collectSkip = try c.decodeIfPresent(String.self, forKey: .collectSkip) ?? ""
+        collectOptIn = try c.decodeIfPresent(String.self, forKey: .collectOptIn) ?? ""
     }
 }

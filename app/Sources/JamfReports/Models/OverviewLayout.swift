@@ -286,7 +286,7 @@ extension TrendSeries.Metric {
             L("Needs Jamf Protect collected for this environment.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Needs Jamf Security Cloud collected for this environment.")
-        case .serverCredentialSoonestDays, .jamfProNotifications:
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
             L("Needs the server health sources collected for this Jamf Pro server.")
         }
     }

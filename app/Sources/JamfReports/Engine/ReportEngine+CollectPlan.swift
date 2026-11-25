@@ -29,6 +29,8 @@ extension ReportEngine {
         case notPermitted
         /// The server has the feature unset; checked again weekly.
         case notConfigured
+        /// An admin-hygiene source: collected only when `jamf_cli.collect_opt_in` lists it.
+        case notOptedIn
 
         /// What follows `[skip] <kind>: `; nil when one aggregate line already says it.
         var skipDetail: String? {
@@ -66,6 +68,7 @@ extension ReportEngine {
             case .notPermitted: return "not permitted for this login; checked again weekly"
             case .notConfigured:
                 return "not set up on this Jamf Pro server; checked again weekly"
+            case .notOptedIn: return "off until turned on (jamf_cli.collect_opt_in)"
             }
         }
 
@@ -90,6 +93,7 @@ extension ReportEngine {
             case .serverHealthNotOnGateway: return "Platform API profile"
             case .notPermitted: return "not permitted"
             case .notConfigured: return "not set up"
+            case .notOptedIn: return "not turned on (jamf_cli.collect_opt_in)"
             }
         }
 
@@ -129,6 +133,8 @@ extension ReportEngine {
         var serverHealthSupported = true
         /// The workspace's own profile uses Platform auth, which serves no server-health command.
         var workspaceAuthIsPlatform = false
+        /// The opt-in sources this Mac collects (`SharedConfigPin.collectOptIn`).
+        var optInKinds: Set<String> = []
     }
 
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
@@ -273,6 +279,9 @@ extension ReportEngine {
         if serverHealthKinds.contains(kind) {
             if inputs.workspaceAuthIsPlatform { return .serverHealthNotOnGateway }
             if !inputs.serverHealthSupported { return .serverHealthUnsupported }
+        }
+        if serverHealthOptInKinds.contains(kind), !inputs.optInKinds.contains(kind) {
+            return .notOptedIn
         }
         return nil
     }

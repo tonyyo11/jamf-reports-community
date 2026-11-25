@@ -20,6 +20,13 @@ struct ServerHealthSection: View {
                     if health.notifications != .notCollected {
                         rowView(title: L("Jamf Pro notifications"), fact: health.notifications)
                     }
+                    let hygiene = health.adminHygiene.filter { $0.fact != .notCollected }
+                    if !hygiene.isEmpty {
+                        Text(L("Admin hygiene")).font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .padding(.horizontal, 16).padding(.top, 8)
+                        ForEach(hygiene, id: \.kind) { rowView(title: $0.label, fact: $0.fact) }
+                    }
                     Text(L("ADE tokens: see Management health"))
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))

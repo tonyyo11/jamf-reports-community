@@ -15,6 +15,8 @@ struct ServerHealthSummaryFigures: Equatable, Sendable {
     var expiries: [String: CredentialExpiryEntry]?
     /// Notifications the login sees, set only when the kind landed this run.
     var notificationCount: Int?
+    /// LAPS rotations pending, set only when that opt-in kind landed this run.
+    var lapsPendingCount: Int?
 }
 
 extension DailySummary {

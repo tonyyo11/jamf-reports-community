@@ -43,6 +43,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
     // (`MetricAlertEvaluator.evaluateCredentials`), not through `value(in:)`.
     case serverCredentialDaysLeft = "server_credential_days_left"
     case jamfProNotificationCount = "jamf_pro_notification_count"
+    case lapsPendingCount = "laps_pending_count"
 
     /// Short human label for the alert card (never a percentage sign — the
     /// message string carries units).
@@ -79,6 +80,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .securityCloudHighRiskCount: return "Security Cloud high-risk devices"
         case .serverCredentialDaysLeft: return "Server credential days left"
         case .jamfProNotificationCount: return "Jamf Pro notifications"
+        case .lapsPendingCount: return "LAPS rotations pending"
         }
     }
 
@@ -95,7 +97,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
              .mobileJailbrokenCount, .protectComputerCount, .protectOpenAlertCount,
              .protectHighAlertCount, .securityCloudDeviceCount,
              .securityCloudHighRiskCount, .serverCredentialDaysLeft,
-             .jamfProNotificationCount: return false
+             .jamfProNotificationCount, .lapsPendingCount: return false
         default: return true
         }
     }
@@ -141,6 +143,7 @@ enum AlertMetric: String, CaseIterable, Sendable {
         // Risk counts were recorded and none is HIGH: a real 0.
         case .securityCloudHighRiskCount: return summary.securityCloudHighRiskCount.map(Double.init)
         case .jamfProNotificationCount: return summary.jamfProNotificationCount.map(Double.init)
+        case .lapsPendingCount: return summary.lapsPendingCount.map(Double.init)
         // One value per credential, read by `evaluateCredentials`.
         case .serverCredentialDaysLeft: return nil
         }

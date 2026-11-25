@@ -46,7 +46,9 @@ final class CollectSkipTests: XCTestCase {
         for kind in core { XCTAssertTrue(ReportEngine.isCoreKind(kind), kind) }
         XCTAssertEqual(
             ReportEngine.optionalKinds(),
-            ReportEngine.allSourceKinds.subtracting(core))
+            ReportEngine.allSourceKinds.subtracting(core)
+                .subtracting(ReportEngine.serverHealthOptInKinds),
+            "an opt-in source has no collect_skip switch")
     }
 
     /// Beside an MDM every Protect source is optional; alone, its computer list is the summary.

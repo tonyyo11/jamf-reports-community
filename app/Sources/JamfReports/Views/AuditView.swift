@@ -1204,7 +1204,9 @@ struct AuditView: View {
         managementCard = card
         let health = await Task.detached(priority: .userInitiated) {
             (try? WorkspacePaths.dataDir(for: profile)).map {
-                ServerHealth.load(dataDir: $0, warningDays: warningDays)
+                ServerHealth.load(
+                    dataDir: $0, warningDays: warningDays,
+                    optIn: SharedConfigPin.collectOptIn(profile: profile))
             }
         }.value
         guard !superseded() else { return }

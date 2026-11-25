@@ -8,6 +8,34 @@ struct ServerHealth: Sendable, Equatable {
     enum Fact: Sendable, Equatable {
         case credential(CredentialExpiry)
         case notifications(Notifications)
+        case lapsPending(Int)
+        case accounts(Accounts)
+        case apiClients(APIClients)
+    }
+
+    /// Console accounts as counts, never names (opt-in; the reduction saves nothing else).
+    struct Accounts: Sendable, Equatable {
+        let total: Int
+        let fullAccessLocal: Int
+        let fullAccessFederated: Int
+        let withFailedLogins: Int
+        let passwordOlderThanYear: Int
+        let passwordAgeUnknown: Int
+    }
+
+    /// API clients as counts, never names or client IDs (opt-in).
+    struct APIClients: Sendable, Equatable {
+        let total: Int
+        let disabled: Int
+        let enabledWithTokenOverOneDay: Int
+    }
+
+    /// One opt-in admin-hygiene source: its kind, what it is called on the card and its state.
+    struct HygieneRow: Sendable, Equatable {
+        let kind: String
+        let label: String
+        let fact: FactState
+        var asOf: Date? = nil
     }
 
     /// The notifications this login sees, counted by the type Jamf names. Jamf filters them by
@@ -61,10 +89,21 @@ struct ServerHealth: Sendable, Equatable {
     let credentials: [CredentialRow]
     var notifications: FactState = .notCollected
     var notificationsAsOf: Date? = nil
+    /// The sources turned on in `collect_opt_in`, in card order; empty with none on.
+    var adminHygiene: [HygieneRow] = []
 
     /// True once any source has been attempted, so the card has something to say.
     var hasAttempt: Bool {
         credentials.contains { $0.fact != .notCollected } || notifications != .notCollected
+            || adminHygiene.contains { $0.fact != .notCollected }
+    }
+
+    /// Rotations waiting, when that kind has landed.
+    var lapsPendingFigure: Int? {
+        for row in adminHygiene {
+            if case .value(.lapsPending(let count), _) = row.fact { return count }
+        }
+        return nil
     }
 
     /// The notifications figure, when that kind has landed.
@@ -86,18 +125,36 @@ struct ServerHealth: Sendable, Equatable {
 
     static let caKind = "certificate-authority"
     static let notificationsKind = "jamf-pro-notifications"
+    static let lapsKind = "laps-pending-rotations"
+    static let accountsKind = "admin-accounts"
+    static let apiClientsKind = "api-integrations"
+
+    /// The Data Sources line under an opt-in source: what it needs and why it is off by default.
+    static func optInLabel(_ kind: String) -> String? {
+        switch kind {
+        case lapsKind:
+            L("LAPS rotations pending (needs View Local Admin Password, which can also read LAPS passwords)")
+        case accountsKind: L("Admin accounts (needs Read Accounts; counts only)")
+        case apiClientsKind: L("API clients (needs Read API Integrations; counts only)")
+        default: nil
+        }
+    }
 
     /// What a source is called in a sentence about it.
     static func sourceName(_ kind: String) -> String {
         switch kind {
         case caKind: L("the built-in certificate authority")
         case notificationsKind: L("Jamf Pro notifications")
+        case lapsKind: L("LAPS rotations pending")
+        case accountsKind: L("Admin accounts")
+        case apiClientsKind: L("API clients")
         default: kind
         }
     }
 
     static func load(
-        dataDir: URL, warningDays: Int, now: Date = Date(), calendar: Calendar = .current
+        dataDir: URL, warningDays: Int, now: Date = Date(), calendar: Calendar = .current,
+        optIn: Set<String> = []
     ) -> ServerHealth {
         let (fact, asOf) = loadFact(
             kind: caKind, dataDir: dataDir) { object, landed in
@@ -114,8 +171,43 @@ struct ServerHealth: Sendable, Equatable {
             let types = rows.map { ($0 as? [String: Any])?["type"] as? String }
             return .value(.notifications(Notifications(types: types)), stale: landed)
         }
-        return ServerHealth(
+        var health = ServerHealth(
             credentials: [ca], notifications: notices, notificationsAsOf: noticesAsOf)
+        health.adminHygiene = [lapsKind, accountsKind, apiClientsKind]
+            .filter(optIn.contains).map { kind in
+                let (fact, asOf) = loadFact(kind: kind, dataDir: dataDir) { object, landed in
+                    hygieneFact(kind: kind, object: object).map { .value($0, stale: landed) }
+                }
+                return HygieneRow(kind: kind, label: sourceName(kind), fact: fact, asOf: asOf)
+            }
+        return health
+    }
+
+    private static func hygieneFact(kind: String, object: Any) -> Fact? {
+        guard let counts = object as? [String: Any] else { return nil }
+        func count(_ key: String) -> Int? {
+            guard let number = counts[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            return number.intValue
+        }
+        switch kind {
+        case lapsKind: return count("totalCount").map(Fact.lapsPending)
+        case accountsKind:
+            guard let total = count("total"), let local = count("fullAccessLocal"),
+                  let federated = count("fullAccessFederated"),
+                  let failed = count("withFailedLogins"),
+                  let older = count("passwordOlderThanYear"),
+                  let unknown = count("passwordAgeUnknown") else { return nil }
+            return .accounts(Accounts(
+                total: total, fullAccessLocal: local, fullAccessFederated: federated,
+                withFailedLogins: failed, passwordOlderThanYear: older,
+                passwordAgeUnknown: unknown))
+        default:
+            guard let total = count("total"), let disabled = count("disabled"),
+                  let long = count("enabledWithTokenOverOneDay") else { return nil }
+            return .apiClients(APIClients(
+                total: total, disabled: disabled, enabledWithTokenOverOneDay: long))
+        }
     }
 
     /// The state of one kind from its newest snapshot and its state files. A server that has
@@ -161,10 +253,34 @@ extension ServerHealth {
             switch fact {
             case .credential(let credential): text = credentialText(credential)
             case .notifications(let figure): text = notificationsText(figure)
+            case .lapsPending(let count): text = count == 0 ? L("None pending") : "\(count)"
+            case .accounts, .apiClients: text = figuresText(fact)
             }
             return stale.map { text + " " + L("(as of \(Self.day($0)), no longer measured)") }
                 ?? text
         }
+    }
+
+    /// The labelled counts of an admin-hygiene fact; each label is a whole phrase.
+    static func figures(of fact: Fact) -> [(label: String, count: Int)] {
+        switch fact {
+        case .accounts(let figure):
+            return [(L("Total"), figure.total), (L("Full access, local"), figure.fullAccessLocal),
+                    (L("Full access, federated"), figure.fullAccessFederated),
+                    (L("With failed logins"), figure.withFailedLogins),
+                    (L("Password over a year old"), figure.passwordOlderThanYear),
+                    (L("Password age unknown"), figure.passwordAgeUnknown)]
+        case .apiClients(let figure):
+            return [(L("Total"), figure.total), (L("Disabled"), figure.disabled),
+                    (L("Enabled, token over 1 day"), figure.enabledWithTokenOverOneDay)]
+        case .lapsPending(let count): return [(sourceName(lapsKind), count)]
+        case .credential, .notifications: return []
+        }
+    }
+
+    /// "Total: 12 · Full access, local: 3 · ...".
+    static func figuresText(_ fact: Fact) -> String {
+        figures(of: fact).map { "\($0.label): \($0.count)" }.joined(separator: " · ")
     }
 
     /// "3 (A: 2, B: 1)", the five most common types with "5 of M types" when there are more.

@@ -9,9 +9,11 @@ extension CoreDashboard {
         let now = Date()
         let warningDays = config.thresholds?.resolvedCertWarningDays
             ?? ManagementHealth.defaultWarningDays
-        let health = ServerHealth.load(dataDir: dataDir, warningDays: warningDays, now: now)
+        let health = ServerHealth.load(
+            dataDir: dataDir, warningDays: warningDays, now: now, optIn: optInKinds)
         // A tab of "not permitted" rows would say nothing; the Audit card carries those.
         let landed = health.credentials.map(\.fact) + [health.notifications]
+            + health.adminHygiene.map(\.fact)
         guard landed.contains(where: {
             if case .value = $0 { return true }
             return false
@@ -41,19 +43,54 @@ extension CoreDashboard {
         }
         if health.notifications != .notCollected {
             row += 1
-            writeNotifications(ws, health, row: row)
+            row = writeNotifications(ws, health, row: row)
+        }
+        let hygiene = health.adminHygiene.filter { $0.fact != .notCollected }
+        if !hygiene.isEmpty {
+            row += 1
+            writeAdminHygiene(ws, hygiene, row: row)
+        }
+    }
+
+    /// Counts only, as the opt-in reductions save them: never a name, email or client ID.
+    private func writeAdminHygiene(
+        _ ws: Worksheet, _ rows: [ServerHealth.HygieneRow], row start: Int
+    ) {
+        var row = start
+        ws.write("Admin hygiene", row: row, col: 0, format: .header)
+        row += 1
+        for (col, header) in ["Source", "Figure", "Count"].enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+        for entry in rows {
+            guard case .value(let fact, _) = entry.fact else {
+                ws.write(entry.label, row: row, col: 0, format: .cell)
+                ws.write(ServerHealth.text(for: entry.fact), row: row, col: 1, format: .yellow)
+                row += 1
+                continue
+            }
+            for figure in ServerHealth.figures(of: fact) {
+                ws.write(entry.label, row: row, col: 0, format: .cell)
+                ws.write(figure.label, row: row, col: 1, format: .cell)
+                ws.write(figure.count, row: row, col: 2, format: .cell)
+                row += 1
+            }
         }
     }
 
     /// Notifications by type as Jamf names them; Jamf filters them by user and site, so zero
     /// is what this login sees.
-    private func writeNotifications(_ ws: Worksheet, _ health: ServerHealth, row start: Int) {
+    @discardableResult
+    private func writeNotifications(
+        _ ws: Worksheet, _ health: ServerHealth, row start: Int
+    ) -> Int {
         var row = start
         ws.write("Notifications", row: row, col: 0, format: .header)
         row += 1
         guard let (figure, _) = health.notificationFigure else {
             ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .yellow)
-            return
+            return row + 1
         }
         for (col, header) in ["Type", "Count"].enumerated() {
             ws.write(header, row: row, col: col, format: .header)
@@ -61,7 +98,7 @@ extension CoreDashboard {
         row += 1
         if figure.total == 0 {
             ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .cell)
-            return
+            return row + 1
         }
         for entry in figure.shown {
             ws.write(entry.name, row: row, col: 0, format: .cell)
@@ -72,7 +109,9 @@ extension CoreDashboard {
             ws.write(
                 "\(figure.shown.count) of \(figure.types.count) types", row: row, col: 0,
                 format: .cell)
+            row += 1
         }
+        return row
     }
 
     private func writeCredentialRow(

@@ -265,4 +265,19 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertGreaterThan(byTier[.inventory] ?? 0, 0)
         XCTAssertGreaterThan(byTier[.scan] ?? 0, 0)
     }
+
+    func testTheAdminHygieneSourcesAreInventoryTierAndExpectedOnlyWhenOptedIn() {
+        for kind in ReportEngine.serverHealthOptInKinds {
+            XCTAssertEqual(CollectionTier.tier(forReport: kind), .inventory, kind)
+            XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind), kind)
+            func expected(_ optIn: Set<String>, advisory: Set<String> = []) -> Bool {
+                WorkspaceStore.expectedKinds(
+                    skipExpensive: false, authMethod: "oauth2", serverHealthSupported: true,
+                    advisory: advisory, optIn: optIn).contains(kind)
+            }
+            XCTAssertFalse(expected([]), kind)
+            XCTAssertTrue(expected([kind]), kind)
+            XCTAssertFalse(expected([kind], advisory: [kind]), "a refused source is advice")
+        }
+    }
 }

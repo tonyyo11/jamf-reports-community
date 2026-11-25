@@ -1121,4 +1121,31 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertEqual(rowText(ws, row: 4, columns: 8)[7], "\u{2014}")
         XCTAssertNotEqual(rowText(ws, row: 5, columns: 8)[7], "\u{2014}")
     }
+
+    func testServerAdminHealthWritesAdminHygieneOnlyForOptedInSources() throws {
+        let dataDir = try tempDataDir(copying: [])
+        func save(_ kind: String, _ json: String) throws {
+            let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try json.write(to: folder.appendingPathComponent("\(kind)_20260921T120000.json"),
+                           atomically: true, encoding: .utf8)
+        }
+        try save("jamf-pro-notifications", #"[{"type":"A"}]"#)
+        try save("admin-accounts", #"{"total":4,"fullAccessLocal":1,"fullAccessFederated":2,"#
+            + #""withFailedLogins":0,"passwordOlderThanYear":3,"passwordAgeUnknown":0}"#)
+        func csv(optIn: Set<String>) throws -> String {
+            let workbook = Workbook()
+            try CoreDashboard(
+                config: ReportConfig(), dataDir: dataDir, workbook: workbook, optInKinds: optIn)
+                .writeServerAdminHealth()
+            let sheet = try XCTUnwrap(workbook.sheet(named: "Server and Admin Health"))
+            return try XCTUnwrap(sheet.csvText(percentFormat: .standard))
+        }
+        XCTAssertFalse(try csv(optIn: []).contains("Admin hygiene"))
+        let text = try csv(optIn: ["admin-accounts"])
+        XCTAssertTrue(text.contains("Admin hygiene"), text)
+        XCTAssertTrue(text.contains("Admin accounts,Full access, federated,2")
+            || text.contains("\"Full access, federated\",2"), text)
+        XCTAssertTrue(text.contains("A,1"), "the notifications section above is intact: \(text)")
+    }
 }

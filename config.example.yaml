@@ -122,6 +122,17 @@ jamf_cli:
   # patch-status also stops patch-release-dates and patch-device-failures.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # Admin hygiene counts, off until listed here (or turned on in Data Sources). Each saves
+  # only counts, never a name, email or client ID:
+  #   laps-pending-rotations  LAPS rotations waiting (needs View Local Admin Password, which
+  #                           can also read LAPS passwords)
+  #   admin-accounts          console accounts with full access, failed logins, old passwords
+  #                           (needs Read Accounts)
+  #   api-integrations        API clients, disabled or with a long token (needs Read API
+  #                           Integrations)
+  # On a shared workspace each Mac collects only what it confirmed in Config Doctor.
+  # Example: collect_opt_in: [admin-accounts]
+  collect_opt_in: []
   # How long a scheduled run may hold the lock before it leaves the rest of its sources for
   # its next run (minutes, 10 to 240). Raise it for a slow server.
   run_budget_minutes: 45

@@ -12,12 +12,15 @@ final class CollectPlanTests: XCTestCase {
     private func inputs(
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases), force: Bool = false,
         skipExpensive: Bool = false, nonPlatformAuth: String? = nil, tenantLevel: Bool = false,
-        collectSkip: Set<String> = [], dashboardSupported: Bool = true
+        collectSkip: Set<String> = [], dashboardSupported: Bool = true,
+        optIn: Set<String> = []
     ) -> ReportEngine.CollectPlanInputs {
-        ReportEngine.CollectPlanInputs(
+        var planInputs = ReportEngine.CollectPlanInputs(
             tiers: tiers, force: force, skipExpensive: skipExpensive,
             nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel, collectSkip: collectSkip,
             dashboardSupported: dashboardSupported, installedVersion: "1.29.0", now: now)
+        planInputs.optInKinds = optIn
+        return planInputs
     }
 
     private var matrix: [(args: [String], kind: String)] {
@@ -152,6 +155,30 @@ final class CollectPlanTests: XCTestCase {
                      "only the server-health kinds are affected")
     }
 
+    func testAnOptInSourceRunsOnlyWhenListedAndEveryOtherSkipComesFirst() {
+        func plan(
+            optIn: Set<String> = [], supported: Bool = true, platform: Bool = false
+        ) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(tiers: [.inventory], optIn: optIn)
+            planInputs.serverHealthSupported = supported
+            planInputs.workspaceAuthIsPlatform = platform
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs, lastRun: { _ in nil })
+        }
+        for kind in ReportEngine.serverHealthOptInKinds.sorted() {
+            XCTAssertEqual(skip(kind, in: plan()), .notOptedIn, kind)
+            XCTAssertNil(skip(kind, in: plan(optIn: [kind])), kind)
+            XCTAssertEqual(skip(kind, in: plan(optIn: [kind], supported: false)),
+                           .serverHealthUnsupported, "an unsupported jamf-cli is the first reason")
+            XCTAssertEqual(skip(kind, in: plan(supported: false)), .serverHealthUnsupported)
+            XCTAssertEqual(skip(kind, in: plan(platform: true)), .serverHealthNotOnGateway)
+        }
+        XCTAssertNil(skip("certificate-authority", in: plan()), "the built-in sources need none")
+        XCTAssertEqual(ReportEngine.CollectSkipReason.notOptedIn.planLabel,
+                       "not turned on (jamf_cli.collect_opt_in)")
+        XCTAssertFalse(ReportEngine.CollectSkipReason.notOptedIn.isNotDue)
+    }
+
     func testServerHealthSkipTextsAreTheSpecsAndIsNotDueIsFalse() {
         typealias Reason = ReportEngine.CollectSkipReason
         XCTAssertEqual(Reason.notPermitted.skipDetail,
@@ -274,7 +301,8 @@ final class CollectPlanTests: XCTestCase {
     func testALongListWrapsUnderTheLimitAndLosesNothing() {
         let longProfile = String(repeating: "p", count: 60)
         let plan = ReportEngine.planCollect(
-            commands: matrix, inputs: inputs(), lastRun: { _ in nil })
+            commands: matrix, inputs: inputs(optIn: ReportEngine.serverHealthOptInKinds),
+            lastRun: { _ in nil })
         let lines = ReportEngine.collectPlanLines(
             profile: longProfile, plan: plan, deviceScan: .due)
 

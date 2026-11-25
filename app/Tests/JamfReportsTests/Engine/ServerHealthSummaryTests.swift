@@ -195,4 +195,59 @@ final class ServerHealthSummaryTests: XCTestCase {
             metric: .serverCredentialSoonestDays, values: [-5, 40])
         XCTAssertEqual(domain.lowerBound, -5)
     }
+
+    // MARK: - LAPS (opt-in)
+
+    func testLAPSCountIsWrittenOnlyWhenItsKindLandedThisRun() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        try save(#"{"totalCount":4}"#, "laps-pending-rotations")
+        try finalize(landed: [.jamfPro: ["computers"]])
+        XCTAssertNil(try summary().lapsPendingCount)
+        try finalize(landed: [.jamfPro: ["laps-pending-rotations"]])
+        XCTAssertEqual(try summary().lapsPendingCount, 4)
+        try finalize(landed: [.jamfPro: ["computers"]])
+        XCTAssertEqual(try summary().lapsPendingCount, 4, "an earlier run's count stands")
+        try save(#"{"totalCount":0}"#, "laps-pending-rotations")
+        try finalize(landed: [.jamfPro: ["laps-pending-rotations"]])
+        XCTAssertEqual(try summary().lapsPendingCount, 0, "a measured zero")
+        XCTAssertTrue(try summary().numbersAreInRange)
+    }
+
+    func testAJamfSchoolEnvironmentGetsNoLAPSCount() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        try save(#"{"totalCount":4}"#, "laps-pending-rotations")
+        try finalize("profiles:\n  jamf_school: shsum\n", landed: [.jamfSchool: ["school-devices"]])
+        XCTAssertNil(try summary().lapsPendingCount)
+    }
+
+    func testLAPSMergesAndIsATrendAndAnAlertMetric() {
+        let older = DailySummary(
+            date: Self.day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", lapsPendingCount: 3)
+        let fresh = DailySummary(
+            date: Self.day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli")
+        XCTAssertEqual(fresh.filling(from: older).lapsPendingCount, 3)
+        XCTAssertEqual(
+            fresh.withEnvironment(products: nil, protect: nil, serverHealth: .init(
+                expiries: nil, notificationCount: nil, lapsPendingCount: 9)).lapsPendingCount, 9)
+        XCTAssertEqual(TrendStore.environmentValue(.lapsPending, in: older), 3)
+        XCTAssertNil(TrendStore.environmentValue(.lapsPending, in: fresh))
+        XCTAssertTrue(TrendSeries.Metric.lapsPending.isServerHealth)
+        XCTAssertEqual(TrendSeries.Metric.lapsPending.polarity, .lowerIsBetter)
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "lapsPending"), .lapsPending)
+        XCTAssertFalse(TrendSeries.Metric.allCases.contains(.lapsPending))
+        XCTAssertEqual(AlertMetric.lapsPendingCount.rawValue, "laps_pending_count")
+        XCTAssertEqual(AlertMetric.lapsPendingCount.value(in: older), 3)
+        XCTAssertNil(AlertMetric.lapsPendingCount.value(in: fresh))
+        XCTAssertFalse(AlertMetric.lapsPendingCount.isPercentage)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [AlertRule(metric: "laps_pending_count", when: "above", threshold: 2)],
+            current: older, prior: nil)
+        XCTAssertEqual(hits.count, 1)
+    }
 }

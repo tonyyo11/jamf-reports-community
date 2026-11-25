@@ -164,4 +164,27 @@ final class CommandCatalogTests: XCTestCase {
         XCTAssertNil(CommandCatalog.installed())
         XCTAssertNil(CommandCatalog.installed(locate: { nil }))
     }
+
+    // MARK: - Opt-in admin hygiene
+
+    func testTheSetupListLeavesOutTheOptInCommandsAndHoldsThemApart() throws {
+        let catalog = try fixture()
+        let collect = catalog.proPrivileges(forArguments: CommandCatalog.collectArguments())
+        for name in ["Read Accounts", "Read API Integrations", "View Local Admin Password"] {
+            XCTAssertFalse(collect.listed.contains(name), "\(name) is optional, not required")
+        }
+        XCTAssertFalse(CommandCatalog.collectArguments().contains {
+            $0.argv.contains("pending-rotations") || $0.argv.contains("accounts")
+                || $0.argv.contains("api-integrations")
+        })
+        let optional = catalog.optionalPrivileges()
+        XCTAssertEqual(optional.map(\.name),
+                       ["Read API Integrations", "Read Accounts", "View Local Admin Password"])
+        XCTAssertTrue(optional.allSatisfy { $0.source == .jamfCLI })
+        XCTAssertEqual(CommandCatalog.bundledOptionalPrivileges, optional)
+        XCTAssertEqual(CommandCatalog.optionalArguments().count, 3)
+        XCTAssertEqual(
+            catalog.proPrivileges(forArguments: CommandCatalog.optionalArguments()).missing, [],
+            "the opt-in commands are in the catalog")
+    }
 }

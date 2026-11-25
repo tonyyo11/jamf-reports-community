@@ -22,6 +22,9 @@ struct CoreDashboard: Sendable {
     let aiNarrative: String?
     /// The generate run's log, for a sheet's `[warn]` line. Nil writes to stdout only.
     let onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    /// The admin-hygiene sources this Mac collects (`SharedConfigPin.collectOptIn`); the Server
+    /// and Admin Health tab shows only these.
+    let optInKinds: Set<String>
     /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
     private let hardwareIndex = OnceCache<[String: Bool]>()
     /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
@@ -35,9 +38,11 @@ struct CoreDashboard: Sendable {
         workbook: Workbook,
         provenance: Provenance? = nil,
         aiNarrative: String? = nil,
-        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil,
+        optInKinds: Set<String> = []
     ) {
         self.onLine = onLine
+        self.optInKinds = optInKinds
         self.config = config
         self.dataDir = dataDir
         self.workbook = workbook

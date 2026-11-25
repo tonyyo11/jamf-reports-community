@@ -274,11 +274,17 @@ struct SourcesView: View {
         // The label wraps at its full height: truncated, it still reserved the wrapped
         // height below the cards row.
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Mono(text: source.command,
-                 color: source.skipReason == nil ? Theme.Text.secondary
-                    : Theme.Text.tertiary(contrast))
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Mono(text: source.command,
+                     color: source.skipReason == nil ? Theme.Text.secondary
+                        : Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note = ServerHealth.optInLabel(source.kind) {
+                    Text(note).font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(Self.rowStatus(source, state: state.control, cachedAt: cachedAt[source.kind]))
                 .font(.caption)
                 .foregroundStyle(state.changedOnAnotherMac
@@ -312,7 +318,17 @@ struct SourcesView: View {
     private func sourceSwitch(
         _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch
     ) -> some View {
-        if state == .on || state == .off || state == .locked {
+        if case .optIn(let on) = state {
+            Toggle("", isOn: Binding(
+                get: { on },
+                set: { newValue in setOptedIn(source.kind, newValue) }))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .accessibilityLabel(L("Collect \(source.kind)"))
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+        } else if state == .on || state == .off || state == .locked {
             let held = sourcesPlan?.changedOnAnotherMac == true
             Toggle("", isOn: Binding(
                 get: { state != .off },
@@ -356,6 +372,25 @@ struct SourcesView: View {
         }
     }
 
+    /// Writes an opt-in switch. A removal is always written; an addition waits for no one.
+    private func setOptedIn(_ kind: String, _ on: Bool) {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try CollectSkipConfigWriter.setOptedIn(on, kind: kind, profile: profile)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            if let failure { workspace.toast = Toast(message: failure, style: .danger) }
+            reloadSourcesPlan()
+            await workspace.refreshDataFreshness()
+        }
+    }
+
     /// The row's trailing text: the switch's state in words, else `sourceStatus`.
     nonisolated static func rowStatus(
         _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch,
@@ -363,6 +398,7 @@ struct SourcesView: View {
     ) -> String {
         switch state {
         case .off: L("Turned off in this workspace")
+        case .optIn(on: false): L("Off until turned on")
         case .followsPatchStatus: L("Turned off with patch-status")
         case .noDevices(.mac): L("No computers in Jamf Pro")
         case .noDevices(.mobile): L("No mobile devices in Jamf Pro")
@@ -907,6 +943,8 @@ struct SourcesView: View {
                 let typedSkip = config?.jamfCli?.collectSkip
                 let skipList = SharedConfigPin.collectSkipList(
                     configured: typedSkip, profile: profile)
+                let optInList = SharedConfigPin.collectOptInList(
+                    configured: config?.jamfCli?.collectOptIn, profile: profile)
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
@@ -931,7 +969,8 @@ struct SourcesView: View {
                     platformUnavailable: routed.unavailable,
                     workspaceAuthIsPlatform:
                         JamfCLIAuthMethod(raw: workspaceAuth?.authMethod)?.isPlatform == true,
-                    advisory: StateFileStore.advisoryCauses(profile: profile)))
+                    advisory: StateFileStore.advisoryCauses(profile: profile),
+                    optInList: optInList.effective, optInDrifted: optInList.drifted))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]

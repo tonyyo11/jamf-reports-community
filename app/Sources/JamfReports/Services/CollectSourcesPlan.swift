@@ -70,6 +70,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
         /// Server-health kinds the API role refuses or the server has not set up
         /// (`StateFileStore.isAdvisory`), with the cause on file.
         var advisory: [String: FailureCause] = [:]
+        /// The opt-in sources this Mac collects (`SharedConfigPin.collectOptInList`), and whether
+        /// another Mac's addition waits for a Confirm.
+        var optInList: [String] = []
+        var optInDrifted = false
     }
 
     /// The auth method and Platform skip reason Data Sources judges by. Only Jamf Pro has a
@@ -89,6 +93,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
     /// computer list is core: what `switchState` reads.
     var listed: Set<String> = []
     var listedInFile: Set<String>?
+    var optIn: Set<String> = []
+    var optInDrifted = false
     var protectOnly = false
     var fleet: FleetState = .unknown
 
@@ -101,6 +107,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         plan.listedInFile = inputs.collectSkipInFile.map {
             ReportEngine.listedSkipKinds($0, protectOnly: inputs.protectOnly, fleet: inputs.fleet)
         }
+        plan.optIn = ReportEngine.listedOptInKinds(inputs.optInList)
+        plan.optInDrifted = inputs.optInDrifted
         plan.protectOnly = inputs.protectOnly
         plan.fleet = inputs.product == .jamfPro && !inputs.protectOnly ? inputs.fleet : .unknown
         return plan
@@ -142,7 +150,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 skippedSides: inputs.fleet.skipped,
                 serverHealthSupported: JamfCLIInstaller.supportsServerHealth(
                     inputs.installedVersion),
-                workspaceAuthIsPlatform: inputs.workspaceAuthIsPlatform),
+                workspaceAuthIsPlatform: inputs.workspaceAuthIsPlatform,
+                optInKinds: ReportEngine.listedOptInKinds(inputs.optInList)),
             lastRun: { _ in nil })
         return plan.map { planned in
             // A forced plan ignores the weekly hold, but Data Sources still says why.
@@ -239,6 +248,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         case followsPatchStatus
         /// Not collected: the fleet has none of this side's devices. No switch.
         case noDevices(FleetSide)
+        /// An opt-in admin-hygiene source: off until turned on, so `on` is the opt-in itself.
+        case optIn(on: Bool)
     }
 
     struct SwitchState: Equatable, Sendable {
@@ -249,13 +260,17 @@ struct CollectSourcesPlan: Equatable, Sendable {
 
     /// The row's switch, from the same lists the collects read.
     func switchState(for source: Source) -> SwitchState {
-        let changed = listedInFile.map { $0.contains(source.kind) != listed.contains(source.kind) }
+        let isOptIn = ReportEngine.serverHealthOptInKinds.contains(source.kind)
+        let changed = isOptIn ? optInDrifted
+            : listedInFile.map { $0.contains(source.kind) != listed.contains(source.kind) }
             ?? false
         let control: SourceSwitch
         if let side = ReportEngine.skippedSide(of: source.kind, skipped: fleet.skipped) {
             control = .noDevices(side)
         } else if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly, fleet: fleet) {
             control = .locked
+        } else if isOptIn {
+            control = .optIn(on: optIn.contains(source.kind))
         } else if let reason = source.skipReason, reason != Self.collectSkipText {
             control = .hidden
         } else if listed.contains(source.kind) {
@@ -269,7 +284,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
     }
 
     /// A peer's edit is pending: every switch waits for Confirm in Config Doctor.
-    var changedOnAnotherMac: Bool { listedInFile != nil }
+    var changedOnAnotherMac: Bool { listedInFile != nil || optInDrifted }
 
     /// A skip in the words of the run log's `[skip]` line, else its `[plan]` label.
     private static func text(_ reason: ReportEngine.CollectSkipReason) -> String {

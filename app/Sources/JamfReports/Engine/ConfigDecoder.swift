@@ -107,6 +107,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// Read only through `SharedConfigPin.collectSkip`; written by the Data Sources switches
     /// (`CollectSkipConfigWriter`), and a Config screen save keeps it.
     var collectSkip: [String]?
+    /// Opt-in sources (`ReportEngine.serverHealthOptInKinds`) turned on; off unless listed. Read
+    /// only through `SharedConfigPin.collectOptIn`; a value that is not a list reads as empty.
+    var collectOptIn: [String]?
     /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
     /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
     var keepAccountNames: Bool?
@@ -137,6 +140,7 @@ struct JamfCLIConfig: Decodable, Sendable {
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
+        case collectOptIn = "collect_opt_in"
         case keepAccountNames = "keep_account_names"
         case runBudgetMinutes = "run_budget_minutes"
         case scanBudgetMinutes = "scan_budget_minutes"
@@ -174,6 +178,7 @@ extension JamfCLIConfig {
         maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
         collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
         keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+        collectOptIn = (try? c.decodeIfPresent([String].self, forKey: .collectOptIn)) ?? nil
         runBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .runBudgetMinutes)
         scanBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .scanBudgetMinutes)
     }

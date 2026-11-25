@@ -265,4 +265,10 @@ final class FleetSidesTests: XCTestCase {
         XCTAssertNil(state.computers)
         XCTAssertNil(state.mobileDevices)
     }
+
+    func testTheAdminHygieneSourcesAreOnBothSides() {
+        for kind in ReportEngine.serverHealthOptInKinds {
+            XCTAssertEqual(ReportEngine.sourceSides[kind], SourceSides.both, kind)
+        }
+    }
 }

@@ -1007,7 +1007,7 @@ enum DiagnosticBundleService {
     /// written; so are the values under `security_policy.controls`.
     static let vocabularyKeys: Set<String> = [
         "provider", "detail", "mode", "type", "tier", "level", "when", "metric", "factor",
-        "stale_basis", "collect_skip", "filevault_off_hardware_encrypted",
+        "stale_basis", "collect_skip", "collect_opt_in", "filevault_off_hardware_encrypted",
     ]
 
     /// config.yaml as the app reads it, with every string replaced by `<string N chars>` except

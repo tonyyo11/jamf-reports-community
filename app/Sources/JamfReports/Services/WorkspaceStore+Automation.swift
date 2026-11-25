@@ -530,7 +530,8 @@ extension WorkspaceStore {
         skippedSides: Set<FleetSide> = [],
         serverHealthSupported: Bool = false,
         workspaceAuthIsPlatform: Bool = false,
-        advisory: Set<String> = []
+        advisory: Set<String> = [],
+        optIn: Set<String> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         let protect = (protectConnected
@@ -546,6 +547,9 @@ extension WorkspaceStore {
                 return false
             }
             if collectSkip.contains(kind) { return false }
+            if ReportEngine.serverHealthOptInKinds.contains(kind), !optIn.contains(kind) {
+                return false
+            }
             if ReportEngine.serverHealthKinds.contains(kind),
                !serverHealthSupported || workspaceAuthIsPlatform || advisory.contains(kind) {
                 return false

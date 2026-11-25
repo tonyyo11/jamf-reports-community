@@ -143,6 +143,10 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "certificate-authority":          .inventory,
         // Notifications change as the server raises them; one small call.
         "jamf-pro-notifications":         .refresh,
+        // Opt-in admin hygiene counts: a small call each, daily-safe.
+        "laps-pending-rotations":         .inventory,
+        "admin-accounts":                 .inventory,
+        "api-integrations":               .inventory,
         // jamf-cli's HTML dashboard (1.31.0+): about 22 requests plus one per 500
         // computers, the inventory sweep again with no per-device fan-out.
         "dashboard":                      .inventory,

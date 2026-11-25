@@ -19,7 +19,7 @@ extension ReportEngine {
         }
         let health = ServerHealth.load(
             dataDir: dataDir, warningDays: ManagementHealth.defaultWarningDays, now: now,
-            calendar: calendar)
+            calendar: calendar, optIn: landed.intersection([ServerHealth.lapsKind]))
         var expiries: [String: CredentialExpiryEntry] = [:]
         if let day = asOf(ServerHealth.caKind),
            case .value(.credential(let credential), _)? = health.credentials.first?.fact,
@@ -39,8 +39,12 @@ extension ReportEngine {
         }
         let count = landed.contains(ServerHealth.notificationsKind)
             ? health.notificationFigure?.value.total : nil
-        guard !expiries.isEmpty || count != nil else { return nil }
-        return .init(expiries: expiries.isEmpty ? nil : expiries, notificationCount: count)
+        // Only a kind that landed this run: an opted-out or failed source leaves the earlier value.
+        let laps = landed.contains(ServerHealth.lapsKind) ? health.lapsPendingFigure : nil
+        guard !expiries.isEmpty || count != nil || laps != nil else { return nil }
+        return .init(
+            expiries: expiries.isEmpty ? nil : expiries, notificationCount: count,
+            lapsPendingCount: laps)
     }
 
     private static let maxADEInstances = 20

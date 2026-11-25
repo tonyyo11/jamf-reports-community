@@ -110,7 +110,10 @@ struct ReportEngine: Sendable {
         // with a warning — they are engine-team follow-ups, not fatal errors.
         BoundedFile.resetSizeRefusals()
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
-                                 provenance: prov, aiNarrative: aiNarrative, onLine: onLine)
+                                 provenance: prov, aiNarrative: aiNarrative, onLine: onLine,
+                                 optInKinds: SharedConfigPin.collectOptIn(
+                                     configured: config.jamfCli?.collectOptIn,
+                                     profile: workspaceName))
         let registry = SheetRegistry(plan: core.sheetPlan)
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
@@ -1870,6 +1873,10 @@ struct ReportEngine: Sendable {
         "certificate-authority",
         // Server-health: Jamf Pro's own notifications, by type.
         "jamf-pro-notifications",
+        // Admin hygiene counts (jamf-cli 1.38.0+), collected only when opted in.
+        "laps-pending-rotations",
+        "admin-accounts",
+        "api-integrations",
         // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
         "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
@@ -1916,8 +1923,13 @@ struct ReportEngine: Sendable {
     }
 
     /// The server-health sources: credentials and server-side processes that fail quietly.
-    static let serverHealthKinds: Set<String> = [
+    static let serverHealthKinds: Set<String> = Set([
         "certificate-authority", "jamf-pro-notifications",
+    ]).union(serverHealthOptInKinds)
+    /// The server-health sources that need a privilege reaching secrets or accounts: off until
+    /// `jamf_cli.collect_opt_in` lists them (`SharedConfigPin.collectOptIn`).
+    static let serverHealthOptInKinds: Set<String> = [
+        "laps-pending-rotations", "admin-accounts", "api-integrations",
     ]
     /// These calls are small; a hung one must not hold the run for the 60-minute kind limit.
     static let serverHealthTimeout: TimeInterval = 180
@@ -2437,6 +2449,8 @@ struct ReportEngine: Sendable {
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
         planInputs.skippedSides = fleet.skipped
+        planInputs.optInKinds = SharedConfigPin.collectOptIn(
+            configured: loadedConfig?.jamfCli?.collectOptIn, profile: workspace.name)
         planInputs.serverHealthSupported = JamfCLIInstaller.supportsServerHealth(detectedVersion)
         planInputs.workspaceAuthIsPlatform =
             JamfCLIAuthMethod(raw: profileAuth?.authMethod)?.isPlatform == true
@@ -3166,6 +3180,12 @@ struct ReportEngine: Sendable {
              "certificate-authority"),
             (["-p", profile, "pro", "jamf-pro-notifications", "list", "--output", "json"],
              "jamf-pro-notifications"),
+            // Opt-in (`collect_opt_in`): counts only, reduced before they are saved.
+            (["-p", profile, "pro", "local-admin-password", "pending-rotations",
+              "--output", "json"], "laps-pending-rotations"),
+            (["-p", profile, "pro", "accounts", "list", "--output", "json"], "admin-accounts"),
+            (["-p", profile, "pro", "api-integrations", "list", "--output", "json"],
+             "api-integrations"),
             // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
             // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
             // profile; `collect` skips the row on an older binary. `--output json` only
@@ -3522,7 +3542,8 @@ struct ReportEngine: Sendable {
             saved = stripped
         } else if serverHealthKinds.contains(kind) {
             // Always reduced, whatever `keep_account_names` says: nothing here is a person.
-            guard let reduced = ServerHealthReduction.reduce(kind: kind, payload: payload) else {
+            guard let reduced = ServerHealthReduction.reduce(
+                kind: kind, payload: payload, now: collectStart) else {
                 onLine(.init(timestamp: Date(), level: .warn,
                     text: "[warn] \(kind): unexpected payload shape — snapshot not saved"))
                 stateStore?.record(
