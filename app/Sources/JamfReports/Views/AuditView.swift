@@ -1203,10 +1203,14 @@ struct AuditView: View {
         guard !superseded() else { return }
         managementCard = card
         let health = await Task.detached(priority: .userInitiated) {
-            (try? WorkspacePaths.dataDir(for: profile)).map {
+            // The reports' cache-age rule, so the card marks an aged value "as of" as they do.
+            let maxAge = ProfileService.workspaceURL(for: profile).flatMap {
+                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+            }?.jamfCli?.resolvedMaxCacheAgeHours
+            return (try? WorkspacePaths.dataDir(for: profile)).map {
                 ServerHealth.load(
                     dataDir: $0, warningDays: warningDays,
-                    optIn: SharedConfigPin.collectOptIn(profile: profile))
+                    optIn: SharedConfigPin.collectOptIn(profile: profile), maxAgeHours: maxAge)
             }
         }.value
         guard !superseded() else { return }

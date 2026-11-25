@@ -663,7 +663,7 @@ private func scheduledRunSingleBody(
         var htmlURL: URL?
         if !isSchool {
             htmlURL = await engine.writeHTMLWithWorkbook(
-                besideWorkbook: outputURL, template: template, onLine: onLine)
+                besideWorkbook: outputURL, template: template, now: runStart, onLine: onLine)
         }
         // The run manifest (and its timestamp when configured); a failure is one [warn] line.
         await ReportEngine.sealRun(
