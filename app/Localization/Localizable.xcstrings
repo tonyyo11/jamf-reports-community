@@ -26834,6 +26834,7 @@
       }
     },
     "Active" : {
+      "comment" : "Status pill. Adjective: currently in use or turned on.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -27074,6 +27075,7 @@
       }
     },
     "Add" : {
+      "comment" : "Button. Verb: add a profile or product to this environment.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -29206,6 +29208,7 @@
       }
     },
     "All" : {
+      "comment" : "Filter and picker option. Pronoun: every item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30526,6 +30529,7 @@
       }
     },
     "Apply" : {
+      "comment" : "Button. Verb: apply the changes on the Customize screen. Reads \"Saved\" afterwards.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -30606,6 +30610,7 @@
       }
     },
     "Archive" : {
+      "comment" : "Name of an operation, inserted into \"%@ failed: …\". Archiving the Trends history.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -33664,6 +33669,7 @@
       }
     },
     "Backup" : {
+      "comment" : "Table column header. Noun: one saved backup of the Jamf configuration.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -34264,6 +34270,7 @@
       }
     },
     "Band" : {
+      "comment" : "Chart legend. Noun: a compliance range.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36682,6 +36689,7 @@
       }
     },
     "Change" : {
+      "comment" : "Stat tile label. Noun: the difference between the current and previous value.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -36757,6 +36765,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alterado em outro Mac; confirme no Config Doctor"
+          }
+        }
+      }
+    },
+    "Change…" : {
+      "comment" : "Button. Verb: replace the profile in this slot. Opens a sheet.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ändern…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifica…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alterar…"
           }
         }
       }
@@ -36962,6 +37011,7 @@
       }
     },
     "Check" : {
+      "comment" : "Button. Verb: run a check on this profile or connection.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37362,6 +37412,7 @@
       }
     },
     "Check-in" : {
+      "comment" : "Option for which date counts toward staleness. Noun: Last Check-in.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38648,6 +38699,7 @@
       }
     },
     "Clean" : {
+      "comment" : "Status. Adjective: no problems found (no jailbreak, no risk).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38688,6 +38740,7 @@
       }
     },
     "Clear" : {
+      "comment" : "Status pill on a computer row. Adjective: no patch failures.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -38928,6 +38981,7 @@
       }
     },
     "Close" : {
+      "comment" : "Button. Verb: close this sheet.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39168,6 +39222,7 @@
       }
     },
     "Collect" : {
+      "comment" : "Name of an operation, inserted into \"%@ failed: …\". Collecting data from Jamf.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -39190,7 +39245,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Raccogli"
+            "value" : "Raccolta"
           }
         },
         "ja" : {
@@ -42552,6 +42607,7 @@
       }
     },
     "Config" : {
+      "comment" : "Button and sidebar tab. Noun: the configuration screen.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -43558,6 +43614,7 @@
       }
     },
     "Connect" : {
+      "comment" : "Button. Verb: connect this product or profile.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -44838,6 +44895,7 @@
       }
     },
     "Contact" : {
+      "comment" : "Option for which date counts toward staleness. Noun: Last Contact (Jamf Pro 11.30).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -44958,6 +45016,7 @@
       }
     },
     "Continue" : {
+      "comment" : "Button. Verb: go to the next setup step.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -45558,6 +45617,7 @@
       }
     },
     "Copy" : {
+      "comment" : "Button. Verb: copy this text to the clipboard.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -48566,6 +48626,7 @@
       }
     },
     "Count" : {
+      "comment" : "Chart axis title. Noun: a number of items.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -49366,6 +49427,7 @@
       }
     },
     "Critical" : {
+      "comment" : "Severity. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -49606,6 +49668,7 @@
       }
     },
     "Current" : {
+      "comment" : "Stat tile label. Adjective, used as a noun: the latest value of the metric.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -49634,7 +49697,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最新"
+            "value" : "現在"
           }
         },
         "pt-BR" : {
@@ -50086,6 +50149,7 @@
       }
     },
     "Customize" : {
+      "comment" : "Button and sidebar tab. Verb: change what this screen shows.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -51486,6 +51550,7 @@
       }
     },
     "Debug" : {
+      "comment" : "Log level. Noun.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -51766,6 +51831,7 @@
       }
     },
     "Default" : {
+      "comment" : "Site name. Noun: the default site in Jamf Pro.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52126,6 +52192,7 @@
       }
     },
     "Delete" : {
+      "comment" : "Menu item. Verb: delete this item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -52486,6 +52553,7 @@
       }
     },
     "Delivered" : {
+      "comment" : "Result of a test notification. Participle: the webhook accepted it.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -53166,6 +53234,7 @@
       }
     },
     "Deployed" : {
+      "comment" : "Count label. Participle: blueprints deployed.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -53326,6 +53395,7 @@
       }
     },
     "Detail" : {
+      "comment" : "Picker label for webhook notifications, and a table column. Noun: how much information is included.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -53406,6 +53476,7 @@
       }
     },
     "Details" : {
+      "comment" : "Button and section heading. Noun: more information about this item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -54646,6 +54717,7 @@
       }
     },
     "Disabled" : {
+      "comment" : "Status label. Adjective: turned off.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -55406,6 +55478,7 @@
       }
     },
     "Dormant" : {
+      "comment" : "Device tier. Adjective: no check-in for over 180 days.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -55446,6 +55519,7 @@
       }
     },
     "Down" : {
+      "comment" : "Trend direction. Adverb: the value went down.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -55462,7 +55536,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bas"
+            "value" : "Baisse"
           }
         },
         "it" : {
@@ -56686,6 +56760,7 @@
       }
     },
     "Empty" : {
+      "comment" : "Status pill on a group. Adjective: the group has no members.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57006,6 +57081,7 @@
       }
     },
     "Enabled" : {
+      "comment" : "Status or toggle label. Adjective: turned on.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -57692,6 +57768,7 @@
       }
     },
     "Error" : {
+      "comment" : "Severity, log level and column header. Noun.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59144,6 +59221,7 @@
       }
     },
     "Export" : {
+      "comment" : "Button. Verb: save the log to a file.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -60882,6 +60960,7 @@
       }
     },
     "Failed" : {
+      "comment" : "Count label. Adjective/participle: items that failed.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -61282,6 +61361,7 @@
       }
     },
     "Failing" : {
+      "comment" : "Status and count label. Adjective: currently failing.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -62974,6 +63054,7 @@
       }
     },
     "Finding" : {
+      "comment" : "Table column header and section heading. Noun: one issue found by an audit.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63894,6 +63975,7 @@
       }
     },
     "Flat" : {
+      "comment" : "Trend direction. Adjective: the value did not change.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64734,6 +64816,7 @@
       }
     },
     "From" : {
+      "comment" : "Date picker label. Preposition: start date of the period.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -64934,6 +65017,7 @@
       }
     },
     "Full" : {
+      "comment" : "Picker option for webhook detail. Adjective: all information is sent.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65734,6 +65818,7 @@
       }
     },
     "Generate" : {
+      "comment" : "Button, and the name of an operation inserted into \"%@ failed: …\". Verb: generate a report.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -68284,6 +68369,7 @@
       }
     },
     "Healthy" : {
+      "comment" : "Status word. Adjective: no problems.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -68644,6 +68730,7 @@
       }
     },
     "High" : {
+      "comment" : "Severity. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -69804,6 +69891,7 @@
       }
     },
     "Import" : {
+      "comment" : "Button in an Open panel. Verb: import the selected CSV file.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70084,6 +70172,7 @@
       }
     },
     "Inactive" : {
+      "comment" : "Device tier or status. Adjective: not active.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -70284,6 +70373,7 @@
       }
     },
     "Info" : {
+      "comment" : "Severity and log level. Noun (information).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -75268,6 +75358,7 @@
       }
     },
     "Label" : {
+      "comment" : "Text field placeholder. Noun: a name for this backup.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -76714,6 +76805,7 @@
       }
     },
     "Latest" : {
+      "comment" : "Table column and tile label. Adjective, used as a noun: the newest one.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -77074,6 +77166,7 @@
       }
     },
     "Level" : {
+      "comment" : "Picker label in the log viewer. Noun: the log level.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -77194,6 +77287,7 @@
       }
     },
     "Limited" : {
+      "comment" : "API access scope. Adjective: limited privileges, the opposite of Full Admin.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -77594,6 +77688,7 @@
       }
     },
     "Loaded" : {
+      "comment" : "Status pill. Participle: details have loaded.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -78514,6 +78609,7 @@
       }
     },
     "Lookback" : {
+      "comment" : "Label. Noun: how many days back to look.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -78594,6 +78690,7 @@
       }
     },
     "Lookup" : {
+      "comment" : "Button. Verb (look up): find a device by serial number or ID.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -78634,6 +78731,7 @@
       }
     },
     "Low" : {
+      "comment" : "Severity, and a low stability score. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -79680,6 +79778,7 @@
       }
     },
     "Managed" : {
+      "comment" : "Status and column label. Adjective: managed by MDM.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -80366,6 +80465,7 @@
       }
     },
     "Medium" : {
+      "comment" : "Severity. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -80486,6 +80586,7 @@
       }
     },
     "Merge" : {
+      "comment" : "Button. Verb: merge another workspace into this one.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -80938,6 +81039,7 @@
       }
     },
     "Minimal" : {
+      "comment" : "Picker option for webhook detail. Adjective: only counts are sent.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -81018,6 +81120,7 @@
       }
     },
     "Missing" : {
+      "comment" : "Status value. Adjective: jamf-cli is not installed.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -81046,7 +81149,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "なし"
+            "value" : "未インストール"
           }
         },
         "pt-BR" : {
@@ -81458,6 +81561,7 @@
       }
     },
     "Mode" : {
+      "comment" : "Table column and form label. Noun: the run mode of a schedule.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -83464,6 +83568,7 @@
       }
     },
     "Never" : {
+      "comment" : "Bucket label for last check-in. Adverb: the device has never checked in.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -83492,7 +83597,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "なし"
+            "value" : "チェックインなし"
           }
         },
         "pt-BR" : {
@@ -83544,6 +83649,7 @@
       }
     },
     "New" : {
+      "comment" : "Status pill. Adjective: appeared since the last audit, or a new alert.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -83870,6 +83976,7 @@
       }
     },
     "Next" : {
+      "comment" : "Button. Verb/adverb: go to the next setup step.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -89654,6 +89761,7 @@
       }
     },
     "None" : {
+      "comment" : "Value. Pronoun: nothing (no backup, no jailbreak).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -91534,6 +91642,7 @@
       }
     },
     "Notice" : {
+      "comment" : "Log level. Noun.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -92174,6 +92283,7 @@
       }
     },
     "Off" : {
+      "comment" : "Toggle and picker value. Adjective: turned off.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -92414,6 +92524,7 @@
       }
     },
     "Offline" : {
+      "comment" : "Device tier or connection status. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -92574,6 +92685,7 @@
       }
     },
     "On" : {
+      "comment" : "Toggle value. Adjective: turned on.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -93334,6 +93446,7 @@
       }
     },
     "Online" : {
+      "comment" : "Connection status. Adjective.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -93500,6 +93613,7 @@
       }
     },
     "Open" : {
+      "comment" : "Button. Verb: open the selected item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -96860,6 +96974,7 @@
       }
     },
     "Other" : {
+      "comment" : "Bucket label. Adjective, used as a noun: everything not listed.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -97380,6 +97495,7 @@
       }
     },
     "Overdue" : {
+      "comment" : "Schedule health status. Adjective: the run is late.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -98312,6 +98428,7 @@
       }
     },
     "Passed" : {
+      "comment" : "Count label. Participle: rules that passed.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -98352,6 +98469,7 @@
       }
     },
     "Passing" : {
+      "comment" : "Count label. Adjective: devices currently passing.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -98392,6 +98510,7 @@
       }
     },
     "Patch" : {
+      "comment" : "Filter, table column and section heading. Noun: software patches (Jamf Pro patch management).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -98792,6 +98911,7 @@
       }
     },
     "Pending" : {
+      "comment" : "Count label. Adjective: MDM commands waiting to run.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -101176,6 +101296,7 @@
       }
     },
     "Populated" : {
+      "comment" : "Stat label. Participle: EA values that hold data.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -101416,6 +101537,7 @@
       }
     },
     "Previous" : {
+      "comment" : "Stat tile label. Adjective, used as a noun: the value from the earlier snapshot.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -101444,7 +101566,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前へ"
+            "value" : "前回"
           }
         },
         "pt-BR" : {
@@ -102902,6 +103024,7 @@
       }
     },
     "Raw" : {
+      "comment" : "Segmented control option. Adjective: the unprocessed output, as opposed to Summary.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -104102,6 +104225,7 @@
       }
     },
     "Ready" : {
+      "comment" : "Status. Adjective: ready to run.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -104182,6 +104306,7 @@
       }
     },
     "Recent" : {
+      "comment" : "Device tier. Adjective: checked in within the last 30 days.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -104702,6 +104827,7 @@
       }
     },
     "Refresh" : {
+      "comment" : "Button, and the name of an operation inserted into \"%@ failed: …\". Verb: refresh the data.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -105920,6 +106046,7 @@
       }
     },
     "Reload" : {
+      "comment" : "Button. Verb: read config.yaml from disk again.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -106120,6 +106247,7 @@
       }
     },
     "Remove" : {
+      "comment" : "Button. Verb: remove this profile from the environment.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -107984,6 +108112,7 @@
       }
     },
     "Reported" : {
+      "comment" : "Count label. Participle: devices that have reported status.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -108504,6 +108633,7 @@
       }
     },
     "Resolved" : {
+      "comment" : "Alert status. Participle: the alert is resolved.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -108944,6 +109074,7 @@
       }
     },
     "Resume" : {
+      "comment" : "Button. Verb: continue an interrupted workspace merge.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -109384,6 +109515,7 @@
       }
     },
     "Retry" : {
+      "comment" : "Button. Verb: try again.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -109424,6 +109556,7 @@
       }
     },
     "Reveal" : {
+      "comment" : "Button. Verb: show the file in Finder.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -109664,6 +109797,7 @@
       }
     },
     "Review" : {
+      "comment" : "Button. Verb: open Config Doctor to look at the changes.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -111396,6 +111530,7 @@
       }
     },
     "Running" : {
+      "comment" : "Status. Present participle: a run is in progress.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -111516,6 +111651,7 @@
       }
     },
     "Runs" : {
+      "comment" : "Button. Noun: opens Run History.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -112476,6 +112612,7 @@
       }
     },
     "Save" : {
+      "comment" : "Button. Verb: save the changes.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -113116,6 +113253,7 @@
       }
     },
     "Saved" : {
+      "comment" : "Button text after the changes were applied. Past participle: the settings are saved.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -113574,6 +113712,7 @@
       }
     },
     "Schedule" : {
+      "comment" : "Table column header. Noun: a scheduled run.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -115866,6 +116005,7 @@
       }
     },
     "Select" : {
+      "comment" : "Button in an Open panel. Verb: choose this file or folder.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -116226,6 +116366,7 @@
       }
     },
     "Selected" : {
+      "comment" : "Stat tile label and accessibility value. Adjective: chosen by the user.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -119472,6 +119613,7 @@
       }
     },
     "Show" : {
+      "comment" : "Picker label. Verb: which devices to show.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -121324,6 +121466,7 @@
       }
     },
     "Smart" : {
+      "comment" : "Group type. Adjective: a smart group (criteria-based).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -122650,6 +122793,7 @@
       }
     },
     "Stable" : {
+      "comment" : "Trend direction. Adjective: unchanged.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -122690,6 +122834,7 @@
       }
     },
     "Stale" : {
+      "comment" : "Filter and tile label. Adjective: devices that have not checked in recently.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -123530,6 +123675,7 @@
       }
     },
     "State" : {
+      "comment" : "Table column header. Noun: the state of an update plan.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -123610,6 +123756,7 @@
       }
     },
     "Static" : {
+      "comment" : "Group type. Adjective: a static group (fixed members).",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -123650,6 +123797,7 @@
       }
     },
     "Status" : {
+      "comment" : "Label and column header. Noun: the current status.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -124228,6 +124376,7 @@
       }
     },
     "Suggest" : {
+      "comment" : "Severity of a Config Doctor row. Noun or adjective: a suggestion, below a warning.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -124238,7 +124387,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sugerir"
+            "value" : "Sugerencia"
           }
         },
         "fr" : {
@@ -125908,6 +126057,7 @@
       }
     },
     "Test" : {
+      "comment" : "Button. Verb: send a test notification.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -125943,46 +126093,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Testar"
-          }
-        }
-      }
-    },
-    "Test notification" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Testbenachrichtigung"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notificación de prueba"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tester la notification"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notifica di prova"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テスト通知"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notificação de teste"
           }
         }
       }
@@ -132168,6 +132278,7 @@
       }
     },
     "Time" : {
+      "comment" : "Form label. Noun: the time of day a schedule runs.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -132288,6 +132399,7 @@
       }
     },
     "To" : {
+      "comment" : "Date picker label. Preposition: end date of the period.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -132408,6 +132520,7 @@
       }
     },
     "Today" : {
+      "comment" : "Relative date. Adverb: the last check-in was today.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -133008,6 +133121,7 @@
       }
     },
     "Total" : {
+      "comment" : "Table row label. Noun: the sum.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -133568,6 +133682,7 @@
       }
     },
     "Trend" : {
+      "comment" : "Stat tile label. Noun: the direction of change.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -134568,6 +134683,7 @@
       }
     },
     "Type" : {
+      "comment" : "Table column and field label. Noun: the kind of item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -134888,6 +135004,7 @@
       }
     },
     "Unknown" : {
+      "comment" : "Value. Adjective: not reported or not known.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -136008,11 +136125,12 @@
       }
     },
     "Up" : {
+      "comment" : "Trend direction. Adverb: the value went up.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hoch"
+            "value" : "Steigend"
           }
         },
         "es" : {
@@ -136094,6 +136212,7 @@
       }
     },
     "Update" : {
+      "comment" : "Button. Verb: install the newer version of jamf-cli.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -137814,6 +137933,7 @@
       }
     },
     "Validate" : {
+      "comment" : "Button in setup. Verb: check that the connection works.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -138494,6 +138614,7 @@
       }
     },
     "View" : {
+      "comment" : "Button. Verb: show the list.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -139294,6 +139415,7 @@
       }
     },
     "Warning" : {
+      "comment" : "Severity. Noun.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -139660,6 +139782,7 @@
       }
     },
     "Watch" : {
+      "comment" : "Status word for a stability score between 70 and 84. Means: keep an eye on it.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -139670,7 +139793,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vigilar"
+            "value" : "En observación"
           }
         },
         "fr" : {
@@ -140740,6 +140863,7 @@
       }
     },
     "Window" : {
+      "comment" : "Picker label in the log viewer. Noun: the time span shown.",
       "localizations" : {
         "de" : {
           "stringUnit" : {

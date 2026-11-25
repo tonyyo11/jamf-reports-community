@@ -222,12 +222,13 @@ struct NotificationsCard: View {
         let profile = profile
         let organization = await Task.detached { WebhookNotifier.organization(profile: profile) }
             .value
+        // Webhook cards stay English whatever the app's language.
         let delivered = await WebhookNotifier.send(
             config: currentNotifyConfig,
-            title: L("Test notification"),
+            title: "Test notification",
             facts: [
-                .init(label: L("Profile"), value: profile),
-                .init(label: L("Status"), value: L("Test")),
+                .init(label: "Profile", value: profile),
+                .init(label: "Status", value: "Test"),
             ],
             organization: organization
         )

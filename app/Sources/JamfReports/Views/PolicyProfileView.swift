@@ -211,7 +211,7 @@ struct PolicyProfileView: View {
                     }
                     .width(min: 180, ideal: 180)
 
-                    TableColumn("Check") { finding in
+                    TableColumn("Finding") { finding in
                         Text(finding.check)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
