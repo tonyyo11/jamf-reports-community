@@ -19,7 +19,14 @@ machine translations agreeing does not prove either right: a disagreement is a s
    and `upload_source_files` it (`fileFormat` XCSTRINGS, `fileId` `jr-delta`), then
    `translate_files` with `publish: false` for the locales asked (default all six: fr, es, de,
    pt-BR, it, ja). Poll `query_jobs` no more than every 30 s; `get_file_content` each locale to
-   `<scratch>/gt-<locale>.xcstrings`. If GT refuses for quota, retry with fewer locales and say so.
+   `<scratch>/gt-<locale>.xcstrings`.
+
+**Free plan.** GT bills input tokens per target locale and does not publish the free monthly
+allowance. On 2026-11-24 a request for 15,048 tokens was refused and one for about 5,000 went
+through, so plan on roughly 5,000 tokens a month. Step 1 prints the estimate: pick the locales
+that fit, lead with the ones the last run skipped, and name the ones left out. A refusal is HTTP
+402 `usage_limit_reached`, which charges nothing: stop and report it. Never configure billing or
+add credit; that is Tony's call.
 4. `gt-check compare --gt de=<scratch>/gt-de.xcstrings ... --out <scratch>/report.md`.
 5. Read the report. For each string in "Ours fails a check GT passes", say whether ours is wrong
    (a lost specifier or product name always is; a glossary term can be right in context) and

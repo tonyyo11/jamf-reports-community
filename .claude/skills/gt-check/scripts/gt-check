@@ -50,8 +50,12 @@ def delta(args):
         if before is None or any(value(entry, x) != value(before, x) for x in LOCALES):
             keys[key] = {"comment": entry["comment"]} if "comment" in entry else {}
     doc = {"sourceLanguage": "en", "version": "1.0", "strings": keys}
-    Path(args.out).write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf8")
+    text = json.dumps(doc, ensure_ascii=False, indent=2)
+    Path(args.out).write_text(text, encoding="utf8")
+    # GT bills input tokens per target locale; the 2026-11-24 pilot came to 4.6 bytes a token.
+    tokens = round(len(text.encode("utf8")) / 4.6)
     print(f"{len(keys)} keys changed since {args.since} -> {args.out}")
+    print(f"about {tokens} GT tokens per locale, {tokens * len(LOCALES)} for all {len(LOCALES)}")
 
 
 def glossary_entries():
