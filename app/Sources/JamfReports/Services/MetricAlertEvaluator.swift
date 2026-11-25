@@ -197,7 +197,11 @@ enum MetricAlertEvaluator {
     static func evaluateCredentials(
         rules: [AlertRule], current: DailySummary, now: Date, calendar: Calendar = .current
     ) -> [MetricAlertHit] {
-        let entries = (current.serverCredentialExpiries ?? [:]).sorted { $0.key < $1.key }
+        // The map comes from a summary another Mac can write: only the keys the writer makes,
+        // and no more of them than it makes.
+        let entries = (current.serverCredentialExpiries ?? [:])
+            .filter { isWrittenCredentialKey($0.key) }
+            .sorted { $0.key < $1.key }.prefix(ReportEngine.maxADEInstances + 1)
         var hits: [MetricAlertHit] = []
         // An expired credential is one line however many rules cover it.
         var expiredSeen: Set<String> = []
@@ -211,6 +215,9 @@ enum MetricAlertEvaluator {
                     continue
                 }
                 let expired = credential.state == .expired
+                // The ledger forgets an entry past this window, so evaluation stops here too:
+                // otherwise a long-expired credential would post again after the prune.
+                guard left >= -MetricAlertLedger.credentialRetentionDays else { continue }
                 guard expired || Double(left) < threshold else { continue }
                 if expired, !expiredSeen.insert("\(key)|\(entry.expires)").inserted { continue }
                 hits.append(MetricAlertHit(
@@ -223,6 +230,10 @@ enum MetricAlertEvaluator {
             }
         }
         return hits
+    }
+
+    private static func isWrittenCredentialKey(_ key: String) -> Bool {
+        key == "ca" || (key.hasPrefix("ade:") && ReportEngine.isSafeKeyPart(String(key.dropFirst(4))))
     }
 
     /// The credential's kind, never an ID or a name.

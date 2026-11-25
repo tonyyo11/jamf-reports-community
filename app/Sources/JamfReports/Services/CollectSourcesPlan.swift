@@ -74,6 +74,8 @@ struct CollectSourcesPlan: Equatable, Sendable {
         /// another Mac's addition waits for a Confirm.
         var optInList: [String] = []
         var optInDrifted = false
+        /// The opt-in list as typed in config.yaml while it awaits a Confirm; nil otherwise.
+        var optInInFile: [String]?
     }
 
     /// The auth method and Platform skip reason Data Sources judges by. Only Jamf Pro has a
@@ -95,6 +97,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
     var listedInFile: Set<String>?
     var optIn: Set<String> = []
     var optInDrifted = false
+    var optInListedInFile: Set<String>?
     var protectOnly = false
     var fleet: FleetState = .unknown
 
@@ -109,6 +112,7 @@ struct CollectSourcesPlan: Equatable, Sendable {
         }
         plan.optIn = ReportEngine.listedOptInKinds(inputs.optInList)
         plan.optInDrifted = inputs.optInDrifted
+        plan.optInListedInFile = inputs.optInInFile.map(ReportEngine.listedOptInKinds)
         plan.protectOnly = inputs.protectOnly
         plan.fleet = inputs.product == .jamfPro && !inputs.protectOnly ? inputs.fleet : .unknown
         return plan
@@ -261,7 +265,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
     /// The row's switch, from the same lists the collects read.
     func switchState(for source: Source) -> SwitchState {
         let isOptIn = ReportEngine.serverHealthOptInKinds.contains(source.kind)
-        let changed = isOptIn ? optInDrifted
+        // Only the opt-in kind the file lists and this Mac has not confirmed is changed.
+        let changed = isOptIn
+            ? optInListedInFile.map { $0.contains(source.kind) && !optIn.contains(source.kind) }
+                ?? false
             : listedInFile.map { $0.contains(source.kind) != listed.contains(source.kind) }
             ?? false
         let control: SourceSwitch
@@ -269,6 +276,11 @@ struct CollectSourcesPlan: Equatable, Sendable {
             control = .noDevices(side)
         } else if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly, fleet: fleet) {
             control = .locked
+        } else if isOptIn, let reason = source.skipReason,
+                  reason == Self.text(.serverHealthUnsupported)
+                      || reason == Self.text(.serverHealthNotOnGateway) {
+            // The source can never run here, so a switch would write a setting with no effect.
+            control = .hidden
         } else if isOptIn {
             control = .optIn(on: optIn.contains(source.kind))
         } else if let reason = source.skipReason, reason != Self.collectSkipText {
@@ -283,8 +295,12 @@ struct CollectSourcesPlan: Equatable, Sendable {
         return SwitchState(control: control, changedOnAnotherMac: changed)
     }
 
-    /// A peer's edit is pending: every switch waits for Confirm in Config Doctor.
+    /// A peer's edit is pending: the banner line says so.
     var changedOnAnotherMac: Bool { listedInFile != nil || optInDrifted }
+
+    /// The `collect_skip` switches wait for Confirm only while `collect_skip` itself changed;
+    /// an opt-in addition holds its own row alone.
+    var holdsSkipSwitches: Bool { listedInFile != nil }
 
     /// A skip in the words of the run log's `[skip]` line, else its `[plan]` label.
     private static func text(_ reason: ReportEngine.CollectSkipReason) -> String {

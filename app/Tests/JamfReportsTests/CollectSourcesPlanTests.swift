@@ -230,6 +230,8 @@ final class CollectSourcesPlanTests: XCTestCase {
             inputs.installedVersion = "1.38.0"
             inputs.optInList = optIn
             inputs.optInDrifted = drifted
+            // The file lists every opt-in kind while a peer's addition waits.
+            inputs.optInInFile = drifted ? Array(ReportEngine.serverHealthOptInKinds) : nil
             let built = Plan.build(inputs)
             let source = built.sources.first { $0.kind == kind }!
             let switchState = built.switchState(for: source)
@@ -243,12 +245,31 @@ final class CollectSourcesPlanTests: XCTestCase {
             XCTAssertNil(on.reason, kind)
             XCTAssertEqual(on.control, .optIn(on: true), kind)
             XCTAssertTrue(state(kind, drifted: true).changed, "a peer's addition waits")
+            XCTAssertFalse(state(kind, optIn: [kind], drifted: true).changed, "confirmed here")
         }
         XCTAssertFalse(state("certificate-authority", drifted: true).changed)
         XCTAssertEqual(state("certificate-authority").control, .on)
         var drifted = Plan.Inputs(product: .jamfPro, profile: "prod")
         drifted.optInDrifted = true
-        XCTAssertTrue(Plan.build(drifted).changedOnAnotherMac)
+        XCTAssertTrue(Plan.build(drifted).changedOnAnotherMac, "the banner still says so")
+        XCTAssertFalse(Plan.build(drifted).holdsSkipSwitches,
+                       "an opt-in addition leaves the collect_skip switches usable")
+        drifted.collectSkipInFile = ["sofa"]
+        XCTAssertTrue(Plan.build(drifted).holdsSkipSwitches)
+    }
+
+    func testOnlyTheOptInKindThePeerAddedIsMarkedChanged() {
+        var inputs = Plan.Inputs(product: .jamfPro, profile: "prod")
+        inputs.installedVersion = "1.38.0"
+        inputs.optInDrifted = true
+        inputs.optInInFile = ["admin-accounts"]
+        let built = Plan.build(inputs)
+        func changed(_ kind: String) -> Bool {
+            built.switchState(for: built.sources.first { $0.kind == kind }!).changedOnAnotherMac
+        }
+        XCTAssertTrue(changed("admin-accounts"))
+        XCTAssertFalse(changed("api-integrations"))
+        XCTAssertFalse(changed("laps-pending-rotations"))
     }
 
     func testAnUnsupportedJamfCLIIsTheReasonShownEvenForAnOptInSource() {
@@ -257,7 +278,12 @@ final class CollectSourcesPlanTests: XCTestCase {
         let built = Plan.build(inputs)
         let source = built.sources.first { $0.kind == "admin-accounts" }!
         XCTAssertEqual(source.skipReason, "needs jamf-cli 1.38.0 or later")
-        XCTAssertEqual(built.switchState(for: source).control, .optIn(on: false),
-                       "the switch stays so it can be turned on once jamf-cli is current")
+        XCTAssertEqual(built.switchState(for: source).control, .hidden,
+                       "a source that cannot run here has no switch to write a dead setting")
+        inputs.installedVersion = "1.38.0"
+        inputs.workspaceAuthIsPlatform = true
+        let gateway = Plan.build(inputs)
+        XCTAssertEqual(gateway.switchState(
+            for: gateway.sources.first { $0.kind == "admin-accounts" }!).control, .hidden)
     }
 }

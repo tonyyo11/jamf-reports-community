@@ -21,6 +21,8 @@ struct ServerHealth: Sendable, Equatable {
         let withFailedLogins: Int
         let passwordOlderThanYear: Int
         let passwordAgeUnknown: Int
+        /// Accounts whose `failedLoginAttempts` was missing or not a whole number.
+        var failedLoginsUnknown: Int = 0
     }
 
     /// API clients as counts, never names or client IDs (opt-in).
@@ -28,6 +30,11 @@ struct ServerHealth: Sendable, Equatable {
         let total: Int
         let disabled: Int
         let enabledWithTokenOverOneDay: Int
+        /// Enabled clients with no readable token lifetime.
+        var tokenLifetimeUnknown: Int = 0
+        /// Clients with no readable `enabled`; they are in neither the disabled nor the
+        /// token count.
+        var enabledUnknown: Int = 0
     }
 
     /// One opt-in admin-hygiene source: its kind, what it is called on the card and its state.
@@ -55,9 +62,12 @@ struct ServerHealth: Sendable, Equatable {
 
         init(types rawTypes: [String?]) {
             total = rawTypes.count
-            let names = rawTypes.map { $0.map(ConfigSchema.displayText) ?? L("Unknown type") }
+            // Group by the raw type; the translated "Unknown type" is only what is shown, so a
+            // type with that very name cannot merge with it.
+            let names = rawTypes.map { $0.map(ConfigSchema.displayText) ?? "" }
             types = Dictionary(grouping: names, by: { $0 })
-                .map { TypeCount(name: $0.key, count: $0.value.count) }
+                .map { TypeCount(name: $0.key.isEmpty ? L("Unknown type") : $0.key,
+                                 count: $0.value.count) }
                 .sorted { ($1.count, $0.name) < ($0.count, $1.name) }
         }
     }
@@ -114,10 +124,11 @@ struct ServerHealth: Sendable, Equatable {
         return nil
     }
 
-    /// The credentials that are expired or inside the warning window, soonest first.
+    /// The credentials that are expired or inside the warning window, soonest first; a value no
+    /// longer measured is not a current warning.
     var expiringCredentials: [CredentialExpiry] {
         credentials.compactMap { row -> CredentialExpiry? in
-            guard case .value(.credential(let credential), _) = row.fact,
+            guard case .value(.credential(let credential), nil) = row.fact,
                   credential.state == .expired || credential.state == .expiring else { return nil }
             return credential
         }.sorted { ($0.daysLeft ?? 0) < ($1.daysLeft ?? 0) }
@@ -154,10 +165,14 @@ struct ServerHealth: Sendable, Equatable {
 
     static func load(
         dataDir: URL, warningDays: Int, now: Date = Date(), calendar: Calendar = .current,
-        optIn: Set<String> = []
+        optIn: Set<String> = [], maxAgeHours: Int? = nil
     ) -> ServerHealth {
-        let (fact, asOf) = loadFact(
-            kind: caKind, dataDir: dataDir) { object, landed in
+        func read(
+            _ kind: String, _ decode: (Any, Date?) -> FactState?
+        ) -> (FactState, asOf: Date?) {
+            loadFact(kind: kind, dataDir: dataDir, now: now, maxAgeHours: maxAgeHours, decode: decode)
+        }
+        let (fact, asOf) = read(caKind) { object, landed in
             guard let row = object as? [String: Any] else { return nil }
             let credential = CredentialExpiry(
                 key: "ca", label: "Built-in CA", raw: row["notAfter"], warningDays: warningDays,
@@ -165,8 +180,7 @@ struct ServerHealth: Sendable, Equatable {
             return .value(.credential(credential), stale: landed)
         }
         let ca = CredentialRow(key: "ca", label: "Built-in CA", fact: fact, asOf: asOf)
-        let (notices, noticesAsOf) = loadFact(kind: notificationsKind, dataDir: dataDir) {
-            object, landed in
+        let (notices, noticesAsOf) = read(notificationsKind) { object, landed in
             guard let rows = ReportEngine.listRows(of: object) else { return nil }
             let types = rows.map { ($0 as? [String: Any])?["type"] as? String }
             return .value(.notifications(Notifications(types: types)), stale: landed)
@@ -175,7 +189,7 @@ struct ServerHealth: Sendable, Equatable {
             credentials: [ca], notifications: notices, notificationsAsOf: noticesAsOf)
         health.adminHygiene = [lapsKind, accountsKind, apiClientsKind]
             .filter(optIn.contains).map { kind in
-                let (fact, asOf) = loadFact(kind: kind, dataDir: dataDir) { object, landed in
+                let (fact, asOf) = read(kind) { object, landed in
                     hygieneFact(kind: kind, object: object).map { .value($0, stale: landed) }
                 }
                 return HygieneRow(kind: kind, label: sourceName(kind), fact: fact, asOf: asOf)
@@ -194,22 +208,26 @@ struct ServerHealth: Sendable, Equatable {
                   let failed = count("withFailedLogins"),
                   let older = count("passwordOlderThanYear"),
                   let unknown = count("passwordAgeUnknown") else { return nil }
+            // The unknown tallies are new; a snapshot saved before them had none to report.
             return .accounts(Accounts(
                 total: total, fullAccessLocal: local, fullAccessFederated: federated,
                 withFailedLogins: failed, passwordOlderThanYear: older,
-                passwordAgeUnknown: unknown))
+                passwordAgeUnknown: unknown, failedLoginsUnknown: count("failedLoginsUnknown") ?? 0))
         default:
             guard let total = count("total"), let disabled = count("disabled"),
                   let long = count("enabledWithTokenOverOneDay") else { return nil }
             return .apiClients(APIClients(
-                total: total, disabled: disabled, enabledWithTokenOverOneDay: long))
+                total: total, disabled: disabled, enabledWithTokenOverOneDay: long,
+                tokenLifetimeUnknown: count("tokenLifetimeUnknown") ?? 0,
+                enabledUnknown: count("enabledUnknown") ?? 0))
         }
     }
 
     /// The state of one kind from its newest snapshot and its state files. A server that has
     /// the feature unset wins over an older snapshot; a refusal after a landing keeps the value.
     private static func loadFact(
-        kind: String, dataDir: URL, decode: (Any, Date?) -> FactState?
+        kind: String, dataDir: URL, now: Date, maxAgeHours: Int?,
+        decode: (Any, Date?) -> FactState?
     ) -> (FactState, asOf: Date?) {
         let store = StateFileStore(directory: dataDir.appendingPathComponent("state"))
         let failed = store.failures(report: kind) != nil
@@ -222,13 +240,33 @@ struct ServerHealth: Sendable, Equatable {
             guard let data = BoundedFile.readSnapshotLogged(url),
                   let object = try? JSONSerialization.jsonObject(
                       with: data, options: [.fragmentsAllowed]),
-                  let state = decode(object, failed ? store.lastRun(report: kind) : nil)
+                  let state = decode(object, staleDate(
+                      failed: failed, asOf: asOf, store: store, kind: kind, now: now,
+                      maxAgeHours: maxAgeHours))
             else { return (.unreadable, asOf) }
             return (state, asOf)
         }
         guard failed else { return (.notCollected, nil) }
-        if store.isAdvisory(kind: kind) { return (.notPermitted(cause?.names ?? []), nil) }
+        if store.isAdvisory(kind: kind) { return (.notPermitted(privilegeNames(cause?.names ?? [])), nil) }
         return (.failed(cause?.label ?? L("unknown cause")), nil)
+    }
+}
+
+extension ServerHealth {
+    /// The snapshot's date when its value is no longer current: the kind has failed since, or
+    /// the snapshot is older than `max_cache_age_hours`. The date is the snapshot's own stamp.
+    fileprivate static func staleDate(
+        failed: Bool, asOf: Date?, store: StateFileStore, kind: String, now: Date,
+        maxAgeHours: Int?
+    ) -> Date? {
+        if failed { return asOf ?? store.lastRun(report: kind) }
+        guard let asOf, let hours = maxAgeHours else { return nil }
+        return now.timeIntervalSince(asOf) > Double(hours) * 3_600 ? asOf : nil
+    }
+
+    /// Privilege names come from a cause file another Mac can write: filtered and capped.
+    static func privilegeNames(_ names: [String]) -> [String] {
+        names.prefix(Notifications.maxShownTypes).map(ConfigSchema.displayText)
     }
 }
 
@@ -241,7 +279,7 @@ extension ServerHealth {
         case .notPermitted(let names):
             return names.isEmpty
                 ? L("Not permitted for this login")
-                : L("Not permitted: ") + names.joined(separator: ", ")
+                : L("Not permitted: ") + privilegeNames(names).joined(separator: ", ")
         case .failed(let cause): return L("Could not be collected: ") + cause
         case .unreadable: return L("Could not be read")
         case .value(let fact, let stale):
@@ -261,14 +299,26 @@ extension ServerHealth {
     static func figures(of fact: Fact) -> [(label: String, count: Int)] {
         switch fact {
         case .accounts(let figure):
-            return [(L("Total"), figure.total), (L("Full access, local"), figure.fullAccessLocal),
-                    (L("Full access, federated"), figure.fullAccessFederated),
-                    (L("With failed logins"), figure.withFailedLogins),
-                    (L("Password over a year old"), figure.passwordOlderThanYear),
-                    (L("Password age unknown"), figure.passwordAgeUnknown)]
+            var rows = [(L("Total"), figure.total),
+                        (L("Full access, local"), figure.fullAccessLocal),
+                        (L("Full access, federated"), figure.fullAccessFederated),
+                        (L("With failed logins"), figure.withFailedLogins),
+                        (L("Password over a year old"), figure.passwordOlderThanYear),
+                        (L("Password age unknown"), figure.passwordAgeUnknown)]
+            if figure.failedLoginsUnknown > 0 {
+                rows.append((L("Failed logins not reported"), figure.failedLoginsUnknown))
+            }
+            return rows
         case .apiClients(let figure):
-            return [(L("Total"), figure.total), (L("Disabled"), figure.disabled),
-                    (L("Enabled, token over 1 day"), figure.enabledWithTokenOverOneDay)]
+            var rows = [(L("Total"), figure.total), (L("Disabled"), figure.disabled),
+                        (L("Enabled, token over 1 day"), figure.enabledWithTokenOverOneDay)]
+            if figure.tokenLifetimeUnknown > 0 {
+                rows.append((L("Token lifetime not reported"), figure.tokenLifetimeUnknown))
+            }
+            if figure.enabledUnknown > 0 {
+                rows.append((L("Enabled state not reported"), figure.enabledUnknown))
+            }
+            return rows
         case .lapsPending(let count): return [(sourceName(lapsKind), count)]
         case .credential, .notifications: return []
         }

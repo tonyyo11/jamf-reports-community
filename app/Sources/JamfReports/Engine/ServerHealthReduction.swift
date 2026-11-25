@@ -64,7 +64,8 @@ extension ServerHealthReduction {
     fileprivate static func accounts(_ object: Any, now: Date) -> Data? {
         guard let rows = ReportEngine.listRows(of: object) else { return nil }
         var counts = ["total": rows.count, "fullAccessLocal": 0, "fullAccessFederated": 0,
-                      "withFailedLogins": 0, "passwordOlderThanYear": 0, "passwordAgeUnknown": 0]
+                      "withFailedLogins": 0, "passwordOlderThanYear": 0, "passwordAgeUnknown": 0,
+                      "failedLoginsUnknown": 0]
         for case let row as [String: Any] in rows {
             let enabled = row["accountStatus"] as? String == "Enabled"
             let type = row["accountType"] as? String
@@ -72,8 +73,10 @@ extension ServerHealthReduction {
                 && row["privilegeLevel"] as? String == "ADMINISTRATOR"
             if fullAdmin, type == "DEFAULT" { counts["fullAccessLocal", default: 0] += 1 }
             if fullAdmin, type == "FEDERATED" { counts["fullAccessFederated", default: 0] += 1 }
-            if (int(row["failedLoginAttempts"]) ?? 0) > 0 {
-                counts["withFailedLogins", default: 0] += 1
+            if let failed = int(row["failedLoginAttempts"]) {
+                if failed > 0 { counts["withFailedLogins", default: 0] += 1 }
+            } else {
+                counts["failedLoginsUnknown", default: 0] += 1
             }
             guard enabled, type == "DEFAULT" else { continue }
             let changed = (row["lastPasswordChange"] as? String).flatMap(passwordChangeDate)
@@ -90,12 +93,18 @@ extension ServerHealthReduction {
 
     fileprivate static func apiClients(_ object: Any) -> Data? {
         guard let rows = ReportEngine.listRows(of: object) else { return nil }
-        var counts = ["total": rows.count, "disabled": 0, "enabledWithTokenOverOneDay": 0]
+        var counts = ["total": rows.count, "disabled": 0, "enabledWithTokenOverOneDay": 0,
+                      "tokenLifetimeUnknown": 0, "enabledUnknown": 0]
         for case let row as [String: Any] in rows {
-            let enabled = bool(row["enabled"])
-            if enabled == false { counts["disabled", default: 0] += 1 }
-            if enabled == true, (int(row["accessTokenLifetimeSeconds"]) ?? 0) > 86_400 {
-                counts["enabledWithTokenOverOneDay", default: 0] += 1
+            switch bool(row["enabled"]) {
+            case nil: counts["enabledUnknown", default: 0] += 1
+            case false?: counts["disabled", default: 0] += 1
+            case true?:
+                if let lifetime = int(row["accessTokenLifetimeSeconds"]) {
+                    if lifetime > 86_400 { counts["enabledWithTokenOverOneDay", default: 0] += 1 }
+                } else {
+                    counts["tokenLifetimeUnknown", default: 0] += 1
+                }
             }
         }
         return try? JSONSerialization.data(withJSONObject: counts)

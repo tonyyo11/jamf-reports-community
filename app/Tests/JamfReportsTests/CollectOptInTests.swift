@@ -232,6 +232,18 @@ final class CollectOptInTests: XCTestCase {
         XCTAssertTrue(kinds([]).contains("certificate-authority"))
     }
 
+    func testTheFreshnessDefaultFailsTheSameWayAsThePlannerOnAnUnknownVersion() {
+        XCTAssertTrue(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2")
+            .contains("certificate-authority"))
+    }
+
+    func testThePinHoldsOnlyOptInNamesThatExist() {
+        let typed: [Any] = ["Laps_Pending_Rotations", "junk", "admin-accounts", 7]
+        XCTAssertEqual(SharedConfigPin.collectOptInText(typed),
+                       "admin-accounts, laps-pending-rotations")
+        XCTAssertEqual(SharedConfigPin.collectOptInText(["junk"] as [Any]), "")
+    }
+
     func testTheStoreReadsTheConfirmedListForTheFreshnessStrip() throws {
         try write("[api-integrations]", shared: false)
         XCTAssertTrue(WorkspaceStore.expectedKinds(

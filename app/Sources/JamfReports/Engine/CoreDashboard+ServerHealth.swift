@@ -6,18 +6,12 @@ extension CoreDashboard {
     // Source: the server-health snapshots through `ServerHealth`.
 
     func writeServerAdminHealth() throws {
-        let now = Date()
         let warningDays = config.thresholds?.resolvedCertWarningDays
             ?? ManagementHealth.defaultWarningDays
         let health = ServerHealth.load(
-            dataDir: dataDir, warningDays: warningDays, now: now, optIn: optInKinds)
-        // A tab of "not permitted" rows would say nothing; the Audit card carries those.
-        let landed = health.credentials.map(\.fact) + [health.notifications]
-            + health.adminHygiene.map(\.fact)
-        guard landed.contains(where: {
-            if case .value = $0 { return true }
-            return false
-        }) else { throw CoreDashboardError.noServerHealthData }
+            dataDir: dataDir, warningDays: warningDays, now: now, optIn: optInKinds,
+            maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
+        try requireServerHealthData(health)
 
         let ws = workbook.addSheet(SheetID.serverAdminHealth.rawValue)
         var row = ws.writeSheetHeader(
@@ -50,6 +44,32 @@ extension CoreDashboard {
             row += 1
             writeAdminHygiene(ws, hygiene, row: row)
         }
+    }
+
+    /// A tab of refusals would say nothing (the Audit card carries those), so it is skipped,
+    /// saying which of three things happened.
+    private func requireServerHealthData(_ health: ServerHealth) throws {
+        let facts = health.credentials.map { ($0.key == "ca" ? ServerHealth.caKind : $0.key, $0.fact) }
+            + [(ServerHealth.notificationsKind, health.notifications)]
+            + health.adminHygiene.map { ($0.kind, $0.fact) }
+        let attempted = facts.filter { $0.1 != .notCollected }
+        if attempted.contains(where: { if case .value = $0.1 { return true } else { return false } }) {
+            return
+        }
+        if let unreadable = attempted.first(where: { $0.1 == .unreadable }) {
+            let line = "[warn] Server and Admin Health: the \(unreadable.0) snapshot could not "
+                + "be read; the sheet was skipped."
+            if let onLine {
+                onLine(.init(timestamp: Date(), level: .warn, text: line))
+            } else {
+                print("  " + line)
+            }
+            throw CoreDashboardError.nothingToShow(
+                "The \(unreadable.0) snapshot could not be read")
+        }
+        guard !attempted.isEmpty else { throw CoreDashboardError.noServerHealthData }
+        throw CoreDashboardError.nothingToShow(
+            "Every server-health source is not permitted or not set up on this server")
     }
 
     /// Counts only, as the opt-in reductions save them: never a name, email or client ID.
@@ -87,6 +107,9 @@ extension CoreDashboard {
     ) -> Int {
         var row = start
         ws.write("Notifications", row: row, col: 0, format: .header)
+        if let asOf = health.notificationsAsOf {
+            ws.write("As of \(ISO8601Time.string(asOf))", row: row, col: 1, format: .cell)
+        }
         row += 1
         guard let (figure, stale) = health.notificationFigure else {
             ws.write(ServerHealth.text(for: health.notifications), row: row, col: 0, format: .yellow)

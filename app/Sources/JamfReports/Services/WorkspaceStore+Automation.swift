@@ -528,7 +528,7 @@ extension WorkspaceStore {
         securityCloudConnected: Bool = false,
         platformUnavailable: Bool = false,
         skippedSides: Set<FleetSide> = [],
-        serverHealthSupported: Bool = false,
+        serverHealthSupported: Bool = true,
         workspaceAuthIsPlatform: Bool = false,
         advisory: Set<String> = [],
         optIn: Set<String> = []

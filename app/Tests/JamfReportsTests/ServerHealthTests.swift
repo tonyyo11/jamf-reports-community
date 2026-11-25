@@ -98,6 +98,65 @@ final class ServerHealthTests: XCTestCase {
         XCTAssertNotNil(stale)
     }
 
+    func testTheStaleDateIsTheSnapshotsOwnStampNotTheStateFilesLastRun() throws {
+        try snapshot(#"{"notAfter":1893456000}"#)
+        store.record(.landed, report: kind, at: now.addingTimeInterval(-10 * 86_400))
+        fail(.other, exit: 1)
+        guard case .value(_, let stale?)? = fact() else { return XCTFail("expected stale") }
+        XCTAssertEqual(ServerHealth.day(stale), "2026-09-21")
+    }
+
+    func testASnapshotOlderThanTheCacheAgeReadsAsOfItsDay() throws {
+        try snapshot(#"{"notAfter":1893456000}"#)
+        let later = now.addingTimeInterval(5 * 86_400)
+        func stale(_ hours: Int?) -> Date? {
+            guard case .value(_, let stale)? = ServerHealth.load(
+                dataDir: dir, warningDays: 90, now: later, maxAgeHours: hours)
+                .credentials.first?.fact else { return nil }
+            return stale
+        }
+        XCTAssertNotNil(stale(48))
+        XCTAssertNil(stale(24 * 30))
+        XCTAssertNil(stale(nil), "no limit given reads as current")
+        let health = ServerHealth.load(dataDir: dir, warningDays: 90, now: later, maxAgeHours: 48)
+        XCTAssertTrue(ServerHealth.text(for: health.credentials[0].fact).contains("as of 2026-09-21"))
+        XCTAssertTrue(health.expiringCredentials.isEmpty, "not a current warning in the report")
+    }
+
+    func testPrivilegeNamesFromACauseFileAreFilteredAndCapped() {
+        let names = (1...8).map { "Read\u{202E} \($0)" }
+        fail(.missingPermission, names: names, exit: 5)
+        guard case .notPermitted(let shown)? = fact() else { return XCTFail("expected refusal") }
+        XCTAssertEqual(shown.count, ServerHealth.Notifications.maxShownTypes)
+        XCTAssertFalse(shown.joined().contains("\u{202E}"))
+        XCTAssertFalse(ServerHealth.text(for: .notPermitted(names)).contains("Read 6"))
+    }
+
+    func testATypeNamedLikeTheUnknownLabelIsNotMergedWithAMissingType() {
+        let figure = ServerHealth.Notifications(types: [nil, "Unknown type", "Unknown type"])
+        XCTAssertEqual(figure.types.count, 2)
+        XCTAssertEqual(figure.types.map(\.count), [2, 1])
+    }
+
+    func testUnreportedCountsShowOnlyWhenAboveZero() {
+        let clean = ServerHealth.Fact.accounts(.init(
+            total: 3, fullAccessLocal: 1, fullAccessFederated: 0, withFailedLogins: 0,
+            passwordOlderThanYear: 0, passwordAgeUnknown: 0))
+        XCTAssertFalse(ServerHealth.figuresText(clean).contains("not reported"))
+        let gaps = ServerHealth.Fact.accounts(.init(
+            total: 3, fullAccessLocal: 1, fullAccessFederated: 0, withFailedLogins: 0,
+            passwordOlderThanYear: 0, passwordAgeUnknown: 0, failedLoginsUnknown: 2))
+        XCTAssertTrue(ServerHealth.figuresText(gaps).hasSuffix("Failed logins not reported: 2"))
+        let clients = ServerHealth.Fact.apiClients(.init(
+            total: 4, disabled: 1, enabledWithTokenOverOneDay: 1, tokenLifetimeUnknown: 1,
+            enabledUnknown: 2))
+        let text = ServerHealth.figuresText(clients)
+        XCTAssertTrue(text.contains("Token lifetime not reported: 1"), text)
+        XCTAssertTrue(text.contains("Enabled state not reported: 2"), text)
+        XCTAssertFalse(ServerHealth.figuresText(.apiClients(.init(
+            total: 1, disabled: 0, enabledWithTokenOverOneDay: 0))).contains("not reported"))
+    }
+
     func testAnUnreadableSnapshotIsUnreadable() throws {
         try snapshot("not json")
         XCTAssertEqual(fact(), .unreadable)

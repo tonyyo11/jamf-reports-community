@@ -12,7 +12,7 @@ extension ConfigDoctorService {
             let source = ServerHealth.sourceName(kind)
             return cause.names.isEmpty
                 ? L("this login cannot read \(source); check the API role's privileges for it")
-                : L("\(source) needs \(cause.names.joined(separator: ", "))")
+                : L("\(source) needs \(ServerHealth.privilegeNames(cause.names).joined(separator: ", "))")
         }
         return [DoctorRow(
             id: "server_health.not_permitted",

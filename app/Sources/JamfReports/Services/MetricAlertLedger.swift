@@ -98,9 +98,18 @@ struct MetricAlertLedger: Sendable {
                         < ($1.key, $1.expires, $1.rule, $1.state) }), to: url)
     }
 
+    /// The file sits where a peer can write, so a credential list is bounded and an entry whose
+    /// expiry is no date is dropped.
+    static let maxCredentialKeys = 200
+
     private func load(from url: URL) -> Record? {
-        guard let data = BoundedFile.stateData(url) else { return nil }
-        return try? JSONDecoder().decode(Record.self, from: data)
+        guard let data = BoundedFile.stateData(url),
+              var record = try? JSONDecoder().decode(Record.self, from: data) else { return nil }
+        record.credentialKeys = record.credentialKeys.map {
+            Array($0.filter { CredentialExpiry.parse($0.expires) != nil }
+                .prefix(Self.maxCredentialKeys))
+        }
+        return record
     }
 
     private func save(_ record: Record, to fileURL: URL) {

@@ -59,9 +59,9 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertFalse(expected(supported: false), "jamf-cli older than 1.38.0")
         XCTAssertFalse(expected(platform: true), "a Platform-auth workspace profile")
         XCTAssertFalse(expected(advisory: [kind]), "refused or not set up: advice, not stale")
-        XCTAssertFalse(
+        XCTAssertTrue(
             WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2").contains(kind),
-            "the defaults keep the old list")
+            "an unknown jamf-cli version fails the way the planner does")
         XCTAssertFalse(
             WorkspaceStore.expectedKinds(
                 skipExpensive: false, authMethod: "oauth2", collectSkip: [kind],

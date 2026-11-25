@@ -146,6 +146,23 @@ final class MetricAlertLedgerTests: XCTestCase {
         XCTAssertTrue(ledger.pendingKeys(day: "2026-07-08", keys: ["a", "b"]).isEmpty)
     }
 
+    func testALedgerAPeerWroteIsBoundedAndDropsEntriesWithNoDate() throws {
+        let url = AutomationStateFile.url(named: ".metric-alerts-ledger.json", in: workspace)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let entries = (0..<500).map {
+            #"{"rule":"below 45","key":"ca","expires":"2030-01-01T00:00:\#($0 % 60 < 10 ? "0" : "")\#($0 % 60)Z","state":"hit\#($0)"}"#
+        } + [#"{"rule":"below 45","key":"ca","expires":"not a date","state":"hit"}"#]
+        try Data(#"{"day":"","keys":[],"credentialKeys":[\#(entries.joined(separator: ","))]}"#.utf8)
+            .write(to: url)
+        let bogus = credentialHit(key: "ca", expires: "not a date", state: "hit")
+        XCTAssertEqual(ledger.pendingCredentialHits([bogus]).count, 1, "a dateless entry is dropped")
+        let late = credentialHit(key: "ca", expires: "2030-01-01T00:00:00Z", state: "hit499")
+        XCTAssertEqual(ledger.pendingCredentialHits([late]).count, 1, "past the 200 cap")
+        let early = credentialHit(key: "ca", expires: "2030-01-01T00:00:00Z", state: "hit0")
+        XCTAssertTrue(ledger.pendingCredentialHits([early]).isEmpty, "inside the cap")
+    }
+
     func testAnEntryIsPrunedSixtyDaysAfterItsExpiryOnly() {
         let day = 86_400.0
         func stamp(_ days: Double) -> String { ISO8601Time.string(now.addingTimeInterval(days * day)) }
@@ -153,7 +170,9 @@ final class MetricAlertLedgerTests: XCTestCase {
         let old = credentialHit(key: "ade:1", expires: stamp(-61), state: "expired")
         ledger.recordCredentials([recent, old], now: now)
         XCTAssertTrue(ledger.pendingCredentialHits([recent]).isEmpty)
-        XCTAssertEqual(ledger.pendingCredentialHits([old]).count, 1, "pruned, so it re-arms")
+        // The evaluator emits no hit this old (`testAnExpiredCredentialPostsTwice...`), so
+        // pruning cannot re-send it.
+        XCTAssertEqual(ledger.pendingCredentialHits([old]).count, 1, "pruned from the file")
     }
 
     func testALedgerAn212BuildWroteHasNoCredentialKeysAndSendsOnce() throws {

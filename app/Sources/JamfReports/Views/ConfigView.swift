@@ -785,7 +785,7 @@ private struct ThresholdsTab: View {
                     thresholdField(
                         label: L("Certificate and token expiry warning"), key: "cert_warning_days",
                         value: $ws.configState.certWarningDays, unit: "days",
-                        help: L("Default expiry warning window for date EAs")
+                        help: L("Warning window in days for date EAs, the built-in certificate authority and ADE tokens")
                     )
 
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)

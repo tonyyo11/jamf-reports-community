@@ -157,6 +157,20 @@ final class MetricAlertCredentialRunTests: XCTestCase {
         XCTAssertEqual(WebhookCapture.posted.count, 2)
     }
 
+    func testAnExpiredCredentialPostsTwiceOverItsLifeEvenPastDay61() async throws {
+        let config = try config()
+        try writeSummary(day: day(0), expiries: ["ca": 3])
+        await run(config, on: day(0))
+        try writeSummary(day: day(4), expiries: ["ca": 3])
+        await run(config, on: day(4))
+        // Inside the window, past it (the ledger forgets the entry), and long after.
+        for offset in [30, 62, 64, 66, 70, 200] {
+            try writeSummary(day: day(offset), expiries: ["ca": 3])
+            await run(config, on: day(offset))
+        }
+        XCTAssertEqual(WebhookCapture.posted.count, 2, "once on crossing, once on expiry")
+    }
+
     func testTwoCredentialsCrossingOnDifferentDaysEachPostOnce() async throws {
         let config = try config()
         try writeSummary(day: day(0), expiries: ["ca": 40, "ade:1": 90])

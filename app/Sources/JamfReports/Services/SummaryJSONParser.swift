@@ -266,9 +266,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
             resolved.securityCloudMatched = securityCloud.matched
             resolved.securityCloudRiskCounts = securityCloud.riskCounts
         }
-        if let expiries = serverHealth?.expiries {
-            resolved.serverCredentialExpiries = (resolved.serverCredentialExpiries ?? [:])
-                .merging(expiries) { $1 }
+        if let health = serverHealth, let expiries = health.expiries {
+            // A measured ADE list replaces every earlier `ade:` key; `ca` stands unless re-measured.
+            let earlier = (resolved.serverCredentialExpiries ?? [:])
+                .filter { !(health.adeMeasured && $0.key.hasPrefix("ade:")) }
+            let merged = earlier.merging(expiries) { $1 }
+            resolved.serverCredentialExpiries = merged.isEmpty ? nil : merged
         }
         if let count = serverHealth?.notificationCount { resolved.jamfProNotificationCount = count }
         if let count = serverHealth?.lapsPendingCount { resolved.lapsPendingCount = count }

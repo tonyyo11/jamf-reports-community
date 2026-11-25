@@ -133,6 +133,46 @@ final class ServerHealthSummaryTests: XCTestCase {
         XCTAssertNotNil(keys["ade:soon"])
     }
 
+    func testTheCapKeepsLiveTokensSoonestFirstThenTheMostRecentlyExpired() {
+        func token(_ id: String, _ offset: Int) -> EnrollmentToken {
+            let day = Calendar.current.date(byAdding: .day, value: offset, to: .testNoon)!
+            let text = SummaryJSONParser.dateFormatter.string(from: day)
+            return EnrollmentToken(
+                row: ["id": id, "tokenExpirationDate": text], warningDays: 90, now: .testNoon)
+        }
+        var tokens = (1...22).map { token("old\($0)", -$0) }
+        tokens += [token("live30", 30), token("live1", 1), token("live5", 5),
+                   token("ancient", -100)]
+        tokens.append(EnrollmentToken(row: ["id": "undated"], warningDays: 90, now: .testNoon))
+        let ids = ReportEngine.cappedTokens(tokens).compactMap(\.id)
+        XCTAssertEqual(Array(ids.prefix(5)), ["live1", "live5", "live30", "old1", "old2"])
+        XCTAssertEqual(ids.count, 20)
+        XCTAssertFalse(ids.contains("ancient"), "past the retention window")
+        XCTAssertFalse(ids.contains("undated"))
+    }
+
+    func testAnInstanceDeletedInJamfProDisappearsWhenADEWasMeasured() {
+        let older = DailySummary(
+            date: Self.day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli",
+            serverCredentialExpiries: [
+                "ca": .init(expires: "2027-01-01T00:00:00Z", asOf: Self.day),
+                "ade:1": .init(expires: "2027-03-01", asOf: Self.day),
+                "ade:2": .init(expires: "2027-04-01", asOf: Self.day)])
+        let measured = older.withEnvironment(products: nil, protect: nil, serverHealth: .init(
+            expiries: ["ade:1": .init(expires: "2027-03-01", asOf: Self.day)],
+            adeMeasured: true, notificationCount: nil))
+        XCTAssertEqual(Set(measured.serverCredentialExpiries?.keys ?? [:].keys), ["ca", "ade:1"])
+        let empty = older.withEnvironment(products: nil, protect: nil, serverHealth: .init(
+            expiries: [:], adeMeasured: true, notificationCount: nil))
+        XCTAssertEqual(Set(empty.serverCredentialExpiries?.keys ?? [:].keys), ["ca"])
+        let unmeasured = older.withEnvironment(products: nil, protect: nil, serverHealth: .init(
+            expiries: ["ca": .init(expires: "2027-02-01T00:00:00Z", asOf: Self.day)],
+            notificationCount: nil))
+        XCTAssertNotNil(unmeasured.serverCredentialExpiries?["ade:2"])
+    }
+
     func testARebuildThatMeasuresOnlyTheCAKeepsTheEarlierADEEntries() {
         let older = DailySummary(
             date: Self.day, totalDevices: 5, fileVaultPct: nil, compliancePct: nil,

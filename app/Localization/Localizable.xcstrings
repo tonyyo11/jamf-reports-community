@@ -2844,6 +2844,46 @@
         }
       }
     },
+    "%@ are collected only when collect_opt_in lists them; collect_skip does nothing for them." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ werden nur erfasst, wenn collect_opt_in sie aufführt; collect_skip bewirkt dafür nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ solo se recopilan cuando collect_opt_in los incluye; collect_skip no hace nada con ellos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne sont collectés que si collect_opt_in les liste ; collect_skip n’a aucun effet sur eux."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vengono raccolti solo se collect_opt_in li elenca; collect_skip non ha effetto su di essi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は collect_opt_in に記載されている場合にのみ収集されます。collect_skip は影響しません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ só são coletados quando collect_opt_in os lista; collect_skip não faz nada por eles."
+          }
+        }
+      }
+    },
     "%@ are not admin hygiene sources, so they turn nothing on." : {
       "localizations" : {
         "de" : {
@@ -5366,6 +5406,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ está atrás da versão atual do iOS ou iPadOS."
+          }
+        }
+      }
+    },
+    "%@ is collected only when collect_opt_in lists it; collect_skip does nothing for it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird nur erfasst, wenn collect_opt_in es aufführt; collect_skip bewirkt dafür nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ solo se recopila cuando collect_opt_in lo incluye; collect_skip no hace nada con él."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est collecté que si collect_opt_in le liste ; collect_skip n’a aucun effet sur lui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene raccolto solo se collect_opt_in lo elenca; collect_skip non ha effetto su di esso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は collect_opt_in に記載されている場合にのみ収集されます。collect_skip は影響しません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ só é coletado quando collect_opt_in o lista; collect_skip não faz nada por ele."
           }
         }
       }
@@ -52351,46 +52431,6 @@
         }
       }
     },
-    "Default expiry warning window for date EAs" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standard-Warnfenster vor Ablauf für Datums-EAs"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ventana predeterminada de aviso de caducidad para EA de fecha"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Délai d’alerte d’expiration par défaut pour les EA de date"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finestra di avviso di scadenza predefinita per gli EA di tipo data"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日付EAのデフォルトの期限警告期間"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Janela padrão de aviso de expiração para EAs de data"
-          }
-        }
-      }
-    },
     "Default trend range" : {
       "localizations" : {
         "de" : {
@@ -57561,6 +57601,46 @@
         }
       }
     },
+    "Enabled state not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivierungsstatus nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de activación no informado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État d’activation non signalé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato di attivazione non segnalato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効状態が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de ativação não informado"
+          }
+        }
+      }
+    },
     "Enabled, token over 1 day" : {
       "localizations" : {
         "de" : {
@@ -61836,6 +61916,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regras com falha"
+          }
+        }
+      }
+    },
+    "Failed logins not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlgeschlagene Anmeldungen nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios de sesión fallidos no informados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échecs de connexion non signalés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessi non riusciti non segnalati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログイン失敗数が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falhas de login não informadas"
           }
         }
       }
@@ -133640,6 +133760,46 @@
         }
       }
     },
+    "Token lifetime not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token-Lebensdauer nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duración del token no informada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durée de vie du jeton non signalée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durata del token non segnalata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トークンの有効期間が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vida útil do token não informada"
+          }
+        }
+      }
+    },
     "Token valid until %@" : {
       "localizations" : {
         "de" : {
@@ -135198,6 +135358,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme dados da frota já coletados em cartões de insight em linguagem simples na Visão geral, em Tendências, Auditoria, Postura de segurança e Postura de conformidade, usando o modelo de fundação no dispositivo (Apple Intelligence). Desativado por padrão. O modelo é executado neste Mac e nada sai dele."
+          }
+        }
+      }
+    },
+    "Turn it off by removing it from collect_opt_in, or with its switch on Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernen Sie es aus collect_opt_in oder verwenden Sie den Schalter unter „Datenquellen“, um es auszuschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactívelo quitándolo de collect_opt_in o con su interruptor en Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez-le en le retirant de collect_opt_in ou avec son interrupteur dans Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivalo rimuovendolo da collect_opt_in o con il suo interruttore in Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "collect_opt_in から削除するか、データソースのスイッチでオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desative-o removendo-o de collect_opt_in ou com o seu botão em Fontes de dados."
           }
         }
       }
@@ -140771,6 +140971,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Severidade de aviso"
+          }
+        }
+      }
+    },
+    "Warning window in days for date EAs, the built-in certificate authority and ADE tokens" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnzeitraum in Tagen für Datums-EAs, die integrierte Zertifizierungsstelle und ADE-Token"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ventana de aviso en días para EA de fecha, la autoridad de certificación integrada y los tokens de ADE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Délai d’alerte en jours pour les EA de date, l’autorité de certification intégrée et les jetons ADE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finestra di avviso in giorni per le EA di data, l’autorità di certificazione integrata e i token ADE"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付EA、内蔵認証局、ADEトークンの警告期間（日数）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Janela de aviso em dias para EAs de data, a autoridade de certificação integrada e os tokens do ADE"
           }
         }
       }

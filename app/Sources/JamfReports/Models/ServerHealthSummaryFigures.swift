@@ -13,6 +13,8 @@ struct CredentialExpiryEntry: Codable, Equatable, Sendable {
 struct ServerHealthSummaryFigures: Equatable, Sendable {
     /// By credential key: `ca`, `ade:<id>`.
     var expiries: [String: CredentialExpiryEntry]?
+    /// True when the ADE snapshot was read this run, so an instance no longer in it is gone.
+    var adeMeasured = false
     /// Notifications the login sees, set only when the kind landed this run.
     var notificationCount: Int?
     /// LAPS rotations pending, set only when that opt-in kind landed this run.

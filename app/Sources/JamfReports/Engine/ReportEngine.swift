@@ -113,7 +113,8 @@ struct ReportEngine: Sendable {
                                  provenance: prov, aiNarrative: aiNarrative, onLine: onLine,
                                  optInKinds: SharedConfigPin.collectOptIn(
                                      configured: config.jamfCli?.collectOptIn,
-                                     profile: workspaceName))
+                                     profile: workspaceName),
+                                 now: now)
         let registry = SheetRegistry(plan: core.sheetPlan)
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
@@ -3993,6 +3994,7 @@ struct ReportEngine: Sendable {
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
@@ -4003,7 +4005,7 @@ struct ReportEngine: Sendable {
         let report = htmlReport(
             config: config, dataDir: dataDir, workspace: workspace, template: template,
             aiNarrative: aiNarrative, expandAll: false, locateJamfCLI: locateJamfCLI,
-            onLine: onLine)
+            now: now, onLine: onLine)
         let configProfile = workspace?.name ?? ""
         let digest = try await report.generate(
             outputURL: outputURL, profileName: configProfile, sections: template.htmlSections
@@ -4029,6 +4031,7 @@ struct ReportEngine: Sendable {
         aiNarrative: String? = nil,
         expandAll: Bool,
         locateJamfCLI: @Sendable () -> URL?,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> HtmlReport {
         var report = HtmlReport(
@@ -4037,6 +4040,7 @@ struct ReportEngine: Sendable {
         report.templateName = template.displayName
         report.openSections = Set(template.htmlOpenSections)
         report.expandAll = expandAll
+        report.now = now
         report.jamfCLIVersion = locateJamfCLI()
             .flatMap { JamfCLIInstaller.installedVersion(at: $0) }
         return report

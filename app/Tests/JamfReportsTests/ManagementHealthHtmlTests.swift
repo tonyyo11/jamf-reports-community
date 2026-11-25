@@ -110,7 +110,7 @@ final class ManagementHealthHtmlTests: XCTestCase {
         try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
         let expiry = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 40, to: Date()))
         try #"{"notAfter":\#(Int(expiry.timeIntervalSince1970))}"#.write(
-            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            to: caDir.appendingPathComponent("certificate-authority_\(Self.freshStamp).json"),
             atomically: true, encoding: .utf8)
         let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
         let text = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
@@ -119,13 +119,21 @@ final class ManagementHealthHtmlTests: XCTestCase {
         XCTAssertTrue(text.contains("The Jamf Pro built-in CA expires in 40 days."), "\(text)")
     }
 
+    /// A snapshot stamped now, so it is inside `max_cache_age_hours` whatever day this runs.
+    private static var freshStamp: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: Date())
+    }
+
     func testNotificationsGetOneSentenceWhileAboveZero() throws {
         let root = GoldenFleetWorkspace.freshRoot()
         roots.append(root)
         let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let dir = dataDir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let file = dir.appendingPathComponent("jamf-pro-notifications_20260921T120000.json")
+        let file = dir.appendingPathComponent("jamf-pro-notifications_\(Self.freshStamp).json")
         try #"[{"type":"B"},{"type":"A"},{"type":"A"}]"#.write(
             to: file, atomically: true, encoding: .utf8)
         let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)

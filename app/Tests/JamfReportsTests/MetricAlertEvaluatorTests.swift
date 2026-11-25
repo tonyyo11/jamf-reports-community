@@ -555,6 +555,29 @@ final class MetricAlertEvaluatorTests: XCTestCase {
     private let below45 = AlertRule(
         metric: "server_credential_days_left", when: "below", threshold: 45)
 
+    func testAnExpiredCredentialPastTheRetentionWindowIsSkipped() {
+        let rule = AlertRule(metric: "server_credential_days_left", when: "below", threshold: 0)
+        func states(_ days: Int) -> [String?] {
+            MetricAlertEvaluator.evaluateCredentials(
+                rules: [rule], current: credentialSummary(["ca": (days, "")]), now: now)
+                .map(\.credentialState)
+        }
+        XCTAssertEqual(states(-60), ["expired"])
+        XCTAssertTrue(states(-61).isEmpty, "the ledger forgets it at 61, so evaluation stops")
+    }
+
+    func testAPlantedCredentialMapIsReducedToTheKeysTheWriterMakes() {
+        var entries: [String: (Int, String)] = ["ca": (5, ""), "junk": (5, ""),
+                                                "ade:bad id": (5, ""), "ade:": (5, "")]
+        for index in 0..<500 { entries["ade:\(index)"] = (5, "") }
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: [below45], current: credentialSummary(entries), now: now)
+        XCTAssertLessThanOrEqual(hits.count, ReportEngine.maxADEInstances + 1)
+        XCTAssertTrue(hits.allSatisfy {
+            $0.credentialKey == "ca" || $0.credentialKey?.hasPrefix("ade:") == true })
+        XCTAssertFalse(hits.contains { $0.credentialKey == "junk" || $0.credentialKey == "ade:bad id" })
+    }
+
     func testACredentialInsideTheThresholdHitsOnceWithItsKeyAndState() {
         let hits = MetricAlertEvaluator.evaluateCredentials(
             rules: [below45], current: credentialSummary(["ca": (40, ""), "ade:1": (90, "")]),

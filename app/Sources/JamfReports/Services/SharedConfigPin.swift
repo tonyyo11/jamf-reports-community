@@ -376,7 +376,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             securityCloudProfile: (ConfigLoader.textValue(securityCloudProfile) ?? "")
                 .trimmingCharacters(in: .whitespaces),
             collectSkip: collectSkipText(raw("jamf_cli", "collect_skip")),
-            collectOptIn: collectSkipText(raw("jamf_cli", "collect_opt_in"))
+            collectOptIn: collectOptInText(raw("jamf_cli", "collect_opt_in"))
         )
     }
 
@@ -386,6 +386,13 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         let names = (raw as? [Any])?.compactMap { $0 as? String } ?? []
         return Set(names.map(ReportEngine.normalizedKind).filter { !$0.isEmpty })
             .sorted().joined(separator: ", ")
+    }
+
+    /// `collectSkipText` narrowed to the opt-in kinds that exist, so a name no build reads is
+    /// never pinned and a kind a later build adds always needs its own Confirm.
+    static func collectOptInText(_ raw: Any?) -> String {
+        collectSkipNames(collectSkipText(raw))
+            .filter(ReportEngine.serverHealthOptInKinds.contains).joined(separator: ", ")
     }
 
     static func collectSkipNames(_ text: String) -> [String] {
@@ -965,7 +972,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     static func collectOptInList(
         configured: [String]?, profile: String, appSupport: URL = AppSupport.directory()
     ) -> (effective: [String], drifted: Bool, pinnedText: String?) {
-        let listed = collectSkipNames(collectSkipText(configured ?? []))
+        let listed = collectSkipNames(collectOptInText(configured ?? []))
         let result = check(profile: profile, appSupport: appSupport)
         if result.isLocal { return (listed, false, nil) }
         guard let pin = result.pinned ?? read(profile: profile, appSupport: appSupport).pin else {

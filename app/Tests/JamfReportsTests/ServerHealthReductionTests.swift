@@ -149,8 +149,17 @@ final class ServerHealthReductionTests: XCTestCase {
     func testAccountCountsFollowTheFixture() throws {
         XCTAssertEqual(try counts("admin-accounts", fixture("admin-accounts-list.json")), [
             "total": 3, "fullAccessLocal": 1, "fullAccessFederated": 1, "withFailedLogins": 1,
-            "passwordOlderThanYear": 1, "passwordAgeUnknown": 0,
+            "passwordOlderThanYear": 1, "passwordAgeUnknown": 0, "failedLoginsUnknown": 0,
         ])
+    }
+
+    func testAMissingFailedLoginCountIsUnknownNotZero() throws {
+        let rows = try counts("admin-accounts", Data("""
+            [{"accountType":"FEDERATED","accountStatus":"Enabled"},
+             {"failedLoginAttempts":"3"}, {"failedLoginAttempts":2}, {"failedLoginAttempts":0}]
+            """.utf8))
+        XCTAssertEqual(rows["failedLoginsUnknown"], 2)
+        XCTAssertEqual(rows["withFailedLogins"], 1)
     }
 
     private func account(
@@ -221,6 +230,7 @@ final class ServerHealthReductionTests: XCTestCase {
     func testAPIClientCounts() throws {
         XCTAssertEqual(try counts("api-integrations", fixture("api-integrations-list.json")), [
             "total": 3, "disabled": 1, "enabledWithTokenOverOneDay": 1,
+            "tokenLifetimeUnknown": 0, "enabledUnknown": 0,
         ])
         func client(enabled: String, seconds: Int) -> String {
             #"{"enabled":\#(enabled),"accessTokenLifetimeSeconds":\#(seconds)}"#
@@ -229,8 +239,16 @@ final class ServerHealthReductionTests: XCTestCase {
             [\(client(enabled: "true", seconds: 86_400)), \(client(enabled: "true", seconds: 86_401)),
              \(client(enabled: "false", seconds: 999_999)), {"enabled":"yes","accessTokenLifetimeSeconds":9}]
             """.utf8))
-        XCTAssertEqual(rows, ["total": 4, "disabled": 1, "enabledWithTokenOverOneDay": 1],
-                       "a day exactly is not over a day; a non-boolean flag is neither")
+        XCTAssertEqual(rows, ["total": 4, "disabled": 1, "enabledWithTokenOverOneDay": 1,
+                              "tokenLifetimeUnknown": 0, "enabledUnknown": 1],
+                       "a day exactly is not over a day; a non-boolean flag is counted unknown")
+        let unknown = try counts("api-integrations", Data("""
+            [{"enabled":true}, {"enabled":true,"accessTokenLifetimeSeconds":"x"},
+             {"enabled":true,"accessTokenLifetimeSeconds":60}, {"accessTokenLifetimeSeconds":9}]
+            """.utf8))
+        XCTAssertEqual(unknown["tokenLifetimeUnknown"], 2)
+        XCTAssertEqual(unknown["enabledUnknown"], 1)
+        XCTAssertEqual(unknown["enabledWithTokenOverOneDay"], 0)
     }
 
     func testLAPSKeepsOnlyTheCount() throws {

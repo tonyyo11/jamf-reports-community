@@ -329,7 +329,7 @@ struct SourcesView: View {
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
         } else if state == .on || state == .off || state == .locked {
-            let held = sourcesPlan?.changedOnAnotherMac == true
+            let held = sourcesPlan?.holdsSkipSwitches == true
             Toggle("", isOn: Binding(
                 get: { state != .off },
                 set: { on in
@@ -970,7 +970,8 @@ struct SourcesView: View {
                     workspaceAuthIsPlatform:
                         JamfCLIAuthMethod(raw: workspaceAuth?.authMethod)?.isPlatform == true,
                     advisory: StateFileStore.advisoryCauses(profile: profile),
-                    optInList: optInList.effective, optInDrifted: optInList.drifted))
+                    optInList: optInList.effective, optInDrifted: optInList.drifted,
+                    optInInFile: optInList.drifted ? config?.jamfCli?.collectOptIn ?? [] : nil))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]

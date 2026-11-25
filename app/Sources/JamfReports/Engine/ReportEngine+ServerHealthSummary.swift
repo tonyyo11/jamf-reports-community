@@ -22,17 +22,18 @@ extension ReportEngine {
             calendar: calendar, optIn: landed.intersection([ServerHealth.lapsKind]))
         var expiries: [String: CredentialExpiryEntry] = [:]
         if let day = asOf(ServerHealth.caKind),
-           case .value(.credential(let credential), _)? = health.credentials.first?.fact,
+           case .value(.credential(let credential), _)?
+               = health.credentials.first(where: { $0.key == "ca" })?.fact,
            let text = credential.expiresText {
             expiries["ca"] = .init(expires: text, asOf: day)
         }
+        var adeMeasured = false
         if let day = asOf("device-enrollment-instances") {
             let tokens = EnrollmentTokenSnapshot.load(
                 dataDir: dataDir, warningDays: ManagementHealth.defaultWarningDays, now: now,
                 calendar: calendar).tokens
-            // Soonest first, so the cap never drops the token about to expire.
-            let soonest = tokens.sorted { ($0.expiryDay ?? "\u{10FFFF}") < ($1.expiryDay ?? "\u{10FFFF}") }
-            for token in soonest.prefix(maxADEInstances) {
+            adeMeasured = true
+            for token in cappedTokens(tokens) {
                 // The id comes from a snapshot a peer can write and becomes part of a key.
                 guard let id = token.id, let expires = token.expiryDay, isSafeKeyPart(id)
                 else { continue }
@@ -43,15 +44,26 @@ extension ReportEngine {
             ? health.notificationFigure?.value.total : nil
         // Only a kind that landed this run: an opted-out or failed source leaves the earlier value.
         let laps = landed.contains(ServerHealth.lapsKind) ? health.lapsPendingFigure : nil
-        guard !expiries.isEmpty || count != nil || laps != nil else { return nil }
+        guard !expiries.isEmpty || adeMeasured || count != nil || laps != nil else { return nil }
         return .init(
-            expiries: expiries.isEmpty ? nil : expiries, notificationCount: count,
-            lapsPendingCount: laps)
+            expiries: expiries.isEmpty && !adeMeasured ? nil : expiries,
+            adeMeasured: adeMeasured, notificationCount: count, lapsPendingCount: laps)
     }
 
-    private static let maxADEInstances = 20
+    static let maxADEInstances = 20
 
-    private static func isSafeKeyPart(_ id: String) -> Bool {
+    /// The tokens the cap keeps: those not yet expired, soonest first, then the expired ones,
+    /// most recently expired first (any past the ledger's retention window left out), so the
+    /// cap never drops the token about to expire. A token with no readable day is not kept.
+    static func cappedTokens(_ tokens: [EnrollmentToken]) -> [EnrollmentToken] {
+        let dated = tokens.compactMap { token in token.daysLeft.map { (token, $0) } }
+            .filter { $0.1 >= -MetricAlertLedger.credentialRetentionDays }
+        let live = dated.filter { $0.1 >= 0 }.sorted { $0.1 < $1.1 }
+        let expired = dated.filter { $0.1 < 0 }.sorted { $0.1 > $1.1 }
+        return Array((live + expired).map(\.0).prefix(maxADEInstances))
+    }
+
+    static func isSafeKeyPart(_ id: String) -> Bool {
         (1...40).contains(id.count)
             && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
     }

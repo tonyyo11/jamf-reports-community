@@ -272,7 +272,7 @@ struct TrendsView: View {
               let first = series.first, let last = series.last else {
             return noChangeText(series: series)
         }
-        let relative = metric.unit == "%" ? nil
+        let relative = !metric.isDeviceCount ? nil
             : relativeChangePercent(delta: last - first, baseline: first)
         return change.heroText(relativeChange: relative)
     }

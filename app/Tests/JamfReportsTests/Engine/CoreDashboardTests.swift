@@ -315,6 +315,43 @@ final class CoreDashboardTests: XCTestCase {
         }
     }
 
+    private final class LineBox: @unchecked Sendable { var lines: [String] = [] }
+
+    private func serverHealthSkip(_ dataDir: URL, box: LineBox? = nil) -> String? {
+        let log: (@Sendable (CLIBridge.LogLine) -> Void)? = box.map { box in
+            { @Sendable line in box.lines.append(line.text) }
+        }
+        let dash = CoreDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: Workbook(), onLine: log)
+        do { try dash.writeServerAdminHealth() } catch let error as CoreDashboardError {
+            return error.skipReason
+        } catch { return "\(error)" }
+        return nil
+    }
+
+    func testTheTabSaysWhyItWasSkipped() throws {
+        XCTAssertEqual(serverHealthSkip(try tempDataDir(copying: [])),
+                       "No server-health source has been collected for this server")
+        let unreadable = try tempDataDir(copying: [])
+        let caDir = unreadable.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        try "not json".write(
+            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let box = LineBox()
+        XCTAssertEqual(serverHealthSkip(unreadable, box: box),
+                       "The certificate-authority snapshot could not be read")
+        XCTAssertTrue(box.lines.contains {
+            $0.hasPrefix("[warn]") && $0.contains("certificate-authority")
+        })
+        let refused = try tempDataDir(copying: [])
+        StateFileStore(directory: refused.appendingPathComponent("state")).record(
+            .failed(exitCode: 5), report: "certificate-authority", at: Date(),
+            cause: FailureCause(kind: .missingPermission, names: [], hint: nil, exitCode: 5))
+        XCTAssertEqual(serverHealthSkip(refused),
+                       "Every server-health source is not permitted or not set up on this server")
+    }
+
     func testTheTabIsLastInTheFullAndOperationalTemplatesAndNotInTheSchoolWorkbook() {
         XCTAssertEqual(FullInstanceTemplate().includedSheets.last, .serverAdminHealth)
         XCTAssertEqual(OperationalTemplate().includedSheets.last, .serverAdminHealth)
