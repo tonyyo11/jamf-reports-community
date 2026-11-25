@@ -19,6 +19,8 @@ lands in the same change as its captured shape.
 commands (`pro accounts list`, `pro api-integrations list`, `pro local-admin-password
 pending-rotations`), shapes as captured on 2026-11-24 against Jamf's public test server; every
 value is synthetic and the rows are edited to cover each count. Pending rotations is the
-`{totalCount, results}` envelope with no rows on every server captured (2026-11-24 and
-2026-11-25), so a result row's shape is still unknown and the reduction reads `totalCount` alone. The reductions save only counts, and a test
+`{totalCount, results}` envelope; its one row follows the row captured on 2026-11-25
+(`{lapsUser: {clientManagementId, guid, username, userSource}, createdDate}`, `createdDate` ISO 8601
+with milliseconds and `Z`, no password field), values synthetic. The reduction keeps
+`totalCount` alone, so no username reaches disk. The reductions save only counts, and a test
 checks that no username, name, email, client ID or display name reaches the saved document.

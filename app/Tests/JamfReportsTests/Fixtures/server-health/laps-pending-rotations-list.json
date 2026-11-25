@@ -1,4 +1,14 @@
 {
-  "totalCount": 0,
-  "results": []
+  "totalCount": 1,
+  "results": [
+    {
+      "lapsUser": {
+        "clientManagementId": "00000000-0000-0000-0000-0000000000a1",
+        "guid": "00000000-0000-0000-0000-0000000000b2",
+        "username": "examplelapsadmin",
+        "userSource": "JMF"
+      },
+      "createdDate": "2026-11-25T14:03:27.512Z"
+    }
+  ]
 }

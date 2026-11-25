@@ -263,7 +263,7 @@ final class ServerHealthReductionTests: XCTestCase {
     func testLAPSKeepsOnlyTheCount() throws {
         XCTAssertEqual(
             try counts("laps-pending-rotations",
-                       fixture("laps-pending-rotations-list.json")), ["totalCount": 0])
+                       fixture("laps-pending-rotations-list.json")), ["totalCount": 1])
         XCTAssertEqual(try counts("laps-pending-rotations",
                                   Data(#"{"totalCount":2,"results":[{},{}]}"#.utf8)),
                        ["totalCount": 2])
@@ -286,7 +286,8 @@ final class ServerHealthReductionTests: XCTestCase {
             return String(decoding: out, as: UTF8.self)
         }.joined()
         for leaked in ["example.admin", "Example", "example.com", "555-0100", "00000000-0000",
-                       "CN=", "username", "realname", "email", "clientId", "displayName"] {
+                       "CN=", "username", "realname", "email", "clientId", "displayName",
+                       "examplelapsadmin", "lapsUser", "guid", "createdDate"] {
             XCTAssertFalse(saved.contains(leaked), leaked)
         }
     }
@@ -309,7 +310,10 @@ final class ServerHealthReductionTests: XCTestCase {
         let laps = try XCTUnwrap(JSONSerialization.jsonObject(
             with: fixture("laps-pending-rotations-list.json")) as? [String: Any])
         XCTAssertEqual(Set(laps.keys), ["totalCount", "results"])
-        XCTAssertEqual((laps["results"] as? [Any])?.isEmpty, true, "no captured row shape yet")
+        let row = try XCTUnwrap((laps["results"] as? [[String: Any]])?.first)
+        XCTAssertEqual(Set(row.keys), ["lapsUser", "createdDate"])
+        XCTAssertEqual(Set(((row["lapsUser"] as? [String: Any]) ?? [:]).keys),
+                       ["clientManagementId", "guid", "username", "userSource"])
     }
 
     func testAMalformedAccountsPayloadIsNotSavedAndRecordsAFailure() throws {
