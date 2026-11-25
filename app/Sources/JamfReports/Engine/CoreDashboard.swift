@@ -2643,18 +2643,8 @@ struct CoreDashboard: Sendable {
                                          hardwareEncrypted: nil, neverInventoried: true)
             }
 
-            let diskEncryption = item["diskEncryption"] as? [String: Any]
-            let fileVaultEnabled = diskEncryption?["fileVault2Enabled"] as? Bool
-            let bootDetails = diskEncryption?["bootPartitionEncryptionDetails"] as? [String: Any]
-            let fvState = bootDetails?["partitionFileVault2State"] as? String
-            let fileVaultStr: String
-            if let state = fvState, !state.isEmpty {
-                fileVaultStr = state
-            } else if let enabled = fileVaultEnabled {
-                fileVaultStr = enabled ? "ENCRYPTED" : "UNENCRYPTED"
-            } else {
-                fileVaultStr = ""
-            }
+            // The raw value, so on_values of "true"/"false" judge it; only the cell maps them.
+            let fileVaultStr = FileVaultValue.raw(computer: item) ?? ""
 
             let security = item["security"] as? [String: Any]
             let sipStr = security?["sipStatus"] as? String ?? ""
@@ -2705,7 +2695,8 @@ struct CoreDashboard: Sendable {
                 row += 1
                 continue
             }
-            ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
+            ws.write(Self.fileVaultCell(policy.fileVaultLabel(
+                        r.fileVault, hardwareEncrypted: r.hardwareEncrypted)),
                      row: row, col: 2, format: securityVerdictFormat(
                         .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
             ws.write(r.sip, row: row, col: 3,
@@ -2726,6 +2717,15 @@ struct CoreDashboard: Sendable {
     /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
     /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
     /// permitted, not whether the token is escrowed, so it never stands in.
+    /// The sheet's FileVault cell: jamf-cli's `fileVault2Enabled` Bool reads as Jamf's words.
+    static func fileVaultCell(_ label: String) -> String {
+        switch label.lowercased() {
+        case "true", "1": "ENCRYPTED"
+        case "false", "0": "UNENCRYPTED"
+        default: label
+        }
+    }
+
     private func bootstrapEscrowText(_ security: [String: Any]?) -> String {
         let status = (security?["bootstrapTokenEscrowedStatus"] as? String)?
             .trimmingCharacters(in: .whitespaces) ?? ""

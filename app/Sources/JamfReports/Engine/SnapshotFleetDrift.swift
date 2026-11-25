@@ -23,6 +23,10 @@ struct SnapshotFleetDrift {
     /// without `general`), so every Mac would read as never checked in.
     let staleNotCompared: Bool
     let currentCount: Int, priorCount: Int
+    /// Matched Macs whose FileVault went from on or warning to a gap, and from a value to
+    /// none. Nil when either snapshot carries no FileVault value at all; empty at `ignore`.
+    let fileVaultOff: [(prior: ComputerDates, current: ComputerDates)]?
+    let fileVaultStoppedReporting: [(prior: ComputerDates, current: ComputerDates)]?
 
     /// The share of the larger snapshot that joined or left, when that is more than
     /// max(20, a quarter of the smaller snapshot) or the smaller is under half the larger.
@@ -43,6 +47,18 @@ struct SnapshotFleetDrift {
         current: [ComputerDates], currentAt: Date,
         prior: [ComputerDates], priorAt: Date, rule: StaleRule
     ) {
+        self.init(
+            current: ComputerSnapshot(rows: current), currentAt: currentAt,
+            prior: ComputerSnapshot(rows: prior), priorAt: priorAt, rule: rule,
+            policy: .default)
+    }
+
+    init(
+        current currentSnapshot: ComputerSnapshot, currentAt: Date,
+        prior priorSnapshot: ComputerSnapshot, priorAt: Date,
+        rule: StaleRule, policy: SecurityControlPolicy
+    ) {
+        let (current, prior) = (currentSnapshot.rows, priorSnapshot.rows)
         func identified(_ macs: [ComputerDates]) -> [ComputerDates] {
             macs.filter { $0.jamfID != nil || $0.serial != nil }
         }
@@ -77,9 +93,16 @@ struct SnapshotFleetDrift {
         func stale(_ age: StaleAge?) -> Bool { age.map { $0 > .days(rule.days) } ?? false }
         var osChanged: [(ComputerDates, ComputerDates)] = []
         var becameStale: [StaleChange] = [], noLongerStale: [StaleChange] = []
+        var fileVaultOff: [(ComputerDates, ComputerDates)] = []
+        var fileVaultStopped: [(ComputerDates, ComputerDates)] = []
         for mac in sortedByName(now) {
             guard let old = priorIndex.match(jamfID: mac.jamfID, serial: mac.serial)
             else { continue }
+            switch Self.fileVaultChange(from: old, to: mac, policy: policy) {
+            case .turnedOff?: fileVaultOff.append((old, mac))
+            case .stoppedReporting?: fileVaultStopped.append((old, mac))
+            case nil: break
+            }
             let was = OSVersionName.normalized(old.osVersion ?? "")
             let isNow = OSVersionName.normalized(mac.osVersion ?? "")
             if !was.isEmpty, !isNow.isEmpty, was != isNow { osChanged.append((old, mac)) }
@@ -92,6 +115,37 @@ struct SnapshotFleetDrift {
         self.osChanged = osChanged
         self.becameStale = becameStale
         self.noLongerStale = noLongerStale
+        let compared = currentSnapshot.fileVaultReported && priorSnapshot.fileVaultReported
+        self.fileVaultOff = compared ? fileVaultOff : nil
+        self.fileVaultStoppedReporting = compared ? fileVaultStopped : nil
+    }
+
+    enum FileVaultChange: Equatable { case turnedOff, stoppedReporting }
+
+    /// The spec's transition table: on or warning to a gap is turned off; a reported value
+    /// (on, warning or gap) to no value at all is stopped reporting. A value present but
+    /// unreadable (ENCRYPTING) is no change, and so is `ignore` on either side.
+    static func fileVaultChange(
+        from prior: ComputerDates, to current: ComputerDates, policy: SecurityControlPolicy
+    ) -> FileVaultChange? {
+        func verdict(_ mac: ComputerDates) -> SecurityVerdict {
+            policy.verdict(for: .fileVault, value: mac.fileVault,
+                           hardwareEncrypted: mac.hardwareEncrypted)
+        }
+        let (before, now) = (verdict(prior), verdict(current))
+        guard before != .ignored, now != .ignored else { return nil }
+        let reported: Set<SecurityVerdict> = [.pass, .warning, .fail]
+        if current.fileVault == nil { return reported.contains(before) ? .stoppedReporting : nil }
+        return (before == .pass || before == .warning) && now == .fail ? .turnedOff : nil
+    }
+
+    /// The newest `computers` snapshot stamped on a local day before `stamp`'s. Same-day
+    /// collects are one day of history, and a future-stamped file is never a baseline.
+    static func baseline(dataDir: URL, before stamp: Date) -> (url: URL, date: Date)? {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: stamp)
+        return TrendStore.datedSnapshots(of: "computers", in: dataDir)
+            .last { calendar.startOfDay(for: $0.date) < day }
     }
 }
 
@@ -101,11 +155,8 @@ extension CoreDashboard {
     /// earlier local calendar day. Same-day collects are one day of history, not a baseline.
     private func driftSnapshots() ->
         (current: (url: URL, date: Date), prior: (url: URL, date: Date))? {
-        let snapshots = TrendStore.datedSnapshots(of: "computers", in: dataDir)
-        guard let current = snapshots.last else { return nil }
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: current.date)
-        guard let prior = snapshots.last(where: { calendar.startOfDay(for: $0.date) < today })
+        guard let current = TrendStore.datedSnapshots(of: "computers", in: dataDir).last,
+              let prior = SnapshotFleetDrift.baseline(dataDir: dataDir, before: current.date)
         else { return nil }
         return (current, prior)
     }
@@ -117,14 +168,15 @@ extension CoreDashboard {
         func read(_ url: URL) throws -> Data {
             try BoundedFile.read(url, limit: BoundedFile.limit(for: url), followSymlinks: false)
         }
-        guard let current = ComputerDates.decodeSnapshot(try read(pair.current.url)),
-              let prior = ComputerDates.decodeSnapshot(try read(pair.prior.url)) else {
+        guard let current = ComputerDates.decodeComputerSnapshot(try read(pair.current.url)),
+              let prior = ComputerDates.decodeComputerSnapshot(try read(pair.prior.url)) else {
             throw CoreDashboardError.noCachedData(names: ["computers"])
         }
         let rule = config.staleRule
         let drift = SnapshotFleetDrift(
             current: current, currentAt: pair.current.date,
-            prior: prior, priorAt: pair.prior.date, rule: rule)
+            prior: prior, priorAt: pair.prior.date, rule: rule,
+            policy: config.resolvedSecurityPolicy)
 
         let ws = workbook.addSheet("Fleet Drift")
         let stamp = DateFormatter()
@@ -207,6 +259,38 @@ extension CoreDashboard {
             [$0.current.name ?? "", $0.current.serial ?? "",
              $0.prior.osVersion ?? "", $0.current.osVersion ?? ""]
         })
+        let fileVaultRows = drift.fileVaultOff.flatMap { off in
+            drift.fileVaultStoppedReporting.map { off + $0 }
+        }
+        section("FileVault changes",
+                empty: fileVaultRows == nil
+                    ? "Not compared (no FileVault data in one snapshot)" : "No changes",
+                ["Computer", "Serial", "Jamf ID", "Before", "Now"],
+                (fileVaultRows ?? []).map {
+                    [$0.current.name ?? "", $0.current.serial ?? "", $0.current.jamfID ?? "",
+                     $0.prior.fileVault ?? "", $0.current.fileVault ?? "Not reported"]
+                })
+        if let benchmarks = benchmarkRuleSection() {
+            section("Benchmark rules newly failing", note: benchmarks.note,
+                    empty: benchmarks.empty,
+                    ["Benchmark", "Rule ID", "Rule", "Failing devices"], benchmarks.rows)
+        }
+    }
+
+    /// The benchmark section's rows; nil when the workspace has no `compliance-rules` file.
+    private func benchmarkRuleSection() -> (note: String?, empty: String, rows: [[String]])? {
+        guard let newest = TrendStore.datedSnapshots(of: "compliance-rules", in: dataDir).last
+        else { return nil }
+        let notCompared = (note: String?.none, empty: "Not compared (one compliance-rules day)",
+                           rows: [[String]]())
+        guard let pair = BenchmarkRuleDrift.pair(dataDir: dataDir, landedStamp: newest.date),
+              let drift = BenchmarkRuleDrift.load(current: pair.current, baseline: pair.baseline)
+        else { return notCompared }
+        return (drift.notCompared > 0 ? "\(drift.notCompared) rules not compared" : nil,
+                "No changes",
+                drift.newlyFailing.map {
+                    [$0.benchmark, $0.ruleId, $0.rule, $0.failed.map(String.init) ?? ""]
+                })
     }
 
     @discardableResult

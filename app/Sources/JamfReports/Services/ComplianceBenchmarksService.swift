@@ -192,7 +192,7 @@ struct ComplianceBenchmarksService: Sendable {
 
     // MARK: - Internals
 
-    private static func decodeRules(at url: URL) -> [Snapshot.Rule]? {
+    static func decodeRules(at url: URL) -> [Snapshot.Rule]? {
         guard let items = LenientElement<RawRule>.rows(at: url, logging: .platform) else {
             return nil
         }

@@ -15,12 +15,20 @@ struct ComputerDates: Sendable, Equatable {
     /// `general.name` and `operatingSystem.version`, for the sheets that list a Mac.
     var name: String?
     var osVersion: String?
+    /// The raw FileVault value (`FileVaultValue`); nil for a never-inventoried Mac.
+    var fileVault: String?
+    var neverInventoried: Bool
+    var hardwareEncrypted: Bool?
 
     init(
         jamfID: String? = nil, serial: String? = nil,
         checkIn: Date? = nil, inventory: Date? = nil, contact: Date? = nil,
-        name: String? = nil, osVersion: String? = nil
+        name: String? = nil, osVersion: String? = nil,
+        fileVault: String? = nil, neverInventoried: Bool = false, hardwareEncrypted: Bool? = nil
     ) {
+        self.fileVault = fileVault
+        self.neverInventoried = neverInventoried
+        self.hardwareEncrypted = hardwareEncrypted
         self.name = name
         self.osVersion = osVersion
         self.jamfID = jamfID
@@ -57,7 +65,10 @@ struct ComputerDates: Sendable, Equatable {
             contact: date(general, ["lastContact"]),
             name: text(general, ["name"]) ?? text(item, ["name"]),
             osVersion: text(item["operatingSystem"] as? [String: Any] ?? [:], ["version"])
-                ?? text(item, ["operatingSystemVersion"]) ?? text(general, ["osVersion"]))
+                ?? text(item, ["operatingSystemVersion"]) ?? text(general, ["osVersion"]),
+            neverInventoried: NeverInventoried.isNeverInventoried(computer: item),
+            hardwareEncrypted: HardwareEncryption.isHardwareEncrypted(computer: item))
+        if !neverInventoried { fileVault = FileVaultValue.raw(computer: item) }
     }
 
     private static func numericID(_ value: Any?) -> String? {
@@ -73,6 +84,12 @@ struct ComputerDates: Sendable, Equatable {
         return trimmed
     }
 
+    /// The Macs of a `computers` snapshot, and whether any of them carries a FileVault value
+    /// (a snapshot collected without `diskEncryption` and `operatingSystem` carries none).
+    static func decodeComputerSnapshot(_ data: Data) -> ComputerSnapshot? {
+        decodeSnapshot(data).map { ComputerSnapshot(rows: $0) }
+    }
+
     /// The Macs of a `computers` snapshot: a bare array, or an envelope with `results`.
     /// Nil when the data is neither.
     static func decodeSnapshot(_ data: Data) -> [ComputerDates]? {
@@ -80,6 +97,16 @@ struct ComputerDates: Sendable, Equatable {
         let items = (object as? [[String: Any]])
             ?? (object as? [String: Any]).flatMap { $0["results"] as? [[String: Any]] }
         return items?.map(ComputerDates.init(item:))
+    }
+}
+
+struct ComputerSnapshot: Sendable {
+    let rows: [ComputerDates]
+    let fileVaultReported: Bool
+
+    init(rows: [ComputerDates], fileVaultReported: Bool? = nil) {
+        self.rows = rows
+        self.fileVaultReported = fileVaultReported ?? rows.contains { $0.fileVault != nil }
     }
 }
 

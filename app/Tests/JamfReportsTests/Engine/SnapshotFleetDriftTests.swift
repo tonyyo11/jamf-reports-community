@@ -70,7 +70,7 @@ final class SnapshotFleetDriftTests: XCTestCase {
         let sheet = try XCTUnwrap(dash.workbook.sheet(named: "Fleet Drift"))
         let cells = sheet.dedupedCells.sorted { ($0.row, $0.col) < ($1.row, $1.col) }
         let titles: Set = ["New Enrollments", "Departed Devices", "New Stale", "Recovered Stale",
-                           "OS Changed"]
+                           "OS Changed", "FileVault changes", "Benchmark rules newly failing"]
         guard let start = cells.firstIndex(where: { $0.col == 0 && $0.row > 0 && text($0.value) == title })
         else { return [] }
         let body = cells[(start + 1)...].prefix { !($0.col == 0 && titles.contains(text($0.value))) }
@@ -353,6 +353,146 @@ final class SnapshotFleetDriftTests: XCTestCase {
         for template: any ReportTemplate in [FullInstanceTemplate(), OperationalTemplate(), AssetTemplate()] {
             XCTAssertTrue(template.includedSheets.contains(.fleetDrift))
         }
+    }
+
+    // MARK: - FileVault changes (wave B2)
+
+    private func fv(_ id: Int, _ value: String?, hardware: Bool? = nil) -> ComputerDates {
+        ComputerDates(jamfID: "\(id)", name: "Mac-\(id)", fileVault: value,
+                      hardwareEncrypted: hardware)
+    }
+
+    func testFileVaultTransitionTable() {
+        let policy = SecurityControlPolicy()
+        func change(_ was: String?, _ now: String?) -> SnapshotFleetDrift.FileVaultChange? {
+            SnapshotFleetDrift.fileVaultChange(from: fv(1, was), to: fv(1, now), policy: policy)
+        }
+        XCTAssertEqual(change("ENCRYPTED", "UNENCRYPTED"), .turnedOff)
+        XCTAssertEqual(change("true", "false"), .turnedOff)
+        XCTAssertNil(change("UNENCRYPTED", "ENCRYPTED"), "a gap closing is not a B2 change")
+        XCTAssertNil(change("NOT_COLLECTED", "UNENCRYPTED"), "unknown to gap opens no change")
+        XCTAssertEqual(change("ENCRYPTED", nil), .stoppedReporting)
+        XCTAssertEqual(change("UNENCRYPTED", nil), .stoppedReporting)
+        XCTAssertNil(change("UNENCRYPTED", "ENCRYPTING"), "a value present but unreadable")
+        XCTAssertNil(change("ENCRYPTED", "RESTART_NEEDED"))
+        XCTAssertNil(change(nil, nil))
+    }
+
+    func testFileVaultIgnoreAndHardwareRule() {
+        let ignored = SecurityControlPolicy(fileVault: .ignore)
+        XCTAssertNil(SnapshotFleetDrift.fileVaultChange(
+            from: fv(1, "ENCRYPTED"), to: fv(1, "UNENCRYPTED"), policy: ignored))
+        XCTAssertNil(SnapshotFleetDrift.fileVaultChange(
+            from: fv(1, "ENCRYPTED"), to: fv(1, nil), policy: ignored))
+        // Off on a hardware-encrypted Mac at warning is not a gap, so not turned off.
+        let hardware = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        XCTAssertNil(SnapshotFleetDrift.fileVaultChange(
+            from: fv(1, "ENCRYPTED", hardware: true), to: fv(1, "UNENCRYPTED", hardware: true),
+            policy: hardware))
+        // A per-Mac ignore on either side is no change.
+        let hardwareIgnored = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        XCTAssertNil(SnapshotFleetDrift.fileVaultChange(
+            from: fv(1, "UNENCRYPTED", hardware: true), to: fv(1, nil, hardware: true),
+            policy: hardwareIgnored))
+    }
+
+    func testFileVaultUnderOnValues() {
+        let policy = SecurityControlPolicy(
+            onValues: [.fileVault: ["Pass"]], offValues: [.fileVault: ["Fail"]])
+        XCTAssertEqual(SnapshotFleetDrift.fileVaultChange(
+            from: fv(1, "Pass"), to: fv(1, "Fail"), policy: policy), .turnedOff)
+    }
+
+    func testFileVaultListsCoverMatchedMacsOnly() {
+        let taken = at(0)
+        let prior = ComputerSnapshot(rows: [fv(1, "ENCRYPTED"), fv(2, "ENCRYPTED"),
+                                            fv(3, "ENCRYPTED")])
+        let current = ComputerSnapshot(rows: [fv(1, "UNENCRYPTED"), fv(2, nil),
+                                              fv(4, "UNENCRYPTED")])
+        let drift = SnapshotFleetDrift(
+            current: current, currentAt: taken, prior: prior, priorAt: at(-1),
+            rule: StaleRule(days: 30), policy: SecurityControlPolicy())
+        XCTAssertEqual(drift.fileVaultOff?.map(\.current.jamfID), ["1"])
+        XCTAssertEqual(drift.fileVaultOff?.first?.prior.fileVault, "ENCRYPTED")
+        XCTAssertEqual(drift.fileVaultStoppedReporting?.map(\.current.jamfID), ["2"])
+    }
+
+    func testFileVaultListsNilWhenOneSnapshotHasNoFileVault() {
+        let drift = SnapshotFleetDrift(
+            current: [fv(1, nil)], currentAt: at(0),
+            prior: [fv(1, "ENCRYPTED")], priorAt: at(-1), rule: StaleRule(days: 30))
+        XCTAssertNil(drift.fileVaultOff)
+        XCTAssertNil(drift.fileVaultStoppedReporting)
+    }
+
+    func testBaselineIgnoresSameDayAndFutureFiles() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        for date in [at(-2), at(-1), at(0, hour: 8), at(1)] {
+            _ = try GoldenFleetWorkspace.writeSnapshot(
+                kind: "computers", dataDir: dataDir, at: date, rows: [])
+        }
+        let baseline = SnapshotFleetDrift.baseline(dataDir: dataDir, before: at(0))
+        XCTAssertEqual(baseline?.date, at(-1))
+        XCTAssertNil(SnapshotFleetDrift.baseline(dataDir: dataDir, before: at(-2)))
+    }
+
+    func testFileVaultSectionRows() throws {
+        func withFileVault(_ item: [String: Any], _ value: String) -> [String: Any] {
+            var item = item
+            item["diskEncryption"] = ["bootPartitionEncryptionDetails":
+                                        ["partitionFileVault2State": value]]
+            return item
+        }
+        let dash = try dashboard(files: [
+            (at(-1), [withFileVault(mac(1, taken: at(-1)), "ENCRYPTED"),
+                      withFileVault(mac(2, taken: at(-1)), "ENCRYPTED")]),
+            (at(0), [withFileVault(mac(1, taken: at(0)), "UNENCRYPTED"),
+                     withFileVault(mac(2, taken: at(0)), "ENCRYPTED")]),
+        ])
+        try dash.writeFleetDrift()
+        XCTAssertEqual(try section("FileVault changes", in: dash), ["Computer", "Mac-1-"])
+        XCTAssertTrue(try texts(dash).contains("UNENCRYPTED"))
+        XCTAssertFalse(try texts(dash).contains("Benchmark rules newly failing"),
+                       "absent with no compliance-rules files")
+    }
+
+    func testFileVaultSectionNotComparedWithoutFileVault() throws {
+        let dash = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                         (at(0), [mac(1, taken: at(0))])])
+        try dash.writeFleetDrift()
+        XCTAssertEqual(try section("FileVault changes", in: dash),
+                       ["Computer", "Not compared (no FileVault data in one snapshot)"])
+    }
+
+    func testBenchmarkSectionWithOneRulesDay() throws {
+        let dash = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                         (at(0), [mac(1, taken: at(0))])])
+        _ = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "compliance-rules", dataDir: dash.dataDir, at: at(0),
+            rows: [["benchmark": "CIS", "ruleId": "r1", "rule": "Rule 1", "failed": 2]])
+        try dash.writeFleetDrift()
+        XCTAssertEqual(try section("Benchmark rules newly failing", in: dash),
+                       ["Benchmark", "Not compared (one compliance-rules day)"])
+    }
+
+    func testBenchmarkSectionListsNewlyFailingRules() throws {
+        let dash = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                         (at(0), [mac(1, taken: at(0))])])
+        _ = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "compliance-rules", dataDir: dash.dataDir, at: at(-1),
+            rows: [["benchmark": "CIS", "ruleId": "r1", "rule": "Rule 1", "failed": 0],
+                   ["benchmark": "CIS", "ruleId": "r2", "rule": "Rule 2", "failed": 0]])
+        _ = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "compliance-rules", dataDir: dash.dataDir, at: at(0),
+            rows: [["benchmark": "CIS", "ruleId": "r1", "rule": "Rule 1", "failed": 3],
+                   ["benchmark": "CIS", "ruleId": "r2", "rule": "Rule 2", "failed": 0],
+                   ["benchmark": "CIS", "ruleId": "r3", "rule": "Rule 3", "failed": 1]])
+        try dash.writeFleetDrift()
+        XCTAssertEqual(try section("Benchmark rules newly failing", in: dash),
+                       ["Benchmark", "CIS"])
+        XCTAssertTrue(try texts(dash).contains("1 rules not compared"))
     }
 }
 

@@ -475,7 +475,7 @@ extension DeviceInventoryService {
         record.neverInventoried = NeverInventoried.isNeverInventoried(computer: item)
         record.daysSinceContact = daysSince(label: record.lastContact)
         record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
-        record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
+        record.fileVault = FileVaultValue.raw(computer: item) ?? ""
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
         record.gatekeeper = first(flat, ["security.gatekeeperStatus"])
