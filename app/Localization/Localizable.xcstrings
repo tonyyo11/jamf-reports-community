@@ -95442,7 +95442,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri Health Audit per vedere la scheda di stato di server e amministrazione."
+            "value" : "Apri Controllo di integrità per vedere la scheda di stato di server e amministrazione."
           }
         },
         "ja" : {
