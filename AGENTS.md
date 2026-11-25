@@ -758,7 +758,7 @@ with retention off.
 `recordingAutomaticCollect` for self-repair and catch-up, `runBackgroundRefresh`; the budget is
 per workspace, so a multi-profile schedule gets one each) is asked before each source of the Jamf Pro, School, Protect and Security
 Cloud loops, before the device scans and before the after-matrix sources (`stopsRun`).
-`RunStop.evaluate` answers `.manualRefresh` while `ManualRefreshRequest.isPending` (a per-Mac
+`RunStop.evaluate` answers `.manualRefresh` while `ManualRefreshRequest.pending()` is not `.none` (a per-Mac
 file in Application Support the app posts, 35-minute lifetime) and `.budgetUsed` once the run has
 held the lock for `jamf_cli.run_budget_minutes` (default 45, clamped 10-240;
 `scan_budget_minutes`, default 30, is decoded for the scan passes). A stop logs

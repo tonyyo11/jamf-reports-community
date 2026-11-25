@@ -70,7 +70,7 @@ final class RunStopTests: XCTestCase {
                        .named(workspace: "acme", full: false))
         ManualRefreshRequest.post(now: now, appSupport: support)
         XCTAssertEqual(ManualRefreshRequest.pending(now: now, appSupport: support), .unnamed)
-        XCTAssertTrue(ManualRefreshRequest.isPending(now: now, appSupport: support))
+        XCTAssertTrue(isPending(now: now, appSupport: support))
     }
 
     func testTheBudgetSettingsAreClampedAndAMistypedOneReadsAsTheDefault() throws {
@@ -92,18 +92,18 @@ final class RunStopTests: XCTestCase {
         let support = root.appendingPathComponent("support", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         let posted = Date(timeIntervalSince1970: 1_790_000_000)
-        XCTAssertFalse(ManualRefreshRequest.isPending(now: posted, appSupport: support))
+        XCTAssertFalse(isPending(now: posted, appSupport: support))
         ManualRefreshRequest.post(now: posted, appSupport: support)
-        XCTAssertTrue(ManualRefreshRequest.isPending(now: posted, appSupport: support))
-        XCTAssertTrue(ManualRefreshRequest.isPending(
+        XCTAssertTrue(isPending(now: posted, appSupport: support))
+        XCTAssertTrue(isPending(
             now: posted.addingTimeInterval(ManualRefreshRequest.lifetime), appSupport: support))
-        XCTAssertFalse(ManualRefreshRequest.isPending(
+        XCTAssertFalse(isPending(
             now: posted.addingTimeInterval(ManualRefreshRequest.lifetime + 1), appSupport: support),
             "a request an app left behind cannot stop every later run")
-        XCTAssertFalse(ManualRefreshRequest.isPending(
+        XCTAssertFalse(isPending(
             now: posted.addingTimeInterval(-3_600), appSupport: support), "dated ahead of now")
         ManualRefreshRequest.clear(appSupport: support)
-        XCTAssertFalse(ManualRefreshRequest.isPending(now: posted, appSupport: support))
+        XCTAssertFalse(isPending(now: posted, appSupport: support))
     }
 
     /// Protect and Security Cloud figures reach the daily summary from the run that landed
@@ -172,13 +172,13 @@ final class RunStopTests: XCTestCase {
         WorkspaceStore.automaticCollectsRunning.withLock { $0 += 1 }
         let finishing = Task {
             try? await Task.sleep(for: .milliseconds(300))
-            XCTAssertTrue(ManualRefreshRequest.isPending(), "the automatic collect is asked to stop")
+            XCTAssertTrue(ManualRefreshRequest.pending() != .none, "the automatic collect is asked to stop")
             WorkspaceStore.automaticCollectsRunning.withLock { $0 -= 1 }
         }
         let mayStart = await store.manualCollectMayStart()
         await finishing.value
         XCTAssertTrue(mayStart)
-        XCTAssertFalse(ManualRefreshRequest.isPending(), "the request is withdrawn")
+        XCTAssertFalse(ManualRefreshRequest.pending() != .none, "the request is withdrawn")
         XCTAssertNil(store.globalStatus)
     }
 
@@ -298,4 +298,8 @@ final class RunStopTests: XCTestCase {
         XCTAssertTrue(left.allSatisfy { store.failures(report: $0) == nil },
                       "a source the run never started records no failure")
     }
+}
+
+private func isPending(now: Date, appSupport: URL) -> Bool {
+    ManualRefreshRequest.pending(now: now, appSupport: appSupport) != .none
 }

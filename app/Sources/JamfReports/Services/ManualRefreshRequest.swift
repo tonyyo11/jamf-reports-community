@@ -59,8 +59,4 @@ enum ManualRefreshRequest {
         guard lines.count >= 2, !lines[1].isEmpty else { return .unnamed }
         return .named(workspace: lines[1], full: lines.count < 3 || lines[2] != "tiers")
     }
-
-    static func isPending(now: Date = Date(), appSupport: URL = AppSupport.directory()) -> Bool {
-        pending(now: now, appSupport: appSupport) != .none
-    }
 }
