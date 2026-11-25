@@ -49,6 +49,8 @@ final class DeploymentSourceReductionTests: XCTestCase {
         XCTAssertNil(row["deferred"], "text is not a number")
         XCTAssertNil(row["policyName"], "a number is not text")
         XCTAssertEqual(row["pending"] as? Int, 3)
+        let negative = try XCTUnwrap(reduce("patch-policies", #"[{"failed":-1}]"#)?.first)
+        XCTAssertNil(negative["failed"], "a negative count reads as not reported")
         XCTAssertEqual(row["id"] as? String, "1")
     }
 

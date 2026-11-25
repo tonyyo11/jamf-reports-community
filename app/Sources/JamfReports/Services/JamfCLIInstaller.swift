@@ -197,8 +197,9 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, serverHealthVersion) != .orderedAscending
     }
 
-    /// The oldest jamf-cli whose command catalog lists `pro app-installers-deployments list` and
-    /// `pro patch-policies list`; they were run on 1.37.0 and 1.38.0.
+    /// The oldest jamf-cli command catalog the app ships (1.35.0) lists `pro
+    /// app-installers-deployments list` and `pro patch-policies list`; earlier versions are
+    /// unchecked, so the gate stays here until a run on one shows otherwise.
     nonisolated static let deploymentSourcesVersion: String = "1.35.0"
 
     /// True only when `installedVersion` parses and is at least 1.35.0, as `supportsDashboard`:

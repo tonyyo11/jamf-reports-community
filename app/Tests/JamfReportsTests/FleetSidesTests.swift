@@ -44,6 +44,11 @@ final class FleetSidesTests: XCTestCase {
 
     // MARK: - Classification
 
+    func testTheDeploymentSourcesAreMacOnly() {
+        XCTAssertEqual(ReportEngine.sourceSides["app-installers-deployments"], SourceSides.mac)
+        XCTAssertEqual(ReportEngine.sourceSides["patch-policies"], SourceSides.mac)
+    }
+
     func testTheCertificateAuthorityIsOnBothSidesSoNoFleetSkipsIt() {
         XCTAssertEqual(ReportEngine.sourceSides["certificate-authority"], SourceSides.both)
     }

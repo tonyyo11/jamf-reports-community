@@ -43,6 +43,25 @@ final class CollectSourcesPlanTests: XCTestCase {
             }, "not set up on this Jamf Pro server; checked again weekly")
     }
 
+    func testDeploymentSourcesAreSkippedOnAnOldOrUnknownJamfCLI() {
+        func reasons(_ version: String?) -> [String?] {
+            var inputs = Plan.Inputs(product: .jamfPro, profile: "prod")
+            inputs.installedVersion = version
+            let sources = Plan.build(inputs).sources
+            return ["app-installers-deployments", "patch-policies"].map { kind in
+                guard let source = sources.first(where: { $0.kind == kind }) else {
+                    return "not listed"
+                }
+                return source.skipReason
+            }
+        }
+        XCTAssertEqual(reasons("1.35.0"), [nil, nil])
+        XCTAssertEqual(reasons("1.34.9"), Array(repeating:
+            "needs jamf-cli 1.35.0 or later (installed: 1.34.9)", count: 2))
+        XCTAssertEqual(reasons(nil), Array(repeating:
+            "needs jamf-cli 1.35.0 or later (installed: unknown)", count: 2))
+    }
+
     /// The other sources are SOFA, which a School collect fetches for OS currency, and the
     /// weekly per-device scan.
     func testASchoolWorkspaceListsSchoolCommandsAndSOFAOnly() {

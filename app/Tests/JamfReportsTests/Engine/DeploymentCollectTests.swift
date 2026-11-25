@@ -99,6 +99,19 @@ final class DeploymentCollectTests: XCTestCase {
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertFalse(text.contains("iconUrl"))
         XCTAssertFalse(text.contains("All Example Macs"), "the smart group name is dropped")
+        let deployments = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(text.utf8)) as? [[String: Any]])
+        XCTAssertEqual((deployments.first?["computerStatuses"] as? [String: Any])?["failed"]
+            as? Int, 40)
+        let policyDir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent(patchPolicies)
+        let policyURL = try XCTUnwrap(FileManager.newestJSONFile(in: policyDir))
+        let policies = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: policyURL)) as? [[String: Any]])
+        XCTAssertEqual(policies.count, 4)
+        XCTAssertEqual(policies.first?["failed"] as? Int, 15)
+        XCTAssertEqual(policies.first?["policyEnabled"] as? Bool, true)
+        XCTAssertNil(policies.first?["policyDeploymentMethod"])
     }
 
     func testExitFourBeforeALandingIsQuiet() async throws {
@@ -211,6 +224,20 @@ final class DeploymentCollectPlanTests: XCTestCase {
         for (_, skip) in decisions {
             guard case .notDue? = skip else { return XCTFail("\(String(describing: skip))") }
         }
+    }
+
+    func testTheSameDayCollectsAgainOnceTheCadencePasses() {
+        let decisions = plan(now: date(25, 21), lastRun: date(25, 8))
+        XCTAssertEqual(decisions.count, 2)
+        for (_, skip) in decisions { XCTAssertNil(skip) }
+    }
+
+    /// As for every kind, a stamp ahead of now cannot hold a source back
+    /// (`CadenceResolver.isDue` reads it as due).
+    func testAFutureStampStillCollects() {
+        let decisions = plan(now: date(25, 8), lastRun: date(26, 9))
+        XCTAssertEqual(decisions.count, 2)
+        for (_, skip) in decisions { XCTAssertNil(skip) }
     }
 
     func testCollectSkipTurnsEachOff() {

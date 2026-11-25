@@ -71,8 +71,9 @@ enum DeploymentSourceReduction {
         case .wholeNumber:
             guard let number = value as? NSNumber, !isBoolean(number) else { return nil }
             let double = number.doubleValue
-            guard double.isFinite, double == double.rounded(),
-                  abs(double) <= Double(Int.max / 2) else { return nil }
+            // A status count is never negative; one that is reads as not reported.
+            guard double.isFinite, double == double.rounded(), double >= 0,
+                  double <= Double(Int.max / 2) else { return nil }
             return Int(double)
         }
     }
