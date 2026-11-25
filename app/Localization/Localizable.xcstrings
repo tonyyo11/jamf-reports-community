@@ -37140,46 +37140,6 @@
         }
       }
     },
-    "Cert expiry warning" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Warnung bei Zertifikatsablauf"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aviso de caducidad de certificado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avertissement d’expiration de certificat"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avviso scadenza certificato"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "証明書の期限警告"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aviso de expiração de certificado"
-          }
-        }
-      }
-    },
     "Certificate and token expiry warning" : {
       "localizations" : {
         "de" : {
@@ -100146,6 +100106,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Os dados de patches deixam de ser atualizados. As telas e abas de patches do relatório continuam mostrando a última coleta, com a data; o resumo diário e a parte de patches do Security Score deixam de usá-los."
+          }
+        }
+      }
+    },
+    "Patch policy results stop updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary stops using it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ergebnisse der Patch-Richtlinien werden nicht mehr aktualisiert. Ansichten und Berichtsblätter zeigen weiter die zuletzt erfassten Daten mit ihrem Datum; die tägliche Zusammenfassung verwendet sie nicht mehr."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los resultados de las políticas de parches dejan de actualizarse. Las pantallas y las pestañas del informe siguen mostrando lo último recopilado, con su fecha; el resumen diario deja de usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les résultats des stratégies de correctifs ne sont plus mis à jour. Les écrans et les onglets du rapport continuent d’afficher la dernière collecte, avec sa date ; le résumé quotidien ne les utilise plus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I risultati delle policy di patch non vengono più aggiornati. Le schermate e le schede del report continuano a mostrare l’ultima raccolta, con la sua data; il riepilogo giornaliero smette di usarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッチポリシーの結果は更新されなくなります。画面とレポートタブには最後に収集したデータが日付付きで表示され続けます。日次サマリーでは使われなくなります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os resultados das políticas de patch deixam de ser atualizados. As telas e as abas do relatório continuam mostrando a última coleta, com a data; o resumo diário deixa de usá-los."
           }
         }
       }

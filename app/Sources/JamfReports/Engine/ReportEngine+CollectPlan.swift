@@ -17,6 +17,8 @@ extension ReportEngine {
         /// The fleet has none of this side's devices (`FleetState`).
         case noDevices(FleetSide)
         case dashboardUnsupported(installedVersion: String?)
+        /// App Installers deployments and patch policies need jamf-cli 1.35.0 or later.
+        case deploymentSourcesUnsupported(installedVersion: String?)
         case tierNotSelected(CollectionTier)
         case notDue(lastRun: Date?, cadence: Cadence)
         /// Its last failures all timed out; left alone until `retryAfter` unless forced.
@@ -53,6 +55,9 @@ extension ReportEngine {
             case .dashboardUnsupported(let installed):
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later "
                     + "(installed: \(installed ?? "unknown"))"
+            case .deploymentSourcesUnsupported(let installed):
+                return "needs jamf-cli \(JamfCLIInstaller.deploymentSourcesVersion) or later "
+                    + "(installed: \(installed ?? "unknown"))"
             case .tierNotSelected(let tier):
                 return "tier \(tier.rawValue) not selected"
             case .notDue(let lastRun, let cadence):
@@ -85,6 +90,8 @@ extension ReportEngine {
             case .noDevices(let side): return Self.noDevicesText(side)
             case .dashboardUnsupported:
                 return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
+            case .deploymentSourcesUnsupported:
+                return "needs jamf-cli \(JamfCLIInstaller.deploymentSourcesVersion) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
             case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
@@ -135,6 +142,8 @@ extension ReportEngine {
         var workspaceAuthIsPlatform = false
         /// The opt-in sources this Mac collects (`SharedConfigPin.collectOptIn`).
         var optInKinds: Set<String> = []
+        /// False for a jamf-cli older than 1.35.0 or of unknown version (`supportsDeploymentSources`).
+        var deploymentSourcesSupported = true
     }
 
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
@@ -276,6 +285,9 @@ extension ReportEngine {
         if kind == dashboardKind, !inputs.dashboardSupported {
             return .dashboardUnsupported(installedVersion: inputs.installedVersion)
         }
+        if deploymentKinds.contains(kind), !inputs.deploymentSourcesSupported {
+            return .deploymentSourcesUnsupported(installedVersion: inputs.installedVersion)
+        }
         if serverHealthKinds.contains(kind) {
             if inputs.workspaceAuthIsPlatform { return .serverHealthNotOnGateway }
             if !inputs.serverHealthSupported { return .serverHealthUnsupported }
@@ -302,6 +314,12 @@ extension ReportEngine {
         if let held = advisoryHold(kind) { return held }
         let cadence = CadenceResolver.cadence(forReport: kind)
         let last = lastRun(kind)
+        // The daily summary takes these figures from the run that landed them, so each day's
+        // first run collects them (`planAddOn`'s rule).
+        if deploymentKinds.contains(kind), let last,
+           !Calendar.current.isDate(last, inSameDayAs: inputs.now) {
+            return nil
+        }
         return CadenceResolver.isDue(lastRun: last, cadence: cadence, now: inputs.now)
             ? nil : .notDue(lastRun: last, cadence: cadence)
     }

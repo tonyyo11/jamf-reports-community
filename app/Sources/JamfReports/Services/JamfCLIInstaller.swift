@@ -197,6 +197,18 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, serverHealthVersion) != .orderedAscending
     }
 
+    /// The oldest jamf-cli whose command catalog lists `pro app-installers-deployments list` and
+    /// `pro patch-policies list`; they were run on 1.37.0 and 1.38.0.
+    nonisolated static let deploymentSourcesVersion: String = "1.35.0"
+
+    /// True only when `installedVersion` parses and is at least 1.35.0, as `supportsDashboard`:
+    /// an unknown version skips them.
+    nonisolated static func supportsDeploymentSources(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, deploymentSourcesVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

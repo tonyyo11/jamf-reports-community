@@ -409,6 +409,10 @@ struct SourcesView: View {
     /// What turning `kind` off does, one sentence per source family: it stops updating, the
     /// screens keep its last data with its date, and the daily summary stops using it.
     nonisolated static func quietSentence(for kind: String) -> String {
+        // Not patch-status data: it feeds no Security Score part.
+        if kind == "patch-policies" {
+            return L("Patch policy results stop updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary stops using it.")
+        }
         if kind.hasPrefix("patch-") {
             return L("Patch data stops updating. Patch screens and report tabs keep showing what was last collected, with its date; the daily summary and the patch part of the Security Score stop using it.")
         }

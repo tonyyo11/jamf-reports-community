@@ -111,7 +111,7 @@ Both commands are listed in jamf-cli's catalog as served by the Jamf Platform ga
 
 Both need jamf-cli 1.35.0 or later. jamf-cli's command catalog bundled with the app at the time of writing lists both commands at 1.35.0, and the commands were run on 1.37.0 and 1.38.0; output shape on 1.35-1.36 is unverified (see Risks). `JamfCLIInstaller.supportsDeploymentSources(_:)` follows the existing `supportsDashboard` rule: false for an unknown or unparseable version and below 1.35.0, so a run that could not read the version skips both with `CollectSkipReason.deploymentSourcesUnsupported`. Data Sources applies the same check.
 
-Each kind gets a 180 s call limit, like wave A's sources: the lists are one page on every server seen.
+Each kind gets a 180 s call limit, like wave A's sources. jamf-cli fetches every page of both lists by default (`--all` defaults to true; on the NFR server, `--page-size 10` still returned all 63 App Installers rows), so a long list is never cut at one page. A partial answer (exit 7) is a failure and saves nothing, as for wave A's sources: a list with rows missing would undercount the rows at a level.
 
 **Each day's first run collects them.** Both kinds are on the 12-hour refresh cadence, and the daily summary takes their figures only from a run that lands them. So, as `planAddOn` already does for add-on products, "not due" applies only within the local day of the last landing: the first run of a new day always collects both, and no day is left without figures.
 
@@ -126,11 +126,11 @@ ReportEngine.untilFirstLandingKinds = {"app-installers-deployments"}
 
 and moves exactly three reads to them:
 
-1.  `ReportEngine.recordUnlandedAttempt`: exit 4 records `FailureCause.notConfiguredOnServer` for a kind in `notSetUpOnExit4Kinds`. The rule checks the exit code alone, as wave A's does today; the `not_found` name was captured as confirmation, and keying on exit 4 keeps one rule for both waves.
+1.  `ReportEngine.recordUnlandedAttempt`: exit 4 records `FailureCause.notConfiguredOnServer` for a kind in `notSetUpOnExit4Kinds`. The rule checks the exit code alone, as wave A's does today; the `not_found` name was captured as confirmation, and keying on exit 4 keeps one rule for both waves. A kind in `untilFirstLandingKinds` that has landed is classified by `FailureCause.classify` instead, so it reads as an ordinary failure that the same-day retry and self-repair still try.
 2.  `StateFileStore.isAdvisory(kind:)`: the `notConfiguredOnServer` case applies to `notSetUpOnExit4Kinds`, and for a kind in `untilFirstLandingKinds` only while it has never landed (`lastRun == nil`). The `missingPermission` case stays keyed on `serverHealthKinds`.
 3.  `StateFileStore.advisoryCauses(profile:)`: iterates `notSetUpOnExit4Kinds`.
 
-Everything else (timeout, exit 7, Platform skip, version gate, opt-in, reduction branch) stays keyed on `serverHealthKinds`, so wave A's behaviour is unchanged; its tests are the check. `patch-policies` is in neither set: on a server that answers exit 4 for it, it is an ordinary failure.
+Everything else (Platform skip, version gate, opt-in, reduction branch) stays keyed on `serverHealthKinds`; the short call limit and the exit-7 rule apply to `deploymentKinds` too, so wave A's behaviour is unchanged; its tests are the check. `patch-policies` is in neither set: on a server that answers exit 4 for it, it is an ordinary failure.
 
 **Why the two rules differ.** Wave A's kinds stay quiet on exit 4 at any time, because a server can turn the built-in CA or notifications on and off. App Installers is quiet only until it first lands: a Jamf Cloud server that once answered and later returns exit 4 is a real failure, not a feature that went away. The "has landed" fact is the per-workspace state file `state/app-installers-deployments.last`.
 
@@ -237,7 +237,7 @@ Enabled rows first, by level then share; disabled rows after, under a "Disabled"
 
 **Trends:** two metrics, `appInstallersAtLevel` and `patchPoliciesAtLevel`, each `atWarning + atCritical`, offered where a summary carries them (never in demo mode, never as Overview score cards). A change is measured only across days judged at the same levels and floor (`TrendStore.comparablePoints` with the basis `warning/critical/minimum`), and a note names the day the basis changed, as for the Security Score.
 
-**Data Sources:** both kinds listed under Jamf Pro by name ("App Installers deployments", "Patch policies"); App Installers in `notSetUp` reads "Not set up on this Jamf Pro server"; `patch-policies` gets its own "turned off" sentence (it does not feed the patch part of the Security Score).
+**Data Sources:** both kinds listed under Jamf Pro, shown by their command text like every source; App Installers in `notSetUp` reads "Not set up on this Jamf Pro server"; `patch-policies` gets its own "turned off" sentence (it does not feed the patch part of the Security Score).
 
 **Data Freshness:** `expectedKinds` leaves out an advisory kind (it already takes `advisory:`); with the split it receives `advisoryCauses` over `notSetUpOnExit4Kinds`, so an on-prem server never shows App Installers as stale.
 
@@ -361,12 +361,12 @@ Caller: the collect path and Data Sources. Checkpoint suites: `DeploymentSourceR
 *   Add `static let deploymentKinds: Set<String> = ["app-installers-deployments", "patch-policies"]`, `static let notSetUpOnExit4Kinds: Set<String> = serverHealthKinds.union(["app-installers-deployments"])` and `static let untilFirstLandingKinds: Set<String> = ["app-installers-deployments"]`.
 *   `recordUnlandedAttempt`: the exit-4 test reads `notSetUpOnExit4Kinds`.
 *   Timeout: a kind in `deploymentKinds` gets `min(kindTimeout, serverHealthTimeout)`.
-*   `saveCollectedPayload`: a branch for `deploymentKinds`, before the `serverHealthKinds` branch, calls `DeploymentSourceReduction.reduce(kind:data:)`. Nil logs `[warn] <kind>: unexpected payload shape — snapshot not saved` and records `.failed(exitCode:)` with `FailureCause` kind `.other`.
+*   `saveCollectedPayload`: a branch for `deploymentKinds`, before the `serverHealthKinds` branch, calls `DeploymentSourceReduction.reduce(kind:payload:)`. Nil logs `[warn] <kind>: unexpected payload shape — snapshot not saved` and records `.failed(exitCode:)` with `FailureCause` kind `.other`.
 *   `collect` plan inputs: `planInputs.deploymentSourcesSupported = JamfCLIInstaller.supportsDeploymentSources(detectedVersion)`.
 
 #### 2. `Engine/DeploymentSourceReduction.swift` (Create)
 
-*   `enum DeploymentSourceReduction { static func reduce(kind: String, data: Data) -> Data? }`.
+*   `enum DeploymentSourceReduction { static func reduce(kind: String, payload: Data) -> Data? }`.
 *   Reads a top-level array, `null` (as `[]`) or a `{results: [...]}` envelope.
 *   Rebuilds each object with only the kept keys of the Collection table, each only with its stated JSON type, nested objects rebuilt with their kept keys only.
 *   Returns the encoded array (empty array kept); nil for anything that is not a list of objects.
@@ -402,12 +402,12 @@ Caller: the collect path and Data Sources. Checkpoint suites: `DeploymentSourceR
 #### 9. `Services/CollectSourcesPlan.swift` and `Views/SourcesView.swift` (Modify)
 
 *   `CollectSourcesPlan` passes `deploymentSourcesSupported: JamfCLIInstaller.supportsDeploymentSources(inputs.installedVersion)` beside `supportsDashboard`.
-*   `SourcesView` maps the two kinds to the display names "App Installers deployments" and "Patch policies"; App Installers in its advisory state uses the existing `.notConfigured` row state ("Not set up on this Jamf Pro server").
-*   `SourcesView.quietSentence(for:)` gets a branch for `patch-policies` before the `patch-` prefix rule: "Patch policy results stop updating; the Deployment Health card and tab keep the last collected figures."
+*   App Installers in its advisory state uses the existing `.notConfigured` row state ("Not set up on this Jamf Pro server"); rows show their command text, as every source does.
+*   `SourcesView.quietSentence(for:)` gets a branch for `patch-policies` before the `patch-` prefix rule: "Patch policy results stop updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary stops using it."
 
 #### 10. `Services/WorkspaceStore+Refresh.swift` and `Services/WorkspaceStore+Automation.swift` (Modify)
 
-*   `expectedKinds` gains `deploymentSourcesSupported` beside `dashboardSupported` and drops both kinds when it is false.
+*   `expectedKinds` gains `deploymentSourcesSupported` (default `false`, as `dashboardSupported`) and drops both kinds when it is false; it drops any kind in `advisory`, whatever set it is in.
 *   It receives `advisory:` from `StateFileStore.advisoryCauses` (now over `notSetUpOnExit4Kinds`). School and Protect-only workspaces already return early.
 
 #### 11. `Models/DemoData+Admin.swift` (Modify)
@@ -444,7 +444,7 @@ Caller: the collect path and Data Sources. Checkpoint suites: `DeploymentSourceR
     *   App Installers advisory only before its first landing;
     *   missing permission is not advisory for it.
 *   `CollectPlanTests`, `CollectSourcesPlanTests`, `CollectionTierTests`, `FleetSidesTests`, `CommandCatalogTests` (Modify): the new kinds in the plan, the skip reason and its position, Data Sources' version check, the tier, the side, the privileges.
-*   `EnvironmentProfilesGoldenTests`: expected unchanged (it hashes command lines of existing kinds); confirm.
+*   `EnvironmentProfilesGoldenTests`: its hash covers every row of `collectCommandMatrix`, so the two new rows change every Jamf Pro shape's `sha256`; the hashes are regenerated from the test's mismatch output and the router transcripts stay unchanged.
 
 ### Phase 2: calculator, configuration and surfaces
 

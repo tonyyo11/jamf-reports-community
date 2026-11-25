@@ -778,7 +778,8 @@ extension WorkspaceStore {
             workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
             advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys),
             optIn: SharedConfigPin.collectOptIn(
-                configured: config?.jamfCli?.collectOptIn, profile: profile)
+                configured: config?.jamfCli?.collectOptIn, profile: profile),
+            deploymentSourcesSupported: JamfCLIInstaller.supportsDeploymentSources(jamfCLIVersion)
         )
     }
 

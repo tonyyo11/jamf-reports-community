@@ -129,7 +129,9 @@ final class CommandCatalogTests: XCTestCase {
         XCTAssertEqual(source["Read Managed Software Updates"], .jamfReports)
         XCTAssertEqual(source["Read iOS Configuration Profiles"], .jamfReports)
         XCTAssertEqual(source["Read Mobile Device Applications"], .jamfReports)
-        XCTAssertEqual(source["Read Patch Policies"], .jamfReports)
+        // `pro patch-policies list` (wave C) lists it in jamf-cli's catalog.
+        XCTAssertEqual(source["Read Patch Policies"], .jamfCLI)
+        XCTAssertEqual(source["Read Mac Applications"], .jamfCLI)
         XCTAssertNil(source["compliance-benchmarks:read"])
         XCTAssertEqual(privileges.map(\.name), privileges.map(\.name).sorted())
     }

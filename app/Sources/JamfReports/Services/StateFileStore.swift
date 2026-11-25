@@ -201,11 +201,15 @@ struct StateFileStore: Sendable {
     /// A server-health kind whose newest failure is not a fault to fix: the feature is not set
     /// up on the server, or the API role lacks its privilege and it has never landed.
     func isAdvisory(kind: String) -> Bool {
-        guard ReportEngine.serverHealthKinds.contains(kind),
+        guard ReportEngine.notSetUpOnExit4Kinds.contains(kind),
               let cause = cause(for: kind) else { return false }
         switch cause.kind {
-        case .notConfiguredOnServer: return true
-        case .missingPermission: return lastRun(report: kind) == nil
+        case .notConfiguredOnServer:
+            // Quiet until its first landing only, for a kind that is quiet that long.
+            return !ReportEngine.untilFirstLandingKinds.contains(kind)
+                || lastRun(report: kind) == nil
+        case .missingPermission:
+            return ReportEngine.serverHealthKinds.contains(kind) && lastRun(report: kind) == nil
         default: return false
         }
     }
@@ -214,7 +218,7 @@ struct StateFileStore: Sendable {
     static func advisoryCauses(profile: String) -> [String: FailureCause] {
         guard let dir = try? WorkspacePaths.stateDir(for: profile) else { return [:] }
         let store = StateFileStore(directory: dir)
-        return ReportEngine.serverHealthKinds.reduce(into: [:]) { result, kind in
+        return ReportEngine.notSetUpOnExit4Kinds.reduce(into: [:]) { result, kind in
             if store.isAdvisory(kind: kind) { result[kind] = store.cause(for: kind) }
         }
     }

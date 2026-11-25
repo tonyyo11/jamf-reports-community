@@ -155,7 +155,9 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 serverHealthSupported: JamfCLIInstaller.supportsServerHealth(
                     inputs.installedVersion),
                 workspaceAuthIsPlatform: inputs.workspaceAuthIsPlatform,
-                optInKinds: ReportEngine.listedOptInKinds(inputs.optInList)),
+                optInKinds: ReportEngine.listedOptInKinds(inputs.optInList),
+                deploymentSourcesSupported: JamfCLIInstaller.supportsDeploymentSources(
+                    inputs.installedVersion)),
             lastRun: { _ in nil })
         return plan.map { planned in
             // A forced plan ignores the weekly hold, but Data Sources still says why.

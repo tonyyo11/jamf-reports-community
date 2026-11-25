@@ -1878,6 +1878,9 @@ struct ReportEngine: Sendable {
         "laps-pending-rotations",
         "admin-accounts",
         "api-integrations",
+        // Deployment health (jamf-cli 1.35.0+): App Installers deployments and patch policies.
+        "app-installers-deployments",
+        "patch-policies",
         // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
         "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
@@ -1934,6 +1937,20 @@ struct ReportEngine: Sendable {
     ]
     /// These calls are small; a hung one must not hold the run for the 60-minute kind limit.
     static let serverHealthTimeout: TimeInterval = 180
+    /// The deployment-health lists (wave C), judged per row against the organization's levels.
+    static let deploymentKinds: Set<String> = ["app-installers-deployments", "patch-policies"]
+    /// The limit for one kind's call: the small server-health and deployment lists get
+    /// `serverHealthTimeout`, everything else the run's kind limit.
+    static func callTimeout(for kind: String, kindTimeout: TimeInterval) -> TimeInterval {
+        serverHealthKinds.contains(kind) || deploymentKinds.contains(kind)
+            ? min(kindTimeout, serverHealthTimeout) : kindTimeout
+    }
+    /// Kinds whose exit 4 means the feature is not set up on this server, not a fault.
+    static let notSetUpOnExit4Kinds: Set<String> =
+        serverHealthKinds.union(["app-installers-deployments"])
+    /// Of those, the kinds quiet on exit 4 only until they first land: a Jamf Cloud server that
+    /// answered once and later says not found has a real fault, not a feature that went away.
+    static let untilFirstLandingKinds: Set<String> = ["app-installers-deployments"]
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
     /// dead (vs a partial failure that should fall back to cache).
@@ -2453,6 +2470,8 @@ struct ReportEngine: Sendable {
         planInputs.optInKinds = SharedConfigPin.collectOptIn(
             configured: loadedConfig?.jamfCli?.collectOptIn, profile: workspace.name)
         planInputs.serverHealthSupported = JamfCLIInstaller.supportsServerHealth(detectedVersion)
+        planInputs.deploymentSourcesSupported =
+            JamfCLIInstaller.supportsDeploymentSources(detectedVersion)
         planInputs.workspaceAuthIsPlatform =
             JamfCLIAuthMethod(raw: profileAuth?.authMethod)?.isPlatform == true
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
@@ -3187,6 +3206,11 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "accounts", "list", "--output", "json"], "admin-accounts"),
             (["-p", profile, "pro", "api-integrations", "list", "--output", "json"],
              "api-integrations"),
+            // jamf-cli 1.35.0+; `collect` skips both on an older or unknown binary.
+            (["-p", profile, "pro", "app-installers-deployments", "list", "--output", "json"],
+             "app-installers-deployments"),
+            (["-p", profile, "pro", "patch-policies", "list", "--output", "json"],
+             "patch-policies"),
             // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
             // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
             // profile; `collect` skips the row on an older binary. `--output json` only
@@ -3247,8 +3271,7 @@ struct ReportEngine: Sendable {
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
             bin: bin, bridge: bridge,
-            timeout: serverHealthKinds.contains(kind)
-                ? min(kindTimeout, serverHealthTimeout) : kindTimeout,
+            timeout: callTimeout(for: kind, kindTimeout: kindTimeout),
             onLine: stderrWatcher.forwarding(to: onLine),
             beforeRetry: { stderrWatcher.reset() }
         )
@@ -3270,7 +3293,7 @@ struct ReportEngine: Sendable {
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
         // A reduced count from a partial list would look complete, so exit 7 is a failure here.
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
-            && !serverHealthKinds.contains(kind)
+            && !serverHealthKinds.contains(kind) && !deploymentKinds.contains(kind)
         // A failed blueprint listing exits non-zero, so exit 0 with jamf-cli's
         // "No blueprints found." line is a real empty answer, not lost output.
         let noBlueprints = exitCode == 0 && data.isEmpty && stderrWatcher.sawNoBlueprints
@@ -3359,8 +3382,12 @@ struct ReportEngine: Sendable {
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) throws -> KindCollectResult {
         // Exit 4 on a server-health command means the feature is not set up on the server;
-        // `classify` cannot tell which kind it is, so the caller says so.
-        let cause = serverHealthKinds.contains(kind) && exitCode == CLIBridge.exitCodeNotFound
+        // `classify` cannot tell which kind it is, so the caller says so. A kind that is quiet
+        // only until it first lands is classified normally once it has landed.
+        let landedBefore = untilFirstLandingKinds.contains(kind)
+            && stateStore?.lastRun(report: kind) != nil
+        let cause = notSetUpOnExit4Kinds.contains(kind) && !landedBefore
+            && exitCode == CLIBridge.exitCodeNotFound
             ? FailureCause(kind: .notConfiguredOnServer, names: [], hint: nil, exitCode: exitCode)
             : FailureCause.classify(
                 exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
@@ -3541,6 +3568,18 @@ struct ReportEngine: Sendable {
             }
             AttentionLog.clear(.lostModeStripFailed)
             saved = stripped
+        } else if deploymentKinds.contains(kind) {
+            // Always reduced to the keys a reader uses; a list that is not of objects saves
+            // nothing rather than a guess.
+            guard let reduced = DeploymentSourceReduction.reduce(kind: kind, payload: payload)
+            else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): unexpected payload shape — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = reduced
         } else if serverHealthKinds.contains(kind) {
             // Always reduced, whatever `keep_account_names` says: nothing here is a person.
             guard let reduced = ServerHealthReduction.reduce(

@@ -126,6 +126,7 @@ extension ReportEngine {
         "certificate-authority": .both,
         "jamf-pro-notifications": .both,
         "laps-pending-rotations": .both, "admin-accounts": .both, "api-integrations": .both,
+        "app-installers-deployments": .mac, "patch-policies": .mac,
         ddmDeviceStatusKind: .mac, mdmCommandHealthKind: .mac,
     ]
 
