@@ -21,6 +21,14 @@ extension ReportEngine {
         case notDue(lastRun: Date?, cadence: Cadence)
         /// Its last failures all timed out; left alone until `retryAfter` unless forced.
         case repeatedTimeouts(retryAfter: Date)
+        /// The server-health commands were first run on jamf-cli 1.38.0.
+        case serverHealthUnsupported
+        /// The workspace's own profile is a Platform one, which does not serve them.
+        case serverHealthNotOnGateway
+        /// The API role lacks the privilege; checked again weekly (`StateFileStore.advisoryHold`).
+        case notPermitted
+        /// The server has the feature unset; checked again weekly.
+        case notConfigured
 
         /// What follows `[skip] <kind>: `; nil when one aggregate line already says it.
         var skipDetail: String? {
@@ -51,6 +59,13 @@ extension ReportEngine {
                 return "timed out \(WorkspaceStore.repeatedTimeoutsBeforeBackoff) runs in a row; "
                     + "next automatic try after \(collectLogDateLabel(retryAfter)) "
                     + "(Collect now tries it sooner)"
+            case .serverHealthUnsupported:
+                return "needs jamf-cli \(JamfCLIInstaller.serverHealthVersion) or later"
+            case .serverHealthNotOnGateway:
+                return "not collected through a Platform API profile yet"
+            case .notPermitted: return "not permitted for this login; checked again weekly"
+            case .notConfigured:
+                return "not set up on this Jamf Pro server; checked again weekly"
             }
         }
 
@@ -70,6 +85,11 @@ extension ReportEngine {
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
             case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
+            case .serverHealthUnsupported:
+                return "jamf-cli older than \(JamfCLIInstaller.serverHealthVersion)"
+            case .serverHealthNotOnGateway: return "Platform API profile"
+            case .notPermitted: return "not permitted"
+            case .notConfigured: return "not set up"
             }
         }
 
@@ -105,6 +125,10 @@ extension ReportEngine {
         var platformUnavailable: String?
         /// Sides of the fleet with no devices (`FleetState.skipped`); forced runs follow it too.
         var skippedSides: Set<FleetSide> = []
+        /// False only for a jamf-cli known to be older than 1.38.0.
+        var serverHealthSupported = true
+        /// The workspace's own profile uses Platform auth, which serves no server-health command.
+        var workspaceAuthIsPlatform = false
     }
 
     /// Decides every matrix command. The order is the loop's always was: Settings, then what
@@ -117,6 +141,7 @@ extension ReportEngine {
         commands: [(args: [String], kind: String)],
         inputs: CollectPlanInputs,
         timeoutHold: (String) -> Date? = { _ in nil },
+        advisoryHold: (String) -> CollectSkipReason? = { _ in nil },
         lastRun: (String) -> Date?
     ) -> [PlannedKind] {
         commands.map { command in
@@ -124,20 +149,21 @@ extension ReportEngine {
                 args: command.args, kind: command.kind,
                 skip: skipReason(
                     for: command.kind, inputs: inputs, timeoutHold: timeoutHold,
-                    lastRun: lastRun))
+                    advisoryHold: advisoryHold, lastRun: lastRun))
         }
     }
 
     private static func skipReason(
         for kind: String, inputs: CollectPlanInputs, timeoutHold: (String) -> Date?,
-        lastRun: (String) -> Date?
+        advisoryHold: (String) -> CollectSkipReason?, lastRun: (String) -> Date?
     ) -> CollectSkipReason? {
         if inputs.skipExpensive, expensivePerDeviceKinds.contains(kind) {
             return .settingsSkipExpensive
         }
         return profileSkip(for: kind, inputs: inputs)
             ?? scheduleSkip(
-                for: kind, inputs: inputs, timeoutHold: timeoutHold, lastRun: lastRun)
+                for: kind, inputs: inputs, timeoutHold: timeoutHold,
+                advisoryHold: advisoryHold, lastRun: lastRun)
     }
 
     /// Why a scheduled run stops before its next source. Nothing failed: what is left stays
@@ -244,6 +270,10 @@ extension ReportEngine {
         if kind == dashboardKind, !inputs.dashboardSupported {
             return .dashboardUnsupported(installedVersion: inputs.installedVersion)
         }
+        if serverHealthKinds.contains(kind) {
+            if inputs.workspaceAuthIsPlatform { return .serverHealthNotOnGateway }
+            if !inputs.serverHealthSupported { return .serverHealthUnsupported }
+        }
         return nil
     }
 
@@ -251,7 +281,7 @@ extension ReportEngine {
     /// `force` bypasses cadence so an ad-hoc refresh always refetches.
     private static func scheduleSkip(
         for kind: String, inputs: CollectPlanInputs, timeoutHold: (String) -> Date?,
-        lastRun: (String) -> Date?
+        advisoryHold: (String) -> CollectSkipReason?, lastRun: (String) -> Date?
     ) -> CollectSkipReason? {
         if let tier = CollectionTier.tier(forReport: kind), !inputs.tiers.contains(tier) {
             return .tierNotSelected(tier)
@@ -260,6 +290,7 @@ extension ReportEngine {
         if let until = timeoutHold(kind), inputs.now < until {
             return .repeatedTimeouts(retryAfter: until)
         }
+        if let held = advisoryHold(kind) { return held }
         let cadence = CadenceResolver.cadence(forReport: kind)
         let last = lastRun(kind)
         return CadenceResolver.isDue(lastRun: last, cadence: cadence, now: inputs.now)

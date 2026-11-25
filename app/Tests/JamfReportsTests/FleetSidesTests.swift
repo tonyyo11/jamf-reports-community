@@ -44,6 +44,10 @@ final class FleetSidesTests: XCTestCase {
 
     // MARK: - Classification
 
+    func testTheCertificateAuthorityIsOnBothSidesSoNoFleetSkipsIt() {
+        XCTAssertEqual(ReportEngine.sourceSides["certificate-authority"], SourceSides.both)
+    }
+
     func testEveryJamfProSourceHasASide() {
         let classified = Set(ReportEngine.sourceSides.keys)
         let matrix = Set(ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30).map(\.kind))

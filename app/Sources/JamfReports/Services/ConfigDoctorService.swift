@@ -103,6 +103,7 @@ enum ConfigDoctorService {
                     resolved: { ProfileAuthMethod.resolve(profile: $0) })
             }
             rows += protectMatchRows(profile: profile, config: config)
+            rows += serverHealthRows(profile: profile, config: config)
             rows += protectSyncedBackupRows(
                 ProtectBackup.syncedStorageChoice(profile: profile, config: config))
             rows += proSyncedBackupRows(

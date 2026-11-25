@@ -242,6 +242,11 @@ extension HtmlReport {
         if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
             items.append((token, nil))
         }
+        // ADE tokens are stated once, by the sentence above.
+        let credentials = inputs.serverHealth?.expiringCredentials ?? []
+        for credential in credentials where credential.key != "ade" {
+            items.append((Self.credentialSentence(credential), nil))
+        }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
             add(.securityTiles, .security, p0 == 1
@@ -288,6 +293,18 @@ extension HtmlReport {
     }
 
     /// The management lines, each only while its count is above zero.
+    /// One Needs attention sentence for an expired or expiring server credential (English: the
+    /// report is never translated).
+    static func credentialSentence(_ credential: CredentialExpiry) -> String {
+        let subject = credential.key == "ca" ? "The Jamf Pro built-in CA" : credential.label
+        let left = credential.daysLeft ?? 0
+        if credential.state == .expired {
+            return left >= 0 ? "\(subject) has expired."
+                : "\(subject) expired \(-left) day\(left == -1 ? "" : "s") ago."
+        }
+        return "\(subject) expires in \(left) day\(left == 1 ? "" : "s")."
+    }
+
     static func managementSentences(_ health: ManagementHealth?) -> [String] {
         let lines: [(ManagementHealth.Finding, String, String)] = [
             (.profileExpired, "has an expired MDM profile and is leaving management",

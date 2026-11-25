@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The Health Audit has a "Server and admin health" card that shows when the Jamf Pro server's built-in certificate authority expires, from jamf-cli 1.38.0. A login without the privilege, or a server without the feature, is shown as such and checked again weekly, never as a failed run. The HTML report's Needs attention list names an expired or expiring certificate.
+
+### Changed
+
+- The workbook has a new last core tab, "Server and Admin Health", in the Full Instance and Operational templates. The Config field for the existing expiry warning window is now labelled "Certificate and token expiry warning"; the key is unchanged.
+
 ## [2.12.0] - 2026-11-23
 
 2.12.0 treats a workspace as one environment: a Jamf Pro or Jamf School server together with the

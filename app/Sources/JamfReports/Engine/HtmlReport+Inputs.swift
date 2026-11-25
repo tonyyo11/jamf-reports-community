@@ -62,6 +62,8 @@ extension HtmlReport {
         /// The newest `device-enrollment-instances` snapshot, with its not-collected and
         /// could-not-be-read states.
         var enrollmentTokens = EnrollmentTokenSnapshot.empty
+        /// The server's own credentials (`ServerHealth`); nil until read.
+        var serverHealth: ServerHealth?
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
         /// One figure for the tile, the attention list and the group headline, so a summary
         /// written by an older build cannot make the top of the report disagree with itself.
@@ -134,6 +136,7 @@ extension HtmlReport {
             now: Date())
         inputs.enrollmentTokens = EnrollmentTokenSnapshot.load(
             dataDir: dataDir, warningDays: warningDays)
+        inputs.serverHealth = ServerHealth.load(dataDir: dataDir, warningDays: warningDays)
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),

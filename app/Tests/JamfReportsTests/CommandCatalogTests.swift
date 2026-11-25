@@ -100,6 +100,8 @@ final class CommandCatalogTests: XCTestCase {
     private static let unmappedUnlisted: Set<String> = [
         "pro overview", "pro report compliance-devices", "pro report compliance-rules",
         "pro report ddm-status", "pro report blueprint-status",
+        // The restricted-role capture read it with no privilege, so none is needed.
+        "pro certificate-authority active",
     ]
 
     func testEverySupplementedCommandIsStillUnlistedAndEveryOtherUnlistedOneIsKnown() throws {

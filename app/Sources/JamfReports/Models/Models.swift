@@ -1512,6 +1512,7 @@ struct CustomSheetGroup: Sendable {
                 .packageLifecycle,
                 .complianceDevices,
                 .complianceRules,
+                .serverAdminHealth,
             ]),
         ]
     }

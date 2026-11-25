@@ -1866,6 +1866,8 @@ struct ReportEngine: Sendable {
         "audit",
         // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
         "duplicate-serials",
+        // Server-health (jamf-cli 1.38.0+): the built-in CA's expiry.
+        "certificate-authority",
         // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
         "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
@@ -1904,9 +1906,17 @@ struct ReportEngine: Sendable {
     struct CollectOutcome: Equatable, Sendable {
         let kind: String
         let exitCode: Int32
+        /// A refusal or "not set up" answer of a server-health kind: advice, not a failure,
+        /// so the loop keeps it out of every verdict.
+        var advisory = false
         /// The failed attempt's classified cause; nil for successes and launch failures.
         var cause: FailureCause.Kind? = nil
     }
+
+    /// The server-health sources: credentials and server-side processes that fail quietly.
+    static let serverHealthKinds: Set<String> = ["certificate-authority"]
+    /// These calls are small; a hung one must not hold the run for the 60-minute kind limit.
+    static let serverHealthTimeout: TimeInterval = 180
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
     /// dead (vs a partial failure that should fall back to cache).
@@ -2423,11 +2433,21 @@ struct ReportEngine: Sendable {
             installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
         planInputs.skippedSides = fleet.skipped
+        planInputs.serverHealthSupported = JamfCLIInstaller.supportsServerHealth(detectedVersion)
+        planInputs.workspaceAuthIsPlatform =
+            JamfCLIAuthMethod(raw: profileAuth?.authMethod)?.isPlatform == true
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
         let plan = Self.slowLast(
             Self.planCollect(
                 commands: commands, inputs: planInputs,
                 timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: collectStart) },
+                advisoryHold: { kind in
+                    guard let store = stateStore,
+                          let until = store.advisoryHoldUntil(report: kind, now: collectStart),
+                          collectStart < until else { return nil }
+                    return store.cause(for: kind)?.kind == .notConfiguredOnServer
+                        ? .notConfigured : .notPermitted
+                },
                 lastRun: { stateStore?.lastRun(report: $0) }
             ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
@@ -2577,7 +2597,7 @@ struct ReportEngine: Sendable {
                     }
                 }
             }
-            outcomes.append(result.outcome)
+            if !result.outcome.advisory { outcomes.append(result.outcome) }
             if result.saved { savedKinds.insert(kind) }
         }
 
@@ -3137,6 +3157,9 @@ struct ReportEngine: Sendable {
             // failure mode on old binaries is a clean non-zero exit.
             (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
              "duplicate-serials"),
+            // jamf-cli 1.38.0+; `collect` skips it on an older binary.
+            (["-p", profile, "pro", "certificate-authority", "active", "--output", "json"],
+             "certificate-authority"),
             // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
             // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
             // profile; `collect` skips the row on an older binary. `--output json` only
@@ -3196,7 +3219,9 @@ struct ReportEngine: Sendable {
         let attemptStart = Date()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, timeout: kindTimeout,
+            bin: bin, bridge: bridge,
+            timeout: serverHealthKinds.contains(kind)
+                ? min(kindTimeout, serverHealthTimeout) : kindTimeout,
             onLine: stderrWatcher.forwarding(to: onLine),
             beforeRetry: { stderrWatcher.reset() }
         )
@@ -3216,7 +3241,9 @@ struct ReportEngine: Sendable {
             )
         }
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
+        // A reduced count from a partial list would look complete, so exit 7 is a failure here.
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
+            && !serverHealthKinds.contains(kind)
         // A failed blueprint listing exits non-zero, so exit 0 with jamf-cli's
         // "No blueprints found." line is a real empty answer, not lost output.
         let noBlueprints = exitCode == 0 && data.isEmpty && stderrWatcher.sawNoBlueprints
@@ -3304,14 +3331,25 @@ struct ReportEngine: Sendable {
         collectStart: Date,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) throws -> KindCollectResult {
-        let cause = FailureCause.classify(
-            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
-            sawNoDeclarationDataOnStderr: sawNoDeclarationData,
-            sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff,
-            sawKeychainLockedOnStderr: sawKeychainLocked)
-        let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
+        // Exit 4 on a server-health command means the feature is not set up on the server;
+        // `classify` cannot tell which kind it is, so the caller says so.
+        let cause = serverHealthKinds.contains(kind) && exitCode == CLIBridge.exitCodeNotFound
+            ? FailureCause(kind: .notConfiguredOnServer, names: [], hint: nil, exitCode: exitCode)
+            : FailureCause.classify(
+                exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
+                sawNoDeclarationDataOnStderr: sawNoDeclarationData,
+                sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff,
+                sawKeychainLockedOnStderr: sawKeychainLocked)
+        var outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
         stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
                            cause: cause)
+        // Decided after the failure is recorded and before the `use_cached_data` abort, so a
+        // refusal never fails a run that asked for live data only.
+        if stateStore?.isAdvisory(kind: kind) == true {
+            onLine(.init(timestamp: Date(), level: .info, text: advisoryLine(kind, cause)))
+            outcome.advisory = true
+            return KindCollectResult(outcome: outcome, saved: false)
+        }
         guard useCachedData else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
@@ -3327,6 +3365,16 @@ struct ReportEngine: Sendable {
                      text: "[warn] \(kind): \(Self.exitText(exitCode))\(reason) — \(cacheNote)"
                         + Self.causeSuffix(cause)))
         return KindCollectResult(outcome: outcome, saved: false)
+    }
+
+    /// The `[info]` line for a refused or not-set-up server-health kind.
+    private static func advisoryLine(_ kind: String, _ cause: FailureCause) -> String {
+        if cause.kind == .notConfiguredOnServer {
+            return "[info] \(kind): not set up on this Jamf Pro server"
+        }
+        // Names come only from jamf-cli's hint; with none, the line says only that it is refused.
+        let names = cause.names.isEmpty ? "" : " (\(cause.names.joined(separator: ", ")))"
+        return "[info] \(kind): not permitted for this login\(names); see Config Doctor"
     }
 
     /// One kind's jamf-cli invocation plus the single in-run retry. nil means
@@ -3466,6 +3514,16 @@ struct ReportEngine: Sendable {
             }
             AttentionLog.clear(.lostModeStripFailed)
             saved = stripped
+        } else if serverHealthKinds.contains(kind) {
+            // Always reduced, whatever `keep_account_names` says: nothing here is a person.
+            guard let reduced = ServerHealthReduction.reduce(kind: kind, payload: payload) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): unexpected payload shape — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = reduced
         } else if kind == "computers" {
             guard let stripped = Self.reducingComputers(
                 payload, keepAccountNames: keepAccountNames) else {
@@ -4981,17 +5039,11 @@ struct ReportEngine: Sendable {
             }
             return reduced
         }
-        let result: Any
-        if let rows = object as? [Any] {
-            guard let reduced = reduce(rows) else { return nil }
-            result = reduced
-        } else if var envelope = object as? [String: Any],
-                  let rows = envelope["results"] as? [Any] {
-            guard let reduced = reduce(rows) else { return nil }
+        guard let rows = listRows(of: object), let reduced = reduce(rows) else { return nil }
+        var result: Any = reduced
+        if var envelope = object as? [String: Any] {
             envelope["results"] = reduced
             result = envelope
-        } else {
-            return nil
         }
         guard removed else { return data }
         return try? JSONSerialization.data(withJSONObject: result)

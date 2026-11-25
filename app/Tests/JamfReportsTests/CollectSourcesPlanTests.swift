@@ -15,8 +15,32 @@ final class CollectSourcesPlanTests: XCTestCase {
     ) -> Plan {
         Plan.build(.init(
             product: product, profile: "prod", protectProfile: protect,
-            installedVersion: "1.33.0", skipExpensive: skipExpensive, authMethod: auth,
+            installedVersion: "1.38.0", skipExpensive: skipExpensive, authMethod: auth,
             tenantLevel: tenantLevel, hasTenantID: hasTenantID, collectSkipList: skip.sorted()))
+    }
+
+    func testServerHealthKindsAreListedAndExplainedWhenRefusedOrUnsupported() {
+        func reason(_ edit: (inout Plan.Inputs) -> Void) -> String?? {
+            var inputs = Plan.Inputs(product: .jamfPro, profile: "prod")
+            inputs.installedVersion = "1.38.0"
+            edit(&inputs)
+            return Plan.build(inputs).sources.first { $0.kind == "certificate-authority" }
+                .map(\.skipReason)
+        }
+        XCTAssertEqual(reason { _ in }, .some(nil), "listed and collected")
+        XCTAssertEqual(reason { $0.installedVersion = "1.37.0" }, "needs jamf-cli 1.38.0 or later")
+        XCTAssertEqual(reason { $0.workspaceAuthIsPlatform = true },
+                       "not collected through a Platform API profile yet")
+        XCTAssertEqual(
+            reason {
+                $0.advisory = ["certificate-authority": FailureCause(
+                    kind: .missingPermission, names: [], hint: nil, exitCode: 5)]
+            }, "not permitted for this login; checked again weekly")
+        XCTAssertEqual(
+            reason {
+                $0.advisory = ["certificate-authority": FailureCause(
+                    kind: .notConfiguredOnServer, names: [], hint: nil, exitCode: 4)]
+            }, "not set up on this Jamf Pro server; checked again weekly")
     }
 
     /// The other sources are SOFA, which a School collect fetches for OS currency, and the

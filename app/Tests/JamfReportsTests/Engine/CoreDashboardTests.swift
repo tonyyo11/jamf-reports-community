@@ -272,6 +272,41 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeGroupHygiene())
     }
 
+    // MARK: - Server and Admin Health
+
+    func testServerAdminHealthWritesTheCredentialRow() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let caDir = dataDir.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        let expiry = Int(Date().timeIntervalSince1970) + 40 * 86_400
+        try #"{"notAfter":\#(expiry)}"#.write(
+            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let workbook = Workbook()
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        try dash.writeServerAdminHealth()
+        XCTAssertNotNil(workbook.sheet(named: "Server and Admin Health"))
+    }
+
+    func testServerAdminHealthIsSkippedWithNoLandedKind() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertThrowsError(try dash.writeServerAdminHealth()) {
+            guard case .noServerHealthData? = $0 as? CoreDashboardError else {
+                return XCTFail("expected noServerHealthData, got \($0)")
+            }
+        }
+    }
+
+    func testTheTabIsLastInTheFullAndOperationalTemplatesAndNotInTheSchoolWorkbook() {
+        XCTAssertEqual(FullInstanceTemplate().includedSheets.last, .serverAdminHealth)
+        XCTAssertEqual(OperationalTemplate().includedSheets.last, .serverAdminHealth)
+        XCTAssertEqual(
+            CoreDashboard(config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
+                          workbook: Workbook()).sheetPlan.last?.name, "Server and Admin Health")
+        XCTAssertFalse(SchoolDashboard.sheetNames.contains("Server and Admin Health"))
+    }
+
     // MARK: - Smart Groups
 
     func testWriteSmartGroups() throws {
@@ -594,6 +629,8 @@ final class CoreDashboardTests: XCTestCase {
             "OS Currency",
             // mSCP / STIG compliance
             "mSCP Compliance", "Compliance Trend",
+            // Server and admin health
+            "Server and Admin Health",
         ]
         for name in expected {
             XCTAssertTrue(names.contains(name), "Sheet plan missing: \(name)")

@@ -121,6 +121,59 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertFalse(ReportEngine.CollectSkipReason.repeatedTimeouts(retryAfter: until).isNotDue)
     }
 
+    // MARK: - Server health
+
+    func testServerHealthSkipsComeInTheirOrderAndNeverOnAnUnknown() {
+        func plan(
+            supported: Bool = true, platform: Bool = false, force: Bool = false,
+            hold: ReportEngine.CollectSkipReason? = nil, lastRun: Date? = nil
+        ) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(tiers: [.inventory], force: force)
+            planInputs.serverHealthSupported = supported
+            planInputs.workspaceAuthIsPlatform = platform
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs,
+                advisoryHold: { $0 == "certificate-authority" ? hold : nil },
+                lastRun: { _ in lastRun })
+        }
+        let kind = "certificate-authority"
+        XCTAssertNil(skip(kind, in: plan()), "the default inputs never skip it")
+        XCTAssertEqual(skip(kind, in: plan(supported: false)), .serverHealthUnsupported)
+        XCTAssertEqual(skip(kind, in: plan(platform: true)), .serverHealthNotOnGateway)
+        XCTAssertEqual(skip(kind, in: plan(supported: false, platform: true)),
+                       .serverHealthNotOnGateway, "the gateway reason comes first")
+        XCTAssertEqual(skip(kind, in: plan(hold: .notPermitted)), .notPermitted)
+        XCTAssertEqual(skip(kind, in: plan(hold: .notConfigured)), .notConfigured)
+        XCTAssertNil(skip(kind, in: plan(force: true, hold: .notPermitted)),
+                     "Collect now probes at once")
+        XCTAssertEqual(skip(kind, in: plan(supported: false, hold: .notPermitted)),
+                       .serverHealthUnsupported, "the hold is a schedule reason, after the profile's")
+        XCTAssertNil(skip("computers", in: plan(supported: false, platform: true)),
+                     "only the server-health kinds are affected")
+    }
+
+    func testServerHealthSkipTextsAreTheSpecsAndIsNotDueIsFalse() {
+        typealias Reason = ReportEngine.CollectSkipReason
+        XCTAssertEqual(Reason.notPermitted.skipDetail,
+                       "not permitted for this login; checked again weekly")
+        XCTAssertEqual(Reason.notConfigured.planLabel, "not set up")
+        XCTAssertEqual(Reason.serverHealthUnsupported.skipDetail, "needs jamf-cli 1.38.0 or later")
+        XCTAssertEqual(Reason.serverHealthNotOnGateway.planLabel, "Platform API profile")
+        for reason in [Reason.notPermitted, .notConfigured, .serverHealthUnsupported,
+                       .serverHealthNotOnGateway] {
+            XCTAssertFalse(reason.isNotDue)
+        }
+    }
+
+    func testTheInstalledVersionGate() {
+        XCTAssertTrue(JamfCLIInstaller.supportsServerHealth("1.38.0"))
+        XCTAssertTrue(JamfCLIInstaller.supportsServerHealth("1.39.2"))
+        XCTAssertFalse(JamfCLIInstaller.supportsServerHealth("1.37.9"))
+        XCTAssertFalse(JamfCLIInstaller.supportsServerHealth("1.38.0-rc1"))
+        XCTAssertTrue(JamfCLIInstaller.supportsServerHealth(nil), "unknown never skips")
+        XCTAssertTrue(JamfCLIInstaller.supportsServerHealth("garbage"))
+    }
+
     // MARK: - Slow sources last
 
     func testSourcesThatWereSlowLastTimeRunLastShortestFirst() {

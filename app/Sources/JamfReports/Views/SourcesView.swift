@@ -928,7 +928,10 @@ struct SourcesView: View {
                     fleet: detected.type == .jamfPro
                         ? FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
                         : .unknown,
-                    platformUnavailable: routed.unavailable))
+                    platformUnavailable: routed.unavailable,
+                    workspaceAuthIsPlatform:
+                        JamfCLIAuthMethod(raw: workspaceAuth?.authMethod)?.isPlatform == true,
+                    advisory: StateFileStore.advisoryCauses(profile: profile)))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]

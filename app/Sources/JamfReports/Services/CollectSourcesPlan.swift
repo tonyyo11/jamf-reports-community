@@ -65,6 +65,11 @@ struct CollectSourcesPlan: Equatable, Sendable {
         var fleet: FleetState = .unknown
         /// Why the Platform-only kinds do not run (no Platform profile), or nil.
         var platformUnavailable: String?
+        /// The workspace's own login uses Platform auth (not the routed Platform slot's).
+        var workspaceAuthIsPlatform = false
+        /// Server-health kinds the API role refuses or the server has not set up
+        /// (`StateFileStore.isAdvisory`), with the cause on file.
+        var advisory: [String: FailureCause] = [:]
     }
 
     /// The auth method and Platform skip reason Data Sources judges by. Only Jamf Pro has a
@@ -134,14 +139,21 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
                 installedVersion: inputs.installedVersion, now: Date(),
                 platformUnavailable: inputs.platformUnavailable,
-                skippedSides: inputs.fleet.skipped),
+                skippedSides: inputs.fleet.skipped,
+                serverHealthSupported: JamfCLIInstaller.supportsServerHealth(
+                    inputs.installedVersion),
+                workspaceAuthIsPlatform: inputs.workspaceAuthIsPlatform),
             lastRun: { _ in nil })
         return plan.map { planned in
-            Source(
+            // A forced plan ignores the weekly hold, but Data Sources still says why.
+            let held = planned.skip ?? inputs.advisory[planned.kind].map {
+                $0.kind == .notConfiguredOnServer ? .notConfigured : .notPermitted
+            }
+            return Source(
                 product: ReportEngine.platformOnlyKinds.contains(planned.kind)
                     ? .platformAPI : .jamfPro,
                 kind: planned.kind, command: command(planned.args),
-                skipReason: planned.skip.map(text))
+                skipReason: held.map(text))
         }
     }
 

@@ -123,6 +123,8 @@ struct CoreDashboard: Sendable {
             // --- mSCP / STIG compliance (sheets 46–47) ---
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
+            // --- Server and admin health (last core tab; EA and Charts tabs follow) ---
+            (SheetID.serverAdminHealth.rawValue, writeServerAdminHealth),
         ]
         // --- Protect (sheets 35–40, optional) ---
         return leading + protectSheetPlan + trailing
@@ -3250,6 +3252,8 @@ struct CoreDashboard: Sendable {
                 + "access grants.",
             "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
                 + "Med-Low / Medium / High with count and percent.",
+            "Server and Admin Health": "The Jamf Pro server's own credentials, such as the "
+                + "built-in certificate authority, with days left and why one could not be read.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
             "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
@@ -3847,6 +3851,8 @@ struct CoreDashboard: Sendable {
 enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
+    /// No server-health source has landed, so the tab would hold only refusals.
+    case noServerHealthData
     /// The snapshot was read and holds nothing this tab can use; the text says what.
     case nothingToShow(String)
 
@@ -3858,6 +3864,8 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
             return reason
         case .protectDisabled:
             return "protect.enabled is off"
+        case .noServerHealthData:
+            return "No server-health source has been collected for this server"
         case .noCachedData(let names):
             if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
                 return "\(refusal.sentence); left out"

@@ -96,6 +96,29 @@ final class ManagementHealthHtmlTests: XCTestCase {
         XCTAssertFalse(lines(fine).contains { $0.contains("Enrollment") })
     }
 
+    func testTheADETokenIsStatedOnceAndTheCAGetsItsOwnSentence() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let anchor = GoldenFleetClock.anchorNoon()
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: dataDir, at: anchor, rows: [mac(1)])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "device-enrollment-instances", dataDir: dataDir, at: anchor,
+            rows: [["id": "1", "name": "A", "tokenExpirationDate": day(12)]])
+        let caDir = dataDir.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        let expiry = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 40, to: Date()))
+        try #"{"notAfter":\#(Int(expiry.timeIntervalSince1970))}"#.write(
+            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
+        let text = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertEqual(text.filter { $0.contains("Automated Device Enrollment") }.count, 1,
+                       "\(text)")
+        XCTAssertTrue(text.contains("The Jamf Pro built-in CA expires in 40 days."), "\(text)")
+    }
+
     // MARK: - Intervention list
 
     func testTheInterventionListCarriesTheFindingTitleAsTheReason() throws {

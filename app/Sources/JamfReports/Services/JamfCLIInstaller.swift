@@ -187,6 +187,16 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, dashboardVersion) != .orderedAscending
     }
 
+    /// First release the server-health commands were run on; the gate moves down only after
+    /// a run on an older one.
+    nonisolated static let serverHealthVersion: String = "1.38.0"
+
+    /// True for 1.38.0 or later, and for an unknown version, which never skips the commands.
+    nonisolated static func supportsServerHealth(_ installedVersion: String?) -> Bool {
+        guard let installedVersion, !versionParts(installedVersion).isEmpty else { return true }
+        return compareVersions(installedVersion, serverHealthVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

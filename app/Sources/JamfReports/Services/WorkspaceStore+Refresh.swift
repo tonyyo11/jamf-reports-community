@@ -773,7 +773,10 @@ extension WorkspaceStore {
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil,
-            skippedSides: fleet.skipped
+            skippedSides: fleet.skipped,
+            serverHealthSupported: JamfCLIInstaller.supportsServerHealth(jamfCLIVersion),
+            workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
+            advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys)
         )
     }
 

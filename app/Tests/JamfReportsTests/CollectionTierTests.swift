@@ -45,6 +45,29 @@ final class CollectionTierLookupTests: XCTestCase {
             .contains("mobile-devices-list"))
     }
 
+    func testTheCertificateAuthorityIsExpectedOnlyWhereCollectWouldRunIt() {
+        let kind = "certificate-authority"
+        XCTAssertEqual(CollectionTier.tier(forReport: kind), .inventory)
+        func expected(
+            supported: Bool = true, platform: Bool = false, advisory: Set<String> = []
+        ) -> Bool {
+            WorkspaceStore.expectedKinds(
+                skipExpensive: false, authMethod: "oauth2", serverHealthSupported: supported,
+                workspaceAuthIsPlatform: platform, advisory: advisory).contains(kind)
+        }
+        XCTAssertTrue(expected())
+        XCTAssertFalse(expected(supported: false), "jamf-cli older than 1.38.0")
+        XCTAssertFalse(expected(platform: true), "a Platform-auth workspace profile")
+        XCTAssertFalse(expected(advisory: [kind]), "refused or not set up: advice, not stale")
+        XCTAssertFalse(
+            WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2").contains(kind),
+            "the defaults keep the old list")
+        XCTAssertFalse(
+            WorkspaceStore.expectedKinds(
+                skipExpensive: false, authMethod: "oauth2", collectSkip: [kind],
+                serverHealthSupported: true).contains(kind))
+    }
+
     func testComputersListAsksForTheSectionsTheDevicesScreenReads() {
         let argv = ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
             .first { $0.kind == "computers" }?.args ?? []

@@ -783,7 +783,7 @@ private struct ThresholdsTab: View {
                         help: L("Check-in Health counts a Mac overdue after this many days")
                     )
                     thresholdField(
-                        label: L("Cert expiry warning"), key: "cert_warning_days",
+                        label: L("Certificate and token expiry warning"), key: "cert_warning_days",
                         value: $ws.configState.certWarningDays, unit: "days",
                         help: L("Default expiry warning window for date EAs")
                     )
