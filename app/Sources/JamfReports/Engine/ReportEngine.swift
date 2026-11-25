@@ -3684,9 +3684,13 @@ struct ReportEngine: Sendable {
         var attempted = 0
         var answered = 0
         var lastFailure: Int32?
+        // Every definition of each title whose body parsed, for `patch-version-dates`.
+        var versionRows: [String: [PatchVersionDate]] = [:]
+        var currentTitles: [String: String] = [:]
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            currentTitles[titleId] = patchItem.title
             // titleId is server-supplied and lands in a bare positional argv
             // slot below — refuse a leading dash exactly like singleDeviceDetail
             // already refuses one. The rejected value is not echoed.
@@ -3732,6 +3736,8 @@ struct ReportEngine: Sendable {
             guard let definitions = try? JSONSerialization.jsonObject(with: data)
                     as? [[String: Any]]
             else { continue }
+            versionRows[titleId] = PatchReleaseDateService.versionRows(
+                fromDefinitions: definitions, titleId: titleId, title: patchItem.title)
             let (version, releaseDate) = PatchReleaseDateService.latestDefinitionDate(
                 definitions: definitions, latestVersion: patchItem.latest)
             guard !releaseDate.isEmpty else { continue }
@@ -3753,6 +3759,10 @@ struct ReportEngine: Sendable {
             try writePatchReleaseDates(merged, stamp: ts, dataDir: dataDir)
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] patch-release-dates: \(merged.count) title(s)"))
+            updatePatchVersionDates(
+                answered: versionRows, currentTitles: currentTitles,
+                refreshAfter: patchVersionRefreshInterval(profile: profile),
+                dataDir: dataDir, onLine: onLine)
             return .landed
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
@@ -3768,13 +3778,75 @@ struct ReportEngine: Sendable {
     static func writePatchReleaseDates(
         _ merged: [[String: String]], stamp: String, dataDir: URL
     ) throws -> URL {
-        let outDir = try WorkspacePaths.confinedFolder([patchReleaseDatesKind], under: dataDir)
-        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-        let outFile = outDir.appendingPathComponent("\(patchReleaseDatesKind)_\(stamp).json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted]
-        try encoder.encode(merged).write(to: outFile, options: .atomic)
+        return try writePatchKind(
+            patchReleaseDatesKind, data: encoder.encode(merged), stamp: stamp, dataDir: dataDir)
+    }
+
+    /// Writes one `patch-version-dates` sidecar with the bytes `patchVersionDatesUpdate` encoded.
+    @discardableResult
+    static func writePatchVersionDates(_ data: Data, stamp: String, dataDir: URL) throws -> URL {
+        try writePatchKind(
+            PatchReleaseDateService.versionDatesKind, data: data, stamp: stamp, dataDir: dataDir)
+    }
+
+    /// One dated file in a patch kind folder: 0700 folder, 0600 file, written atomically, as
+    /// `saveSnapshot` writes every snapshot.
+    private static func writePatchKind(
+        _ kind: String, data: Data, stamp: String, dataDir: URL
+    ) throws -> URL {
+        let outDir = try WorkspacePaths.confinedFolder([kind], under: dataDir)
+        try FileManager.default.createDirectory(
+            at: outDir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let outFile = outDir.appendingPathComponent("\(kind)_\(stamp).json")
+        try AtomicInstall.write(data, to: outFile, mode: 0o600)
         return outFile
+    }
+
+    /// After `patch-release-dates` lands: merge this walk's definitions with the newest
+    /// sidecar and write a new one only when it changed or the newest has aged past
+    /// `refreshAfter`. A failure is one `[warn]`; the walk's own result stands.
+    static func updatePatchVersionDates(
+        answered: [String: [PatchVersionDate]], currentTitles: [String: String],
+        refreshAfter: TimeInterval, dataDir: URL, now: Date = Date(),
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        let kind = PatchReleaseDateService.versionDatesKind
+        let update = PatchReleaseDateService.patchVersionDatesUpdate(
+            answered: answered, currentTitles: currentTitles,
+            previous: PatchReleaseDateService.versionDates(dataDir: dataDir),
+            now: now, refreshAfter: refreshAfter)
+        let titles = Set(update.rows.map(\.titleId)).count
+        guard update.changed else {
+            onLine(.init(timestamp: now, level: .info,
+                         text: "[info] \(kind): \(titles) title(s), unchanged"))
+            return
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        do {
+            try writePatchVersionDates(
+                update.data, stamp: formatter.string(from: now), dataDir: dataDir)
+            onLine(.init(timestamp: now, level: .ok, text: "[ok] \(kind): \(titles) title(s)"))
+        } catch {
+            onLine(.init(timestamp: now, level: .warn,
+                         text: "[warn] \(kind): could not write snapshot — "
+                             + error.localizedDescription))
+        }
+    }
+
+    /// The effective retention of `profile`'s workspace, as the sweep reads it.
+    private static func patchVersionRefreshInterval(profile: String) -> TimeInterval {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            return PatchReleaseDateService.patchVersionRefreshInterval(nil)
+        }
+        let config = SharedConfigPin.effectiveRetention(
+            SnapshotRetentionService.loadRetentionConfig(workspace: workspace),
+            check: SharedConfigPin.check(profile: profile))
+        return PatchReleaseDateService.patchVersionRefreshInterval(config)
     }
 
     /// How `collectPatchReleaseDates` ended when it attempted the walk.
