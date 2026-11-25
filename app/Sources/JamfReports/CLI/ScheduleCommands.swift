@@ -16,11 +16,29 @@ struct Schedules: AsyncParsableCommand {
         func run() async throws {
             let records = ScheduleStore().load()
             if records.isEmpty { print("no hand-built schedules"); return }
+            var runsByWorkspace: [String: [String: RunHistoryService.RunSummary]] = [:]
             for r in records {
-                let target = r.allWorkspaces ? "all-profiles" : r.workspace
-                let flag = r.enabled ? "" : " (disabled)"
-                print("\(r.label)\t\(target)\t\(Self.effectiveMode(of: r))\t\(r.schedule)\(flag)")
+                let workspace = r.allWorkspaces
+                    ? (ProfileService.runnableWorkspaces(
+                        ProfileService.discoverLocal(),
+                        excluding: Set(r.excludedWorkspaces)).first?.name ?? r.workspace)
+                    : r.workspace
+                if runsByWorkspace[workspace] == nil {
+                    runsByWorkspace[workspace] = RunHistoryService.newestFinishedRuns(
+                        profile: workspace)
+                }
+                print(Self.line(for: r, status: runsByWorkspace[workspace]?[r.label]?.status))
             }
+        }
+
+        /// One row: label, target, mode, cadence, the last run's status (English, `-` with no
+        /// finished run), and a disabled flag. An all-profiles record reads the first runnable
+        /// workspace's Run History.
+        static func line(for r: ScheduleRecord, status: Schedule.LastStatus?) -> String {
+            let target = r.allWorkspaces ? "all-profiles" : r.workspace
+            let flag = r.enabled ? "" : " (disabled)"
+            let state = status?.rawValue.uppercased() ?? "-"
+            return "\(r.label)\t\(target)\t\(effectiveMode(of: r))\t\(r.schedule)\t\(state)\(flag)"
         }
 
         /// The mode a run uses: a pre-2.11 csv-assisted record runs as jamf-cli-full. An
