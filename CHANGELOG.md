@@ -24,6 +24,7 @@ versions in this repository map to git tags.
 - The Computers detail panel's jamf-cli Detail shows Jamf's status words as words ("Disabled", not "DISABLED"); names written in capitals stay as Jamf gives them.
 - Leaving the Setup tab in the middle of a setup that has already saved a jamf-cli profile or workspace folder keeps it: coming back resumes it, and Start over (now offered in the app as well as on first launch) removes what it saved.
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+- School Devices no longer runs wider than the window in Spanish, German, Portuguese and Italian: when the five filter buttons do not fit beside the search field, the filter becomes a menu.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 
 ## [2.12.0] - 2026-11-23
