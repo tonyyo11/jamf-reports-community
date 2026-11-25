@@ -637,11 +637,14 @@ extension DemoData {
         let plans = [
             ProtectPlanRow(
                 name: "Standard", logLevel: "INFO", autoUpdate: true,
-                telemetry: "Standard Telemetry"),
+                telemetry: "Standard Telemetry", usbControlSet: .names("Block Removable Storage"),
+                preventListSets: .names("")),
             ProtectPlanRow(
                 name: "Premium", logLevel: "DEBUG", autoUpdate: true,
-                telemetry: "Extended Telemetry"),
-            ProtectPlanRow(name: "Lab", logLevel: "INFO", autoUpdate: false, telemetry: nil),
+                telemetry: "Extended Telemetry", preventListSets: .names("Approved Developer Tools")),
+            ProtectPlanRow(
+                name: "Lab", logLevel: "INFO", autoUpdate: false, telemetry: nil,
+                preventListSets: .names("")),
         ]
         return ProtectDashboardService.Snapshot(
             isDetected: true,

@@ -1291,12 +1291,27 @@ struct ProtectPlanRow: Sendable, Equatable {
     let logLevel: String?
     let autoUpdate: Bool?
     let telemetry: String?
+    /// Absent when the plan has none (jamf-cli leaves the key out).
+    var usbControlSet: PlanReference = .absent
+    /// `""` when the plan has none; absent on every row before jamf-cli 1.37.
+    var preventListSets: PlanReference = .absent
+}
+
+/// A plan's reference to a set: absent, its names, or a value that is not text.
+enum PlanReference: Sendable, Equatable {
+    case absent, names(String), unreadable
+
+    /// From a decoded JSON value: nil key is absent, a string is names, anything else unreadable.
+    init(present: Bool, value: Any?) {
+        guard present else { self = .absent; return }
+        self = (value as? String).map(PlanReference.names) ?? .unreadable
+    }
 }
 
 // Decoding sits in an extension so the memberwise initializer stays available to demo data.
 extension ProtectPlanRow: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case name, logLevel, autoUpdate, telemetry
+        case name, logLevel, autoUpdate, telemetry, usbControlSet, preventListSets
     }
 
     init(from decoder: Decoder) throws {
@@ -1305,6 +1320,15 @@ extension ProtectPlanRow: Decodable {
         logLevel = try? c.decodeIfPresent(String.self, forKey: .logLevel)
         autoUpdate = try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)
         telemetry = try? c.decodeIfPresent(String.self, forKey: .telemetry)
+        usbControlSet = Self.reference(c, .usbControlSet)
+        preventListSets = Self.reference(c, .preventListSets)
+    }
+
+    private static func reference(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> PlanReference {
+        guard c.contains(key) else { return .absent }
+        return (try? c.decode(String.self, forKey: key)).map(PlanReference.names) ?? .unreadable
     }
 }
 

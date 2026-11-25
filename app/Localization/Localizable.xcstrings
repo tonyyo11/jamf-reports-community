@@ -46723,6 +46723,46 @@
         }
       }
     },
+    "Could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht lesbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Illisible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler"
+          }
+        }
+      }
+    },
     "Could not check GitHub releases: %@" : {
       "localizations" : {
         "de" : {
@@ -48641,6 +48681,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Contagens"
+          }
+        }
+      }
+    },
+    "Counts only; whether a plan needs these is your organization's call." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur Zählungen; ob ein Plan diese braucht, entscheidet Ihre Organisation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo recuentos; su organización decide si un plan los necesita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simples décomptes ; c'est à votre organisation de décider si un plan en a besoin."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo conteggi; spetta alla vostra organizzazione decidere se un piano ne ha bisogno."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "件数のみです。プランにこれらが必要かどうかは組織が判断します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apenas contagens; cabe à sua organização decidir se um plano precisa deles."
           }
         }
       }
@@ -91013,6 +91093,46 @@
         }
       }
     },
+    "Not reported by this jamf-cli (needs 1.37 or later)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von dieser jamf-cli-Version nicht gemeldet (erfordert 1.37 oder neuer)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión de jamf-cli no lo informa (requiere 1.37 o posterior)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non signalé par cette version de jamf-cli (1.37 ou ultérieure requise)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non segnalato da questa versione di jamf-cli (richiede 1.37 o successiva)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この jamf-cli では報告されません (1.37 以降が必要)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não informado por esta versão do jamf-cli (requer 1.37 ou posterior)"
+          }
+        }
+      }
+    },
     "Not reported by this profile" : {
       "localizations" : {
         "de" : {
@@ -99993,6 +100113,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Planos concluídos"
+          }
+        }
+      }
+    },
+    "Plans with no USB control set" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pläne ohne USB-Steuerungsset"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planes sin conjunto de control USB"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plans sans ensemble de contrôle USB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piani senza set di controllo USB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "USB 制御セットのないプラン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planos sem conjunto de controle USB"
+          }
+        }
+      }
+    },
+    "Plans with no prevent list" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pläne ohne Sperrliste"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planes sin lista de prevención"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plans sans liste de blocage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Piani senza elenco di blocco"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "防止リストのないプラン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Planos sem lista de prevenção"
           }
         }
       }

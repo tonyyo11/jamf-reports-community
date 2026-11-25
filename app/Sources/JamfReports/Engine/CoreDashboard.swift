@@ -2355,6 +2355,22 @@ struct CoreDashboard: Sendable {
             ws.write(logFilterSets, row: row, col: 6, format: .cell)
             row += 1
         }
+        // The same rule as `ProtectPlanRow`'s decoder, over the dictionaries this tab read.
+        let plans = items.map {
+            ProtectPlanRow(
+                name: nil, logLevel: nil, autoUpdate: nil, telemetry: nil,
+                usbControlSet: PlanReference(
+                    present: $0.keys.contains("usbControlSet"), value: $0["usbControlSet"]),
+                preventListSets: PlanReference(
+                    present: $0.keys.contains("preventListSets"), value: $0["preventListSets"]))
+        }
+        guard let configuration = ProtectConfiguration.counts(plans: plans) else { return }
+        row += 1
+        for (label, value) in configuration.reportRows {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
     }
 
     // MARK: - Protect Threat Overview
@@ -3315,7 +3331,8 @@ struct CoreDashboard: Sendable {
             "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
                 + "stale since the last collect on an earlier day.",
             "Protect Plans": "Jamf Protect plans with log level, auto-update, and the "
-                + "configurations each plan uses.",
+                + "configurations each plan uses, then how many plans have no USB control set "
+                + "and no prevent list.",
             "Protect Threat Overview": "Jamf Protect alerts per Mac with type, severity, "
                 + "status and analytics.",
             "Patch Summary Dashboard": "Fleet and patch overview from patch-status and "

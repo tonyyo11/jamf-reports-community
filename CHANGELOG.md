@@ -13,10 +13,12 @@ versions in this repository map to git tags.
 - The Jamf Protect screen has a Protect agents card: how many Macs hold signatures older than the newest version Protect published at least a day ago, how many run an agent older than the installer Protect has offered for at least a day, and how many have been disconnected for more than a day, with Protect's reasons. A count that cannot be judged yet says why instead of showing 0. It replaces the line that compared signatures only with the newest version seen in the fleet, which read "none behind" when every Mac was behind.
 - The HTML report has a Protect agents section with the same three counts, and Needs attention names each one that is above zero.
 - The daily summary records the three Protect agent counts, so Trends draws them over time and the Overview can show them as score cards. Alert rules can use `protect_signatures_behind_count`, `protect_agent_behind_count` and `protect_disconnected_count`; a count the app could not judge that day is left out, so it never fires as 0.
+- The Jamf Protect screen's Plans card ends with two counts: plans with no USB control set and plans with no prevent list. They are counts only, with no colour, because whether a plan needs either is the organization's call. The prevent list count needs jamf-cli 1.37 or later and says so on older versions.
 
 ### Changed
 
 - Workbook: the Protect Computers tab gains three columns at the end, Signatures Behind, Agent Behind and Disconnected Over 24 h (Yes, No, or blank when not judged); no existing column moves. The Protect Overview tab gains a Protect agents block below its rows, and is written with that block alone when there is no overview snapshot.
+- Workbook: the Protect Plans tab gains two rows below the plans, after a blank row: Plans with no USB control set and Plans with no prevent list, each as "N of M". No existing column moves.
 
 ## [2.12.0] - 2026-11-23
 

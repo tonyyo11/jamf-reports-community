@@ -1200,8 +1200,13 @@ each finding this run measured (nil included) and keeps the earlier value of one
 `met` (absent never fires); Trends and the Overview's score card picker offer the metrics
 `protectSignaturesBehind`, `protectAgentBehind`, `protectDisconnected` (counts, lower is better)
 through `TrendSeries.Metric.protectMetrics`; the demo history ends on the Protect screen's
-figures (`DemoData.protectFigures`). E2 (plan-side configuration counts) is next
-(`docs/superpowers/specs/2026-11-24-protect-configuration-posture-design.md`).
+figures (`DemoData.protectFigures`). **Plan configuration (E2).**
+`ProtectConfiguration.counts(plans:)` (`Models/ProtectConfiguration.swift`) counts the plans with no
+USB control set and no prevent list as neutral `{met, of}` (blank or absent is unset; jamf-cli
+leaves `usbControlSet` out when unset and always sends `preventListSets` from 1.37, so when no
+row carries `preventListSets` that count is nil, "not reported", never N of N; `ProtectPlanRow`
+decodes both). The Protect screen's Plans card ends with them and the Protect Plans tab appends
+them as rows after a blank row; no summary, alert or Trends figure.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
