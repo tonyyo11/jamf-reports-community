@@ -236,6 +236,34 @@ every collect you start appears as "Manual collect" (the last 20 are kept, so th
 push scheduled runs out of the 50). A collect that is turned away because a scheduled run
 holds the lock leaves no entry, and a manual collect is never counted as a schedule's run.
 
+### Large fleets: a collect split across the day
+
+A scheduled run gives the lock up between sources once it has held it for
+`jamf_cli.run_budget_minutes` (45 by default) and logs `stopped early` with what is left. From
+2.13 the background item **continues** that collect: at the next wake where the lock is free and
+nothing else is due (within about five minutes), it runs again, collecting only the sources still
+due, and keeps doing so until everything has landed or local midnight. A continuation is not a
+retry: it does not use the 1, 2 and 4 hour retries kept for failures, and it is never turned into
+one, whatever the budget. If a source also failed, those retries run first; once they are spent,
+the continuations pick up the rest of the day.
+
+The Automation screen (and the schedule builder) shows a **Continuing today's collect** card with
+"N of M sources collected today" and **Continue now**, and the schedule's status reads **In
+progress** until the day's collect is done. A fleet whose collect fits in the budget never sees
+any of this. To spread a collect over smaller runs on purpose, lower `run_budget_minutes`; there
+is no separate switch.
+
+- **Jamf School** collects are continued too, without forcing past School's 12-hour cadence, so
+  only what is still due is fetched.
+- **Jamf Protect on its own** (a Protect-only environment) is not continued: its collect has no
+  cadence to skip what already landed, so a stopped run keeps the 1, 2, 4 hour retries.
+- **Refresh in the app** still stops whatever scheduled run holds the lock, between sources. A
+  Collect now of the same workspace collects everything, so that run is not continued; a refresh
+  of another workspace, or of only some tiers, leaves the stopped run to be continued.
+- On a workspace several Macs share, only the Mac that started the day's collect continues it.
+- The app's own automatic collects (background refresh, the hourly repair, catch-up on wake) also
+  stop at the budget but are not continued; the scheduled collect is.
+
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports
 --tick` still runs from any binary, which is how scheduling is tested locally.
@@ -244,7 +272,8 @@ skipped and the Automation screen shows "Ticker unavailable in this build" — `
 
 A scheduled run logs to **per-run logs** at `~/Jamf-Reports/<profile>/automation/logs/` —
 one file per run, read by the **Run History** screen (pruned to the most recent 50 per
-workspace). There is no separate `launchd` stdout/stderr file per schedule any more; the
+schedule and 200 per workspace, so a schedule that runs several times a day never pushes another
+schedule's history out). There is no separate `launchd` stdout/stderr file per schedule any more; the
 background item's own diagnostics (lock contention, import, registration, a schedule
 skipped because its start could not be recorded) go to Console.app under the
 `com.github.tonyyo11.jamf-reports-community` subsystem.

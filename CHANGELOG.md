@@ -7,9 +7,21 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- A large fleet's collect that stops at its run budget is now continued through the day. The background item picks up the rest at its next free wake (within about five minutes), collecting only what is still due, until everything has landed or midnight. Jamf School collects are continued too; a Jamf Protect-only workspace is not. The Automation screen shows "N of M sources collected today" with Continue now, and the schedule reads In progress until the day's collect is done. A fleet whose collect fits in the budget sees no change; lower `jamf_cli.run_budget_minutes` to spread a collect over smaller runs.
+
+### Changed
+
+- A collect that stops at its run budget no longer uses up the 1, 2 and 4 hour retries kept for failures, and is no longer limited to about four runs a day. If a source also failed, those retries still run first.
+- The schedule list shows each schedule's real last run and status (OK, Warning, Failed, Partial, In progress) from Run History. It showed OK for every schedule. `jamf-reports schedules list` gains a STATUS column.
+- Run History keeps the last 50 runs of each schedule and 200 per workspace, so a schedule that runs several times a day no longer pushes another schedule's history out. It kept 50 per workspace.
+- Refresh in the app still stops a scheduled run between sources. A Collect now of the same workspace collects everything, so that run is not continued; a refresh of another workspace, or of only some tiers, leaves the stopped run to be continued.
+
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+- Jamf Security Cloud's "stopped early" line listed its source as left even after it was collected.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 
 ## [2.12.0] - 2026-11-23

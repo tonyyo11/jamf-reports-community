@@ -1,7 +1,7 @@
 # Continue today's collect (split collect) — 2.13, wave D
 
 *   **Author:** Tony Young
-*   **Status:** Reviewed (EGM, 2026-11-25); awaiting approval
+*   **Status:** Approved (Tony, 2026-11-25); built on `dev/wave-d-automation-bdab91`
 *   **Date:** 2026-11-25
 *   **Epic:** [#421](https://github.com/tonyyo11/jamf-reports-community/issues/421) (Automation).
     Follows the 2.12 large-fleet design (`docs/superpowers/specs/2026-11-17-large-fleet-design.md`,
@@ -30,6 +30,22 @@ The feature was called "micro-refresh" in epic #421, where it meant light fleet-
 collects. Tony's answer on 2026-11-25 is that the purpose is spreading one large fleet's collect,
 so that name is retired here and the light-calls item is closed in #421 with that answer as the
 reason.
+
+## As built (differences from the plan below)
+
+*   The pill reads `RunHistoryService.newestFinishedRuns(profile:)` (the per-log status Run
+    History already computes) and `WorkspaceStore.withLastRuns` writes it onto `schedules` in
+    `refreshAutomationHealth`, instead of a separate `scheduleStatuses` map.
+*   `SplitDay.failed` is one flag per label (the newest run's failure verdict over all its
+    profiles), not one per profile.
+*   `scheduledRunSingle` takes the `RunProgress` and records `protectOnly` on it, instead of
+    returning a `ScheduledRunResult`. `ManualRefreshRequest.Pending` is `none`, `unnamed`,
+    `named(workspace:full:)`.
+*   Run History keeps 50 logs per label and 200 per workspace (the plan said 50 per label only).
+*   A Run now marker on an open split day runs as the wake's continuation; no second continuation
+    is added that wake.
+*   Not built here: a School scheduled-run test of the unforced continuation (the rule is the one
+    `force` line in `scheduledRunSingleBody`), and the measurement gate.
 
 ## How it works today
 
