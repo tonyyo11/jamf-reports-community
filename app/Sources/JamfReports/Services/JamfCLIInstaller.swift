@@ -174,40 +174,12 @@ final class JamfCLIInstaller {
             + "oldest Jamf Reports can run — aborting '\(profile)' to avoid writing data from an unsupported binary. Update jamf-cli in Settings or with brew upgrade jamf-cli."
     }
 
-    /// First release with the top-level `dashboard` command: one self-contained
-    /// HTML page of fleet aggregates. Older binaries have no such command.
-    nonisolated static let dashboardVersion: String = "1.31.0"
-
-    /// True only when `installedVersion` parses and is at least 1.31.0. An unknown version
-    /// fails toward not running it. A pre-release of 1.31.0 (`1.31.0-rc1`) counts as below it,
-    /// so the command is not run.
-    nonisolated static func supportsDashboard(_ installedVersion: String?) -> Bool {
-        guard let installedVersion,
-              !versionParts(installedVersion).isEmpty else { return false }
-        return compareVersions(installedVersion, dashboardVersion) != .orderedAscending
-    }
-
-    /// First release the server-health commands were run on; the gate moves down only after
-    /// a run on an older one.
-    nonisolated static let serverHealthVersion: String = "1.38.0"
-
-    /// True for 1.38.0 or later, and for an unknown version, which never skips the commands.
-    nonisolated static func supportsServerHealth(_ installedVersion: String?) -> Bool {
-        guard let installedVersion, !versionParts(installedVersion).isEmpty else { return true }
-        return compareVersions(installedVersion, serverHealthVersion) != .orderedAscending
-    }
-
-    /// The oldest jamf-cli command catalog the app ships (1.35.0) lists `pro
-    /// app-installers-deployments list` and `pro patch-policies list`; earlier versions are
-    /// unchecked, so the gate stays here until a run on one shows otherwise.
-    nonisolated static let deploymentSourcesVersion: String = "1.35.0"
-
-    /// True only when `installedVersion` parses and is at least 1.35.0, as `supportsDashboard`:
-    /// an unknown version skips them.
-    nonisolated static func supportsDeploymentSources(_ installedVersion: String?) -> Bool {
-        guard let installedVersion,
-              !versionParts(installedVersion).isEmpty else { return false }
-        return compareVersions(installedVersion, deploymentSourcesVersion) != .orderedAscending
+    /// True only when `installed` parses and is at least `required`. An unknown version fails
+    /// toward not running the command. A pre-release of `required` (`1.31.0-rc1`) counts as
+    /// below it. `ReportEngine.minimumJamfCLI` names the gated sources.
+    nonisolated static func supports(_ required: String, installed: String?) -> Bool {
+        guard let installed, !versionParts(installed).isEmpty else { return false }
+        return compareVersions(installed, required) != .orderedAscending
     }
 
     /// Errors raised by `validateAsset(host:name:)` when a release asset

@@ -152,7 +152,7 @@ ServerHealth.load(dataDir:, warningDays:, now:)   one reader, one calculator
 
 ### New collect kinds
 
-All are Jamf Pro matrix rows (`jamfProCommandMatrix`), device side `.both` in `sourceSides`; the six default kinds are optional in `collect_skip` (`optionalKinds`), while the three opt-in kinds are not (their only switch is `collect_opt_in`); and collected only when jamf-cli is 1.38.0 or later (`JamfCLIInstaller.supportsServerHealth`, the `supportsDashboard` pattern: below it the kinds are skipped with `CollectSkipReason.serverHealthUnsupported` and recorded nowhere). 1.38.0 is the only version on which the commands were run; the gate moves down only after a run on an older binary.
+All are Jamf Pro matrix rows (`jamfProCommandMatrix`), device side `.both` in `sourceSides`; the six default kinds are optional in `collect_skip` (`optionalKinds`), while the three opt-in kinds are not (their only switch is `collect_opt_in`); and collected only when jamf-cli is 1.38.0 or later (`JamfCLIInstaller.supportsServerHealth`, the `supportsDashboard` pattern: below it the kinds are skipped with `CollectSkipReason.serverHealthUnsupported` and recorded nowhere). 1.38.0 is the only version on which the commands were run; the gate moves down only after a run on an older binary. **Changed 2026-11-26:** the gate is rows in `ReportEngine.minimumJamfCLI`, the one version table wave E added, with `CollectSkipReason.needsJamfCLI` as the skip reason; `supportsServerHealth` and `.serverHealthUnsupported` are gone, and an unknown version now skips these sources as it skips every gated source.
 
 | Kind | Command | Tier | Saved (allow-list) | Default |
 |---|---|---|---|---|

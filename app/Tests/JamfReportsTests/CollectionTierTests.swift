@@ -57,20 +57,21 @@ final class CollectionTierLookupTests: XCTestCase {
             supported: Bool = true, platform: Bool = false, advisory: Set<String> = []
         ) -> Bool {
             WorkspaceStore.expectedKinds(
-                skipExpensive: false, authMethod: "oauth2", serverHealthSupported: supported,
+                skipExpensive: false, authMethod: "oauth2",
+                jamfCLIVersion: supported ? "1.38.0" : "1.37.0",
                 workspaceAuthIsPlatform: platform, advisory: advisory).contains(kind)
         }
         XCTAssertTrue(expected())
         XCTAssertFalse(expected(supported: false), "jamf-cli older than 1.38.0")
         XCTAssertFalse(expected(platform: true), "a Platform-auth workspace profile")
         XCTAssertFalse(expected(advisory: [kind]), "refused or not set up: advice, not stale")
-        XCTAssertTrue(
+        XCTAssertFalse(
             WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2").contains(kind),
             "an unknown jamf-cli version fails the way the planner does")
         XCTAssertFalse(
             WorkspaceStore.expectedKinds(
                 skipExpensive: false, authMethod: "oauth2", collectSkip: [kind],
-                serverHealthSupported: true).contains(kind))
+                jamfCLIVersion: "1.38.0").contains(kind))
     }
 
     func testComputersListAsksForTheSectionsTheDevicesScreenReads() {
@@ -277,7 +278,7 @@ final class CollectionTierLookupTests: XCTestCase {
             XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind), kind)
             func expected(_ optIn: Set<String>, advisory: Set<String> = []) -> Bool {
                 WorkspaceStore.expectedKinds(
-                    skipExpensive: false, authMethod: "oauth2", serverHealthSupported: true,
+                    skipExpensive: false, authMethod: "oauth2", jamfCLIVersion: "1.38.0",
                     advisory: advisory, optIn: optIn).contains(kind)
             }
             XCTAssertFalse(expected([]), kind)

@@ -28,7 +28,8 @@ final class CollectSourcesPlanTests: XCTestCase {
                 .map(\.skipReason)
         }
         XCTAssertEqual(reason { _ in }, .some(nil), "listed and collected")
-        XCTAssertEqual(reason { $0.installedVersion = "1.37.0" }, "needs jamf-cli 1.38.0 or later")
+        XCTAssertEqual(reason { $0.installedVersion = "1.37.0" },
+                       "needs jamf-cli 1.38.0 or later (installed: 1.37.0)")
         XCTAssertEqual(reason { $0.workspaceAuthIsPlatform = true },
                        "not collected through a Platform API profile yet")
         XCTAssertEqual(
@@ -296,7 +297,7 @@ final class CollectSourcesPlanTests: XCTestCase {
         inputs.installedVersion = "1.37.0"
         let built = Plan.build(inputs)
         let source = built.sources.first { $0.kind == "admin-accounts" }!
-        XCTAssertEqual(source.skipReason, "needs jamf-cli 1.38.0 or later")
+        XCTAssertEqual(source.skipReason, "needs jamf-cli 1.38.0 or later (installed: 1.37.0)")
         XCTAssertEqual(built.switchState(for: source).control, .hidden,
                        "a source that cannot run here has no switch to write a dead setting")
         inputs.installedVersion = "1.38.0"

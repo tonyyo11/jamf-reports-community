@@ -44,6 +44,7 @@ final class AdminHygieneCollectTests: XCTestCase {
         let stub = root.appendingPathComponent("stub-cli")
         let script = """
         #!/bin/sh
+        [ "$1" = "--version" ] && { echo "jamf-cli version 1.38.0"; exit 0; }
         [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
         case "$*" in
           *pending-rotations*) echo laps >> "\(calls.path)"; cat "\(fixture("laps-pending-rotations-list.json"))" ;;
@@ -87,7 +88,7 @@ final class AdminHygieneCollectTests: XCTestCase {
         let laps = try XCTUnwrap(try saved("laps-pending-rotations"))
         XCTAssertTrue(accounts.contains("\"fullAccessLocal\":1"), accounts)
         XCTAssertTrue(api.contains("\"enabledWithTokenOverOneDay\":1"), api)
-        XCTAssertTrue(laps.contains("\"totalCount\":2"), laps)
+        XCTAssertTrue(laps.contains("\"totalCount\":1"), laps)
         for text in [accounts, api, laps] {
             for leaked in ["example", "Example", "clientId", "000000"] {
                 XCTAssertFalse(text.contains(leaked), "\(leaked) in \(text)")

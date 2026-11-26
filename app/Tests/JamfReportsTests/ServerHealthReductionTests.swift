@@ -72,8 +72,13 @@ final class ServerHealthReductionTests: XCTestCase {
             kind: "jamf-pro-notifications",
             payload: fixture("jamf-pro-notifications-list.json")))
         let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: out) as? [[String: Any]])
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0] as? [String: String], ["type": "PATCH_EXTENTION_ATTRIBUTE"])
+        XCTAssertEqual(rows.count, 7)
+        XCTAssertTrue(rows.allSatisfy { $0.count == 1 }, "only the type is kept")
+        XCTAssertEqual(rows.compactMap { $0["type"] as? String }, [
+            "BUILT_IN_CA_EXPIRING", "CAN_ENABLE_PASSWORD_RESET_CLOUD_ENVIRONMENT",
+            "DEP_INSTANCE_EXPIRED", "EXCEEDED_LICENSE_COUNT", "PATCH_EXTENTION_ATTRIBUTE",
+            "PUSH_CERT_EXPIRED", "VPP_ACCOUNT_EXPIRED",
+        ])
         let text = String(decoding: out, as: UTF8.self)
         XCTAssertFalse(text.contains("Example"), "params and id are not saved")
     }
@@ -96,11 +101,15 @@ final class ServerHealthReductionTests: XCTestCase {
     func testTheNotificationsFixtureKeepsTheCapturedShape() throws {
         let rows = try XCTUnwrap(JSONSerialization.jsonObject(
             with: fixture("jamf-pro-notifications-list.json")) as? [[String: Any]])
-        let row = try XCTUnwrap(rows.first)
-        XCTAssertEqual(Set(row.keys), ["id", "type", "params"])
-        XCTAssertEqual(row["type"] as? String, "PATCH_EXTENTION_ATTRIBUTE")
-        let params = try XCTUnwrap(row["params"] as? [String: String])
-        XCTAssertEqual(Set(params.keys), ["softwareTitleName", "extensionAttributeName", "id"])
+        XCTAssertTrue(rows.allSatisfy { Set($0.keys) == ["id", "type", "params"] })
+        // As captured: `params` is `{}`, `{id, name}` or the patch EA trio, and an `id` in it
+        // can be a number.
+        let params = rows.compactMap { $0["params"] as? [String: Any] }
+        XCTAssertEqual(params.count, rows.count)
+        XCTAssertEqual(Set(params.map { $0.keys.sorted() }), [
+            [], ["id", "name"], ["extensionAttributeName", "id", "softwareTitleName"],
+        ])
+        XCTAssertTrue(params.contains { $0["id"] is Int })
     }
 
     func testListRowsReadsEveryShapeTheEnrollmentReductionDoes() {
@@ -254,7 +263,10 @@ final class ServerHealthReductionTests: XCTestCase {
     func testLAPSKeepsOnlyTheCount() throws {
         XCTAssertEqual(
             try counts("laps-pending-rotations",
-                       fixture("laps-pending-rotations-list.json")), ["totalCount": 2])
+                       fixture("laps-pending-rotations-list.json")), ["totalCount": 1])
+        XCTAssertEqual(try counts("laps-pending-rotations",
+                                  Data(#"{"totalCount":2,"results":[{},{}]}"#.utf8)),
+                       ["totalCount": 2])
         XCTAssertEqual(try counts("laps-pending-rotations", Data(#"{"results":[1,2,3]}"#.utf8)),
                        ["totalCount": 3])
         // A bare list or null counts its rows, so `[]` is a measured zero (see the fallback test).
@@ -274,7 +286,8 @@ final class ServerHealthReductionTests: XCTestCase {
             return String(decoding: out, as: UTF8.self)
         }.joined()
         for leaked in ["example.admin", "Example", "example.com", "555-0100", "00000000-0000",
-                       "CN=", "username", "realname", "email", "clientId", "displayName"] {
+                       "CN=", "username", "realname", "email", "clientId", "displayName",
+                       "examplelapsadmin", "lapsUser", "guid", "createdDate"] {
             XCTAssertFalse(saved.contains(leaked), leaked)
         }
     }
@@ -297,6 +310,10 @@ final class ServerHealthReductionTests: XCTestCase {
         let laps = try XCTUnwrap(JSONSerialization.jsonObject(
             with: fixture("laps-pending-rotations-list.json")) as? [String: Any])
         XCTAssertEqual(Set(laps.keys), ["totalCount", "results"])
+        let row = try XCTUnwrap((laps["results"] as? [[String: Any]])?.first)
+        XCTAssertEqual(Set(row.keys), ["lapsUser", "createdDate"])
+        XCTAssertEqual(Set(((row["lapsUser"] as? [String: Any]) ?? [:]).keys),
+                       ["clientManagementId", "guid", "username", "userSource"])
     }
 
     func testAMalformedAccountsPayloadIsNotSavedAndRecordsAFailure() throws {

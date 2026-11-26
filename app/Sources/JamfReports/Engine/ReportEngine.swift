@@ -2427,7 +2427,6 @@ struct ReportEngine: Sendable {
         // Resolved once per run; the dashboard and quiet-flag gates below key on it.
         let (detectedVersion, profileAuth) = try await collectPreflight(
             profile: profile, binary: bin, onLine: onLine)
-        let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let platformRun = Self.resolvePlatformRun(
             environment: routedEnvironment
                 ?? EnvironmentProfiles.resolve(config: loadedConfig, workspace: workspace.name),
@@ -2463,15 +2462,11 @@ struct ReportEngine: Sendable {
         var planInputs = CollectPlanInputs(
             tiers: tiers, force: force, skipExpensive: skipExpensive,
             nonPlatformAuth: platformRun.nonPlatformAuth, tenantLevel: platformRun.tenantLevel,
-            collectSkip: collectSkip, dashboardSupported: dashboardSupported,
-            installedVersion: detectedVersion, now: collectStart)
+            collectSkip: collectSkip, installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
         planInputs.skippedSides = fleet.skipped
         planInputs.optInKinds = SharedConfigPin.collectOptIn(
             configured: loadedConfig?.jamfCli?.collectOptIn, profile: workspace.name)
-        planInputs.serverHealthSupported = JamfCLIInstaller.supportsServerHealth(detectedVersion)
-        planInputs.deploymentSourcesSupported =
-            JamfCLIInstaller.supportsDeploymentSources(detectedVersion)
         planInputs.workspaceAuthIsPlatform =
             JamfCLIAuthMethod(raw: profileAuth?.authMethod)?.isPlatform == true
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }

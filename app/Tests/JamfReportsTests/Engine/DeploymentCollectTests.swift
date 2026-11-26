@@ -194,12 +194,12 @@ final class DeploymentCollectPlanTests: XCTestCase {
 
     private func plan(
         now: Date, lastRun: Date?, collectSkip: Set<String> = [], force: Bool = false,
-        platform: Bool = false
+        platform: Bool = false, version: String? = "1.38.0"
     ) -> [String: ReportEngine.CollectSkipReason?] {
         var inputs = ReportEngine.CollectPlanInputs(
             tiers: [.refresh], force: force, skipExpensive: false, nonPlatformAuth: nil,
-            tenantLevel: false, collectSkip: collectSkip, dashboardSupported: true,
-            installedVersion: "1.38.0", now: now)
+            tenantLevel: false, collectSkip: collectSkip,
+            installedVersion: version, now: now)
         inputs.workspaceAuthIsPlatform = platform
         let planned = ReportEngine.planCollect(
             commands: ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30),
@@ -247,6 +247,17 @@ final class DeploymentCollectPlanTests: XCTestCase {
         XCTAssertEqual(decisions["app-installers-deployments"], .some(nil))
     }
 
+    /// The version gate is `ReportEngine.minimumJamfCLI`'s row for each kind, forced or not.
+    func testAnOlderOrUnknownJamfCLINeedsJamfCLI() {
+        for version in ["1.34.9", nil] {
+            let decisions = plan(now: date(25, 8), lastRun: nil, force: true, version: version)
+            XCTAssertEqual(decisions.count, 2)
+            for (_, skip) in decisions {
+                XCTAssertEqual(skip, .needsJamfCLI(required: "1.35.0", installed: version))
+            }
+        }
+    }
+
     func testAPlatformProfileStillCollectsBoth() {
         let decisions = plan(now: date(25, 8), lastRun: nil, platform: true)
         for (_, skip) in decisions { XCTAssertNil(skip) }
@@ -271,8 +282,8 @@ final class DeploymentExpectedKindsTests: XCTestCase {
 
     private func expected(supported: Bool, advisory: Set<String> = []) -> Set<String> {
         Set(WorkspaceStore.expectedKinds(
-            skipExpensive: false, authMethod: "oauth2", advisory: advisory,
-            deploymentSourcesSupported: supported))
+            skipExpensive: false, authMethod: "oauth2",
+            jamfCLIVersion: supported ? "1.38.0" : "1.34.9", advisory: advisory))
     }
 
     func testBothAreExpectedOnASupportedJamfCLI() {
