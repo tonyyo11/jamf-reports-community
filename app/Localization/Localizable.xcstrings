@@ -31158,6 +31158,46 @@
         }
       }
     },
+    "App Installers deployments at a level" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Installers-Bereitstellungen auf einer Stufe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Despliegues de App Installers en un nivel"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déploiements App Installers à un niveau"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Distribuzioni di App Installers a un livello"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レベルに達した App Installers の展開"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Implantações do App Installers em um nível"
+          }
+        }
+      }
+    },
     "App updates" : {
       "localizations" : {
         "de" : {
@@ -84791,6 +84831,46 @@
         }
       }
     },
+    "Needs App Installers deployments or patch policies collected for this Jamf Pro server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert gesammelte App Installers-Bereitstellungen oder Patch-Richtlinien für diesen Jamf Pro-Server."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere que se recopilen los despliegues de App Installers o las políticas de parches de este servidor de Jamf Pro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte des déploiements App Installers ou des règles de correctifs de ce serveur Jamf Pro."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta delle distribuzioni di App Installers o dei criteri di patch di questo server Jamf Pro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Pro サーバの App Installers の展開またはパッチポリシーの収集が必要です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer que as implantações do App Installers ou as políticas de patch deste servidor Jamf Pro sejam coletadas."
+          }
+        }
+      }
+    },
     "Needs Jamf Protect collected for this environment." : {
       "localizations" : {
         "de" : {
@@ -96837,6 +96917,46 @@
         }
       }
     },
+    "Open Health Audit to see the deployments and patch policies card." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie Health Audit, um die Karte zu Bereitstellungen und Patch-Richtlinien zu sehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Health Audit para ver la tarjeta de despliegues y políticas de parches."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez Health Audit pour voir la carte des déploiements et des règles de correctifs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Health Audit per vedere la scheda delle distribuzioni e dei criteri di patch."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health Audit を開いて、展開とパッチポリシーのカードを確認してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra o Health Audit para ver o cartão de implantações e políticas de patch."
+          }
+        }
+      }
+    },
     "Open Health Audit to see the server and admin health card." : {
       "localizations" : {
         "de" : {
@@ -101370,6 +101490,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Políticas de patch"
+          }
+        }
+      }
+    },
+    "Patch policies at a level" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Patch-Richtlinien auf einer Stufe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Políticas de parches en un nivel"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Règles de correctifs à un niveau"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Criteri di patch a un livello"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レベルに達したパッチポリシー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Políticas de patch em um nível"
           }
         }
       }
@@ -131461,6 +131621,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A coleta mais recente de dispositivos móveis não encontrou nenhum, então não há nada para exibir em gráfico aqui."
+          }
+        }
+      }
+    },
+    "The levels changed on %@: rows are now at warning from %lld%% failed and at critical from %lld%%, with at least %lld Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The levels changed on %1$@: rows are now at warning from %2$lld%% failed and at critical from %3$lld%%, with at least %4$lld Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Stufen haben sich am %@ geändert: Zeilen erreichen jetzt die Warnstufe ab %lld%% fehlgeschlagen und die kritische Stufe ab %lld%%, bei mindestens %lld Macs im Bereich. Frühere Tage behalten die Anzahl, mit der sie bewertet wurden; der Sprung dort ist die Regel, nicht die Flotte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los niveles cambiaron el %@: ahora una fila está en advertencia desde un %lld%% de fallos y en crítico desde un %lld%%, con al menos %lld Mac en el ámbito. Los días anteriores conservan el recuento con el que se evaluaron, así que el salto se debe a la regla, no a la flota."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les niveaux ont changé le %@ : une ligne est désormais en avertissement à partir de %lld %% d’échecs et en critique à partir de %lld %%, avec au moins %lld Mac dans la portée. Les jours précédents gardent le nombre avec lequel ils ont été évalués : le saut vient de la règle, pas de la flotte."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I livelli sono cambiati il %@: ora una riga è in avviso da %lld%% di errori e critica da %lld%%, con almeno %lld Mac nell'ambito. I giorni precedenti mantengono il conteggio con cui sono stati valutati, quindi il salto è dovuto alla regola, non alla flotta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ にレベルが変更されました。対象範囲に %4$lld 台以上の Mac がある行は、失敗が %2$lld%% 以上で警告、%3$lld%% 以上で重大になります。それより前の日は判定時の件数のままなので、そこでの変化はルールによるもので、フリートの変化ではありません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os níveis mudaram em %@: agora uma linha fica em alerta a partir de %lld%% de falhas e em crítico a partir de %lld%%, com pelo menos %lld Macs no escopo. Os dias anteriores mantêm a contagem com que foram avaliados, então a mudança ali é da regra, não da frota."
           }
         }
       }

@@ -215,6 +215,7 @@ final class WorkspaceStore {
             metrics = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
         }
         metrics += productMetrics
+        if deploymentMetricsOffered { metrics += TrendSeries.Metric.deploymentMetrics }
         if !isSchoolWorkspace && !environmentProducts.isProtectOnly { metrics += agentMetrics }
         return metrics
     }
@@ -227,6 +228,9 @@ final class WorkspaceStore {
         if serverHealthMetricsOffered { metrics += TrendSeries.Metric.serverHealthMetrics }
         return metrics
     }
+
+    /// Deployment-health series: the server-health rule (Jamf Pro, not School, never demo).
+    var deploymentMetricsOffered: Bool { serverHealthMetricsOffered }
 
     /// Server-health series: a Jamf Pro workspace, never demo (no demo history carries them).
     var serverHealthMetricsOffered: Bool {
@@ -255,6 +259,8 @@ final class WorkspaceStore {
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
         if metric.isServerHealth, !serverHealthMetricsOffered { return false }
+        // Trends series only: never an Overview score card.
+        if metric.isDeployment { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }

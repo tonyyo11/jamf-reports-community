@@ -103,7 +103,8 @@ enum ChartPalette {
         case .patch:                              return hex(slot: 3, scheme: scheme)
         case .securityScore, .mobileJailbroken,
              .securityCloudHighRisk, .jamfProNotifications,
-             .lapsPending: return hex(slot: 4, scheme: scheme)
+             .lapsPending, .appInstallersAtLevel,
+             .patchPoliciesAtLevel: return hex(slot: 4, scheme: scheme)
         case .serverCredentialSoonestDays:        return hex(slot: 0, scheme: scheme)
         case .stale, .mobileStale, .protectOpenAlerts: return hex(slot: 5, scheme: scheme)
         case .fileVault, .mobilePasscode:         return hex(slot: 6, scheme: scheme)

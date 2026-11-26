@@ -554,9 +554,9 @@ Checkpoint suites: `DeploymentSummaryTests`, `SummaryJSONParserTests`, `TrendSto
 *   `TrendSeries.Metric` gains `appInstallersAtLevel` and `patchPoliciesAtLevel` in a `deploymentMetrics` list joined to the `init?(rawValue:)` union.
 *   **Per metric:**
     *   labels "App Installers deployments at a level" and "Patch policies at a level";
-    *   `unit` `""`, `isDeviceCount` false, `minY` 0, no `maxY` and no default goal;
+    *   `unit` `""`, `isDeviceCount` true (the count axis sized to the data, as for the LAPS count), `minY` 0, `maxY` 60 and no default goal;
     *   polarity `.lowerIsBetter`;
-    *   `ChartPalette.hex(forMetric:)` reuses the existing slot of the nearest lower-is-better count metric, with no new slot;
+    *   `ChartPalette.hex(forMetric:)` reuses the slot `.lapsPending` uses, with no new slot;
     *   `OverviewLayout.dataRequirement` text "Needs App Installers deployments (or patch policies) collected";
     *   `OverviewView` drill-down caption and related destination Audit.
 *   **Offering:** `WorkspaceStore.availableMetrics`/`isOffered` offer them on a Jamf Pro workspace whose loaded summaries carry the group, never in demo mode, never as Overview score cards.

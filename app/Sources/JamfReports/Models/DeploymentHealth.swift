@@ -337,3 +337,37 @@ extension DeploymentHealth {
         }
     }
 }
+
+/// One source's figures in a daily summary, with the levels and floor they were judged at, so a
+/// later change of either never rewrites the day (`TrendStore.comparablePoints`).
+struct DeploymentSummaryGroup: Codable, Equatable, Sendable {
+    var judged: Int
+    var atWarning: Int
+    var atCritical: Int
+    var warningPercent: Int
+    var criticalPercent: Int
+    var minimumInScope: Int
+
+    /// Rows at warning or critical: the Trends point.
+    var atLevel: Int { atWarning + atCritical }
+
+    /// The basis `TrendStore` compares days on.
+    var basis: String { "\(warningPercent)/\(criticalPercent)/\(minimumInScope)" }
+
+    /// The range rules the reader enforces (counts are checked non-negative and bounded with
+    /// the summary's other counts); the writer never produces a group that fails them.
+    var isConsistent: Bool {
+        atWarning + atCritical <= judged
+            && (1...100).contains(warningPercent) && (1...100).contains(criticalPercent)
+            && warningPercent <= criticalPercent && minimumInScope >= 1
+    }
+
+    init(figures: DeploymentHealth.Figures, levels: DeploymentHealth.Levels) {
+        judged = figures.judged
+        atWarning = figures.atWarning
+        atCritical = figures.atCritical
+        warningPercent = levels.warning
+        criticalPercent = levels.critical
+        minimumInScope = DeploymentHealth.minimumInScope
+    }
+}
