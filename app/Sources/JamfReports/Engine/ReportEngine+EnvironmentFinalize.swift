@@ -126,7 +126,28 @@ extension ReportEngine {
         if readable("protect-alerts"), !snapshot.unreadableKinds.contains("protect-alerts") {
             figures.alerts = protectAlertFigures(snapshot.alerts)
         }
-        return figures.computers == nil && figures.alerts == nil ? nil : figures
+        figures.agent = protectAgentFigures(snapshot, landed: landed)
+        return figures.computers == nil && figures.alerts == nil && figures.agent == nil
+            ? nil : figures
+    }
+
+    /// The agent findings this run measured: disconnected whenever `protect-computers` landed,
+    /// signatures and agent only when their own baseline landed too and could be read.
+    static func protectAgentFigures(
+        _ snapshot: ProtectDashboardService.Snapshot, landed: Set<String>
+    ) -> ProtectSummaryFigures.Agent? {
+        let computers = "protect-computers"
+        guard landed.contains(computers), !snapshot.unreadableKinds.contains(computers),
+              let health = snapshot.agentHealth else { return nil }
+        func measured(_ kind: String, _ finding: ProtectAgentHealth.Finding)
+            -> ProtectSummaryFigures.Measured? {
+            landed.contains(kind) && !snapshot.unreadableKinds.contains(kind)
+                ? .init(finding.share) : nil
+        }
+        return .init(
+            signaturesBehind: measured(protectSignatureVersionsKind, health.signaturesBehind),
+            agentBehind: measured(protectInstallerKind, health.agentBehind),
+            disconnected: .init(health.disconnected.share))
     }
 
     /// The open alerts, counted by lowercased severity; the demo summary counts its alerts here.
@@ -211,13 +232,15 @@ extension ReportEngine {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
         let file = summariesDir.appendingPathComponent("summary_\(date).json")
         let protectKinds = landed[.protect] ?? []
+        // A Protect-only day needs a source reports are built on, not only the version metadata.
+        let protectReportLanded = protectKinds.contains(where: protectReportKinds.contains)
         var summary: DailySummary
         var creates = false
         if let data = try? BoundedFile.read(
             file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
            let existing = try? SummaryJSONParser.decode(data) {
             summary = existing
-        } else if environment.isProtectOnly, !protectKinds.isEmpty {
+        } else if environment.isProtectOnly, protectReportLanded {
             do {
                 try FileManager.default.createDirectory(
                     at: summariesDir, withIntermediateDirectories: true)
@@ -234,7 +257,7 @@ extension ReportEngine {
         } else {
             return .nothingToSummarize
         }
-        if environment.isProtectOnly, !protectKinds.isEmpty {
+        if environment.isProtectOnly, protectReportLanded {
             summary.collectionSources = mergedSources(
                 existing: summary.collectionSources,
                 fresh: Dictionary(uniqueKeysWithValues: protectKinds.map { ($0, "live") }))

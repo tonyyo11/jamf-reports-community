@@ -292,7 +292,8 @@ extension TrendSeries.Metric {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             L("Needs the mobile device inventory.")
-        case .protectComputers, .protectMatched, .protectOpenAlerts:
+        case .protectComputers, .protectMatched, .protectOpenAlerts,
+             .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             L("Needs Jamf Protect collected for this environment.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Needs Jamf Security Cloud collected for this environment.")

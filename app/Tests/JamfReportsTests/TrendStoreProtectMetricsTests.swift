@@ -37,6 +37,9 @@ final class TrendStoreProtectMetricsTests: XCTestCase {
             (.protectComputers, "protectComputers", .neutral, "", true),
             (.protectMatched, "protectMatched", .higherIsBetter, "%", false),
             (.protectOpenAlerts, "protectOpenAlerts", .lowerIsBetter, "", true),
+            (.protectSignaturesBehind, "protectSignaturesBehind", .lowerIsBetter, "", true),
+            (.protectAgentBehind, "protectAgentBehind", .lowerIsBetter, "", true),
+            (.protectDisconnected, "protectDisconnected", .lowerIsBetter, "", true),
         ]
         XCTAssertEqual(TrendSeries.Metric.protectMetrics, expected.map(\.0))
         for (metric, raw, polarity, unit, isCount) in expected {

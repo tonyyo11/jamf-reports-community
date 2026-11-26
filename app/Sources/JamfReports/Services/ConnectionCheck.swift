@@ -72,6 +72,7 @@ enum ConnectionCheck {
         case .missingPermission: return .noJamfPro
         case .edgeBlocked, .notServed, .noDeclarationData, .softwareUpdatePlansOff,
              .noConfiguredBenchmark, .retiredGateway, .keychainLocked, .notConfiguredOnServer,
+             .unexpectedOutput,
              .other:
             return namesNoTenant(probe.stdout) ? .noJamfPro : .undecided(exitCode: probe.exitCode)
         }

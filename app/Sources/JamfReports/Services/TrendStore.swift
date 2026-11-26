@@ -385,7 +385,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
              .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
              .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
              .securityCloudHighRisk, .serverCredentialSoonestDays, .jamfProNotifications,
-             .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel:
+             .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             return Self.environmentValue(metric, in: summary)
         }
     }
@@ -406,6 +407,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .protectComputers: return summary.protectComputerCount.map(Double.init)
         case .protectMatched: return summary.protectMatched?.pctOneDecimal
         case .protectOpenAlerts: return summary.protectOpenAlerts.map(Double.init)
+        case .protectSignaturesBehind: return summary.protectSignaturesBehind.map { Double($0.met) }
+        case .protectAgentBehind: return summary.protectAgentBehind.map { Double($0.met) }
+        case .protectDisconnected: return summary.protectDisconnected.map { Double($0.met) }
         case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
         case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
         case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)

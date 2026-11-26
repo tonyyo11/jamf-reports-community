@@ -1,0 +1,11 @@
+{
+  "hasCSR": true,
+  "hasNetworkContentFilterProfile": true,
+  "hasPPPC": true,
+  "hasRootCA": true,
+  "hasTamperPreventionProfile": false,
+  "hasWebsocketAuth": true,
+  "installerURL": "https://example.invalid/installer.pkg",
+  "installerVersion": "5.1.0.7",
+  "uninstallerURL": "https://example.invalid/uninstaller.pkg"
+}

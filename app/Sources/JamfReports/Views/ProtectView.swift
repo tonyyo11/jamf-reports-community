@@ -172,6 +172,9 @@ struct ProtectView: View {
         if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty {
             kpiGrid
         }
+        if let health = snapshot.agentHealth {
+            ProtectAgentsCard(health: health)
+        }
         if !snapshot.alerts.isEmpty {
             alertsBySeverityCard
             recentAlertsCard
@@ -694,12 +697,6 @@ struct ProtectView: View {
                     trailing: snapshot.computers.count > 50
                         ? L("Showing 50 of \(snapshot.computers.count)") : nil)
 
-                if let lag = ProtectComputerRow.signatureLag(snapshot.computers) {
-                    Text(L("\(lag.behind) of \(lag.reporting) behind the newest signatures in this tenant"))
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
-
                 let displayedComputers = Array(snapshot.computers.prefix(50))
 
                 if !displayedComputers.isEmpty {
@@ -962,8 +959,42 @@ struct ProtectView: View {
                         planRow(plan)
                     }
                 }
+                if let configuration = ProtectConfiguration.counts(plans: snapshot.plans) {
+                    Divider()
+                    configurationRows(configuration)
+                }
             }
         }
+    }
+
+    private func configurationRows(_ configuration: ProtectConfiguration) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            configurationRow(L("Plans with no USB control set"),
+                             configuration.noUSBControl.map(Self.shareText)
+                                ?? L("Could not be read"))
+            configurationRow(L("Plans with no prevent list"),
+                             configuration.noPreventList.map(Self.shareText)
+                                ?? L("Not reported by this jamf-cli (needs 1.37 or later)"))
+            Text(L("Counts only; whether a plan needs these is your organization's call."))
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+        }
+    }
+
+    private func configurationRow(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.fg)
+            Spacer()
+            Text(value)
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(Theme.Colors.fg)
+        }
+    }
+
+    nonisolated static func shareText(_ share: MobileSummary.Share) -> String {
+        L("\(share.met) of \(share.of)")
     }
 
     @ViewBuilder

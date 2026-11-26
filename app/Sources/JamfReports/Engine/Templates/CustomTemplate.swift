@@ -63,6 +63,7 @@ struct CustomTemplate: ReportTemplate {
                 if !sections.contains(.deploymentHealth) { sections.append(.deploymentHealth) }
             case .protectOverview, .protectAlerts, .protectComputers:
                 if !sections.contains(.protectAlerts) { sections.append(.protectAlerts) }
+                if !sections.contains(.protectAgents) { sections.append(.protectAgents) }
             default:
                 // For other sheets, no specific HTML section mapping
                 break

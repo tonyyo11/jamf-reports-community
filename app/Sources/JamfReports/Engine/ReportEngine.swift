@@ -631,6 +631,9 @@ struct ReportEngine: Sendable {
             || (existing.protectMatched == nil && fresh.protectMatched != nil)
             || (existing.protectOpenAlerts == nil && fresh.protectOpenAlerts != nil)
             || (existing.protectAlertCounts == nil && fresh.protectAlertCounts != nil)
+            || (existing.protectSignaturesBehind == nil && fresh.protectSignaturesBehind != nil)
+            || (existing.protectAgentBehind == nil && fresh.protectAgentBehind != nil)
+            || (existing.protectDisconnected == nil && fresh.protectDisconnected != nil)
             || (existing.securityCloudDeviceCount == nil && fresh.securityCloudDeviceCount != nil)
             || (existing.securityCloudMatched == nil && fresh.securityCloudMatched != nil)
             || (existing.securityCloudRiskCounts == nil && fresh.securityCloudRiskCounts != nil)
@@ -3120,6 +3123,10 @@ struct ReportEngine: Sendable {
             (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
             (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
             (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
+            (["-p", profile, "protect", "threat-prevention-versions", "list", "--output", "json"],
+             protectSignatureVersionsKind),
+            (["-p", profile, "protect", "downloads", "summary", "--output", "json"],
+             protectInstallerKind),
         ]
     }
 
@@ -3588,7 +3595,8 @@ struct ReportEngine: Sendable {
             // Exit 0 with unusable output is a failure for this kind even
             // though the process succeeded — count it, or a renamed command
             // stays permanently invisible behind a green run.
-            stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+            stateStore?.record(.failed(exitCode: outcome.exitCode), report: kind, at: collectStart,
+                cause: .unexpectedOutput)
             return KindCollectResult(outcome: outcome, saved: false)
         }
         if payload.count != data.count {
@@ -4444,7 +4452,8 @@ struct ReportEngine: Sendable {
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
                     unlanded.append(kind)
-                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                cause: .unexpectedOutput)
                     continue
                 }
                 try saveRecordingFailure(
@@ -4582,6 +4591,8 @@ struct ReportEngine: Sendable {
     /// - Parameters:
     ///   - profile: jamf-cli protect profile slug.
     ///   - dataDir: Directory under which snapshots are written.
+    ///   - readVersion: The installed jamf-cli's version, for the gated sources
+    ///     (`minimumJamfCLI`); asked only when one of them would run. Tests inject it.
     ///   - onLine: Progress callback for log lines.
     /// - Returns: The kinds of the Protect sources that landed.
     @discardableResult
@@ -4590,6 +4601,9 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         collectSkip: Set<String> = [],
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        readVersion: @Sendable (URL) async -> String? = {
+            await JamfCLIInstaller.installedVersionOffMain(at: $0)
+        },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> [String] {
         guard let bin = locateJamfCLI() else {
@@ -4604,9 +4618,14 @@ struct ReportEngine: Sendable {
             .confinedFolderOrWarn(["state"], under: dataDir, onLine: onLine)
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
+        let matrix = protectCommandMatrix(profile: profile)
+        let asksVersion = matrix.contains {
+            minimumJamfCLI[$0.kind] != nil && !collectSkip.contains($0.kind)
+        }
+        let installedVersion = asksVersion ? await readVersion(bin) : nil
         let commands = announcing(
             planAddOn(
-                commands: protectCommandMatrix(profile: profile), collectSkip: collectSkip,
+                commands: matrix, collectSkip: collectSkip, installedVersion: installedVersion,
                 stateStore: stateStore, now: collectStart),
             profile: profile, onLine: onLine)
 
@@ -4647,15 +4666,34 @@ struct ReportEngine: Sendable {
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
                     unlanded.append(kind)
-                    stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                    stateStore?.record(.failed(exitCode: exitCode), report: kind,
+                                       at: collectStart, cause: .unexpectedOutput)
                     continue
                 }
+                // A reduced kind saves only its keep-list; a payload that cannot be reduced is
+                // not saved on a guess.
+                let saved: Data
+                if reducedProtectKinds[kind] != nil {
+                    guard let reduced = jsonPayload(from: data)
+                            .flatMap({ reducingProtect(kind: kind, data: $0) }) else {
+                        onLine(.init(timestamp: Date(), level: .warn,
+                            text: "[warn] \(kind) not saved: unexpected shape"))
+                        unlanded.append(kind)
+                        stateStore?.record(
+                            .failed(exitCode: exitCode), report: kind, at: collectStart,
+                            cause: .unexpectedOutput)
+                        continue
+                    }
+                    saved = reduced
+                } else {
+                    saved = data
+                }
                 try saveRecordingFailure(
-                    data, kind: kind, dataDir: dataDir, exitCode: exitCode,
+                    saved, kind: kind, dataDir: dataDir, exitCode: exitCode,
                     stateStore: stateStore, at: collectStart, onLine: onLine)
                 stateStore?.record(.landed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
-                             text: "[ok] \(kind): \(data.count) bytes"))
+                             text: "[ok] \(kind): \(saved.count) bytes"))
             } else {
                 // The cause lets the same-day retry leave a permanent failure (a 403) alone.
                 let cause = FailureCause.classify(

@@ -49,9 +49,15 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// A server-health command exited 4: the feature (SSO, volume purchasing) is not set up on
         /// this Jamf Pro server, which is no failure and no missing privilege.
         case notConfiguredOnServer
+        /// jamf-cli exited 0 with output this app cannot read (not JSON, or not the shape it
+        /// reduces). Recorded by collect, never classified; a retry gets the same output.
+        case unexpectedOutput
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
+
+    /// Exit 0 with output this app cannot read; see `Kind.unexpectedOutput`.
+    static let unexpectedOutput = FailureCause(kind: .unexpectedOutput, names: [], hint: nil, exitCode: 0)
 
     let kind: Kind
     /// Permission or privilege names parsed from the hint; empty when it names none.
@@ -142,7 +148,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
              .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
-             .retiredGateway, .notConfiguredOnServer: true
+             .retiredGateway, .notConfiguredOnServer, .unexpectedOutput: true
         case .edgeBlocked, .keychainLocked, .other: false
         }
     }
@@ -171,6 +177,8 @@ struct FailureCause: Codable, Equatable, Sendable {
                 ? L("no benchmark in platform.compliance_benchmarks can be collected")
                 : L("no benchmark in platform.compliance_benchmarks can be collected: ")
                     + names.joined(separator: "; ")
+        case .unexpectedOutput:
+            L("jamf-cli's output was not in the form this app reads; update jamf-cli or the app")
         case .other:
             exitCode == CLIBridge.exitCodeTimedOut
                 ? L("timed out and was stopped") : L("exit \(exitCode)")

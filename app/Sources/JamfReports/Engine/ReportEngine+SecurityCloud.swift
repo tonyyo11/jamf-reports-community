@@ -104,7 +104,8 @@ extension ReportEngine {
                 onLine(.init(timestamp: Date(), level: .warn,
                     text: "[warn] \(kind): output is not a JSON array — snapshot not saved"))
                 unlanded.append(kind)
-                stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                                   cause: .unexpectedOutput)
             } else {
                 let cause = FailureCause.classify(
                     exitCode: exitCode, stdout: data,

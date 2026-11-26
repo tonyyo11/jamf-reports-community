@@ -36,6 +36,8 @@ struct ProtectDashboardService: Sendable {
         /// Kinds whose newest file exists but could not be read or decoded (a planted link or
         /// pipe, an oversize file, bad JSON); never shown as "not detected" or as zero rows.
         var unreadableKinds: [String] = []
+        /// Signatures, agent and connection currency (`ProtectAgentHealth`); nil with no computers.
+        var agentHealth: ProtectAgentHealth?
 
         /// Alerts that are not Resolved or AutoResolved; the severity counts are over these.
         var openAlertCount: Int { alerts.filter(\.isOpen).count }
@@ -80,7 +82,8 @@ struct ProtectDashboardService: Sendable {
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate &&
             lhs.sourceDates == rhs.sourceDates &&
-            lhs.unreadableKinds == rhs.unreadableKinds
+            lhs.unreadableKinds == rhs.unreadableKinds &&
+            lhs.agentHealth == rhs.agentHealth
         }
     }
 
@@ -99,8 +102,21 @@ struct ProtectDashboardService: Sendable {
         let computersURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
         let plansURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-plans", isDirectory: true))
 
-        return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL,
-                    plansURL: plansURL)
+        var snapshot = load(overviewURL: overviewURL, alertsURL: alertsURL,
+                            computersURL: computersURL, plansURL: plansURL)
+        // The baselines the agent findings compare with, measured against the same computers file.
+        if let result = ProtectAgentHealthLoader.load(
+            dataDir: dir, computers: snapshot.computers, computersFile: computersURL) {
+            snapshot.agentHealth = result.health
+            snapshot.unreadableKinds += result.unreadableKinds
+        }
+        for kind in [ReportEngine.protectSignatureVersionsKind, ReportEngine.protectInstallerKind] {
+            guard let url = FileManager.newestJSONFile(in: dir.appendingPathComponent(kind)),
+                  let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                      .contentModificationDate else { continue }
+            snapshot.sourceDates[kind] = date
+        }
+        return snapshot
     }
 
     /// Test seam: load directly from specific URLs. Returns `.empty` when all URLs are nil.

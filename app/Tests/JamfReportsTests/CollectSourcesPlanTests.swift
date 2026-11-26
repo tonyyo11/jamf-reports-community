@@ -157,7 +157,25 @@ final class CollectSourcesPlanTests: XCTestCase {
         XCTAssertFalse(protect.isEmpty)
         XCTAssertTrue(protect.allSatisfy { $0.skipReason == reason })
         XCTAssertTrue(plan(protect: "prod-protect").sources(for: .protect)
+            .filter { ReportEngine.minimumJamfCLI[$0.kind] == nil }
             .allSatisfy { $0.skipReason == nil })
+    }
+
+    /// The sources a jamf-cli too old for them cannot run are listed with that reason.
+    func testProtectSourcesBelowTheirJamfCLIVersionShowTheVersionTheyNeed() {
+        func reasons(_ version: String?) -> [String: String?] {
+            let sources = Plan.build(.init(
+                product: .jamfPro, profile: "prod", protectProfile: "prod-protect",
+                installedVersion: version)).sources(for: .protect)
+            return Dictionary(uniqueKeysWithValues: sources.map { ($0.kind, $0.skipReason) })
+        }
+        let old = reasons("1.33.0")
+        XCTAssertEqual(old[ReportEngine.protectSignatureVersionsKind],
+                       "needs jamf-cli 1.38.0 or later (installed: 1.33.0)")
+        XCTAssertEqual(old[ReportEngine.protectInstallerKind],
+                       "needs jamf-cli 1.35.0 or later (installed: 1.33.0)")
+        XCTAssertEqual(old["protect-computers"], .some(nil))
+        XCTAssertEqual(reasons("1.38.0")[ReportEngine.protectSignatureVersionsKind], .some(nil))
     }
 
     func testCollectSkipAndTheSettingsSwitchShowAsSkipped() {

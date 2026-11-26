@@ -511,9 +511,11 @@ extension ReportEngine {
     /// Unforced (`addOnCollectForced` false), a source waits out the refresh cadence and the
     /// timeout hold like a matrix source, so a run that came for one retried Jamf Pro source
     /// does not collect the whole product again.
+    /// `installedVersion` gates the kinds in `minimumJamfCLI`; a gated kind is skipped even on
+    /// a forced run, since the command does not exist on that jamf-cli.
     static func planAddOn(
         commands: [(args: [String], kind: String)], collectSkip: Set<String> = [],
-        stateStore: StateFileStore?, now: Date = Date()
+        installedVersion: String? = nil, stateStore: StateFileStore?, now: Date = Date()
     ) -> [PlannedKind] {
         let cadence = Cadence.seconds(CollectionTier.refresh.intervalSeconds)
         return commands.map { args, kind in
@@ -521,6 +523,8 @@ extension ReportEngine {
             let last = stateStore?.lastRun(report: kind)
             if collectSkip.contains(kind) {
                 skip = .collectSkip
+            } else if let gate = jamfCLISkip(kind, installed: installedVersion) {
+                skip = gate
             } else if addOnCollectForced {
                 skip = nil
             } else if let until = stateStore?.timeoutHoldUntil(report: kind, now: now),

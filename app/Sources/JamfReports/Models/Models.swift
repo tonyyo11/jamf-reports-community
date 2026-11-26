@@ -1122,6 +1122,8 @@ struct TrendSeries: Identifiable, Sendable {
              mobileDataProtection, mobileStale, mobileJailbroken
         /// The summary's Jamf Protect figures (P9), offered only where the environment has Protect.
         case protectComputers, protectMatched, protectOpenAlerts
+        /// Protect agent currency (wave E): Macs behind, counted, lower is better.
+        case protectSignaturesBehind, protectAgentBehind, protectDisconnected
         /// The summary's Jamf Security Cloud figures (P12), offered only where the environment
         /// has Security Cloud.
         case securityCloudDevices, securityCloudMatched, securityCloudHighRisk
@@ -1161,7 +1163,8 @@ struct TrendSeries: Identifiable, Sendable {
         /// The Protect metrics, offered only where a summary carries them and Protect is in the
         /// environment, so they are not in `allCases`.
         static let protectMetrics: [Metric] = [
-            .protectComputers, .protectMatched, .protectOpenAlerts,
+            .protectComputers, .protectMatched, .protectOpenAlerts, .protectSignaturesBehind,
+            .protectAgentBehind, .protectDisconnected,
         ]
 
         static let securityCloudMetrics: [Metric] = [
@@ -1212,6 +1215,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .protectComputers: return "protectComputers"
             case .protectMatched: return "protectMatched"
             case .protectOpenAlerts: return "protectOpenAlerts"
+            case .protectSignaturesBehind: return "protectSignaturesBehind"
+            case .protectAgentBehind: return "protectAgentBehind"
+            case .protectDisconnected: return "protectDisconnected"
             case .securityCloudDevices: return "securityCloudDevices"
             case .securityCloudMatched: return "securityCloudMatched"
             case .securityCloudHighRisk: return "securityCloudHighRisk"
@@ -1278,6 +1284,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .protectComputers: return L("Jamf Protect computers")
             case .protectMatched: return L("Jamf Protect match with inventory")
             case .protectOpenAlerts: return L("Jamf Protect open alerts")
+            case .protectSignaturesBehind: return L("Jamf Protect signatures behind")
+            case .protectAgentBehind: return L("Jamf Protect agents behind the installer")
+            case .protectDisconnected: return L("Jamf Protect disconnected over a day")
             case .securityCloudDevices: return L("Security Cloud devices")
             case .securityCloudMatched: return L("Security Cloud match with inventory")
             case .securityCloudHighRisk: return L("Security Cloud high-risk devices")
@@ -1310,7 +1319,8 @@ struct TrendSeries: Identifiable, Sendable {
                  .mobileStale, .mobileJailbroken, .protectComputers,
                  .protectOpenAlerts, .securityCloudDevices,
                  .securityCloudHighRisk, .jamfProNotifications, .lapsPending,
-                 .appInstallersAtLevel, .patchPoliciesAtLevel: return ""
+                 .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected: return ""
             case .serverCredentialSoonestDays: return " days"
             default: return "%"
             }
@@ -1323,7 +1333,8 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts,
                  .securityCloudHighRisk, .jamfProNotifications, .lapsPending,
-                 .appInstallersAtLevel, .patchPoliciesAtLevel: .lowerIsBetter
+                 .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected: .lowerIsBetter
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .protectComputers, .securityCloudDevices: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
@@ -1339,7 +1350,8 @@ struct TrendSeries: Identifiable, Sendable {
             case .managedDevices, .activeDevices, .stale, .mobileManaged, .mobileStale,
                  .mobileJailbroken, .protectComputers, .protectOpenAlerts,
                  .securityCloudDevices, .securityCloudHighRisk, .jamfProNotifications,
-                 .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel: true
+                 .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected: true
             default: false
             }
         }
@@ -1349,7 +1361,8 @@ struct TrendSeries: Identifiable, Sendable {
                  .mobileJailbroken, .protectComputers, .protectOpenAlerts,
                  .securityCloudDevices, .securityCloudHighRisk,
                  .jamfProNotifications, .lapsPending, .serverCredentialSoonestDays,
-                 .appInstallersAtLevel, .patchPoliciesAtLevel: return 0
+                 .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected: return 0
             case .protectMatched, .securityCloudMatched: return 50
             case .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
                  .mobileDataProtection: return 50
@@ -1370,7 +1383,8 @@ struct TrendSeries: Identifiable, Sendable {
                  .securityCloudDevices: return 1000
             case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk,
                  .jamfProNotifications, .lapsPending,
-                 .appInstallersAtLevel, .patchPoliciesAtLevel: return 60
+                 .appInstallersAtLevel, .patchPoliciesAtLevel,
+                 .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected: return 60
             case .serverCredentialSoonestDays: return 90
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max

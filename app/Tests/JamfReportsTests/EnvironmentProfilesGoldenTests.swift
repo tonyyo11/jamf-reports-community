@@ -73,6 +73,8 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
     /// What each shape ran before `profiles:` existed: the router's lines and the product and
     /// profile each collect closure was handed, then the SHA-256 of that transcript with every
     /// call expanded into its jamf-cli command lines.
+    /// The Protect shapes' hashes changed in 2.13 only because `protectCommandMatrix` gained
+    /// two commands; their routing transcripts are unchanged.
     private let golden: [String: (transcript: String, sha256: String)] = [
         "pro-oauth": (
             transcript: """
@@ -90,7 +92,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "2fabca2135d6a890b94e9e7f6daf126769154de8591b3fc60be152bd64927e59"),
+            sha256: "ab7f36f78ec7ee0c31881fa0787720004121c98e85e6786d4a395c0aafea0fc5"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
@@ -122,7 +124,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "2fabca2135d6a890b94e9e7f6daf126769154de8591b3fc60be152bd64927e59"),
+            sha256: "ab7f36f78ec7ee0c31881fa0787720004121c98e85e6786d4a395c0aafea0fc5"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -131,7 +133,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 protect ws-golden-protect
                 log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "d02714987955a7f7e1d103d2340aa7a9d49ecc3bc64b1689413272e8e182ebbc"),
+            sha256: "3906bd7618fef3d97cf8dbc87ccc32eb85051de6193bf4f237cb97eff054ee8e"),
         "jamf-cli-profile-equal": (
             transcript: """
                 pro ws-golden

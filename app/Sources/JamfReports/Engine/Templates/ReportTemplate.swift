@@ -98,6 +98,8 @@ enum SectionID: String, Sendable, CaseIterable {
     case exceptionList   = "exception_list"
     case orgInfo         = "org_info"
     case protectAlerts   = "protect_alerts"
+    /// Signatures, agent and connection currency of the Protect agents (`ProtectAgentHealth`).
+    case protectAgents   = "protect_agents"
     case agentHealth     = "agent_health"
     case recentFailures  = "recent_failures"
     case interventionList = "intervention_list"

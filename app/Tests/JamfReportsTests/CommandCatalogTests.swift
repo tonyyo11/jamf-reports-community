@@ -4,13 +4,13 @@ import XCTest
 final class CommandCatalogTests: XCTestCase {
 
     private func fixture() throws -> CommandCatalog {
-        let url = TestFixtures.dir("jamf-cli/commands-1.35.0.json")
+        let url = TestFixtures.dir("jamf-cli/commands-1.38.0.json")
         return try CommandCatalog(data: Data(contentsOf: url))
     }
 
     func testDecodesTheCapturedCatalog() throws {
         let catalog = try fixture()
-        XCTAssertEqual(catalog.count, 1783)
+        XCTAssertEqual(catalog.count, 1798)
         XCTAssertEqual(
             catalog.flags(for: ["pro", "backup"]),
             ["--concurrency", "--download-packages", "--format", "--include-ids", "--output",

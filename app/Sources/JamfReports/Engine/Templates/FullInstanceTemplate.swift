@@ -94,6 +94,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .agentHealth,
             .exceptionList,
             .protectAlerts,
+            .protectAgents,
             .auditEvidence,
             // Patching
             .patchBar,

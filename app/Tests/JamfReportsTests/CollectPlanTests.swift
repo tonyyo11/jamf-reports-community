@@ -274,6 +274,62 @@ final class CollectPlanTests: XCTestCase {
                      "one aggregate line already names these")
     }
 
+    // MARK: - jamf-cli version gate
+
+    func testTheDashboardFollowsTheVersionTable() {
+        for (version, gated) in [("1.30.2", true), ("1.31.0", false), (nil, true)] as
+            [(String?, Bool)] {
+            let plan = ReportEngine.planCollect(
+                commands: matrix, inputs: inputs(installedVersion: version),
+                lastRun: { _ in nil })
+            XCTAssertEqual(
+                skip("dashboard", in: plan),
+                gated ? .needsJamfCLI(required: "1.31.0", installed: version) : nil,
+                version ?? "unknown")
+        }
+    }
+
+    /// The Protect sources jamf-cli added after the floor are skipped below their version,
+    /// forced or not, with nothing recorded; collect_skip is reported first.
+    func testProtectSourcesBelowTheirJamfCLIVersionAreSkippedEvenWhenForced() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plan-gate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = StateFileStore(directory: dir)
+        let commands = ReportEngine.protectCommandMatrix(profile: profile)
+        func plan(_ version: String?, forced: Bool, skip: Set<String> = [])
+            -> [String: ReportEngine.CollectSkipReason?] {
+            let planned = ReportEngine.$addOnCollectForced.withValue(forced) {
+                ReportEngine.planAddOn(
+                    commands: commands, collectSkip: skip, installedVersion: version,
+                    stateStore: store, now: now)
+            }
+            return Dictionary(uniqueKeysWithValues: planned.map { ($0.kind, $0.skip) })
+        }
+        let signatures = ReportEngine.protectSignatureVersionsKind
+        let installer = ReportEngine.protectInstallerKind
+        for forced in [false, true] {
+            let old = plan("1.34.0", forced: forced)
+            XCTAssertEqual(old[signatures], .needsJamfCLI(required: "1.38.0", installed: "1.34.0"))
+            XCTAssertEqual(old[installer], .needsJamfCLI(required: "1.35.0", installed: "1.34.0"))
+            XCTAssertEqual(old["protect-computers"], .some(nil), "ungated kinds still run")
+            let mid = plan("1.37.0", forced: forced)
+            XCTAssertEqual(mid[signatures], .needsJamfCLI(required: "1.38.0", installed: "1.37.0"))
+            XCTAssertEqual(mid[installer], .some(nil))
+            let current = plan("1.38.0", forced: forced)
+            XCTAssertEqual(current[signatures], .some(nil))
+            let unknown = plan(nil, forced: forced)
+            XCTAssertEqual(unknown[signatures], .needsJamfCLI(required: "1.38.0", installed: nil))
+        }
+        XCTAssertEqual(plan("1.34.0", forced: true, skip: [signatures])[signatures], .collectSkip)
+        XCTAssertNil(store.lastRun(report: signatures), "a skip records nothing")
+        XCTAssertNil(store.lastFailureExitCode(for: signatures))
+        XCTAssertEqual(
+            ReportEngine.CollectSkipReason.needsJamfCLI(required: "1.38.0", installed: nil)
+                .skipDetail, "needs jamf-cli 1.38.0 or later (installed: unknown)")
+    }
+
     // MARK: - Lines
 
     func testThePlanNamesWhatRunsAndGroupsWhatDoesNot() {

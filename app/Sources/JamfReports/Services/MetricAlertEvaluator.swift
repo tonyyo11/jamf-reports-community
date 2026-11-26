@@ -35,6 +35,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
     case protectMatchedPct = "protect_matched_pct"
     case protectOpenAlertCount = "protect_open_alert_count"
     case protectHighAlertCount = "protect_high_alert_count"
+    case protectSignaturesBehindCount = "protect_signatures_behind_count"
+    case protectAgentBehindCount = "protect_agent_behind_count"
+    case protectDisconnectedCount = "protect_disconnected_count"
     // Jamf Security Cloud (`DailySummary.securityCloud*`); absent without a Security Cloud collect.
     case securityCloudDeviceCount = "security_cloud_device_count"
     case securityCloudMatchedPct = "security_cloud_matched_pct"
@@ -75,6 +78,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .protectMatchedPct: return "Jamf Protect match with inventory"
         case .protectOpenAlertCount: return "Jamf Protect open alerts"
         case .protectHighAlertCount: return "Jamf Protect high alerts"
+        case .protectSignaturesBehindCount: return "Jamf Protect signatures behind"
+        case .protectAgentBehindCount: return "Jamf Protect agents behind the installer"
+        case .protectDisconnectedCount: return "Jamf Protect disconnected over a day"
         case .securityCloudDeviceCount: return "Security Cloud devices"
         case .securityCloudMatchedPct: return "Security Cloud match with inventory"
         case .securityCloudHighRiskCount: return "Security Cloud high-risk devices"
@@ -97,7 +103,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
              .mobileJailbrokenCount, .protectComputerCount, .protectOpenAlertCount,
              .protectHighAlertCount, .securityCloudDeviceCount,
              .securityCloudHighRiskCount, .serverCredentialDaysLeft,
-             .jamfProNotificationCount, .lapsPendingCount: return false
+             .jamfProNotificationCount, .lapsPendingCount,
+                 .protectSignaturesBehindCount,
+             .protectAgentBehindCount, .protectDisconnectedCount: return false
         default: return true
         }
     }
@@ -138,6 +146,11 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .protectHighAlertCount:
             return (summary.protectAlertCounts?["high"]
                 ?? (summary.protectOpenAlerts != nil ? 0 : nil)).map(Double.init)
+        // A finding not measured, or with no Mac judged, is absent, so it never fires.
+        case .protectSignaturesBehindCount:
+            return summary.protectSignaturesBehind.map { Double($0.met) }
+        case .protectAgentBehindCount: return summary.protectAgentBehind.map { Double($0.met) }
+        case .protectDisconnectedCount: return summary.protectDisconnected.map { Double($0.met) }
         case .securityCloudDeviceCount: return summary.securityCloudDeviceCount.map(Double.init)
         case .securityCloudMatchedPct: return summary.securityCloudMatched?.pctOneDecimal
         // Risk counts were recorded and none is HIGH: a real 0.

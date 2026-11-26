@@ -222,7 +222,9 @@ struct CollectSourcesPlan: Equatable, Sendable {
         guard let profile = inputs.protectProfile else { return [] }
         return ReportEngine.protectCommandMatrix(profile: profile).map {
             Source(product: .protect, kind: $0.kind, command: command($0.args),
-                   skipReason: inputs.protectRefusal ?? skipped($0.kind, inputs))
+                   skipReason: inputs.protectRefusal ?? skipped($0.kind, inputs)
+                       ?? ReportEngine.jamfCLISkip($0.kind, installed: inputs.installedVersion)
+                           .map(text))
         }
     }
 

@@ -387,6 +387,8 @@ notify:
 #   Jamf Protect (a workspace that collects it):
 #   protect_matched_pct   (0–100, Protect computers found in Jamf Pro inventory)
 #   protect_computer_count, protect_open_alert_count, protect_high_alert_count
+#   protect_signatures_behind_count, protect_agent_behind_count,
+#   protect_disconnected_count   (Macs behind or disconnected over a day)
 #   security_cloud_matched_pct   (0–100, Security Cloud devices found in the inventory)
 #   security_cloud_device_count, security_cloud_high_risk_count
 #   (whole-number counts)

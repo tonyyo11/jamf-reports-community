@@ -15,8 +15,27 @@ struct ProtectSummaryFigures: Equatable, Sendable {
         var counts: [String: Int]?
     }
 
+    /// One agent finding this run measured: `share` nil when it could not be judged (a
+    /// baseline under a day old, or no Mac reporting the fields), never `{0, 0}`.
+    struct Measured: Equatable, Sendable {
+        var share: MobileSummary.Share?
+
+        init(_ share: MobileSummary.Share?) {
+            self.share = share.flatMap { $0.of > 0 ? $0 : nil }
+        }
+    }
+
+    /// `ProtectAgentHealth`'s findings; a nil member is one this run did not measure, so the
+    /// summary keeps the earlier value for it.
+    struct Agent: Equatable, Sendable {
+        var signaturesBehind: Measured?
+        var agentBehind: Measured?
+        var disconnected: Measured?
+    }
+
     var computers: Computers?
     var alerts: Alerts?
+    var agent: Agent?
 }
 
 extension MobileSummary.Share {

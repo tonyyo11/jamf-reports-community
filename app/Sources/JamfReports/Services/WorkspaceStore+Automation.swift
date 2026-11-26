@@ -544,8 +544,8 @@ extension WorkspaceStore {
     /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
     /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
     /// and it skips a source the installed jamf-cli is too old for (`ReportEngine.minimumJamfCLI`:
-    /// the dashboard, the server-health sources; an unknown version counts as too old, as
-    /// `collect` reads it).
+    /// the dashboard, two Protect sources, the server-health and deployment sources; an
+    /// unknown version counts as too old, as `collect` reads it).
     /// A workspace with Protect connected (`EnvironmentProfiles.protect`) also expects the
     /// `protect-*` kinds, and one with Jamf Security Cloud connected the `security-risk` kind.
     /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
