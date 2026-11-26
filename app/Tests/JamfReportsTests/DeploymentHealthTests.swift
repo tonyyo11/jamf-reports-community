@@ -160,10 +160,6 @@ final class DeploymentHealthTests: XCTestCase {
     func testRowsLeftOutAreNotNone() {
         let state = DeploymentHealth.SourceState.rows([], asOf: nil, leftOut: 2)
         XCTAssertNil(DeploymentHealth.stateText(state), "the left-out note shows instead")
-        XCTAssertTrue(DeploymentHealthSection.summaryLines(state, levels: levels)
-            .contains("2 rows with no ID left out"))
-        XCTAssertTrue(DeploymentHealthSection.summaryLines(
-            .rows([], asOf: nil, leftOut: 1), levels: levels).contains("1 row with no ID left out"))
         XCTAssertEqual(DeploymentHealth.leftOutText(1), "1 row with no ID left out")
     }
 
@@ -335,5 +331,17 @@ final class DeploymentHealthReviewTests: XCTestCase {
             workspace: nil, profile: "ws")
         XCTAssertTrue(rows.contains { $0.title == "thresholds.deployment_failure_warning_percent" },
                       "\(rows.map(\.title))")
+    }
+}
+
+/// The card's lines (a SwiftUI view's statics, main-actor isolated on Swift 6.1).
+@MainActor
+final class DeploymentHealthCardLineTests: XCTestCase {
+    func testTheLeftOutNoteHasASingular() {
+        let levels = DeploymentHealth.Levels.defaults
+        XCTAssertTrue(DeploymentHealthSection.summaryLines(
+            .rows([], asOf: nil, leftOut: 2), levels: levels).contains("2 rows with no ID left out"))
+        XCTAssertTrue(DeploymentHealthSection.summaryLines(
+            .rows([], asOf: nil, leftOut: 1), levels: levels).contains("1 row with no ID left out"))
     }
 }
