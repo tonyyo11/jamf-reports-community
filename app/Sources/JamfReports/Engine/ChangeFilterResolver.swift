@@ -31,13 +31,6 @@ enum ChangeFilterResolver {
         return Dictionary(uniqueKeysWithValues: kinds.map { ($0, ChangeFilterResult(outcome: outcome)) })
     }
 
-    nonisolated static func resolve(
-        _ filter: ChangeFilter, dataDir: URL, rule: StaleRule, policy: SecurityControlPolicy
-    ) -> ChangeFilterResult {
-        resolveAll(filter, dataDir: dataDir, rule: rule, policy: policy)[filter.kind]
-            ?? ChangeFilterResult(outcome: .fileGone)
-    }
-
     /// Only the rule a kind depends on, and only when the summary recorded it: a value the
     /// summary does not hold is unknown, not changed.
     nonisolated static func ruleChanged(
@@ -122,6 +115,12 @@ enum ChangeFilterResolver {
     /// The snapshot of `kind` whose name carries exactly `stamp`, found by listing, so a
     /// sync-conflict copy or a name built from the stamp is never read.
     private static func file(kind: String, stamp: String, dataDir: URL) throws -> (url: URL, date: Date) {
+        // A kind folder replaced by a link lists nothing; it is refused, not gone.
+        let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
+        if (try? FileManager.default.attributesOfItem(atPath: folder.path)[.type]
+            as? FileAttributeType) == .typeSymbolicLink {
+            throw Failed(outcome: .unreadable(.undecodable))
+        }
         guard let found = TrendStore.datedSnapshots(of: kind, in: dataDir)
             .last(where: { PatchReleaseDateService.snapshotStamp(of: $0.url) == stamp })
         else { throw Failed(outcome: .fileGone) }

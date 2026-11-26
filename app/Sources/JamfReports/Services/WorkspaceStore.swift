@@ -91,7 +91,7 @@ final class WorkspaceStore {
     /// profile switch. `changeFilterInFlight` holds one comparison per pair.
     @ObservationIgnored var changeFilterCache: [ChangeFilterCacheKey: [ChangeKind: ChangeFilterResult]] = [:]
     @ObservationIgnored var changeFilterInFlight:
-        [ChangeFilterCacheKey: Task<[ChangeKind: ChangeFilterResult], Never>] = [:]
+        [ChangeFilterCacheKey: Task<[ChangeKind: ChangeFilterResult]?, Never>] = [:]
     /// How long a manual refresh waits for a scheduled run in another process to stop at its
     /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
     var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait

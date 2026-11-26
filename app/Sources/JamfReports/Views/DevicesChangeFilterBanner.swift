@@ -21,7 +21,7 @@ struct DevicesChangeFilterBanner: View {
                 Text(Self.title(filter))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg)
-                ForEach(Self.lines(result: result, notInList: notInList), id: \.self) { line in
+                ForEach(Self.lines(result: result, notInList: notInList, kind: filter.kind), id: \.self) { line in
                     Text(line)
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.secondary)
@@ -41,18 +41,14 @@ struct DevicesChangeFilterBanner: View {
     }
 
     /// The banner's notes, in order; each is decided here so tests read the same text.
-    static func lines(result: ChangeFilterResult?, notInList: Int?) -> [String] {
+    static func lines(
+        result: ChangeFilterResult?, notInList: Int?, kind: ChangeKind
+    ) -> [String] {
         guard let result else { return [L("Comparing snapshots…")] }
         var lines: [String] = []
         switch result.outcome {
         case .macs(let keys):
-            if let failures = result.failures {
-                lines.append(keys.count == 1
-                    ? L("1 Mac (\(failures) policy failures)")
-                    : L("\(keys.count) Macs (\(failures) policy failures)"))
-            } else {
-                lines.append(keys.count == 1 ? L("1 Mac") : L("\(keys.count) Macs"))
-            }
+            lines.append(macsLine(macs: keys.count, failures: result.failures, kind: kind))
             if let notInList, notInList > 0 {
                 lines.append(notInList == 1
                     ? L("1 Mac from that comparison is not in the current list")
@@ -75,9 +71,28 @@ struct DevicesChangeFilterBanner: View {
         return lines
     }
 
+    /// "4 Macs", or for a patch kind the failures behind them: policy failures for Macs that
+    /// started failing, pairs for those no longer listed.
+    static func macsLine(macs: Int, failures: Int?, kind: ChangeKind) -> String {
+        let shown = macs == 1 ? L("1 Mac") : L("\(macs) Macs")
+        guard let failures else { return shown }
+        let detail: String = switch (kind, failures == 1) {
+        case (.patchNoLongerListed, true): L("1 pair no longer listed as failed")
+        case (.patchNoLongerListed, false): L("\(failures) pairs no longer listed as failed")
+        case (_, true): L("1 policy failure")
+        case (_, false): L("\(failures) policy failures")
+        }
+        return L("\(shown) (\(detail))")
+    }
+
+    /// The removed Macs the banner names, and how many more there are.
+    static func shownLeft(_ macs: [ComputerDates]) -> (shown: [ComputerDates], more: Int) {
+        (Array(macs.prefix(leftListLimit)), max(macs.count - leftListLimit, 0))
+    }
+
     private func leftList(_ macs: [ComputerDates]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(macs.prefix(Self.leftListLimit).enumerated()), id: \.offset) { _, mac in
+            ForEach(Array(Self.shownLeft(macs).shown.enumerated()), id: \.offset) { _, mac in
                 Text([
                     ConfigSchema.displayText(mac.name ?? ""),
                     ConfigSchema.displayText(mac.serial ?? ""),
@@ -87,8 +102,8 @@ struct DevicesChangeFilterBanner: View {
                     .foregroundStyle(Theme.Colors.fg)
                     .textSelection(.enabled)
             }
-            if macs.count > Self.leftListLimit {
-                Text(L("and \(macs.count - Self.leftListLimit) more"))
+            if Self.shownLeft(macs).more > 0 {
+                Text(L("and \(Self.shownLeft(macs).more) more"))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
             }

@@ -44,6 +44,14 @@ final class ChangeFilterTests: XCTestCase {
         return item
     }
 
+    private func resolve(
+        _ filter: ChangeFilter, _ dir: URL, rule: StaleRule? = nil,
+        policy: SecurityControlPolicy? = nil
+    ) -> ChangeFilterResult? {
+        ChangeFilterResolver.resolveAll(
+            filter, dataDir: dir, rule: rule ?? self.rule, policy: policy ?? self.policy)[filter.kind]
+    }
+
     private let rule = StaleRule(days: 20)
     private let policy = SecurityControlPolicy()
 
@@ -155,7 +163,7 @@ final class ChangeFilterTests: XCTestCase {
             let count = try XCTUnwrap(kind.count(in: stored), "\(kind)")
             XCTAssertGreaterThan(count, 0, "\(kind) has a Mac in the seed")
             let filter = try XCTUnwrap(ChangeFilter.from(stored, kind: kind))
-            let result = ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+            let result = try XCTUnwrap(resolve(filter, dir))
             XCTAssertFalse(result.ruleChanged, "\(kind)")
             switch result.outcome {
             case .macs(let keys): XCTAssertEqual(keys.count, count, "\(kind)")
@@ -182,12 +190,12 @@ final class ChangeFilterTests: XCTestCase {
             dataDir: dir, landedStamp: at(0), landed: nil))
         XCTAssertEqual(stored.computersStamp, stamp(0))
         let started = try XCTUnwrap(ChangeFilter.from(stored, kind: .patchStarted))
-        let result = ChangeFilterResolver.resolve(started, dataDir: dir, rule: rule, policy: policy)
+        let result = try XCTUnwrap(resolve(started, dir))
         XCTAssertEqual(result.outcome, .macs([MacKey(jamfID: "1")]), "Mac 1 once")
         XCTAssertEqual(result.failures, stored.startedFailing, "two policy failures")
         XCTAssertEqual(result.failures, 2)
         let dropped = try XCTUnwrap(ChangeFilter.from(stored, kind: .patchNoLongerListed))
-        let gone = ChangeFilterResolver.resolve(dropped, dataDir: dir, rule: rule, policy: policy)
+        let gone = try XCTUnwrap(resolve(dropped, dir))
         XCTAssertEqual(gone.outcome, .macs([MacKey(jamfID: "3")]))
         XCTAssertEqual(gone.failures, stored.stoppedFailing)
         XCTAssertFalse(gone.ruleChanged, "patch kinds never set it")
@@ -200,16 +208,16 @@ final class ChangeFilterTests: XCTestCase {
         let baseline = dir.appendingPathComponent("computers/computers_\(stamp(-10)).json")
 
         try Data("{bad".utf8).write(to: baseline)
-        XCTAssertEqual(ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+        XCTAssertEqual(resolve(filter, dir)?
             .outcome, .unreadable(.undecodable))
 
         try FileManager.default.removeItem(at: baseline)
-        XCTAssertEqual(ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+        XCTAssertEqual(resolve(filter, dir)?
             .outcome, .fileGone)
 
         try write("computers", day: -10, json([mac("7", checkIn: -11, fileVault: true, os: "15.4")]),
                   in: dir, name: "computers_\(stamp(-10)) 2.json")
-        XCTAssertEqual(ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+        XCTAssertEqual(resolve(filter, dir)?
             .outcome, .fileGone, "a sync-conflict copy is never read")
     }
 
@@ -222,7 +230,7 @@ final class ChangeFilterTests: XCTestCase {
         try handle.truncate(atOffset: UInt64(BoundedFile.inventoryLimit) + 1)
         try handle.close()
         let filter = ChangeFilter(kind: .joined, currentStamp: stamp(0), baselineStamp: stamp(-1))
-        XCTAssertEqual(ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+        XCTAssertEqual(resolve(filter, dir)?
             .outcome, .unreadable(.tooLarge))
     }
 
@@ -262,11 +270,11 @@ final class ChangeFilterTests: XCTestCase {
         try seedComputers(in: dir)
         let filter = try XCTUnwrap(ChangeFilter.from(try storedComputerChanges(in: dir), kind: .joined))
         let (rule, policy) = (rule, policy)
-        let result = await Task.detached {
+        let result = await Task.detached { () -> ChangeFilterResult? in
             withUnsafeCurrentTask { $0?.cancel() }
-            return ChangeFilterResolver.resolve(filter, dataDir: dir, rule: rule, policy: policy)
+            return ChangeFilterResolver.resolveAll(filter, dataDir: dir, rule: rule, policy: policy)[filter.kind]
         }.value
-        XCTAssertEqual(result.outcome, .cancelled)
+        XCTAssertEqual(result?.outcome, .cancelled)
     }
 
     func testACancelledStoreResolveIsNotCached() async {
@@ -327,5 +335,142 @@ final class ChangeFilterTests: XCTestCase {
         let result = await store.resolveChangeFilter(filter, rule: rule, policy: policy)
         XCTAssertEqual(result, DemoData.changeFilterResult(for: .osChanged))
         XCTAssertTrue(store.changeFilterCache.isEmpty, "demo results are not cached")
+    }
+
+    // MARK: - Review round 1
+
+    private func seedPatch(in dir: URL) throws {
+        try write("computers", day: 0, json([["id": "1"], ["id": "3"]]), in: dir)
+        try write(PatchFailureDrift.kind, day: 0, json([["device_id": "1", "policy_id": "11"]]),
+                  in: dir)
+        try write(PatchFailureDrift.kind, day: -7, json([["device_id": "3", "policy_id": "13"]]),
+                  in: dir)
+    }
+
+    private func patchFilter(_ kind: ChangeKind = .patchStarted) -> ChangeFilter {
+        ChangeFilter(kind: kind, currentStamp: stamp(0), baselineStamp: stamp(-7),
+                     computersStamp: stamp(0))
+    }
+
+    func testPatchFailurePathsFillBothPatchKinds() throws {
+        let dir = dataDir()
+        try seedPatch(in: dir)
+        var noComputers = patchFilter()
+        noComputers.computersStamp = nil
+        let all = ChangeFilterResolver.resolveAll(noComputers, dataDir: dir, rule: rule, policy: policy)
+        XCTAssertEqual(Set(all.keys), [.patchStarted, .patchNoLongerListed])
+        XCTAssertTrue(all.values.allSatisfy { $0.outcome == .fileGone })
+
+        var otherComputers = patchFilter()
+        otherComputers.computersStamp = stamp(-3)
+        XCTAssertEqual(resolve(otherComputers, dir)?.outcome, .fileGone, "no computers file")
+
+        try Data("{bad".utf8).write(to: dir.appendingPathComponent(
+            "\(PatchFailureDrift.kind)/\(PatchFailureDrift.kind)_\(stamp(-7)).json"))
+        let broken = ChangeFilterResolver.resolveAll(patchFilter(.patchNoLongerListed),
+                                                     dataDir: dir, rule: rule, policy: policy)
+        XCTAssertTrue(broken.values.allSatisfy { $0.outcome == .unreadable(.undecodable) })
+    }
+
+    func testALinkedKindFolderIsUnreadableNotGone() throws {
+        let dir = dataDir()
+        try seedComputers(in: dir)
+        let filter = try XCTUnwrap(ChangeFilter.from(try storedComputerChanges(in: dir), kind: .joined))
+        let real = dir.appendingPathComponent("computers-real", isDirectory: true)
+        try FileManager.default.moveItem(at: dir.appendingPathComponent("computers"), to: real)
+        try FileManager.default.createSymbolicLink(
+            at: dir.appendingPathComponent("computers"), withDestinationURL: real)
+        XCTAssertEqual(resolve(filter, dir)?.outcome, .unreadable(.undecodable))
+    }
+
+    func testRuleChangedComesThroughResolveAll() throws {
+        let dir = dataDir()
+        try seedComputers(in: dir)
+        let stored = try storedComputerChanges(in: dir)
+        let stale = try XCTUnwrap(ChangeFilter.from(stored, kind: .becameStale))
+        XCTAssertEqual(resolve(stale, dir, rule: StaleRule(days: 25))?.ruleChanged, true)
+        let fileVault = try XCTUnwrap(ChangeFilter.from(stored, kind: .fileVaultOff))
+        XCTAssertEqual(resolve(fileVault, dir,
+                               policy: SecurityControlPolicy(onValues: [.fileVault: ["Pass"]]))?
+                        .ruleChanged, true)
+        XCTAssertEqual(resolve(fileVault, dir)?.ruleChanged, false)
+    }
+
+    func testJSONRefusesAPatchKindWithoutItsComputersFile() {
+        func decoded(_ text: String) -> ChangeFilter? { ChangeFilter(json: text) }
+        XCTAssertNil(decoded(#"{"kind":"patchStarted","currentStamp":"20261102T060000","baselineStamp":"20261026T060000"}"#))
+        XCTAssertNotNil(decoded(#"{"kind":"patchStarted","currentStamp":"20261102T060000","baselineStamp":"20261026T060000","computersStamp":"20261102T050000"}"#))
+        XCTAssertNil(decoded(#"{"kind":"joined","currentStamp":"20261102T060000","baselineStamp":"20261101T060000","computersStamp":"../x"}"#))
+        XCTAssertNil(decoded("not json"))
+    }
+
+    func testOnlyStableOutcomesAreCacheable() {
+        XCTAssertTrue(ChangeFilterResult(outcome: .macs([])).isStable)
+        XCTAssertTrue(ChangeFilterResult(outcome: .left([])).isStable)
+        XCTAssertTrue(ChangeFilterResult(outcome: .fileGone).isStable)
+        XCTAssertTrue(ChangeFilterResult(outcome: .unreadable(.tooLarge)).isStable)
+        XCTAssertFalse(ChangeFilterResult(outcome: .unreadable(.undecodable)).isStable)
+        XCTAssertFalse(ChangeFilterResult(outcome: .cancelled).isStable)
+    }
+
+    func testMacsWithNoMatchKeepNothing() {
+        let keep = DevicesView.changeKeep(ChangeFilterResult(outcome: .macs([MacKey(jamfID: "1")])),
+                                          match: nil)
+        var record = DeviceInventoryRecord.empty(id: "a", source: "computers.json")
+        record.jamfID = "1"
+        XCTAssertFalse(keep(record))
+    }
+
+    // MARK: - Banner
+
+    func testBannerLines() {
+        typealias Banner = DevicesChangeFilterBanner
+        func lines(_ outcome: ChangeFilterResult.Outcome, failures: Int? = nil,
+                   ruleChanged: Bool = false, notInList: Int? = nil,
+                   kind: ChangeKind = .joined) -> [String] {
+            Banner.lines(result: ChangeFilterResult(outcome: outcome, ruleChanged: ruleChanged,
+                                                    failures: failures),
+                         notInList: notInList, kind: kind)
+        }
+        let one = [MacKey(jamfID: "1")], two = [MacKey(jamfID: "1"), MacKey(jamfID: "2")]
+        XCTAssertEqual(Banner.lines(result: nil, notInList: nil, kind: .joined),
+                       ["Comparing snapshots…"])
+        XCTAssertEqual(lines(.macs(one)), ["1 Mac"])
+        XCTAssertEqual(lines(.macs(two), notInList: 0), ["2 Macs"])
+        XCTAssertEqual(lines(.macs(two), notInList: 1),
+                       ["2 Macs", "1 Mac from that comparison is not in the current list"])
+        XCTAssertEqual(lines(.macs(two), notInList: 2)[1],
+                       "2 Macs from that comparison are not in the current list")
+        XCTAssertEqual(lines(.macs(one), failures: 1, kind: .patchStarted),
+                       ["1 Mac (1 policy failure)"])
+        XCTAssertEqual(lines(.macs(two), failures: 3, kind: .patchStarted),
+                       ["2 Macs (3 policy failures)"])
+        XCTAssertEqual(lines(.macs(one), failures: 2, kind: .patchNoLongerListed),
+                       ["1 Mac (2 pairs no longer listed as failed)"])
+        XCTAssertEqual(lines(.macs(one), failures: 1, kind: .patchNoLongerListed),
+                       ["1 Mac (1 pair no longer listed as failed)"])
+        XCTAssertEqual(lines(.fileGone), ["Snapshot no longer on disk"])
+        XCTAssertEqual(lines(.unreadable(.tooLarge)),
+                       ["A snapshot could not be read: over the read limit"])
+        XCTAssertEqual(lines(.unreadable(.undecodable)),
+                       ["A snapshot could not be read: it did not decode"])
+        XCTAssertEqual(lines(.cancelled), ["Comparing snapshots…"])
+        XCTAssertEqual(lines(.macs(one), ruleChanged: true),
+                       ["1 Mac", "The rule changed since these counts"])
+        XCTAssertEqual(lines(.left([ComputerDates(jamfID: "7")])),
+                       ["1 Mac left since then; it is not in the current list"])
+        XCTAssertEqual(lines(.left([ComputerDates(), ComputerDates()]))[0],
+                       "2 Macs left since then; they are not in the current list")
+    }
+
+    func testBannerTitleAndLeftCap() {
+        let filter = ChangeFilter(kind: .joined, currentStamp: "20261102T060000",
+                                  baselineStamp: "20261101T060000")
+        XCTAssertTrue(DevicesChangeFilterBanner.title(filter).hasPrefix("Enrolled since "))
+        let macs = (0..<53).map { ComputerDates(jamfID: "\($0)") }
+        let left = DevicesChangeFilterBanner.shownLeft(macs)
+        XCTAssertEqual(left.shown.count, 50)
+        XCTAssertEqual(left.more, 3)
+        XCTAssertEqual(DevicesChangeFilterBanner.shownLeft(Array(macs.prefix(50))).more, 0)
     }
 }

@@ -228,6 +228,8 @@ struct DevicesView: View {
             filter = .all
             osFilter = nil
             query = ""
+            // The same count again keeps its result: the comparison task would not restart.
+            guard requested != changeFilter else { return }
             changeResult = nil
             changeMatch = nil
             changeNotInList = nil

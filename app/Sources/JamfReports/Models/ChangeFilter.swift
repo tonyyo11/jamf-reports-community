@@ -156,6 +156,15 @@ struct ChangeFilterResult: Sendable, Equatable {
     var ruleChanged: Bool = false
     /// Patch kinds: the policy failures behind the Macs, which is what the stored count holds.
     var failures: Int?
+
+    /// An outcome a retry cannot change. An undecodable read also covers a read error or a
+    /// refused link, which can clear, so it is not.
+    var isStable: Bool {
+        switch outcome {
+        case .macs, .left, .fileGone, .unreadable(.tooLarge): true
+        case .unreadable(.undecodable), .cancelled: false
+        }
+    }
 }
 
 /// Finds the records a change list names, with `ComputerDateIndex`'s rules: an identifier two
