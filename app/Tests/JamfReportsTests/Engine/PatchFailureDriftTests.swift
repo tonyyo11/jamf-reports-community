@@ -24,6 +24,19 @@ final class PatchFailureDriftTests: XCTestCase {
         XCTAssertEqual(drift.notInComputers, 0)
     }
 
+    /// Digit runs compare as numbers and text as text in one order, so a mix of numeric and
+    /// non-numeric IDs still sorts consistently (a strict weak order).
+    func testMixedIDsSortInOneConsistentOrder() {
+        let ids = ["a", "10", "9", "b2", "b10", "2"]
+        let drift = PatchFailureDrift(
+            current: ids.map { row($0, "1") }, baseline: [], computers: fleet)
+        let sorted = drift.startedFailing.map(\.deviceId)
+        XCTAssertEqual(sorted, ["2", "9", "10", "a", "b2", "b10"])
+        let again = PatchFailureDrift(
+            current: ids.reversed().map { row($0, "1") }, baseline: [], computers: fleet)
+        XCTAssertEqual(again.startedFailing.map(\.deviceId), sorted, "independent of input order")
+    }
+
     func testRepeatedKeyKeepsTheFirstRow() {
         var second = row("1", "5")
         second = PatchFailureRow(policy: "Second", policyId: "5", device: "Mac-1", deviceId: "1",
@@ -68,12 +81,13 @@ final class PatchFailureDriftTests: XCTestCase {
         XCTAssertEqual(pair.baseline.lastPathComponent, old.lastPathComponent)
         XCTAssertEqual(pair.current.lastPathComponent, landed.lastPathComponent)
         XCTAssertNil(PatchFailureDrift.pair(dataDir: dataDir, landedStamp: at(3)))
-        let drift = try XCTUnwrap(PatchFailureDrift.load(
-            current: pair.current, baseline: pair.baseline, dataDir: dataDir, computers: fleet))
+        let drift = try PatchFailureDrift.load(
+            current: pair.current, baseline: pair.baseline, dataDir: dataDir, computers: fleet).get()
         XCTAssertEqual(drift.startedFailing.count, 1)
 
         try Data("{bad".utf8).write(to: old)
-        XCTAssertNil(PatchFailureDrift.load(
-            current: pair.current, baseline: pair.baseline, dataDir: dataDir, computers: fleet))
+        XCTAssertThrowsError(try PatchFailureDrift.load(
+            current: pair.current, baseline: pair.baseline, dataDir: dataDir, computers: fleet)
+            .get()) { XCTAssertEqual($0 as? SnapshotReadFailure, SnapshotReadFailure(.undecodable)) }
     }
 }

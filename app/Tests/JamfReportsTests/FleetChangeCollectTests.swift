@@ -31,8 +31,10 @@ final class FleetChangeCollectTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    /// Fixed once, so the seeded file name and the assertion name the same second.
-    private let yesterday = Date().addingTimeInterval(-86_400)
+    /// Noon of the previous local day, fixed once: `Date() - 86_400` lands two days back
+    /// just after midnight on a 23-hour DST day.
+    private let yesterday = GoldenFleetClock.timestamp(
+        dayOffset: -1, hour: 12, minute: 0, relativeTo: GoldenFleetClock.anchorNoon())
 
     private func seed(_ kind: String, _ json: String) throws {
         let dir = try WorkspacePaths.dataDir(for: profile)
@@ -141,8 +143,18 @@ final class FleetChangeCollectTests: XCTestCase {
         XCTAssertNil(try todaysSummary().changes?.patch)
         let warnings = lines.texts.filter { $0.contains("no device_failures section") }
         XCTAssertEqual(warnings.count, 1, "\(lines.texts)")
+        XCTAssertTrue(warnings[0].contains("could not fetch device_failures"),
+                      "the fetch_error recorder's wording")
+        XCTAssertTrue(lines.texts.contains {
+            $0.hasPrefix("[partial]") && $0.contains(ReportEngine.unlandedSourcesMarker)
+                && $0.contains("patch-device-failures")
+        }, "named in the run's [partial] line: \(lines.texts)")
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
-        XCTAssertNotNil(store.cause(for: "patch-device-failures"))
+        let cause = try XCTUnwrap(store.cause(for: "patch-device-failures"))
+        XCTAssertEqual(cause.kind, .other)
+        XCTAssertFalse(cause.isPermanent)
+        XCTAssertFalse(WorkspaceStore.lastFailureRepeatsOnRetry("patch-device-failures", in: store),
+                       "not a repeating failure: the same-day retry may fetch the section")
     }
 }
 

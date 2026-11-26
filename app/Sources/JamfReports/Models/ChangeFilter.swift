@@ -16,8 +16,23 @@ enum ChangeKind: String, Sendable, CaseIterable, Codable {
         case .fileVaultOff: L("FileVault turned off")
         case .fileVaultStoppedReporting: L("FileVault stopped reporting")
         case .osChanged: L("macOS version changed")
-        case .patchStarted: L("Started failing a patch policy")
-        case .patchNoLongerListed: L("No longer listed as failed")
+        case .patchStarted: L("Patch policy failures started")
+        case .patchNoLongerListed: L("Patch policy failures no longer listed")
+        }
+    }
+
+    /// The banner's title: one whole string per kind, so a translation can order it freely.
+    func title(since day: String) -> String {
+        switch self {
+        case .joined: L("Enrolled since \(day)")
+        case .left: L("Removed since \(day)")
+        case .becameStale: L("Went stale since \(day)")
+        case .noLongerStale: L("Checking in again since \(day)")
+        case .fileVaultOff: L("FileVault turned off since \(day)")
+        case .fileVaultStoppedReporting: L("FileVault stopped reporting since \(day)")
+        case .osChanged: L("macOS version changed since \(day)")
+        case .patchStarted: L("Started failing a patch policy since \(day)")
+        case .patchNoLongerListed: L("No longer listed as failed since \(day)")
         }
     }
 
@@ -156,6 +171,8 @@ struct ChangeFilterResult: Sendable, Equatable {
     var ruleChanged: Bool = false
     /// Patch kinds: the policy failures behind the Macs, which is what the stored count holds.
     var failures: Int?
+    /// Set when the folder is on shared storage and a file was missing: not cached.
+    var mayChange = false
 
     /// An outcome a retry cannot change. An undecodable read also covers a read error or a
     /// refused link, which can clear, so it is not.

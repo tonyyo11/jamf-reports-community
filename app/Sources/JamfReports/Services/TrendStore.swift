@@ -12,13 +12,23 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 @MainActor
 @Observable final class TrendStore {
     private var allSummaries: [DailySummary] = [] {
-        didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
+        didSet {
+            newestTwoSummaries = Self.newestTwo(of: allSummaries)
+            overviewChangesCache = nil
+        }
     }
     private(set) var filteredSummaries: [DailySummary] = []
 
+    /// Built once per load and format, not on every Overview redraw.
+    @ObservationIgnored private var overviewChangesCache:
+        (format: PercentFormat, value: OverviewChanges?)?
+
     /// The Overview's "Since last collect" figures, over every loaded summary.
     func overviewChanges(format: PercentFormat) -> OverviewChanges? {
-        OverviewChanges.build(summaries: allSummaries, format: format)
+        if let cached = overviewChangesCache, cached.format == format { return cached.value }
+        let built = OverviewChanges.build(summaries: allSummaries, format: format)
+        overviewChangesCache = (format, built)
+        return built
     }
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4

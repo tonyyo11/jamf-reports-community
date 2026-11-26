@@ -113,13 +113,21 @@ struct BenchmarkChanges: Codable, Sendable, Equatable {
     var baselineStamp: String?
     var newlyFailing: Int?
     var notCompared: Int?
+    /// A `compliance-rules` file of the pair is there but could not be read: no counts.
+    var baselineUnreadable: Bool?
+    var baselineUnreadableReason: ComputerChanges.UnreadableReason?
 
     private enum CodingKeys: String, CodingKey {
         case currentStamp = "current_stamp", baselineStamp = "baseline_stamp"
         case newlyFailing = "newly_failing", notCompared = "not_compared"
+        case baselineUnreadable = "baseline_unreadable"
+        case baselineUnreadableReason = "baseline_unreadable_reason"
     }
 
-    var isValid: Bool { FleetChangeSummary.inRange([newlyFailing, notCompared]) }
+    var isValid: Bool {
+        guard FleetChangeSummary.inRange([newlyFailing, notCompared]) else { return false }
+        return baselineUnreadable != true || (newlyFailing == nil && notCompared == nil)
+    }
 }
 
 /// Patch policy failures between two scans. `stopped_failing` is a pair jamf-cli no longer
@@ -134,15 +142,22 @@ struct PatchChanges: Codable, Sendable, Equatable {
     /// The stamp of the `computers` file the dropped pairs were checked against, so the
     /// Computers screen can rebuild the same lists.
     var computersStamp: String?
+    /// A scan of the pair, or the computers file, is there but could not be read: no counts.
+    var baselineUnreadable: Bool?
+    var baselineUnreadableReason: ComputerChanges.UnreadableReason?
 
     private enum CodingKeys: String, CodingKey {
         case currentStamp = "current_stamp", baselineStamp = "baseline_stamp"
         case computersStamp = "computers_stamp"
         case startedFailing = "started_failing", stoppedFailing = "stopped_failing"
         case leftOut = "left_out", notInComputers = "not_in_computers"
+        case baselineUnreadable = "baseline_unreadable"
+        case baselineUnreadableReason = "baseline_unreadable_reason"
     }
 
     var isValid: Bool {
-        FleetChangeSummary.inRange([startedFailing, stoppedFailing, leftOut, notInComputers])
+        let counts = [startedFailing, stoppedFailing, leftOut, notInComputers]
+        guard FleetChangeSummary.inRange(counts) else { return false }
+        return baselineUnreadable != true || counts.allSatisfy { $0 == nil }
     }
 }

@@ -41,6 +41,8 @@ extension HtmlReport {
         var patchFailures: [[String: Any]] = []
         var patchVersions: [VersionVelocity] = []
         var patchVersionDates: VersionDatesRead = .absent
+        /// The "now" the patch history was measured against (the run's, inside a report run).
+        var patchHistoryNow = Date()
         var updateFailures: [[String: Any]] = []
         var auditFindings: [[String: Any]] = []
         var eaRows: [EAResultRow]?
@@ -155,6 +157,7 @@ extension HtmlReport {
                 dataDir: dataDir, releaseRows: PatchReleaseDateService.load(dataDir: dataDir))
             inputs.patchVersions = history.versions
             inputs.patchVersionDates = history.versionDates
+            inputs.patchHistoryNow = history.now
         }
         if sections.contains(.mobileFleet) {
             let mobile = MobileFleetService.load(dataDir: dataDir)

@@ -25,6 +25,9 @@ struct PatchView: View {
     @State private var versionDates: VersionDatesRead = .absent
     @State private var versionTitleId: String?
     @State private var versionsLoaded = false
+    /// The Version History card's fleet figure and model key, set once per history load.
+    @State private var versionSummary = FleetVersionSummary()
+    @State private var historyRevision = 0
     /// Band the titles table is filtered to; a tile sets it and its chip clears it.
     @State private var titleFilter: TitleFilter?
 
@@ -64,8 +67,8 @@ struct PatchView: View {
                     }
                     PatchVersionHistoryCard(
                         titles: snapshot.titles, versions: versions, dates: versionDates,
-                        loaded: versionsLoaded, now: daysBehindReferenceDate,
-                        titleId: $versionTitleId)
+                        loaded: versionsLoaded, summary: versionSummary,
+                        revision: historyRevision, titleId: $versionTitleId)
                     if !snapshot.failures.isEmpty {
                         recentFailuresCard
                     }
@@ -110,6 +113,8 @@ struct PatchView: View {
             releaseLookup = DemoData.patchReleaseLookup
             velocity = []
             (versions, versionDates) = DemoData.patchVersionHistory
+            versionSummary = PatchVelocityBuilder.summary(versions, now: daysBehindReferenceDate)
+            historyRevision += 1
             versionsLoaded = true
             loadedSource = source
             return
@@ -128,16 +133,18 @@ struct PatchView: View {
         let releaseRows = loaded.1
         guard let computed = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
-            read: { () -> ([TitleVelocity], [VersionVelocity], VersionDatesRead) in
+            read: { () -> ([TitleVelocity], [VersionVelocity], VersionDatesRead, Date) in
                 guard let dir = try? WorkspacePaths.dataDir(for: profile) else {
-                    return ([], [], .absent)
+                    return ([], [], .absent, Date())
                 }
                 let built = PatchVelocityBuilder.computeWithVersions(
                     dataDir: dir, releaseRows: releaseRows)
-                return (built.velocities, built.versions, built.versionDates)
+                return (built.velocities, built.versions, built.versionDates, built.now)
             }
         ) else { return }
-        (velocity, versions, versionDates) = computed
+        (velocity, versions, versionDates) = (computed.0, computed.1, computed.2)
+        versionSummary = PatchVelocityBuilder.summary(versions, now: computed.3)
+        historyRevision += 1
         versionsLoaded = true
     }
 

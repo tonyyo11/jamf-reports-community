@@ -94,14 +94,27 @@ struct PatchVersionHistoryCard: View {
     let dates: VersionDatesRead
     /// False until the slow history read finishes, so loading never reads as "not read".
     let loaded: Bool
-    let now: Date
+    /// The fleet figure, built once per history load by the Patch screen.
+    let summary: FleetVersionSummary
+    /// Bumped by the Patch screen with each history load; the model rebuilds on it, not per redraw.
+    let revision: Int
     @Binding var titleId: String?
     @State private var showAll = false
+    @State private var cached: (key: ModelKey, model: PatchVersionHistoryModel)?
     @Environment(\.colorSchemeContrast) private var contrast
 
+    private struct ModelKey: Equatable { var titleId: String; var revision: Int }
+
+    private var modelKey: ModelKey { ModelKey(titleId: chosen.wrappedValue, revision: revision) }
+
+    /// The cached model, or one built now for the first frame after a key change.
+    private var model: PatchVersionHistoryModel {
+        if let cached, cached.key == modelKey { return cached.model }
+        return PatchVersionHistoryModel(titleId: modelKey.titleId, versions: versions, dates: dates)
+    }
+
     var body: some View {
-        let model = PatchVersionHistoryModel(
-            titleId: chosen.wrappedValue, versions: versions, dates: dates)
+        let model = model
         return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: L("Version History"))
@@ -128,6 +141,10 @@ struct PatchVersionHistoryCard: View {
                 }
             }
         }
+        .onChange(of: modelKey, initial: true) { _, key in
+            cached = (key, PatchVersionHistoryModel(
+                titleId: key.titleId, versions: versions, dates: dates))
+        }
     }
 
     private var sortedTitles: [PatchStatusRow] {
@@ -140,7 +157,6 @@ struct PatchVersionHistoryCard: View {
     }
 
     private var fleetFigure: some View {
-        let summary = PatchVelocityBuilder.summary(versions, now: now)
         let figure = summary.median.map { median in
             L("Last 90 days: median \(median) days from release to 90%, 90th percentile \(summary.p90 ?? median), over \(summary.crossed) windows.")
         } ?? (summary.crossed == 1

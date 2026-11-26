@@ -135,4 +135,31 @@ final class ChangeFilterStoreTests: XCTestCase {
         let fixed = await resolve(store).value
         XCTAssertEqual(fixed.outcome, .macs([MacKey(jamfID: "3"), MacKey(jamfID: "4")]))
     }
+
+    /// On shared storage a missing snapshot can still arrive from a peer, so "gone" is shown
+    /// but not cached.
+    func testAMissingFileOnSharedStorageIsNotCached() async throws {
+        let store = try store()
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(
+            at: dataDir.appendingPathComponent(".stfolder"), withIntermediateDirectories: true)
+        XCTAssertTrue(CloudStorage.isSharedStorage(dataDir), "a Syncthing marker")
+        try FileManager.default.removeItem(
+            at: dataDir.appendingPathComponent("computers/computers_\(stamp(-1)).json"))
+        let gone = await resolve(store).value
+        XCTAssertEqual(gone.outcome, .fileGone)
+        XCTAssertTrue(store.changeFilterCache.isEmpty)
+    }
+
+    /// A data folder the path rules refuse reads as unreadable, never as another folder.
+    func testARefusedDataFolderIsUnreadableAndNotCached() async throws {
+        let store = try store()
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  data_dir: \"/etc\"\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try WorkspacePaths.dataDir(for: profile), "a system folder is refused")
+        let result = await resolve(store).value
+        XCTAssertEqual(result.outcome, .unreadable(.undecodable))
+        XCTAssertTrue(store.changeFilterCache.isEmpty)
+    }
 }

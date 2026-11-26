@@ -192,4 +192,43 @@ final class PatchVersionWindowTests: XCTestCase {
         XCTAssertEqual(velocity.daysBehind, 3)
         XCTAssertEqual(velocity.series.count, 8, "the chart keeps every day, blank `latest` included")
     }
+
+    /// Inside one report run the history is read once per data folder and measured against
+    /// the run's first "now"; outside a run every call reads again.
+    func testOneReportRunReadsTheHistoryOnceWithOneNow() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pvshare-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = dir.appendingPathComponent("patch-status")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let runNow = Date(timeIntervalSince1970: 1_790_000_000)
+        for offset in [2, 1] {
+            let json = #"[{"title":"T","id":"1","on_latest":50,"on_other":0,"total":100,"#
+                + #""latest":"A","compliance_pct":""}]"#
+            try Data(json.utf8).write(to: folder.appendingPathComponent(
+                "patch-status_\(formatter.string(from: runNow.addingTimeInterval(Double(-offset) * 86_400))).json"))
+        }
+        let share = PatchHistoryShare()
+        share.adopt(now: runNow)
+        let (first, second) = PatchVelocityBuilder.$runShare.withValue(share) { () -> (PatchHistory, PatchHistory) in
+            let first = PatchVelocityBuilder.computeWithVersions(dataDir: dir, releaseRows: [])
+            try? FileManager.default.removeItem(at: folder)
+            let second = PatchVelocityBuilder.computeWithVersions(
+                dataDir: dir, releaseRows: [], now: Date())
+            return (first, second)
+        }
+        XCTAssertEqual(first.now, runNow, "the run's now, not the call's")
+        XCTAssertEqual(second.now, runNow)
+        XCTAssertEqual(second.versions.count, first.versions.count, "read once: the folder is gone")
+        XCTAssertFalse(first.versions.isEmpty)
+        let outside = PatchVelocityBuilder.computeWithVersions(dataDir: dir, releaseRows: [])
+        XCTAssertTrue(outside.versions.isEmpty, "no run bound: read again")
+
+        let summary = PatchVelocityBuilder.summary(first.versions, now: runNow)
+        XCTAssertEqual(summary.since, runNow.addingTimeInterval(-90 * 86_400))
+        XCTAssertEqual(summary.now, runNow)
+    }
 }

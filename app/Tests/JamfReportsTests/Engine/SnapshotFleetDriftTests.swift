@@ -439,6 +439,23 @@ final class SnapshotFleetDriftTests: XCTestCase {
         XCTAssertNil(SnapshotFleetDrift.baseline(dataDir: dataDir, before: at(-2)))
     }
 
+    /// jamf-cli's `fileVault2Enabled` Bool prints as Jamf's words, as Device Security State does.
+    func testFileVaultSectionPrintsBoolsAsWords() throws {
+        func withEnabled(_ item: [String: Any], _ on: Bool) -> [String: Any] {
+            var item = item
+            item["diskEncryption"] = ["fileVault2Enabled": on]
+            return item
+        }
+        let dash = try dashboard(files: [
+            (at(-1), [withEnabled(mac(1, taken: at(-1)), true)]),
+            (at(0), [withEnabled(mac(1, taken: at(0)), false)]),
+        ])
+        try dash.writeFleetDrift()
+        let all = try texts(dash)
+        XCTAssertTrue(all.contains("ENCRYPTED") && all.contains("UNENCRYPTED"), "\(all)")
+        XCTAssertFalse(all.contains("true") || all.contains("false"))
+    }
+
     func testFileVaultSectionRows() throws {
         func withFileVault(_ item: [String: Any], _ value: String) -> [String: Any] {
             var item = item
@@ -476,6 +493,22 @@ final class SnapshotFleetDriftTests: XCTestCase {
         try dash.writeFleetDrift()
         XCTAssertEqual(try section("Benchmark rules newly failing", in: dash),
                        ["Benchmark", "Not compared (one compliance-rules day)"])
+    }
+
+    /// A rules file that is there but does not decode is not "one day".
+    func testBenchmarkSectionWithAnUnreadableRulesFile() throws {
+        let dash = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                         (at(0), [mac(1, taken: at(0))])])
+        let old = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "compliance-rules", dataDir: dash.dataDir, at: at(-1), rows: [])
+        _ = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "compliance-rules", dataDir: dash.dataDir, at: at(0),
+            rows: [["benchmark": "CIS", "ruleId": "r1", "rule": "Rule 1", "failed": 2]])
+        try Data("{bad".utf8).write(to: old)
+        try dash.writeFleetDrift()
+        XCTAssertEqual(try section("Benchmark rules newly failing", in: dash), [
+            "Benchmark",
+            "Not compared (a compliance-rules file could not be read: it did not decode)"])
     }
 
     func testBenchmarkSectionListsNewlyFailingRules() throws {
@@ -541,7 +574,7 @@ final class SnapshotFleetDriftTests: XCTestCase {
         try Data("{bad".utf8).write(to: badFile)
         try bad.writeFleetDrift()
         XCTAssertEqual(try section("Patch policy failures since the last scan", in: bad),
-                       ["Computer", "Not compared (a scan did not decode)"])
+                       ["Computer", "Not compared (a scan could not be read: it did not decode)"])
 
         // Both scans predate every computers file, so no Mac list is readable for them.
         let noMacs = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
@@ -550,7 +583,7 @@ final class SnapshotFleetDriftTests: XCTestCase {
         try scan([], at: at(-8), in: noMacs)
         try noMacs.writeFleetDrift()
         XCTAssertEqual(try section("Patch policy failures since the last scan", in: noMacs),
-                       ["Computer", "Not compared (no readable computers snapshot)"])
+                       ["Computer", "Not compared (no computers snapshot)"])
 
         let none = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
                                          (at(0), [mac(1, taken: at(0))])])

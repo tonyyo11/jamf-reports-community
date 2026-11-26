@@ -28,15 +28,23 @@ final class LandedSources: Sendable {
         set { scanPlan.withLock { $0 = newValue } }
     }
 
-    /// The `computers` snapshot this run saved (wave B2), decoded from the bytes in memory.
+    /// The `computers` snapshot this run saved (wave B2), decoded once when the change
+    /// counts are built.
     struct LandedComputers: Sendable {
         let stamp: String
         let date: Date
         let snapshot: ComputerSnapshot
     }
 
-    private let computers = Mutex<LandedComputers?>(nil)
-    var computerSnapshot: LandedComputers? {
+    /// Where that snapshot was saved; the collect does not decode it again on the hot path.
+    struct LandedFile: Sendable {
+        let stamp: String
+        let date: Date
+        let url: URL
+    }
+
+    private let computers = Mutex<LandedFile?>(nil)
+    var computerFile: LandedFile? {
         get { computers.withLock { $0 } }
         set { computers.withLock { $0 = newValue } }
     }
@@ -56,13 +64,12 @@ final class LandedSources: Sendable {
     }
 
     /// Records what the change counts need from a snapshot this run saved.
-    func noteSaved(kind: String, file: URL, payload: Data) {
+    func noteSaved(kind: String, file: URL) {
         guard let date = CloudStorage.snapshotTimestamp(of: file) else { return }
         switch kind {
         case "computers":
-            guard let snapshot = ComputerDates.decodeComputerSnapshot(payload) else { return }
-            computerSnapshot = LandedComputers(
-                stamp: PatchReleaseDateService.snapshotStamp(of: file) ?? "", date: date, snapshot: snapshot)
+            guard let stamp = PatchReleaseDateService.snapshotStamp(of: file) else { return }
+            computerFile = LandedFile(stamp: stamp, date: date, url: file)
         case "compliance-rules":
             complianceRulesStamp = date
         case PatchFailureDrift.kind:

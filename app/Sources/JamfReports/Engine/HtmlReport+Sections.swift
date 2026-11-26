@@ -355,10 +355,9 @@ extension HtmlReport {
     /// slowest first. A missing or unreadable release-dates file is named, never shown as
     /// counts; the section is left out only when the file was read and no window reached 90%.
     func buildPatchVersionHistory(
-        _ versions: [VersionVelocity], dates: VersionDatesRead
+        _ versions: [VersionVelocity], dates: VersionDatesRead, now: Date = Date()
     ) -> HtmlBlock {
         guard !versions.isEmpty else { return .omitted("no patch-status history") }
-        let now = Date()
         let summary = PatchVelocityBuilder.summary(versions, now: now)
         var note = ""
         switch dates {
@@ -370,11 +369,13 @@ extension HtmlReport {
                 return .omitted("no version window reached 90% in the last 90 days")
             }
         }
-        let since = now.addingTimeInterval(-90 * 86_400)
+        // The summary's own period, so the list and the figure above it count the same windows.
+        let since = summary.since ?? now
         let slow = versions.flatMap { version in
             version.windows.compactMap { window -> (VersionVelocity, Int)? in
                 guard window.outcome == .crossed, let days = window.daysTo90,
-                      let crossed = window.crossedAt90, crossed >= since else { return nil }
+                      let crossed = window.crossedAt90, crossed >= since, crossed <= now
+                else { return nil }
                 return (version, days)
             }
         }

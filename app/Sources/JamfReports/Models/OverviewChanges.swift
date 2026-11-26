@@ -11,7 +11,17 @@ struct OverviewChanges: Equatable, Sendable {
         var filter: ChangeFilter? = nil
         /// The screen the row opens without a filter (benchmark rules).
         var opens: Tab? = nil
-        var id: String { label }
+        /// A `ChangeKind` raw value, "benchmarks" or the agent's name; never the translated label.
+        var id: String
+
+        init(label: String, value: String, filter: ChangeFilter? = nil, opens: Tab? = nil,
+             id: String? = nil) {
+            self.label = label
+            self.value = value
+            self.filter = filter
+            self.opens = opens
+            self.id = id ?? label
+        }
     }
 
     /// The day of the summary the Mac counts (else the benchmark rules) come from; shown when
@@ -75,7 +85,7 @@ struct OverviewChanges: Equatable, Sendable {
                                    .fileVaultStoppedReporting, .osChanged]
         return kinds.map { kind in
             Row(label: kind.label, value: Self.value(kind.count(in: computers)),
-                filter: ChangeFilter.from(computers, kind: kind))
+                filter: ChangeFilter.from(computers, kind: kind), id: kind.rawValue)
         }
     }
 
@@ -90,18 +100,27 @@ struct OverviewChanges: Equatable, Sendable {
                 : L("Could not be read: the file did not decode")
         }
         if let percent = computers.largeChangePercent {
-            return L("Large change: \(percent)% of the fleet joined or left. Check that the last collect finished.")
+            let share = PercentFormat.whole.text(Double(percent))
+            return L("Large change: \(share) of the fleet joined or left. Check that the last collect finished.")
         }
         return nil
     }
 
-    /// The patch rows; none without a part.
+    /// The patch rows, in policy failures (Mac and policy pairs); none without a part.
     var patchRows: [Row] {
         guard let patch else { return [] }
         return [ChangeKind.patchStarted, .patchNoLongerListed].map { kind in
-            Row(label: kind.label, value: Self.value(kind.count(in: patch)),
-                filter: ChangeFilter.from(patch, kind: kind))
+            Row(label: kind.label,
+                value: patch.baselineUnreadable == true
+                    ? Self.unreadable(patch.baselineUnreadableReason)
+                    : Self.value(kind.count(in: patch)),
+                filter: ChangeFilter.from(patch, kind: kind), id: kind.rawValue)
         }
+    }
+
+    private static func unreadable(_ reason: ComputerChanges.UnreadableReason?) -> String {
+        reason == .tooLarge
+            ? L("Could not be read: over the read limit") : L("Could not be read")
     }
 
     /// The scan's day when it differs from `day`; nil when its stamp does not parse.
@@ -113,8 +132,14 @@ struct OverviewChanges: Equatable, Sendable {
     }
 
     var benchmarkRow: Row? {
-        guard let newly = benchmarks?.newlyFailing else { return nil }
+        guard let benchmarks else { return nil }
+        if benchmarks.baselineUnreadable == true {
+            return Row(label: L("Benchmark rules newly failing"),
+                       value: Self.unreadable(benchmarks.baselineUnreadableReason),
+                       id: "benchmarks")
+        }
+        guard let newly = benchmarks.newlyFailing else { return nil }
         return Row(label: L("Benchmark rules newly failing"), value: "\(newly)",
-                   opens: newly > 0 ? .complianceBenchmarks : nil)
+                   opens: newly > 0 ? .complianceBenchmarks : nil, id: "benchmarks")
     }
 }

@@ -32,9 +32,11 @@ extension ReportEngine {
         guard config.html?.writesWithWorkbook == true else { return nil }
         let htmlURL = Self.htmlURL(besideWorkbook: workbookURL)
         do {
-            try await Self.generateHTML(
-                config: config, dataDir: dataDir, outputURL: htmlURL, workspace: workspace,
-                template: template, aiNarrative: aiNarrative, onLine: onLine)
+            try await PatchVelocityBuilder.$runShare.withValue(patchHistoryShare) {
+                try await Self.generateHTML(
+                    config: config, dataDir: dataDir, outputURL: htmlURL, workspace: workspace,
+                    template: template, aiNarrative: aiNarrative, onLine: onLine)
+            }
         } catch {
             let reason = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
             let message = Self.htmlWithWorkbookFailureMarker + reason

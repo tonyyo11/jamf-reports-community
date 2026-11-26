@@ -142,10 +142,7 @@ struct SnapshotFleetDrift {
     /// The newest `computers` snapshot stamped on a local day before `stamp`'s. Same-day
     /// collects are one day of history, and a future-stamped file is never a baseline.
     static func baseline(dataDir: URL, before stamp: Date) -> (url: URL, date: Date)? {
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: stamp)
-        return TrendStore.datedSnapshots(of: "computers", in: dataDir)
-            .last { calendar.startOfDay(for: $0.date) < day }
+        SnapshotPair.earlierDay(of: "computers", in: dataDir, before: stamp)
     }
 }
 
@@ -268,7 +265,8 @@ extension CoreDashboard {
                 ["Computer", "Serial", "Jamf ID", "Before", "Now"],
                 (fileVaultRows ?? []).map {
                     [$0.current.name ?? "", $0.current.serial ?? "", $0.current.jamfID ?? "",
-                     $0.prior.fileVault ?? "", $0.current.fileVault ?? "Not reported"]
+                     Self.fileVaultCell($0.prior.fileVault ?? ""),
+                     $0.current.fileVault.map(Self.fileVaultCell) ?? "Not reported"]
                 })
         if let patch = patchFailureSection() {
             section("Patch policy failures since the last scan", note: patch.note,
@@ -293,11 +291,20 @@ extension CoreDashboard {
         else { return notCompared("one scan") }
         guard let computers = ReportEngine.patchComputerIndex(
             landed: nil, dataDir: dataDir, scanDate: newest.date)
-        else { return notCompared("no readable computers snapshot") }
-        guard let drift = PatchFailureDrift.load(
-            current: pair.current, baseline: pair.baseline, dataDir: dataDir,
-            computers: computers.index)
-        else { return notCompared("a scan did not decode") }
+        else { return notCompared("no computers snapshot") }
+        let drift: PatchFailureDrift
+        switch computers {
+        case .failure(let failure):
+            return notCompared("the computers snapshot could not be read: \(failure.text)")
+        case .success(let index):
+            switch PatchFailureDrift.load(
+                current: pair.current, baseline: pair.baseline, dataDir: dataDir,
+                computers: index.index) {
+            case .success(let found): drift = found
+            case .failure(let failure):
+                return notCompared("a scan could not be read: \(failure.text)")
+            }
+        }
         let note = [
             drift.leftOut > 0
                 ? "\(drift.leftOut) rows with no Jamf ID or policy ID left out" : nil,
@@ -316,11 +323,18 @@ extension CoreDashboard {
     private func benchmarkRuleSection() -> (note: String?, empty: String, rows: [[String]])? {
         guard let newest = TrendStore.datedSnapshots(of: "compliance-rules", in: dataDir).last
         else { return nil }
-        let notCompared = (note: String?.none, empty: "Not compared (one compliance-rules day)",
-                           rows: [[String]]())
-        guard let pair = BenchmarkRuleDrift.pair(dataDir: dataDir, landedStamp: newest.date),
-              let drift = BenchmarkRuleDrift.load(current: pair.current, baseline: pair.baseline)
-        else { return notCompared }
+        func notCompared(_ why: String) -> (String?, String, [[String]]) {
+            (nil, "Not compared (\(why))", [])
+        }
+        guard let pair = BenchmarkRuleDrift.pair(dataDir: dataDir, landedStamp: newest.date)
+        else { return notCompared("one compliance-rules day") }
+        let drift: BenchmarkRuleDrift
+        switch BenchmarkRuleDrift.load(
+            current: pair.current, baseline: pair.baseline, dataDir: dataDir) {
+        case .success(let found): drift = found
+        case .failure(let failure):
+            return notCompared("a compliance-rules file could not be read: \(failure.text)")
+        }
         return (drift.notCompared > 0 ? "\(drift.notCompared) rules not compared" : nil,
                 "No changes",
                 drift.newlyFailing.map {

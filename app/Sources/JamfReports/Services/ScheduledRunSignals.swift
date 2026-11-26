@@ -137,36 +137,63 @@ enum ScheduledRunSignals {
         return newest.changes
     }
 
-    /// The digest's English `Changes` text: counts only, never a device. Nil with no part.
+    /// The digest's English `Changes` text: counts only, never a device. "No changes" only
+    /// when every Mac count was measured and is 0; a count not measured is named. A zero
+    /// patch or benchmark count is left out. Nil with no part, or only all-zero patch and
+    /// benchmark parts.
     static func changesText(_ changes: FleetChangeSummary) -> String? {
         var parts: [String] = []
+        func count(_ value: Int, _ one: String, _ many: String) -> String {
+            value == 1 ? "1 \(one)" : "\(value) \(many)"
+        }
         if let computers = changes.computers {
             let counts: [(Int?, String)] = [
                 (computers.joined, "enrolled"), (computers.left, "removed"),
                 (computers.becameStale, "went stale"), (computers.noLongerStale, "came back"),
                 (computers.fileVaultOff, "FileVault off"),
                 (computers.fileVaultStoppedReporting, "FileVault not reported"),
+                (computers.osChanged, "macOS changed"),
             ]
-            let shown = counts.compactMap { count, label in
-                count.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
-            }
             if computers.baselineUnreadable == true || counts.allSatisfy({ $0.0 == nil }) {
-                parts.append("Changes not measured")
+                parts.append("Mac changes not measured")
             } else {
-                parts.append(shown.isEmpty ? "No changes" : shown.joined(separator: ", "))
+                let shown = counts.compactMap { value, label in
+                    value.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+                }
+                let missing = counts.filter { $0.0 == nil }.map(\.1)
+                if shown.isEmpty && missing.isEmpty {
+                    parts.append("No changes")
+                } else {
+                    parts += shown
+                    if !missing.isEmpty {
+                        parts.append("not measured: " + missing.joined(separator: ", "))
+                    }
+                }
             }
         }
         if let patch = changes.patch {
-            let counts = [(patch.startedFailing, "started failing a patch policy"),
-                          (patch.stoppedFailing, "no longer listed as failed")]
-            parts += counts.compactMap { count, label in
-                count.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+            if patch.baselineUnreadable == true {
+                parts.append("patch policy failures not measured")
+            } else {
+                if let started = patch.startedFailing, started > 0 {
+                    parts.append(count(started, "patch policy failure started",
+                                       "patch policy failures started"))
+                }
+                if let stopped = patch.stoppedFailing, stopped > 0 {
+                    parts.append(count(stopped, "patch policy failure no longer listed",
+                                       "patch policy failures no longer listed"))
+                }
             }
         }
-        if let newly = changes.benchmarks?.newlyFailing {
-            parts.append("\(newly) benchmark rules newly failing")
+        if let benchmarks = changes.benchmarks {
+            if benchmarks.baselineUnreadable == true {
+                parts.append("benchmark rules not measured")
+            } else if let newly = benchmarks.newlyFailing, newly > 0 {
+                parts.append(count(newly, "benchmark rule newly failing",
+                                   "benchmark rules newly failing"))
+            }
         }
-        return parts.isEmpty ? nil : parts.joined(separator: "; ")
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`

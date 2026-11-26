@@ -298,10 +298,10 @@ extension DemoData {
         return formatter.string(from: referenceDate.addingTimeInterval(-Double(days) * 86_400))
     }
 
-    static var overviewChanges: OverviewChanges {
+    static let overviewChanges: OverviewChanges = {
         OverviewChanges(
             day: SummaryJSONParser.dateFormatter.string(from: referenceDate),
             computers: fleetChanges.computers, benchmarks: nil, patch: fleetChanges.patch,
             agents: [])
-    }
+    }()
 }

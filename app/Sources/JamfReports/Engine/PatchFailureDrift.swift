@@ -39,44 +39,42 @@ struct PatchFailureDrift {
         notInComputers = dropped.count - known.count
     }
 
-    /// By Jamf ID, then policy ID: numerically when both parse as numbers, else as text.
+    /// By Jamf ID, then policy ID, comparing digit runs as numbers (a strict weak order).
     private static func sorted(_ rows: [PatchFailureRow]) -> [PatchFailureRow] {
-        func before(_ lhs: String, _ rhs: String) -> Bool? {
-            let (a, b) = (lhs.trimmingCharacters(in: .whitespaces),
-                          rhs.trimmingCharacters(in: .whitespaces))
-            guard a != b else { return nil }
-            if let x = Int(a), let y = Int(b) { return x < y }
-            return a < b
+        func order(_ lhs: String, _ rhs: String) -> ComparisonResult {
+            lhs.trimmingCharacters(in: .whitespaces)
+                .compare(rhs.trimmingCharacters(in: .whitespaces), options: .numeric)
         }
         return rows.sorted {
-            before($0.deviceId, $1.deviceId) ?? before($0.policyId, $1.policyId) ?? false
+            let device = order($0.deviceId, $1.deviceId)
+            return device == .orderedSame
+                ? order($0.policyId, $1.policyId) == .orderedAscending
+                : device == .orderedAscending
         }
     }
 
     /// The `patch-device-failures` file stamped `landedStamp` and the newest from an earlier
     /// local day. A same-day rescan is never the baseline.
     static func pair(dataDir: URL, landedStamp: Date) -> (current: URL, baseline: URL)? {
-        let files = TrendStore.datedSnapshots(of: kind, in: dataDir)
-        guard let current = files.last(where: { $0.date == landedStamp }) else { return nil }
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: landedStamp)
-        guard let baseline = files.last(where: { calendar.startOfDay(for: $0.date) < day })
-        else { return nil }
-        return (current.url, baseline.url)
+        SnapshotPair.landed(kind, in: dataDir, stamp: landedStamp)
     }
 
-    /// Nil when either scan cannot be read or decoded.
+    /// The drift, or why a scan could not be read.
     static func load(
         current: URL, baseline: URL, dataDir: URL, computers: ComputerDateIndex
-    ) -> PatchFailureDrift? {
-        func rows(_ url: URL) -> [PatchFailureRow]? {
-            guard let data = try? BoundedFile.read(
-                url, limit: BoundedFile.limit(forKind: kind), followSymlinks: false,
-                inside: dataDir) else { return nil }
-            return try? JSONDecoder().decode([PatchFailureRow].self, from: data)
+    ) -> Result<PatchFailureDrift, SnapshotReadFailure> {
+        func rows(_ url: URL) -> Result<[PatchFailureRow], SnapshotReadFailure> {
+            SnapshotPair.read(url, limit: BoundedFile.limit(forKind: kind), dataDir: dataDir)
+                .flatMap { data in
+                    (try? JSONDecoder().decode([PatchFailureRow].self, from: data))
+                        .map { .success($0) } ?? .failure(SnapshotReadFailure(.undecodable))
+                }
         }
-        guard let now = rows(current), let before = rows(baseline) else { return nil }
-        return PatchFailureDrift(current: now, baseline: before, computers: computers)
+        return rows(current).flatMap { now in
+            rows(baseline).map {
+                PatchFailureDrift(current: now, baseline: $0, computers: computers)
+            }
+        }
     }
 
     static let kind = "patch-device-failures"

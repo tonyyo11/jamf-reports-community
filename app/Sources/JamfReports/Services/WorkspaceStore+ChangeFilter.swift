@@ -30,11 +30,19 @@ extension WorkspaceStore {
             let running = changeFilterInFlight[key].flatMap { $0.isCancelled ? nil : $0 }
             let handle = running ?? Task.detached(priority: .userInitiated) {
                 // No workspace folder resolves now; `nil` is shown as gone but not cached.
-                guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
-                let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-                    ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
-                return ChangeFilterResolver.resolveAll(
+                // A data folder the path rules refuse is unreadable, never another folder read in
+                // its place; `undecodable` is not cached, so a fixed config is read next time.
+                guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+                    return ProfileService.workspaceURL(for: profile) == nil
+                        ? nil : ChangeFilterResolver.uniform(filter, .unreadable(.undecodable))
+                }
+                let results = ChangeFilterResolver.resolveAll(
                     filter, dataDir: dataDir, rule: rule, policy: policy)
+                // On shared storage a peer's snapshot can sync in after the summary named it,
+                // so "gone" is not final there.
+                guard results.values.contains(where: { $0.outcome == .fileGone }),
+                      CloudStorage.isSharedStorage(dataDir) else { return results }
+                return results.mapValues { var result = $0; result.mayChange = true; return result }
             }
             changeFilterInFlight[key] = handle
             let resolved = await withTaskCancellationHandler {
@@ -47,7 +55,7 @@ extension WorkspaceStore {
             guard let result = results[filter.kind] else { break }
             if result.outcome != .cancelled {
                 if resolved != nil, key.profile == self.profile,
-                   results.values.allSatisfy(\.isStable) {
+                   results.values.allSatisfy({ $0.isStable && !$0.mayChange }) {
                     changeFilterCache[key] = results
                 }
                 return result

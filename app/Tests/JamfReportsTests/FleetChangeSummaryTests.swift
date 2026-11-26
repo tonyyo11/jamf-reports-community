@@ -71,20 +71,22 @@ final class FleetChangeSummaryTests: XCTestCase {
 
     func testPatchComputerIndex() throws {
         let landedIndex = try XCTUnwrap(ReportEngine.patchComputerIndex(
-            landed: landed(), dataDir: try dataDir(baseline: nil), scanDate: at(0)))
+            landed: landed(), dataDir: try dataDir(baseline: nil), scanDate: at(0))).get()
         XCTAssertTrue(landedIndex.index.contains(jamfID: "1", serial: nil))
         XCTAssertEqual(landedIndex.stamp, "x", "a landed snapshot gives its own stamp")
 
         let rows: [[String: Any]] = [["id": "7"]]
         let dir = try dataDir(baseline: JSONSerialization.data(withJSONObject: rows))
         let fromFile = try XCTUnwrap(ReportEngine.patchComputerIndex(
-            landed: nil, dataDir: dir, scanDate: at(0)))
+            landed: nil, dataDir: dir, scanDate: at(0))).get()
         XCTAssertTrue(fromFile.index.contains(jamfID: "7", serial: nil))
         XCTAssertEqual(fromFile.stamp, GoldenFleetClock.stamp(at(-1)), "the fallback file's stamp")
         XCTAssertNil(ReportEngine.patchComputerIndex(landed: nil, dataDir: dir, scanDate: at(-2)),
                      "a file stamped after the scan is not used")
-        XCTAssertNil(ReportEngine.patchComputerIndex(
-            landed: nil, dataDir: try dataDir(baseline: Data("{bad".utf8)), scanDate: at(0)))
+        let unreadable = try XCTUnwrap(ReportEngine.patchComputerIndex(
+            landed: nil, dataDir: try dataDir(baseline: Data("{bad".utf8)), scanDate: at(0)),
+            "a file that is there but does not decode is a failure, not no file")
+        XCTAssertThrowsError(try unreadable.get())
         XCTAssertNil(ReportEngine.patchComputerIndex(
             landed: nil, dataDir: try dataDir(baseline: nil), scanDate: at(0)))
     }
@@ -220,10 +222,54 @@ final class FleetChangeSummaryTests: XCTestCase {
         XCTAssertTrue(changes.isValid)
     }
 
+    /// A benchmark or patch file that is there but cannot be read is stored as unreadable and
+    /// logged once, never dropped as if there were no earlier file.
+    func testUnreadableBenchmarkAndPatchFilesAreStoredAndLogged() throws {
+        let dir = try dataDir(baseline: JSONSerialization.data(withJSONObject: [["id": "1"]]))
+        func write(_ kind: String, _ day: Int, _ text: String) throws {
+            let url = dir.appendingPathComponent(kind, isDirectory: true)
+                .appendingPathComponent("\(kind)_\(GoldenFleetClock.stamp(at(day))).json")
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
+        try write("compliance-rules", -1, "{bad")
+        try write("compliance-rules", 0, #"[{"benchmark":"CIS","ruleId":"r1","failed":1}]"#)
+        try write(PatchFailureDrift.kind, -7, "{bad")
+        try write(PatchFailureDrift.kind, 0, "[]")
+        let benchmarks = try XCTUnwrap(ReportEngine.benchmarkChanges(dataDir: dir, landedStamp: at(0)))
+        XCTAssertEqual(benchmarks.baselineUnreadable, true)
+        XCTAssertEqual(benchmarks.baselineUnreadableReason, .undecodable)
+        XCTAssertNil(benchmarks.newlyFailing)
+        let patch = try XCTUnwrap(ReportEngine.patchChanges(
+            dataDir: dir, landedStamp: at(0), landed: landed()))
+        XCTAssertEqual(patch.baselineUnreadable, true)
+        XCTAssertNil(patch.startedFailing)
+
+        let landedSources = LandedSources()
+        landedSources.complianceRulesStamp = at(0)
+        landedSources.patchFailuresStamp = at(0)
+        let lines = LineSink()
+        let summary = ReportEngine.fleetChanges(
+            landed: landedSources, dataDir: dir, config: ReportConfig(), onLine: lines.append)
+        XCTAssertEqual(summary?.benchmarks?.baselineUnreadable, true)
+        XCTAssertEqual(lines.texts.filter { $0.hasPrefix("[warn] change counts:") }.count, 2,
+                       "\(lines.texts)")
+    }
+
     func testUndecodableBaselineIsUnreadable() throws {
         let changes = try XCTUnwrap(ReportEngine.computerChanges(
             landed: landed(), dataDir: try dataDir(baseline: Data("{not json".utf8)),
             rule: StaleRule(days: 30), policy: SecurityControlPolicy()))
         XCTAssertEqual(changes.baselineUnreadableReason, .undecodable)
     }
+}
+
+private final class LineSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in self.lock.lock(); defer { self.lock.unlock() }; self.lines.append(line.text) }
+    }
+    var texts: [String] { lock.lock(); defer { lock.unlock() }; return lines }
 }

@@ -479,7 +479,8 @@ struct CoreDashboard: Sendable {
         row += 1
         ws.write(patchVersionFooter(versions), row: row, col: 0, format: .cell)
         row += 2
-        for line in Self.fleetVersionLines(PatchVelocityBuilder.summary(versions)) {
+        for line in Self.fleetVersionLines(
+            PatchVelocityBuilder.summary(versions, now: patchHistory.now)) {
             ws.write(line, row: row, col: 0, format: .cell)
             row += 1
         }
@@ -2713,11 +2714,8 @@ struct CoreDashboard: Sendable {
         }
     }
 
-    /// Bootstrap token escrow as the sheet shows it. Jamf Pro reports it as
-    /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
-    /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
-    /// permitted, not whether the token is escrowed, so it never stands in.
-    /// The sheet's FileVault cell: jamf-cli's `fileVault2Enabled` Bool reads as Jamf's words.
+    /// A FileVault cell: jamf-cli's `fileVault2Enabled` Bool reads as Jamf's own words, so a
+    /// sheet never shows a bare "true" beside "ENCRYPTED" from another Mac.
     static func fileVaultCell(_ label: String) -> String {
         switch label.lowercased() {
         case "true", "1": "ENCRYPTED"
@@ -2726,6 +2724,10 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    /// Bootstrap token escrow as the sheet shows it. Jamf Pro reports it as
+    /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
+    /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
+    /// permitted, not whether the token is escrowed, so it never stands in.
     private func bootstrapEscrowText(_ security: [String: Any]?) -> String {
         let status = (security?["bootstrapTokenEscrowedStatus"] as? String)?
             .trimmingCharacters(in: .whitespaces) ?? ""

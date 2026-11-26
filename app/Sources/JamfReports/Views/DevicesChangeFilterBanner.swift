@@ -36,8 +36,7 @@ struct DevicesChangeFilterBanner: View {
 
     static func title(_ filter: ChangeFilter) -> String {
         guard let date = filter.baselineDate else { return filter.kind.label }
-        let day = date.formatted(date: .abbreviated, time: .omitted)
-        return L("\(filter.kind.label) since \(day)")
+        return filter.kind.title(since: date.formatted(date: .abbreviated, time: .omitted))
     }
 
     /// The banner's notes, in order; each is decided here so tests read the same text.
@@ -74,15 +73,18 @@ struct DevicesChangeFilterBanner: View {
     /// "4 Macs", or for a patch kind the failures behind them: policy failures for Macs that
     /// started failing, pairs for those no longer listed.
     static func macsLine(macs: Int, failures: Int?, kind: ChangeKind) -> String {
-        let shown = macs == 1 ? L("1 Mac") : L("\(macs) Macs")
-        guard let failures else { return shown }
-        let detail: String = switch (kind, failures == 1) {
-        case (.patchNoLongerListed, true): L("1 pair no longer listed as failed")
-        case (.patchNoLongerListed, false): L("\(failures) pairs no longer listed as failed")
-        case (_, true): L("1 policy failure")
-        case (_, false): L("\(failures) policy failures")
+        guard let failures else { return macs == 1 ? L("1 Mac") : L("\(macs) Macs") }
+        switch (kind == .patchNoLongerListed, macs == 1, failures == 1) {
+        case (true, true, true): return L("1 Mac (1 pair no longer listed as failed)")
+        case (true, true, false): return L("1 Mac (\(failures) pairs no longer listed as failed)")
+        case (true, false, true): return L("\(macs) Macs (1 pair no longer listed as failed)")
+        case (true, false, false):
+            return L("\(macs) Macs (\(failures) pairs no longer listed as failed)")
+        case (false, true, true): return L("1 Mac (1 policy failure)")
+        case (false, true, false): return L("1 Mac (\(failures) policy failures)")
+        case (false, false, true): return L("\(macs) Macs (1 policy failure)")
+        case (false, false, false): return L("\(macs) Macs (\(failures) policy failures)")
         }
-        return L("\(shown) (\(detail))")
     }
 
     /// The removed Macs the banner names, and how many more there are.

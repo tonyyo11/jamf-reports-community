@@ -588,7 +588,7 @@ private func scheduledRunSingleBody(
             if honesty.producedFreshSnapshot {
                 await ScheduledRunSignals.notifyScheduledRun(
                     config: routingConfig, profile: profile, mode: mode,
-                    artifact: nil, recorder: recorder
+                    artifact: nil, recorder: recorder, now: runStart
                 )
                 await ScheduledRunSignals.notifyMetricAlerts(
                     config: routingConfig, profile: profile, workspace: workspace,
@@ -678,7 +678,7 @@ private func scheduledRunSingleBody(
             config: config, profile: profile, mode: mode,
             artifact: outputURL.lastPathComponent,
             sheetFailures: failures.count,
-            recorder: recorder
+            recorder: recorder, now: runStart
         )
         // jamf-cli-only generates from cache without a fresh collect, so its
         // summary isn't "just produced" — skip alerting for it. A collect that
@@ -892,14 +892,21 @@ func runCheck(profile: String) -> Int32 {
         // A peer on a shared workspace can write config.yaml, so the value is shown filtered.
         print("[ok] \(environment.isSchool ? "Jamf School" : "Jamf Pro") profile: "
             + (environment.mdm.map(ConfigSchema.displayText) ?? "(not set)"))
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile)) ?? workspace
-            .appendingPathComponent("jamf-cli-data")
+        // A data_dir the path rules refuse is reported, not swapped for the default folder.
         var isDir: ObjCBool = false
-        if !FileManager.default.fileExists(atPath: dataDir.path, isDirectory: &isDir) {
+        let dataDir: URL?
+        do {
+            dataDir = try WorkspacePaths.dataDir(for: profile)
+        } catch {
+            dataDir = nil
+            fputs(LogRedactor.redact(
+                "[warn] data_dir could not be used: \(error.englishDescription)") + "\n", stderr)
+        }
+        if let dataDir, !FileManager.default.fileExists(atPath: dataDir.path, isDirectory: &isDir) {
             print("[warn] data_dir does not exist yet (no collect run): \(dataDir.path)")
-        } else if !isDir.boolValue {
+        } else if let dataDir, !isDir.boolValue {
             fputs("[warn] data_dir path exists but is not a directory: \(dataDir.path)\n", stderr)
-        } else {
+        } else if let dataDir {
             do {
                 let snapshotCount = try FileManager.default.contentsOfDirectory(atPath: dataDir.path).count
                 print("[ok] cached snapshots in data_dir: \(snapshotCount)")

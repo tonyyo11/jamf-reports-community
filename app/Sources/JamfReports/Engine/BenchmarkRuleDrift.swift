@@ -38,20 +38,22 @@ struct BenchmarkRuleDrift {
     /// The `compliance-rules` file stamped `landedStamp` and the newest from an earlier local
     /// day. Nil when either is missing.
     static func pair(dataDir: URL, landedStamp: Date) -> (current: URL, baseline: URL)? {
-        let files = TrendStore.datedSnapshots(of: "compliance-rules", in: dataDir)
-        guard let current = files.last(where: { $0.date == landedStamp }) else { return nil }
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: landedStamp)
-        guard let baseline = files.last(where: { calendar.startOfDay(for: $0.date) < day })
-        else { return nil }
-        return (current.url, baseline.url)
+        SnapshotPair.landed("compliance-rules", in: dataDir, stamp: landedStamp)
     }
 
-    /// The drift between the two files `pair` names; nil when either does not decode.
-    static func load(current: URL, baseline: URL) -> BenchmarkRuleDrift? {
-        guard let now = ComplianceBenchmarksService.decodeRules(at: current),
-              let before = ComplianceBenchmarksService.decodeRules(at: baseline)
-        else { return nil }
-        return BenchmarkRuleDrift(current: now, baseline: before)
+    /// The drift between the two files `pair` names, or why one could not be read.
+    static func load(
+        current: URL, baseline: URL, dataDir: URL
+    ) -> Result<BenchmarkRuleDrift, SnapshotReadFailure> {
+        func rules(_ url: URL) -> Result<[Rule], SnapshotReadFailure> {
+            SnapshotPair.read(url, limit: BoundedFile.limit(forKind: "compliance-rules"),
+                              dataDir: dataDir).flatMap {
+                ComplianceBenchmarksService.decodeRules(in: $0).map { .success($0) }
+                    ?? .failure(SnapshotReadFailure(.undecodable))
+            }
+        }
+        return rules(current).flatMap { now in
+            rules(baseline).map { BenchmarkRuleDrift(current: now, baseline: $0) }
+        }
     }
 }

@@ -1053,52 +1053,6 @@
         }
       }
     },
-    "%@ (%@)" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$@)"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ (%2$@)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$@)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$@)"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$@)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@(%2$@)"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$@)"
-          }
-        }
-      }
-    },
     "%@ (%lld)" : {
       "localizations" : {
         "en" : {
@@ -7736,52 +7690,6 @@
         }
       }
     },
-    "%@ since %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ seit %2$@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ since %2$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ desde el %2$@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ depuis le %2$@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ dal %2$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@以降: %1$@"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ desde %2$@"
-          }
-        }
-      }
-    },
     "%@ started %@ %@ and never released it — usually a Mac that slept or was shut down mid-run. It has expired, so the next run here takes it over automatically." : {
       "localizations" : {
         "de" : {
@@ -11546,6 +11454,178 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld Macs"
+          }
+        }
+      }
+    },
+    "%lld Macs (%lld pairs no longer listed as failed)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld Paare nicht mehr als fehlgeschlagen aufgeführt)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld Macs (%2$lld pairs no longer listed as failed)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Mac (%2$lld pares que ya no figuran como fallidos)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld paires ne figurant plus parmi les échecs)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Mac (%2$lld coppie non più elencate come non riuscite)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac %1$lld台(失敗として表示されなくなったペア %2$lld件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld pares não listados mais como falha)"
+          }
+        }
+      }
+    },
+    "%lld Macs (%lld policy failures)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld fehlgeschlagene Richtlinien)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld Macs (%2$lld policy failures)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Mac (%2$lld fallos de política)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld échecs de stratégie)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Mac (%2$lld errori di policy)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac %1$lld台(ポリシーの失敗 %2$lld件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld Macs (%2$lld falhas de política)"
+          }
+        }
+      }
+    },
+    "%lld Macs (1 pair no longer listed as failed)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 Paar nicht mehr als fehlgeschlagen aufgeführt)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac (1 par que ya no figura como fallido)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 paire ne figurant plus parmi les échecs)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac (1 coppia non più elencata come non riuscita)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac %lld台(失敗として表示されなくなったペア 1件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 par não listado mais como falha)"
+          }
+        }
+      }
+    },
+    "%lld Macs (1 policy failure)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 fehlgeschlagene Richtlinie)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac (1 fallo de política)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 échec de stratégie)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mac (1 errore di policy)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac %lld台(ポリシーの失敗 1件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Macs (1 falha de política)"
           }
         }
       }
@@ -17364,46 +17444,6 @@
         }
       }
     },
-    "%lld pairs no longer listed as failed" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Paare nicht mehr als fehlgeschlagen aufgeführt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pares que ya no figuran como fallidos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld paires ne figurant plus parmi les échecs"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld coppie non più elencate come non riuscite"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失敗として表示されなくなったペア %lld件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld pares não listados mais como falha"
-          }
-        }
-      }
-    },
     "%lld partial collect" : {
       "localizations" : {
         "de" : {
@@ -17858,46 +17898,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld políticas monitoradas, %2$lld achados identificados."
-          }
-        }
-      }
-    },
-    "%lld policy failures" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld fehlgeschlagene Richtlinien"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld fallos de política"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld échecs de stratégie"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld errori di policy"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ポリシーの失敗 %lld件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld falhas de política"
           }
         }
       }
@@ -22418,6 +22418,166 @@
         }
       }
     },
+    "1 Mac (%lld pairs no longer listed as failed)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld Paare nicht mehr als fehlgeschlagen aufgeführt)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld pares que ya no figuran como fallidos)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld paires ne figurant plus parmi les échecs)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld coppie non più elencate come non riuscite)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 1台(失敗として表示されなくなったペア %lld件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld pares não listados mais como falha)"
+          }
+        }
+      }
+    },
+    "1 Mac (%lld policy failures)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld fehlgeschlagene Richtlinien)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld fallos de política)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld échecs de stratégie)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld errori di policy)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 1台(ポリシーの失敗 %lld件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (%lld falhas de política)"
+          }
+        }
+      }
+    },
+    "1 Mac (1 pair no longer listed as failed)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 Paar nicht mehr als fehlgeschlagen aufgeführt)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 par que ya no figura como fallido)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 paire ne figurant plus parmi les échecs)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 coppia non più elencata come non riuscita)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 1台(失敗として表示されなくなったペア 1件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 par não listado mais como falha)"
+          }
+        }
+      }
+    },
+    "1 Mac (1 policy failure)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 fehlgeschlagene Richtlinie)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 fallo de política)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 échec de stratégie)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 errore di policy)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 1台(ポリシーの失敗 1件)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Mac (1 falha de política)"
+          }
+        }
+      }
+    },
     "1 Mac from that comparison is not in the current list" : {
       "localizations" : {
         "de" : {
@@ -22854,86 +23014,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 objeto"
-          }
-        }
-      }
-    },
-    "1 pair no longer listed as failed" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 Paar nicht mehr als fehlgeschlagen aufgeführt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 par que ya no figura como fallido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 paire ne figurant plus parmi les échecs"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 coppia non più elencata come non riuscita"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失敗として表示されなくなったペア 1件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 par não listado mais como falha"
-          }
-        }
-      }
-    },
-    "1 policy failure" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 fehlgeschlagene Richtlinie"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 fallo de política"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 échec de stratégie"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 errore di policy"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ポリシーの失敗 1件"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 falha de política"
           }
         }
       }
@@ -38264,6 +38344,46 @@
         }
       }
     },
+    "Checking in again since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melden sich wieder seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelven a conectarse desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se reconnectent de nouveau depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di nuovo in contatto dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: チェックイン再開"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voltaram a fazer check-in desde %@"
+          }
+        }
+      }
+    },
     "Checking installed commands…" : {
       "localizations" : {
         "de" : {
@@ -47263,6 +47383,46 @@
         }
       }
     },
+    "Could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取れません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler"
+          }
+        }
+      }
+    },
     "Could not be read: over the 256 MB limit" : {
       "localizations" : {
         "de" : {
@@ -47299,6 +47459,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não foi possível ler: acima do limite de 256 MB"
+          }
+        }
+      }
+    },
+    "Could not be read: over the read limit" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht gelesen werden: Leselimit überschritten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer: supera el límite de lectura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture impossible : limite de lecture dépassée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere: supera il limite di lettura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取れません: 読み取り上限を超えています"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler: acima do limite de leitura"
           }
         }
       }
@@ -57721,6 +57921,46 @@
         }
       }
     },
+    "Enrolled since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registriert seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inscritos desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inscrits depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrati dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: 登録済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrados desde %@"
+          }
+        }
+      }
+    },
     "Enrolled via ADE" : {
       "localizations" : {
         "de" : {
@@ -62921,6 +63161,46 @@
         }
       }
     },
+    "FileVault stopped reporting since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault meldet nicht mehr seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault dejó de informar desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault ne remonte plus depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault non viene più segnalato dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: FileVault の報告が停止"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault parou de informar desde %@"
+          }
+        }
+      }
+    },
     "FileVault turned off" : {
       "localizations" : {
         "de" : {
@@ -62957,6 +63237,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "FileVault desativado"
+          }
+        }
+      }
+    },
+    "FileVault turned off since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault deaktiviert seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault desactivado desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault désactivé depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault disattivato dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: FileVault がオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault desativado desde %@"
           }
         }
       }
@@ -76038,42 +76358,42 @@
         }
       }
     },
-    "Large change: %lld%% of the fleet joined or left. Check that the last collect finished." : {
+    "Large change: %@ of the fleet joined or left. Check that the last collect finished." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Große Änderung: %lld %% der Flotte kamen hinzu oder fielen weg. Prüfen Sie, ob die letzte Erfassung abgeschlossen wurde."
+            "value" : "Große Änderung: %@ der Flotte kamen hinzu oder fielen weg. Prüfen Sie, ob die letzte Erfassung abgeschlossen wurde."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambio grande: el %lld %% de la flota entró o salió. Compruebe que la última recopilación terminó."
+            "value" : "Cambio grande: el %@ de la flota entró o salió. Compruebe que la última recopilación terminó."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Changement important : %lld %% du parc est arrivé ou parti. Vérifiez que la dernière collecte s’est terminée."
+            "value" : "Changement important : %@ du parc est arrivé ou parti. Vérifiez que la dernière collecte s’est terminée."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambiamento ampio: il %lld%% della flotta è entrato o uscito. Verifica che l’ultima raccolta sia terminata."
+            "value" : "Cambiamento ampio: il %@ della flotta è entrato o uscito. Verifica che l’ultima raccolta sia terminata."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "大きな変化: フリートの %lld%% が追加または削除されました。前回の収集が完了したか確認してください。"
+            "value" : "大きな変化: フリートの %@ が追加または削除されました。前回の収集が完了したか確認してください。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mudança grande: %lld%% da frota entrou ou saiu. Verifique se a última coleta terminou."
+            "value" : "Mudança grande: %@ da frota entrou ou saiu. Verifique se a última coleta terminou."
           }
         }
       }
@@ -88594,42 +88914,42 @@
         }
       }
     },
-    "No longer listed as failed" : {
+    "No longer listed as failed since %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nicht mehr als fehlgeschlagen gelistet"
+            "value" : "Seit %@ nicht mehr als fehlgeschlagen gelistet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ya no figura como fallido"
+            "value" : "Ya no figura como fallido desde el %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ne figure plus parmi les échecs"
+            "value" : "Ne figure plus parmi les échecs depuis le %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non più elencato come non riuscito"
+            "value" : "Non più elencato come non riuscito dal %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "失敗として表示されなくなった"
+            "value" : "%@以降: 失敗として表示されなくなった"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Não aparece mais como falha"
+            "value" : "Não aparece mais como falha desde %@"
           }
         }
       }
@@ -99876,6 +100196,86 @@
         }
       }
     },
+    "Patch policy failures no longer listed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht mehr gelistete fehlgeschlagene Patch-Richtlinien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fallos de política de parches que ya no figuran"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échecs de stratégie de correctif qui ne figurent plus"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Errori di policy di patch non più elencati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示されなくなったパッチポリシーの失敗"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falhas de política de patch não listadas mais"
+          }
+        }
+      }
+    },
+    "Patch policy failures started" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu fehlgeschlagene Patch-Richtlinien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevos fallos de política de parches"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveaux échecs de stratégie de correctif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovi errori di policy di patch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新たなパッチポリシーの失敗"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novas falhas de política de patch"
+          }
+        }
+      }
+    },
     "Patch titles tracked" : {
       "localizations" : {
         "de" : {
@@ -108473,6 +108873,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Removido do seu ambiente."
+          }
+        }
+      }
+    },
+    "Removed since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernt seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirados desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirés depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rimossi dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: 削除済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removidos desde %@"
           }
         }
       }
@@ -124760,42 +125200,42 @@
         }
       }
     },
-    "Started failing a patch policy" : {
+    "Started failing a patch policy since %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Neu fehlschlagende Patch-Richtlinie"
+            "value" : "Seit %@ neu fehlschlagende Patch-Richtlinie"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Empezó a fallar una política de parches"
+            "value" : "Empezó a fallar una política de parches desde el %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Échec récent d’une règle de correctif"
+            "value" : "Échec récent d’une règle de correctif depuis le %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inizia a non riuscire un criterio di patch"
+            "value" : "Inizia a non riuscire un criterio di patch dal %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "パッチポリシーの失敗が発生"
+            "value" : "%@以降: パッチポリシーの失敗が発生"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Começou a falhar em uma política de patch"
+            "value" : "Começou a falhar em uma política de patch desde %@"
           }
         }
       }
@@ -142034,6 +142474,46 @@
         }
       }
     },
+    "Went stale since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veraltet seit %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quedaron inactivos desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devenus inactifs depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diventati inattivi dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: 非アクティブ化"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ficaram inativos desde %@"
+          }
+        }
+      }
+    },
     "What a full collect runs for this workspace." : {
       "localizations" : {
         "de" : {
@@ -151844,6 +152324,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Versão do macOS alterada"
+          }
+        }
+      }
+    },
+    "macOS version changed since %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS-Version seit %@ geändert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión de macOS cambiada desde el %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version de macOS modifiée depuis le %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versione di macOS cambiata dal %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@以降: macOS バージョンが変更"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão do macOS alterada desde %@"
           }
         }
       }

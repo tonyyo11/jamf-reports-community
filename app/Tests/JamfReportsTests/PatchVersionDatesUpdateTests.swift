@@ -246,6 +246,42 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
         XCTAssertNil(today.versions.first?.releaseDate, "past the cap from today")
     }
 
+    /// One odd row costs that row; an unreadable newest file is carried over from the newest
+    /// readable earlier one, never written back smaller.
+    func testRowsDecodeAloneAndAnUnreadableNewestFileIsCarried() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lenient-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let older = now.addingTimeInterval(-2 * 86_400)
+        try ReportEngine.writePatchVersionDates(
+            Data(#"[{"title_id":"1","version":"2.0"},{"title_id":7},{"title_id":"2","version":"1.0"}]"#.utf8),
+            stamp: stamp(older), dataDir: dir)
+        guard case .rows(let rows, _, _) = PatchReleaseDateService.versionDates(dataDir: dir) else {
+            return XCTFail("one bad row does not make the file unreadable")
+        }
+        XCTAssertEqual(rows.map(\.titleId), ["1", "2"])
+
+        try ReportEngine.writePatchVersionDates(
+            Data("{bad".utf8), stamp: stamp(now.addingTimeInterval(-86_400)), dataDir: dir)
+        guard case .unreadable = PatchReleaseDateService.versionDates(dataDir: dir) else {
+            return XCTFail("the newest file is the bad one")
+        }
+        guard case .rows(let carried, let carriedStamp, _) =
+                PatchReleaseDateService.carryableVersionDates(dataDir: dir) else {
+            return XCTFail("carried from the newest readable file")
+        }
+        XCTAssertEqual(carried.count, 2)
+        XCTAssertEqual(carriedStamp, stamp(older))
+
+        let lines = VersionLines()
+        ReportEngine.updatePatchVersionDates(
+            answered: [:], currentTitles: ["1": "One", "2": "Two"], refreshAfter: week,
+            dataDir: dir, now: now, onLine: lines.append)
+        guard case .rows(let rewritten, _, _) = PatchReleaseDateService.versionDates(dataDir: dir)
+        else { return XCTFail("the bad newest file is replaced") }
+        XCTAssertEqual(rewritten.count, 2, "no title's rows are lost")
+    }
+
     /// Only the newest release-date file of each local day is read.
     func testOnlyTheNewestFileOfEachDayIsRead() throws {
         let dir = FileManager.default.temporaryDirectory
@@ -292,5 +328,13 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
         let lookup = ReleaseDateLookup(versionRows: [], releaseFilesNewestFirst: [[newer], [older]])
         XCTAssertEqual(lookup.date(titleId: "1", title: "T", version: "1.0"),
                        SOFAFeedService.parseSOFADate("2026-03-01T00:00:00Z"))
+    }
+}
+
+private final class VersionLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in self.lock.lock(); defer { self.lock.unlock() }; self.lines.append(line.text) }
     }
 }

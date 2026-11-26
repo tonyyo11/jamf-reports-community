@@ -250,7 +250,8 @@ extension HtmlReport {
             return buildPatchChart(patchStatus: inputs.patchStatus)
         case .patchQueue: return buildPatchQueue(patchStatus: inputs.patchStatus)
         case .patchVersionHistory:
-            return buildPatchVersionHistory(inputs.patchVersions, dates: inputs.patchVersionDates)
+            return buildPatchVersionHistory(
+                inputs.patchVersions, dates: inputs.patchVersionDates, now: inputs.patchHistoryNow)
         case .osAdoptionChart:
             return buildOSChart(osVersions: inputs.security.filter {
                 $0["section"] as? String == "os_version"

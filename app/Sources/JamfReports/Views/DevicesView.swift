@@ -256,12 +256,22 @@ struct DevicesView: View {
         var fileVaultFingerprint: String
     }
 
+    /// The rule and policy the collect counted with: the loaded inventory's, which come from
+    /// the same config.yaml read (`ReportConfig.staleRule`, `resolvedSecurityPolicy`), never the
+    /// Config screen's text. Nil until the inventory of this workspace has loaded.
+    private var changeRule: (rule: StaleRule, policy: SecurityControlPolicy)? {
+        guard workspace.demoMode || loadedSource == dataSource else { return nil }
+        let snapshot = activeSnapshot
+        return (StaleRule(days: snapshot.staleDays, basis: snapshot.staleBasis),
+                snapshot.securityPolicy)
+    }
+
     private var changeTaskID: ChangeTaskID {
-        let rule = workspace.configState.staleRule
+        let rule = changeRule
         return ChangeTaskID(
-            source: dataSource, filter: changeFilter, staleDays: rule.days,
-            staleBasis: rule.basis.map(\.rawValue),
-            fileVaultFingerprint: workspace.securityPolicy.fileVaultFingerprint)
+            source: dataSource, filter: changeFilter, staleDays: rule?.rule.days ?? -1,
+            staleBasis: rule?.rule.basis.map(\.rawValue) ?? [],
+            fileVaultFingerprint: rule?.policy.fileVaultFingerprint ?? "")
     }
 
     /// Compares the count's two snapshots off the main actor; a result lands only while the
@@ -269,7 +279,8 @@ struct DevicesView: View {
     private func resolveChange() async {
         // A workspace switch clears the filter in the same update; let that land first.
         await Task.yield()
-        guard let filter = changeFilter, !Task.isCancelled else { return }
+        // Waits for the inventory, whose rule the comparison uses; the task id changes when it lands.
+        guard let filter = changeFilter, let rule = changeRule, !Task.isCancelled else { return }
         let source = dataSource
         if changeResult != nil {
             changeResult = nil
@@ -278,7 +289,7 @@ struct DevicesView: View {
             changeRevision += 1
         }
         let result = await workspace.resolveChangeFilter(
-            filter, rule: workspace.configState.staleRule, policy: workspace.securityPolicy)
+            filter, rule: rule.rule, policy: rule.policy)
         guard result.outcome != .cancelled, changeFilter == filter, source == dataSource
         else { return }
         changeResult = result

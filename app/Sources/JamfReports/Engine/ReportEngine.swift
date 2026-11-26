@@ -28,6 +28,9 @@ struct ReportEngine: Sendable {
     /// The sources turned off for this run (`SharedConfigPin.collectSkip`); nil reads them for
     /// `workspace`. The daily summary treats them as absent, never as current.
     var turnedOffKinds: Set<String>? = nil
+    /// The patch history this engine's workbook and the HTML beside it share (one read, one
+    /// "now" per run).
+    let patchHistoryShare = PatchHistoryShare()
 
     /// The trend-chart tab, the one tab no sheet plan writes.
     static let chartsSheetName = "Charts"
@@ -83,6 +86,23 @@ struct ReportEngine: Sendable {
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> GeneratedReport {
+        patchHistoryShare.adopt(now: now)
+        return try await PatchVelocityBuilder.$runShare.withValue(patchHistoryShare) {
+            try await generateReportBody(
+                outputURL: outputURL, template: template, aiNarrative: aiNarrative,
+                csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine)
+        }
+    }
+
+    private func generateReportBody(
+        outputURL: URL,
+        template: any ReportTemplate,
+        aiNarrative: String?,
+        csvFolder: Bool,
+        locateJamfCLI: @Sendable () -> URL?,
+        now: Date,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) async throws -> GeneratedReport {
         let workspaceName = workspace?.name ?? ""
 
@@ -2903,6 +2923,8 @@ struct ReportEngine: Sendable {
                          text: "[info] collecting patch-release-dates for \(profile)"))
             if let result = await collectPatchReleaseDates(
                 profile: profile, bin: bin, dataDir: dataDir,
+                refreshAfter: patchVersionRefreshInterval(
+                    workspace: workspace, config: loadedConfig),
                 limits: patchDefinitionLimits, onLine: onLine
             ) {
                 switch result {
@@ -2945,7 +2967,8 @@ struct ReportEngine: Sendable {
                 summariesDir: summariesDir, provenance: prov,
                 liveKinds: liveKinds, day: day,
                 changes: Self.landedSources.flatMap {
-                    Self.fleetChanges(landed: $0, dataDir: dataDir, config: config)
+                    Self.fleetChanges(
+                        landed: $0, dataDir: dataDir, config: config, onLine: onLine)
                 },
                 onLine: onLine
             ).partialReason
@@ -3437,18 +3460,13 @@ struct ReportEngine: Sendable {
             case .rows(let rows):
                 salvaged = rows
             case .noDeviceSection where Self.patchFetchError(in: data) == nil:
-                let cause = FailureCause.fetchError(
-                    "no device_failures section in jamf-cli output", exitCode: outcome.exitCode)
-                stateStore?.record(
-                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart,
-                    cause: cause)
-                onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): no device_failures section in jamf-cli output; "
-                        + "not saved"))
-                return KindCollectResult(
-                    outcome: CollectOutcome(
-                        kind: kind, exitCode: outcome.exitCode, cause: cause.kind),
-                    saved: false)
+                // The fetch_error path's recorder, so the cause, the [warn] wording and the
+                // run's [partial] line are the same; saving [] would read as no failures.
+                return Self.recordSectionFetchError(
+                    kind: kind, section: "device_failures",
+                    error: "no device_failures section in jamf-cli output",
+                    exitCode: outcome.exitCode, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine)
             case .noDeviceSection, .unreadable:
                 salvaged = nil
             }
@@ -3535,7 +3553,7 @@ struct ReportEngine: Sendable {
                 data: saved, kind: kind, dataDir: dataDir,
                 recordManifest: recordManifest, onLine: onLine
             )
-            Self.landedSources?.noteSaved(kind: kind, file: file, payload: saved)
+            Self.landedSources?.noteSaved(kind: kind, file: file)
         } catch {
             // The throw aborts the whole collect, so without this the kind
             // that caused it would be the one kind with no record of having
@@ -3691,6 +3709,7 @@ struct ReportEngine: Sendable {
         profile: String,
         bin: URL,
         dataDir: URL,
+        refreshAfter: TimeInterval,
         limits: DeviceCallLimits = DeviceCallLimits(timeout: patchDefinitionTimeout),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> PatchReleaseResult? {
@@ -3795,13 +3814,13 @@ struct ReportEngine: Sendable {
                          text: "[ok] patch-release-dates: \(merged.count) title(s)"))
             updatePatchVersionDates(
                 answered: versionRows, currentTitles: currentTitles,
-                refreshAfter: patchVersionRefreshInterval(profile: profile),
+                refreshAfter: refreshAfter,
                 dataDir: dataDir, onLine: onLine)
             return .landed
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] patch-release-dates: could not write snapshot — " +
-                               error.localizedDescription))
+                               error.englishDescription))
             return .failed(exitCode: nil)
         }
     }
@@ -3848,12 +3867,19 @@ struct ReportEngine: Sendable {
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
         let kind = PatchReleaseDateService.versionDatesKind
+        // An unreadable newest file is replaced, carrying rows from the newest readable one.
+        let newestUnreadable: Bool
+        if case .unreadable = PatchReleaseDateService.versionDates(dataDir: dataDir) {
+            newestUnreadable = true
+        } else {
+            newestUnreadable = false
+        }
         let update = PatchReleaseDateService.patchVersionDatesUpdate(
             answered: answered, currentTitles: currentTitles,
-            previous: PatchReleaseDateService.versionDates(dataDir: dataDir),
+            previous: PatchReleaseDateService.carryableVersionDates(dataDir: dataDir),
             now: now, refreshAfter: refreshAfter)
         let titles = Set(update.rows.map(\.titleId)).count
-        guard update.changed else {
+        guard update.changed || newestUnreadable else {
             onLine(.init(timestamp: now, level: .info,
                          text: "[info] \(kind): \(titles) title(s), unchanged"))
             return
@@ -3868,19 +3894,18 @@ struct ReportEngine: Sendable {
         } catch {
             onLine(.init(timestamp: now, level: .warn,
                          text: "[warn] \(kind): could not write snapshot — "
-                             + error.localizedDescription))
+                             + error.englishDescription))
         }
     }
 
-    /// The effective retention of `profile`'s workspace, as the sweep reads it.
-    private static func patchVersionRefreshInterval(profile: String) -> TimeInterval {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            return PatchReleaseDateService.patchVersionRefreshInterval(nil)
-        }
-        let config = SharedConfigPin.effectiveRetention(
-            SnapshotRetentionService.loadRetentionConfig(workspace: workspace),
-            check: SharedConfigPin.check(profile: profile))
-        return PatchReleaseDateService.patchVersionRefreshInterval(config)
+    /// The effective retention of the collect's own workspace and loaded config (never the
+    /// `-p` profile, which can name another slot's login), with the shared-config pin applied
+    /// as the sweep applies it.
+    private static func patchVersionRefreshInterval(
+        workspace: WorkspaceID, config: ReportConfig?
+    ) -> TimeInterval {
+        PatchReleaseDateService.patchVersionRefreshInterval(SharedConfigPin.effectiveRetention(
+            config?.retention, check: SharedConfigPin.check(profile: workspace.name)))
     }
 
     /// How `collectPatchReleaseDates` ended when it attempted the walk.

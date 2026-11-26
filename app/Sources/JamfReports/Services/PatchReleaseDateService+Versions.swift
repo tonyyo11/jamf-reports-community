@@ -68,16 +68,36 @@ extension PatchReleaseDateService {
     static func versionDates(dataDir: URL) -> VersionDatesRead {
         let dir = dataDir.appendingPathComponent(versionDatesKind, isDirectory: true)
         guard let url = FileManager.newestJSONFile(in: dir) else { return .absent }
+        return versionDates(at: url)
+    }
+
+    /// One sidecar. Each row decodes on its own, so one odd row costs that row, not the file.
+    static func versionDates(at url: URL) -> VersionDatesRead {
         guard let stamp = snapshotStamp(of: url) else {
             return .unreadable("\(url.lastPathComponent) has no snapshot stamp")
         }
         guard let data = BoundedFile.readSnapshotLogged(url) else {
             return .unreadable("\(url.lastPathComponent) could not be read")
         }
-        guard let rows = try? JSONDecoder().decode([PatchVersionDate].self, from: data) else {
+        guard let rows = LenientElement<PatchVersionDate>.rows(in: data) else {
             return .unreadable("\(url.lastPathComponent) could not be decoded")
         }
-        return .rows(rows, stamp: stamp, bytes: data)
+        if rows.skipped > 0 {
+            AppLogger.event(.report, .notice, "\(ConfigSchema.displayText(url.lastPathComponent)): "
+                + "skipped \(rows.skipped) rows that are not version dates")
+        }
+        return .rows(rows.rows, stamp: stamp, bytes: data)
+    }
+
+    /// What a walk carries rows from: the newest sidecar, or when that one cannot be read,
+    /// the newest earlier one that can, so an unreadable file never shrinks the next.
+    static func carryableVersionDates(dataDir: URL) -> VersionDatesRead {
+        let newest = versionDates(dataDir: dataDir)
+        guard case .unreadable = newest else { return newest }
+        for file in TrendStore.datedSnapshots(of: versionDatesKind, in: dataDir).reversed() {
+            if case .rows = versionDates(at: file.url) { return versionDates(at: file.url) }
+        }
+        return newest
     }
 
     /// The sidecar a walk should hold, and whether it differs from the newest one on disk.

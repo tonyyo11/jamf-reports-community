@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 // MARK: - Patch adoption velocity
 
@@ -32,8 +33,27 @@ struct TitleVelocity: Sendable, Identifiable {
 /// What one read of the patch history gives every reader: Patch Velocity's titles, every
 /// version window, and the `patch-version-dates` read the windows were dated from.
 typealias PatchHistory = (
-    velocities: [TitleVelocity], versions: [VersionVelocity], versionDates: VersionDatesRead
+    velocities: [TitleVelocity], versions: [VersionVelocity], versionDates: VersionDatesRead,
+    now: Date
 )
+
+/// One report run's patch history: the workbook and the HTML beside it read it once and
+/// measure it against one "now". Bound by `ReportEngine` through `PatchVelocityBuilder.runShare`.
+final class PatchHistoryShare: Sendable {
+    private let state = Mutex<(now: Date?, histories: [String: PatchHistory])>((nil, [:]))
+
+    /// The run's "now": the first one given wins, so a later step cannot move it.
+    func adopt(now: Date) { state.withLock { if $0.now == nil { $0.now = now } } }
+
+    func history(dataDir: URL, now: Date, build: (Date) -> PatchHistory) -> PatchHistory {
+        let key = dataDir.standardizedFileURL.path
+        let (cached, runNow) = state.withLock { ($0.histories[key], $0.now ?? now) }
+        if let cached { return cached }
+        let built = build(runNow)
+        state.withLock { $0.histories[key] = built; if $0.now == nil { $0.now = runNow } }
+        return built
+    }
+}
 
 /// Computes `TitleVelocity` from dated `patch-status` snapshots + release dates.
 enum PatchVelocityBuilder {
@@ -82,17 +102,36 @@ enum PatchVelocityBuilder {
         computeWithVersions(dataDir: dataDir, releaseRows: releaseRows, now: now).velocities
     }
 
+    /// The report run this read belongs to, when one is bound; nil reads afresh every call.
+    @TaskLocal static var runShare: PatchHistoryShare?
+
     /// `compute` and the version windows it is built on, from one read of the history, for
-    /// the Patch screen, which shows both.
+    /// the Patch screen, which shows both. Inside a report run (`runShare`) it is read once per
+    /// data folder and measured against the run's "now".
     static func computeWithVersions(
         dataDir: URL,
         releaseRows: [PatchReleaseDateService.Row],
         now: Date = Date()
     ) -> PatchHistory {
+        guard let share = runShare else {
+            return AppLogger.signpost("Patch history") {
+                readHistory(dataDir: dataDir, releaseRows: releaseRows, now: now)
+            }
+        }
+        return share.history(dataDir: dataDir, now: now) { runNow in
+            AppLogger.signpost("Patch history") {
+                readHistory(dataDir: dataDir, releaseRows: releaseRows, now: runNow)
+            }
+        }
+    }
+
+    private static func readHistory(
+        dataDir: URL, releaseRows: [PatchReleaseDateService.Row], now: Date
+    ) -> PatchHistory {
         // Read before the empty-history guard: the card lists versions and notes with no history.
         let versionDates = PatchReleaseDateService.versionDates(dataDir: dataDir)
         let daily = loadDailyRows(dataDir: dataDir)
-        guard !daily.isEmpty else { return ([], [], versionDates) }
+        guard !daily.isEmpty else { return ([], [], versionDates, now) }
 
         // Accumulate per-title series across days. day is already deduped so each
         // (title, day) contributes at most one point.
@@ -161,7 +200,7 @@ enum PatchVelocityBuilder {
             default: return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
         }
-        return (sorted, allVersions, versionDates)
+        return (sorted, allVersions, versionDates, now)
     }
 
     // MARK: - Internals
@@ -346,6 +385,8 @@ enum PatchVelocityBuilder {
         let since = now.addingTimeInterval(-Double(periodDays) * 86_400)
         func inPeriod(_ date: Date?) -> Bool { date.map { $0 >= since && $0 <= now } ?? false }
         var summary = FleetVersionSummary()
+        summary.since = since
+        summary.now = now
         var days: [Int] = []
         for window in versions.flatMap(\.windows) {
             switch window.outcome {
@@ -453,4 +494,7 @@ struct FleetVersionSummary: Sendable, Equatable {
     var notYet = 0
     var alreadyAt90 = 0
     var noReleaseDate = 0
+    /// The period the figures cover, so a list beside them uses the same bounds.
+    var since: Date?
+    var now: Date?
 }
