@@ -243,6 +243,48 @@ final class HTMLWithWorkbookGUITests: XCTestCase {
         }
     }
 
+    /// The Deployment Health tab and HTML section read words shared with the Audit card
+    /// (`DeploymentHealth.stateText`, `judgementText`, `displayName`): a report run keeps them
+    /// English, for a listed row and for a failed source alike.
+    func testTheDeploymentHealthTabAndSectionStayEnglish() async throws {
+        try await withHTMLWorkbookFixture { fixture in
+            try fixture.writeConfig(withWorkbookOn)
+            let data = fixture.workspace.appendingPathComponent("jamf-cli-data")
+            let kindDir = data.appendingPathComponent("patch-policies", isDirectory: true)
+            try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+            try Data(#"[{"id":"1","policyName":"Example","policyEnabled":true,"failed":40,"completed":60,"deferred":0,"pending":0}]"#.utf8)
+                .write(to: kindDir.appendingPathComponent("patch-policies_20261125T120000.json"))
+            StateFileStore(directory: data.appendingPathComponent("state")).record(
+                .failed(exitCode: 5), report: "app-installers-deployments", at: Date(),
+                cause: FailureCause(kind: .missingPermission, names: [], hint: nil, exitCode: 5))
+            let result = await Localization.$isPseudo.withValue(true) {
+                await CLIBridge().generateAll(
+                    types: [.xlsx, .html], outputDir: nil, profile: fixture.profile,
+                    onLine: CLIBridge.noOpOnLine)
+            }
+            XCTAssertEqual(Set(result.succeeded), [.xlsx, .html])
+            let page = try String(contentsOf: fixture.reports.appendingPathComponent(
+                try XCTUnwrap(fixture.files(ending: ".html").first)), encoding: .utf8)
+            XCTAssertTrue(page.contains("id=\"deployment-health\""), "the section is there")
+            XCTAssertTrue(page.contains("At critical"))
+            XCTAssertTrue(page.contains("Could not be collected: missing permission"))
+            XCTAssertFalse(page.contains("\u{27E6}"))
+            let archive = try Archive(
+                url: fixture.reports.appendingPathComponent(
+                    try XCTUnwrap(fixture.files(ending: ".xlsx").first)),
+                accessMode: .read)
+            var strings = ""
+            for entry in archive where entry.path.hasSuffix(".xml") {
+                var xml = Data()
+                _ = try archive.extract(entry) { xml.append($0) }
+                strings += String(decoding: xml, as: UTF8.self)
+            }
+            XCTAssertTrue(strings.contains("Deployment Health"), "the tab is there")
+            XCTAssertTrue(strings.contains("Could not be collected: missing permission"))
+            XCTAssertFalse(strings.contains("\u{27E6}"))
+        }
+    }
+
     func testTheOptionOffLeavesTheWorkbookAlone() async throws {
         try await withHTMLWorkbookFixture { fixture in
             try fixture.writeConfig("html:\n  with_workbook: false\n")

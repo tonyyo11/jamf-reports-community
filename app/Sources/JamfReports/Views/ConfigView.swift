@@ -783,9 +783,9 @@ private struct ThresholdsTab: View {
                         help: L("Check-in Health counts a Mac overdue after this many days")
                     )
                     thresholdField(
-                        label: L("Cert expiry warning"), key: "cert_warning_days",
+                        label: L("Certificate and token expiry warning"), key: "cert_warning_days",
                         value: $ws.configState.certWarningDays, unit: "days",
-                        help: L("Default expiry warning window for date EAs")
+                        help: L("Warning window in days for date EAs, the built-in certificate authority and ADE tokens")
                     )
 
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
@@ -799,6 +799,21 @@ private struct ThresholdsTab: View {
                         label: L("Disk usage critical"), key: "critical_disk_percent",
                         value: $ws.configState.criticalDiskPercent, unit: "%",
                         help: L("Red highlight in Disk Usage sheet")
+                    )
+
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
+                    SectionHeader(title: L("Deployments and Patch Policies")).padding(.bottom, 14)
+                    thresholdField(
+                        label: L("Deployment failure warning"),
+                        key: "deployment_failure_warning_percent",
+                        value: $ws.configState.deploymentFailureWarningPercent, unit: "%",
+                        help: L("Failed share of a deployment's or patch policy's Macs that needs attention")
+                    )
+                    thresholdField(
+                        label: L("Deployment failure critical"),
+                        key: "deployment_failure_critical_percent",
+                        value: $ws.configState.deploymentFailureCriticalPercent, unit: "%",
+                        help: L("Failed share that reads as critical")
                     )
                 }
             }

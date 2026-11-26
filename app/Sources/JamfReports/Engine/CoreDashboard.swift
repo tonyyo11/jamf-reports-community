@@ -22,6 +22,11 @@ struct CoreDashboard: Sendable {
     let aiNarrative: String?
     /// The generate run's log, for a sheet's `[warn]` line. Nil writes to stdout only.
     let onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    /// The admin-hygiene sources this Mac collects (`SharedConfigPin.collectOptIn`); the Server
+    /// and Admin Health tab shows only these.
+    let optInKinds: Set<String>
+    /// The generate run's one time, so the tabs of a workbook agree on days left.
+    let now: Date
     /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
     private let hardwareIndex = OnceCache<[String: Bool]>()
     /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
@@ -37,9 +42,13 @@ struct CoreDashboard: Sendable {
         workbook: Workbook,
         provenance: Provenance? = nil,
         aiNarrative: String? = nil,
-        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil,
+        optInKinds: Set<String> = [],
+        now: Date = Date()
     ) {
+        self.now = now
         self.onLine = onLine
+        self.optInKinds = optInKinds
         self.config = config
         self.dataDir = dataDir
         self.workbook = workbook
@@ -126,6 +135,10 @@ struct CoreDashboard: Sendable {
             // --- mSCP / STIG compliance (sheets 46–47) ---
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
+            // --- Server and admin health ---
+            (SheetID.serverAdminHealth.rawValue, writeServerAdminHealth),
+            // --- Deployment health (last core tab; EA and Charts tabs follow) ---
+            (SheetID.deploymentHealth.rawValue, writeDeploymentHealth),
         ]
         // --- Protect (sheets 35–40, optional) ---
         return leading + protectSheetPlan + trailing
@@ -3364,6 +3377,13 @@ struct CoreDashboard: Sendable {
                 + "access grants.",
             "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
                 + "Med-Low / Medium / High with count and percent.",
+            "Server and Admin Health": "The Jamf Pro server's own credentials, such as the "
+                + "built-in certificate authority, with days left, the Jamf Pro notifications this "
+                + "login sees and, when turned on, admin hygiene counts, or why one could not "
+                + "be read.",
+            "Deployment Health": "App Installers deployments and patch policies with the share "
+                + "of their own Macs that failed, judged against the organization's warning and "
+                + "critical levels; deployed versus latest version, pinned or lagging.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
             "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
@@ -3963,6 +3983,8 @@ struct CoreDashboard: Sendable {
 enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
+    /// No server-health source has landed, so the tab would hold only refusals.
+    case noServerHealthData
     /// The snapshot was read and holds nothing this tab can use; the text says what.
     case nothingToShow(String)
 
@@ -3974,6 +3996,8 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
             return reason
         case .protectDisabled:
             return "protect.enabled is off"
+        case .noServerHealthData:
+            return "No server-health source has been collected for this server"
         case .noCachedData(let names):
             if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
                 return "\(refusal.sentence); left out"

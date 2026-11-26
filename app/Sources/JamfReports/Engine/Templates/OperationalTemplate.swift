@@ -31,6 +31,8 @@ struct OperationalTemplate: ReportTemplate {
             .groupHygiene,
             .profileStatus,
             .appStatus,
+            .serverAdminHealth,
+            .deploymentHealth,
         ]
     }
 
@@ -43,6 +45,7 @@ struct OperationalTemplate: ReportTemplate {
             .interventionList,
             .patchQueue,
             .patchBar,
+            .deploymentHealth,
             .policyTable,
             .profileTable,
             .appTable,

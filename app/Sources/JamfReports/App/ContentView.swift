@@ -460,7 +460,7 @@ struct TabPage: View {
         case .sources:           SourcesView()
         case .backups:           BackupsView()
         case .settings:          SettingsView()
-        case .onboarding:        OnboardingView().id(onboardingRun)
+        case .onboarding:        OnboardingView(run: onboardingRun).id(onboardingRun)
         case .securityPosture:   SecurityPostureView()
         case .compliancePosture: CompliancePostureView()
         case .complianceBenchmarks: ComplianceBenchmarksView()

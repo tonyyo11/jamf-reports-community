@@ -122,6 +122,17 @@ jamf_cli:
   # patch-status also stops patch-release-dates and patch-device-failures.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
+  # Admin hygiene counts, off until listed here (or turned on in Data Sources). Each saves
+  # only counts, never a name, email or client ID:
+  #   laps-pending-rotations  LAPS rotations waiting (needs View Local Admin Password, which
+  #                           can also read LAPS passwords)
+  #   admin-accounts          console accounts with full access, failed logins, old passwords
+  #                           (needs Read Accounts)
+  #   api-integrations        API clients, disabled or with a long token (needs Read API
+  #                           Integrations)
+  # On a shared workspace each Mac collects only what it confirmed in Config Doctor.
+  # Example: collect_opt_in: [admin-accounts]
+  collect_opt_in: []
   # How long a scheduled run may hold the lock before it leaves the rest of its sources for
   # its next run (minutes, 10 to 240). Raise it for a slow server.
   run_budget_minutes: 45
@@ -378,6 +389,9 @@ notify:
 #   security_cloud_matched_pct   (0–100, Security Cloud devices found in the inventory)
 #   security_cloud_device_count, security_cloud_high_risk_count
 #   (whole-number counts)
+#   Jamf Pro server health (a Jamf Pro workspace on jamf-cli 1.38.0 or later):
+#   server_credential_days_left   (whole days; one alert per credential, `below` only)
+#   jamf_pro_notification_count   (whole-number count)
 # when — one of:
 #   below            fires when the value is below threshold
 #   above            fires when the value is above threshold
@@ -807,6 +821,12 @@ thresholds:
   # Default disk usage thresholds used when not set per-EA.
   warning_disk_percent: 80
   critical_disk_percent: 90
+
+  # App Installers deployments and patch policies: the failed share of a deployment's or
+  # policy's own Macs at which it is at warning and at critical (whole numbers, 1-100).
+  # Judged only with at least 10 Macs in scope.
+  deployment_failure_warning_percent: 10
+  deployment_failure_critical_percent: 25
 
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90

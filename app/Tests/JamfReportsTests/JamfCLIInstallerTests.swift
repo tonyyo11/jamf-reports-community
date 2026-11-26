@@ -29,8 +29,20 @@ final class JamfCLIInstallerTests: XCTestCase {
     }
 
     func test_featureGates_treatAPreReleaseOfTheFloorAsBelowIt() {
-        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("1.31.0"))
-        XCTAssertFalse(JamfCLIInstaller.supportsDashboard("1.31.0-rc1"))
+        XCTAssertTrue(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0"))
+        XCTAssertFalse(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0-rc1"))
+    }
+
+    func test_deploymentSources_needAKnownVersionOf1_35_0OrLater() {
+        for kind in ReportEngine.deploymentKinds {
+            XCTAssertEqual(ReportEngine.jamfCLISkip(kind, installed: "1.34.9"),
+                           .needsJamfCLI(required: "1.35.0", installed: "1.34.9"))
+            XCTAssertNil(ReportEngine.jamfCLISkip(kind, installed: "1.35.0"))
+            XCTAssertNil(ReportEngine.jamfCLISkip(kind, installed: "1.38.0"))
+            XCTAssertEqual(ReportEngine.jamfCLISkip(kind, installed: nil),
+                           .needsJamfCLI(required: "1.35.0", installed: nil))
+            XCTAssertNotNil(ReportEngine.jamfCLISkip(kind, installed: "not a version"))
+        }
     }
 
     // MARK: - isTrustedFinalURL

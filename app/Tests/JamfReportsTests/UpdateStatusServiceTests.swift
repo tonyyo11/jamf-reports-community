@@ -163,6 +163,29 @@ final class UpdateStatusServiceTests: XCTestCase {
     /// failed_plans is one row per plan, so one Mac with several failed plans
     /// shares a serial; the rows still need distinct Table identities, and a
     /// byte-identical duplicate row is dropped rather than rendered twice.
+    /// A Vision Pro row (Jamf Pro 11.34, `VISION_PRO`) is kept like any other device type.
+    func testVisionProRowsAreKept() throws {
+        let json = """
+        [{"total": 2, "status_summary": [],
+          "error_devices": [{"name": "Vision-01", "serial": "VP1", "device_type": "VISION_PRO",
+                             "os_version": "26.1", "username": "", "status": "Error",
+                             "product_key": "", "updated": "2026-11-20T10:00:00Z"}],
+          "plan_total": 1, "plan_state_summary": [],
+          "failed_plans": [{"name": "Vision-01", "serial": "VP1", "device_type": "VISION_PRO",
+                            "os_version": "26.1", "username": "", "state": "PlanFailed",
+                            "action": "DOWNLOAD_INSTALL", "version": "26.2", "error": "X",
+                            "last_event": "2026-11-20T10:00:00Z"}]}]
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("update-failures-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: url))
+        XCTAssertEqual(snapshot.errorDevices.map(\.serial), ["VP1"])
+        XCTAssertEqual(snapshot.failedPlans.map(\.serial), ["VP1"])
+    }
+
     func testRowsSharingASerialKeepDistinctIdentities() throws {
         func plan(_ version: String) -> String {
             """

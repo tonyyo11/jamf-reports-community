@@ -88,7 +88,8 @@ struct Generate: AsyncParsableCommand {
             var htmlURL: URL?
             if !isSchool {
                 htmlURL = await engine.writeHTMLWithWorkbook(
-                    besideWorkbook: outputURL, template: resolved, onLine: onLine)
+                    besideWorkbook: outputURL, template: resolved, now: signals.startedAt,
+                    onLine: onLine)
             }
             await ReportEngine.sealRun(
                 artifacts: [outputURL, htmlURL, generated.csvFolder].compactMap { $0 },

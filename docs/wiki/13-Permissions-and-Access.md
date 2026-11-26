@@ -184,6 +184,9 @@ names are the ones Run History and the health strip use.
 | Groups, searches and organization | `groups`, `smart-computer-groups`, `classic-computer-groups`, `classic-mobile-device-groups`, `advanced-mobile-device-searches`, `sites`, `buildings`, `departments`, `categories`, `scripts`, `packages`, `device-enrollment-instances` | Read Smart Computer Groups; Read Static Computer Groups; Read Smart Mobile Device Groups; Read Static Mobile Device Groups; Read Advanced Mobile Device Searches; Read Sites; Read Buildings; Read Departments; Read Categories; Read Self Service; Read Scripts; Read Packages; Read Device Enrollment Program Instances | Inventory > Device groups; Inventory > Advanced device searches; Organizational context > Sites; Organizational context > Buildings; Organizational context > Departments; Organizational context > Categories; Global settings > Self Service configuration; Deployment > Scripts; Deployment > Packages; Infrastructure > Automated Device Enrollment connection |
 | DDM and MDM command health (weekly device scan) | `ddm-device-status`, `mdm-command-health` | Read Computers; Read Mobile Devices | Inventory > Devices; Inventory > Device history |
 | Health Audit | `audit` | Read Policies; Read Categories; Read Self Service; Read Smart Computer Groups; Read Static Computer Groups; Read Device Enrollment Program Instances; Read Computer PreStage Enrollments; View MDM command information in Jamf Pro API; Read Computers | Deployment > Policies; Organizational context > Categories; Global settings > Self Service configuration; Inventory > Device groups; Infrastructure > Automated Device Enrollment connection; Enrollment > PreStage enrollments; Device actions > Device actions; Inventory > Devices; for its platform checks, Deployment > Blueprints; Compliance > Compliance Benchmarks; Deployment > Declarations reporting |
+| Server health (jamf-cli 1.38.0 or later) | `certificate-authority`, `jamf-pro-notifications` | None needed: both read with a role that has no privilege for them. Jamf shows each login only the notifications for its own user and site | Not collected through a Platform API profile yet |
+| Admin hygiene (optional, off by default; Data Sources switches or `jamf_cli.collect_opt_in`) | `laps-pending-rotations`, `admin-accounts`, `api-integrations` | View Local Admin Password; Read Accounts; Read API Integrations | Not collected through a Platform API profile yet |
+| Deployment health (jamf-cli 1.35.0 or later) | `app-installers-deployments`, `patch-policies` | Read Mac Applications; Read Patch Policies | App lifecycle management > Apps (`applications:read`); App lifecycle management > Patch policies (`patch-policies:read`) |
 | Group hygiene (Health Audit, on demand) | `group-tools-analyze` | Read Smart Computer Groups; Read Static Computer Groups; Read Policies; Read macOS Configuration Profiles; Read Patch Policies; Read Patch Management Software Titles; Read Restricted Software; Read eBooks; Read Computer PreStage Enrollments | Inventory > Device groups; Deployment > Policies; Deployment > Configuration profiles; App lifecycle management > Patch policies; App lifecycle management > Patch titles; App lifecycle management > Restricted software; App lifecycle management > eBooks; Enrollment > PreStage enrollments |
 | Device lookup (live, not stored) | — | Read Computers; View MDM command information in Jamf Pro API | Inventory > Devices; Inventory > Device history; Device actions > Device actions |
 | Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks (`compliance-benchmarks:read`); Deployment > Blueprints (`blueprints:read`, see below); Deployment > Declarations reporting (`declarations:read`); Inventory > Devices (`devices:read`) — environment level (DDM status also answers at tenant level) |
@@ -201,6 +204,25 @@ and every other source still collects. The Health Audit skips its blueprint chec
 status and Group hygiene read blueprints only to name them or to count a group a blueprint
 uses, so they carry on without it. Group hygiene can then list a group that only a blueprint
 or benchmark uses as unused.
+
+**Admin hygiene is optional.** Each of its three sources is off until you turn it on in Data
+Sources, so a role without these privileges is never asked for them. They save counts only:
+LAPS rotations waiting, console accounts by access, failed logins and password age, and API
+clients by state and token lifetime. No username, name, email, client ID or password is saved.
+Be aware that *View Local Admin Password* is the privilege that lets a role read the passwords
+LAPS holds, not only the list of pending rotations. Grant it to a role you would trust with those
+passwords, or leave LAPS rotations off; the other two sources do not need it. A source whose
+privilege the role lacks is shown as not permitted and checked again weekly, and never fails a
+run. On a shared workspace each Mac collects only the sources it confirmed in Config Doctor.
+
+**Deployment health is on by default.** App Installers deployments and patch policies are
+collected on every Jamf Pro workspace with Macs, unlike admin hygiene. A role without *Read Mac
+Applications* or *Read Patch Policies* fails that source, and the run reads as Partial until
+the privilege is granted or the source is turned off in Data Sources (`jamf_cli.collect_skip`).
+A server that has never had App Installers reports it as not set up, not as a failure, until
+App Installers is first collected; after that, an error there is an ordinary failure. The
+Platform API permissions come from jamf-cli's command catalog and Jamf's Platform API reference;
+no Platform API profile has collected these two sources yet.
 
 **The `overview` source** checks about 40 settings and inventory objects in one pass. It
 shows N/A for any line the credential cannot read and keeps the rest. The areas above cover

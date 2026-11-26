@@ -85,6 +85,9 @@ file changed on disk after the screen loaded it. See
   output retention, chart toggles. See **Stale Macs and the contact gap** below for the
   stale rule. `thresholds.cert_warning_days` (90 when unset) is also the warning window for an
   expiring MDM profile or Automated Device Enrollment token in Management health.
+  `thresholds.deployment_failure_warning_percent` and `deployment_failure_critical_percent`
+  (10 and 25 when unset) are the failed shares at which an App Installers deployment or a patch
+  policy is at warning or critical, measured against the Macs in its own scope.
 
 ### Stale Macs and the contact gap (`thresholds`)
 

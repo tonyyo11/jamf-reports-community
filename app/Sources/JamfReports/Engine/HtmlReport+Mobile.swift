@@ -17,6 +17,7 @@ extension HtmlReport {
         if mobile.iPadCount > 0 { parts.append("\(mobile.iPadCount) iPad") }
         if mobile.iPhoneCount > 0 { parts.append("\(mobile.iPhoneCount) iPhone") }
         if mobile.appleTVCount > 0 { parts.append("\(mobile.appleTVCount) Apple TV") }
+        if mobile.visionProCount > 0 { parts.append("\(mobile.visionProCount) Vision Pro") }
         return parts
     }
 
@@ -28,7 +29,8 @@ extension HtmlReport {
         let total = mobile.totalDevices
         var cards: [HtmlSectionFormatters.SectionCard] = []
         for (name, count) in [("iPad", mobile.iPadCount), ("iPhone", mobile.iPhoneCount),
-                              ("Apple TV", mobile.appleTVCount)] where count > 0 {
+                              ("Apple TV", mobile.appleTVCount),
+                              ("Vision Pro", mobile.visionProCount)] where count > 0 {
             cards.append(.init(name: name, value: "\(count)"))
         }
         let detailed = !mobile.richDevices.isEmpty

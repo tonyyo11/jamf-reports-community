@@ -272,6 +272,99 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeGroupHygiene())
     }
 
+    // MARK: - Server and Admin Health
+
+    func testServerAdminHealthWritesTheCredentialRow() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let caDir = dataDir.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        let expiry = Int(Date().timeIntervalSince1970) + 40 * 86_400
+        try #"{"notAfter":\#(expiry)}"#.write(
+            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let workbook = Workbook()
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        try dash.writeServerAdminHealth()
+        XCTAssertNotNil(workbook.sheet(named: "Server and Admin Health"))
+    }
+
+    func testServerAdminHealthWritesTheNotificationsSectionByType() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let dir = dataDir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try #"[{"type":"B"},{"type":"A"},{"type":"A"}]"#.write(
+            to: dir.appendingPathComponent("jamf-pro-notifications_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let workbook = Workbook()
+        try CoreDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+            .writeServerAdminHealth()
+        let sheet = try XCTUnwrap(workbook.sheet(named: "Server and Admin Health"))
+        let csv = try XCTUnwrap(sheet.csvText(percentFormat: .standard))
+        XCTAssertTrue(csv.contains("Notifications"), csv)
+        XCTAssertTrue(csv.contains("A,2"), csv)
+        XCTAssertTrue(csv.contains("B,1"), csv)
+    }
+
+    func testServerAdminHealthIsSkippedWithNoLandedKind() throws {
+        let dataDir = try tempDataDir(copying: [])
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertThrowsError(try dash.writeServerAdminHealth()) {
+            guard case .noServerHealthData? = $0 as? CoreDashboardError else {
+                return XCTFail("expected noServerHealthData, got \($0)")
+            }
+        }
+    }
+
+    private final class LineBox: @unchecked Sendable { var lines: [String] = [] }
+
+    private func serverHealthSkip(_ dataDir: URL, box: LineBox? = nil) -> String? {
+        let log: (@Sendable (CLIBridge.LogLine) -> Void)? = box.map { box in
+            { @Sendable line in box.lines.append(line.text) }
+        }
+        let dash = CoreDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: Workbook(), onLine: log)
+        do { try dash.writeServerAdminHealth() } catch let error as CoreDashboardError {
+            return error.skipReason
+        } catch { return "\(error)" }
+        return nil
+    }
+
+    func testTheTabSaysWhyItWasSkipped() throws {
+        XCTAssertEqual(serverHealthSkip(try tempDataDir(copying: [])),
+                       "No server-health source has been collected for this server")
+        let unreadable = try tempDataDir(copying: [])
+        let caDir = unreadable.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        try "not json".write(
+            to: caDir.appendingPathComponent("certificate-authority_20260921T120000.json"),
+            atomically: true, encoding: .utf8)
+        let box = LineBox()
+        XCTAssertEqual(serverHealthSkip(unreadable, box: box),
+                       "The certificate-authority snapshot could not be read")
+        XCTAssertTrue(box.lines.contains {
+            $0.hasPrefix("[warn]") && $0.contains("certificate-authority")
+        })
+        let refused = try tempDataDir(copying: [])
+        StateFileStore(directory: refused.appendingPathComponent("state")).record(
+            .failed(exitCode: 5), report: "certificate-authority", at: Date(),
+            cause: FailureCause(kind: .missingPermission, names: [], hint: nil, exitCode: 5))
+        XCTAssertEqual(serverHealthSkip(refused),
+                       "Every server-health source is not permitted or not set up on this server")
+    }
+
+    /// Server and Admin Health is followed only by Deployment Health (wave C), the last core tab.
+    func testTheTabIsLastInTheFullAndOperationalTemplatesAndNotInTheSchoolWorkbook() {
+        for sheets in [FullInstanceTemplate().includedSheets, OperationalTemplate().includedSheets] {
+            XCTAssertEqual(Array(sheets.suffix(2)), [.serverAdminHealth, .deploymentHealth])
+        }
+        let plan = CoreDashboard(
+            config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
+            workbook: Workbook()).sheetPlan.map(\.name)
+        XCTAssertEqual(Array(plan.suffix(2)), ["Server and Admin Health", "Deployment Health"])
+        XCTAssertFalse(SchoolDashboard.sheetNames.contains("Server and Admin Health"))
+        XCTAssertFalse(SchoolDashboard.sheetNames.contains("Deployment Health"))
+    }
+
     // MARK: - Smart Groups
 
     func testWriteSmartGroups() throws {
@@ -594,6 +687,9 @@ final class CoreDashboardTests: XCTestCase {
             "OS Currency",
             // mSCP / STIG compliance
             "mSCP Compliance", "Compliance Trend",
+            // Server and admin health
+            "Server and Admin Health",
+            "Deployment Health",
         ]
         for name in expected {
             XCTAssertTrue(names.contains(name), "Sheet plan missing: \(name)")
@@ -1066,5 +1162,32 @@ final class CoreDashboardTests: XCTestCase {
         let ws = try XCTUnwrap(dash.workbook.sheet(named: "Patch Compliance"))
         XCTAssertEqual(rowText(ws, row: 4, columns: 8)[7], "\u{2014}")
         XCTAssertNotEqual(rowText(ws, row: 5, columns: 8)[7], "\u{2014}")
+    }
+
+    func testServerAdminHealthWritesAdminHygieneOnlyForOptedInSources() throws {
+        let dataDir = try tempDataDir(copying: [])
+        func save(_ kind: String, _ json: String) throws {
+            let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try json.write(to: folder.appendingPathComponent("\(kind)_20260921T120000.json"),
+                           atomically: true, encoding: .utf8)
+        }
+        try save("jamf-pro-notifications", #"[{"type":"A"}]"#)
+        try save("admin-accounts", #"{"total":4,"fullAccessLocal":1,"fullAccessFederated":2,"#
+            + #""withFailedLogins":0,"passwordOlderThanYear":3,"passwordAgeUnknown":0}"#)
+        func csv(optIn: Set<String>) throws -> String {
+            let workbook = Workbook()
+            try CoreDashboard(
+                config: ReportConfig(), dataDir: dataDir, workbook: workbook, optInKinds: optIn)
+                .writeServerAdminHealth()
+            let sheet = try XCTUnwrap(workbook.sheet(named: "Server and Admin Health"))
+            return try XCTUnwrap(sheet.csvText(percentFormat: .standard))
+        }
+        XCTAssertFalse(try csv(optIn: []).contains("Admin hygiene"))
+        let text = try csv(optIn: ["admin-accounts"])
+        XCTAssertTrue(text.contains("Admin hygiene"), text)
+        XCTAssertTrue(text.contains("Admin accounts,Full access, federated,2")
+            || text.contains("\"Full access, federated\",2"), text)
+        XCTAssertTrue(text.contains("A,1"), "the notifications section above is intact: \(text)")
     }
 }

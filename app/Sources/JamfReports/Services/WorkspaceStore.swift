@@ -117,6 +117,28 @@ final class WorkspaceStore {
     /// The setup on screen has registered a jamf-cli profile or created a workspace folder and
     /// is not finished; `AddSheetPlan.addRefusal` keeps the Add sheet closed meanwhile.
     var onboardingRunHasWork = false
+    /// That setup's flow while its tab is not shown, by `ContentView`'s onboarding run, so
+    /// leaving the tab and coming back keeps what Start over has to remove.
+    @ObservationIgnored var parkedOnboarding: (run: Int, flow: OnboardingFlow)?
+
+    /// The flow parked for `run`, removed from the store; a flow parked for another run is
+    /// dropped, since that run has ended.
+    func takeParkedOnboarding(run: Int?) -> OnboardingFlow? {
+        defer { parkedOnboarding = nil }
+        guard let run, let parked = parkedOnboarding, parked.run == run else { return nil }
+        return parked.flow
+    }
+
+    /// Parks a run that has saved something or is running a command (which may save a profile
+    /// after the tab is gone), and keeps the Add sheet refused while it is parked.
+    func leaveOnboarding(run: Int?, flow: OnboardingFlow) {
+        if let run, flow.parksWhenLeft {
+            parkedOnboarding = (run, flow)
+            onboardingRunHasWork = true
+        } else {
+            onboardingRunHasWork = false
+        }
+    }
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
@@ -214,12 +236,34 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        (environmentProducts.isProtectOnly ? []
-            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
-            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
+        // Built in steps: one long `+` chain is too slow for the Swift 6.1 type checker.
+        var metrics: [TrendSeries.Metric] = []
+        if isSchoolWorkspace {
+            metrics = TrendSeries.Metric.schoolMetrics
+        } else if !environmentProducts.isProtectOnly {
+            metrics = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
+        }
+        metrics += productMetrics
+        if deploymentMetricsOffered { metrics += TrendSeries.Metric.deploymentMetrics }
+        if !isSchoolWorkspace && !environmentProducts.isProtectOnly { metrics += agentMetrics }
+        return metrics
+    }
+
+    /// The Protect, Security Cloud and server-health series this workspace offers.
+    private var productMetrics: [TrendSeries.Metric] {
+        var metrics: [TrendSeries.Metric] = []
+        if protectMetricsOffered { metrics += TrendSeries.Metric.protectMetrics }
+        if securityCloudMetricsOffered { metrics += TrendSeries.Metric.securityCloudMetrics }
+        if serverHealthMetricsOffered { metrics += TrendSeries.Metric.serverHealthMetrics }
+        return metrics
+    }
+
+    /// Deployment-health series: the server-health rule (Jamf Pro, not School, never demo).
+    var deploymentMetricsOffered: Bool { serverHealthMetricsOffered }
+
+    /// Server-health series: a Jamf Pro workspace, never demo (no demo history carries them).
+    var serverHealthMetricsOffered: Bool {
+        !demoMode && environmentProducts.has(.jamfPro) && !isSchoolWorkspace
     }
 
     /// An environment with Protect; each demo one has a Protect series.
@@ -227,9 +271,7 @@ final class WorkspaceStore {
 
     /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones.
     var scoreCardExtraMetrics: [TrendSeries.Metric] {
-        TrendSeries.Metric.mobileMetrics
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+        TrendSeries.Metric.mobileMetrics + productMetrics
     }
 
     /// Likewise for Jamf Security Cloud, which no demo environment has.
@@ -245,6 +287,9 @@ final class WorkspaceStore {
            DemoData.trends(for: profile)[metric] == nil { return false }
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
+        if metric.isServerHealth, !serverHealthMetricsOffered { return false }
+        // Trends series only: never an Overview score card.
+        if metric.isDeployment { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }
@@ -741,7 +786,7 @@ final class WorkspaceStore {
         isInitializingWorkspace = true
         defer { isInitializingWorkspace = false }
         workspaceInitMessage = L("Initializing workspace…")
-        globalStatus = "initializing workspace · profile=\(profile)"
+        globalStatus = "initializing workspace · \(profile)"
         let bridge = CLIBridge()
         do {
             let exit = try await bridge.initializeWorkspace(

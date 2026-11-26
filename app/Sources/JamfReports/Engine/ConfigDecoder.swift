@@ -107,6 +107,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// Read only through `SharedConfigPin.collectSkip`; written by the Data Sources switches
     /// (`CollectSkipConfigWriter`), and a Config screen save keeps it.
     var collectSkip: [String]?
+    /// Opt-in sources (`ReportEngine.serverHealthOptInKinds`) turned on; off unless listed. Read
+    /// only through `SharedConfigPin.collectOptIn`; a value that is not a list reads as empty.
+    var collectOptIn: [String]?
     /// `keep_account_names`: keep the account names jamf-cli returns in saved snapshots. Absent
     /// or not a boolean reads as false (`ReportEngine.reducingComputers`).
     var keepAccountNames: Bool?
@@ -137,6 +140,7 @@ struct JamfCLIConfig: Decodable, Sendable {
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
+        case collectOptIn = "collect_opt_in"
         case keepAccountNames = "keep_account_names"
         case runBudgetMinutes = "run_budget_minutes"
         case scanBudgetMinutes = "scan_budget_minutes"
@@ -174,6 +178,7 @@ extension JamfCLIConfig {
         maxCacheAgeHours = try c.decodeIfPresent(Int.self, forKey: .maxCacheAgeHours)
         collectSkip = try c.decodeIfPresent([String].self, forKey: .collectSkip)
         keepAccountNames = try? c.decodeIfPresent(Bool.self, forKey: .keepAccountNames)
+        collectOptIn = (try? c.decodeIfPresent([String].self, forKey: .collectOptIn)) ?? nil
         runBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .runBudgetMinutes)
         scanBudgetMinutes = try? c.decodeIfPresent(Int.self, forKey: .scanBudgetMinutes)
     }
@@ -457,6 +462,9 @@ struct ThresholdsConfig: Decodable, Sendable {
     /// know is skipped and named by Config Doctor.
     var staleBasis: StaleBasisSetting?
     var contactGapDays: WholeNumberSetting?   // key is `contact_gap_days`
+    /// The failed share at which a deployment or patch policy is at warning and at critical.
+    var deploymentFailureWarningPercent: Int?
+    var deploymentFailureCriticalPercent: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case staleDeviceDays = "stale_device_days"
@@ -467,6 +475,8 @@ struct ThresholdsConfig: Decodable, Sendable {
         case profileErrorWarning = "profile_error_warning"
         case staleBasis = "stale_basis"
         case contactGapDays = "contact_gap_days"
+        case deploymentFailureWarningPercent = "deployment_failure_warning_percent"
+        case deploymentFailureCriticalPercent = "deployment_failure_critical_percent"
     }
 
     var resolvedStaleDays: Int { staleDeviceDays ?? 30 }
@@ -484,6 +494,23 @@ struct ThresholdsConfig: Decodable, Sendable {
     }
 
     var staleRule: StaleRule { StaleRule(days: resolvedStaleDays, basis: resolvedStaleBasis) }
+
+    /// Each level outside 1-100 (or absent) takes its own default; then a warning above
+    /// critical takes both defaults. Warning equal to critical is valid (every such row is
+    /// critical). The one reader of the two keys: every surface and Config Doctor use it.
+    var resolvedDeploymentLevels: DeploymentHealth.Levels {
+        let defaults = DeploymentHealth.Levels.defaults
+        let warning = Self.usableDeploymentPercent(deploymentFailureWarningPercent)
+            ?? defaults.warning
+        let critical = Self.usableDeploymentPercent(deploymentFailureCriticalPercent)
+            ?? defaults.critical
+        return warning > critical ? defaults : .init(warning: warning, critical: critical)
+    }
+
+    /// A typed deployment level the app uses as written (1-100); nil means the default applies.
+    static func usableDeploymentPercent(_ value: Int?) -> Int? {
+        value.flatMap { (1...100).contains($0) ? $0 : nil }
+    }
 }
 
 /// `thresholds.stale_basis` as typed: a date or a list of dates. Never throws (the `AlertRule`
@@ -581,6 +608,8 @@ extension ThresholdsConfig {
         profileErrorWarning = c.wholeNumber(.profileErrorWarning)
         staleBasis = try c.decodeIfPresent(StaleBasisSetting.self, forKey: .staleBasis)
         contactGapDays = try c.decodeIfPresent(WholeNumberSetting.self, forKey: .contactGapDays)
+        deploymentFailureWarningPercent = c.wholeNumber(.deploymentFailureWarningPercent)
+        deploymentFailureCriticalPercent = c.wholeNumber(.deploymentFailureCriticalPercent)
     }
 }
 
@@ -989,8 +1018,9 @@ struct AlertsConfig: Decodable, Sendable {
     /// expects a positive drop) and at most `AlertRule.maxThreshold`.
     var resolvedRules: [AlertRule] {
         (rules ?? []).filter { rule in
-            guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
-                  let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
+            guard let metric = rule.metric, let known = AlertMetric(rawValue: metric),
+                  let when = rule.when, let comparison = AlertRule.Comparison(rawValue: when),
+                  known.accepts(comparison),
                   let threshold = rule.threshold,
                   threshold.isFinite, threshold >= 0,
                   threshold <= AlertRule.maxThreshold else { return false }

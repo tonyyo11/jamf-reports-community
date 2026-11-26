@@ -498,7 +498,7 @@ struct DeviceLookupView: View {
                 // Before `beginCollect`, which would replace a running collect's status line.
                 if let refusal = workspace.generateRefusal() { throw refusal }
                 workspace.beginCollect(
-                    for: profile, status: "refreshing device index · profile=\(profile)")
+                    for: profile, status: "refreshing device index · \(profile)")
                 defer { workspace.endCollect(for: profile) }
                 _ = try await WorkspaceStore.recordingCollect(
                     profile: profile, honesty: CollectHonestyWatcher()

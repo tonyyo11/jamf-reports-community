@@ -637,9 +637,9 @@ struct OverviewView: View {
         }
 
         if shouldSkipCollect {
-            workspace.globalStatus = "generate from cached snapshots · profile=\(profile)"
+            workspace.globalStatus = "generate from cached snapshots · \(profile)"
         } else {
-            workspace.globalStatus = "collect + generate · profile=\(profile)"
+            workspace.globalStatus = "collect + generate · \(profile)"
         }
 
         // Status-bar race guard — see AuditView.runAudit comment.
@@ -649,7 +649,7 @@ struct OverviewView: View {
             // last manual audit. Failures warn and continue — a stale audit
             // is preferable to no report.
             if includeAuditInGenerate && !workspace.demoMode {
-                workspace.globalStatus = "health audit · profile=\(profile)"
+                workspace.globalStatus = "health audit · \(profile)"
                 do {
                     _ = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
                         Task { @MainActor in
@@ -1019,7 +1019,7 @@ struct OverviewView: View {
         guard !workspace.demoMode else { return DemoData.securityAgents }
         return OverviewLiveDataLoader.agents(
             live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
-            edrSeries: trendStore.values(metric: .edrAgent))
+            edrSeries: trendStore.currentPoints(metric: .edrAgent).map(\.value))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1726,7 +1726,9 @@ struct OverviewView: View {
                 kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
                 title: metricDetailTitle(metric),
-                subtitle: MetricDetailFigures.summaryCount(values.count)
+                subtitle: MetricDetailFigures.summaryCount(
+                    values.count,
+                    of: workspace.demoMode ? nil : trendStore.filteredSummaries.count)
                     + " · \(workspace.profile)"
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
@@ -1990,6 +1992,10 @@ struct OverviewView: View {
             L("Open Jamf Protect to inspect current records.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Open Data Sources to see the Jamf Security Cloud collect.")
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
+            L("Open Health Audit to see the server and admin health card.")
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            L("Open Health Audit to see the deployments and patch policies card.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -2054,6 +2060,9 @@ struct OverviewView: View {
             [.init(.protectDashboard)]
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             [.init(.sources)]
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending,
+             .appInstallersAtLevel, .patchPoliciesAtLevel:
+            [.init(.audit)]
         case .sip:
             [.init(.securityPosture), .init(.devices, filter: .sipOff)]
         case .firewall:
@@ -2418,9 +2427,13 @@ struct MetricDetailFigures: Equatable {
             change: delta(latest - previous), hasChange: true)
     }
 
-    /// "1 summary", "0 summaries".
-    static func summaryCount(_ count: Int) -> String {
-        count == 1 ? L("1 summary") : L("\(count) summaries")
+    /// "1 summary", "3 summaries"; "2 of 5 summaries" when some loaded summaries do not
+    /// carry the metric, so a metric no summary has does not read as no summaries at all.
+    static func summaryCount(_ count: Int, of total: Int? = nil) -> String {
+        if let total, total > count {
+            return total == 1 ? L("\(count) of 1 summary") : L("\(count) of \(total) summaries")
+        }
+        return count == 1 ? L("1 summary") : L("\(count) summaries")
     }
 }
 

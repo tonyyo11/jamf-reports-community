@@ -539,7 +539,7 @@ try await engine.generateReport(
                 htmlURL = await Localization.english {
 await engine.writeHTMLWithWorkbook(
                     besideWorkbook: outputURL, template: template,
-                    aiNarrative: aiNarrative, onLine: onLine)
+                    aiNarrative: aiNarrative, now: now, onLine: onLine)
 }
             }
             await RunArtifacts.record(

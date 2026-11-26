@@ -76,6 +76,9 @@ struct FullInstanceTemplate: ReportTemplate {
             // mSCP / STIG compliance
             .mscpCompliance,
             .complianceTrend,
+            // Server and admin health
+            .serverAdminHealth,
+            .deploymentHealth,
         ]
     }
 
@@ -98,6 +101,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .patchVersionHistory,
             .osAdoptionChart,
             .osCurrency,
+            .deploymentHealth,
             // Devices, policies, trends, failures
             .interventionList,
             .policyTable,

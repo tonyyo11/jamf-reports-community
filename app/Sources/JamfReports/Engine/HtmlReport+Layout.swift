@@ -49,6 +49,7 @@ extension SectionID {
         case .buildingBreakdown: "Buildings"
         case .departmentBreakdown: "Departments"
         case .mobileFleet: "Mobile devices"
+        case .deploymentHealth: "Deployments and patch policies"
         case .orgInfo: "Catalog overview"
         }
     }
@@ -80,7 +81,7 @@ enum HtmlDetailGroup: String, CaseIterable {
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
              .auditEvidence]
         case .patching: [.patchBar, .patchQueue, .patchVersionHistory, .osAdoptionChart,
-                         .osCurrency]
+                         .osCurrency, .deploymentHealth]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
         case .trends: [.timeline]
@@ -281,6 +282,7 @@ extension HtmlReport {
             return buildDepartmentBreakdown(computersInventory: inputs.computers)
         case .orgInfo: return buildCatalogSection(counts: inputs.catalogCounts)
         case .mobileFleet: return buildMobileFleet(inputs.mobile)
+        case .deploymentHealth: return buildDeploymentHealth(inputs)
         case .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix:
             return .omitted("drawn outside the detail groups")
         }
