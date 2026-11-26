@@ -263,11 +263,11 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
 
         try ReportEngine.writePatchVersionDates(
             Data("{bad".utf8), stamp: stamp(now.addingTimeInterval(-86_400)), dataDir: dir)
-        guard case .unreadable = PatchReleaseDateService.versionDates(dataDir: dir) else {
+        guard case .unreadable = PatchReleaseDateService.versionDates(dataDir: dir, now: now) else {
             return XCTFail("the newest file is the bad one")
         }
         guard case .rows(let carried, let carriedStamp, _) =
-                PatchReleaseDateService.carryableVersionDates(dataDir: dir) else {
+                PatchReleaseDateService.newestAndCarryable(dataDir: dir, now: now).carryable else {
             return XCTFail("carried from the newest readable file")
         }
         XCTAssertEqual(carried.count, 2)
@@ -280,6 +280,16 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
         guard case .rows(let rewritten, _, _) = PatchReleaseDateService.versionDates(dataDir: dir)
         else { return XCTFail("the bad newest file is replaced") }
         XCTAssertEqual(rewritten.count, 2, "no title's rows are lost")
+
+        // A file stamped in the future is never the newest, so it cannot force every walk to
+        // write a new file.
+        try ReportEngine.writePatchVersionDates(
+            Data("{bad".utf8), stamp: stamp(now.addingTimeInterval(10 * 86_400)), dataDir: dir)
+        guard case .rows(let present, _, _) =
+                PatchReleaseDateService.versionDates(dataDir: dir, now: now) else {
+            return XCTFail("the future-dated file is ignored")
+        }
+        XCTAssertEqual(present.count, 2)
     }
 
     /// Only the newest release-date file of each local day is read.

@@ -100,7 +100,7 @@ extension HtmlReport {
         if case BoundedFile.Failure.unreadable(let code) = error {
             return String(cString: strerror(code))
         }
-        return error.localizedDescription
+        return error.englishDescription
     }
 
     /// A page name comes from a folder a peer can write to, so it is filtered before it

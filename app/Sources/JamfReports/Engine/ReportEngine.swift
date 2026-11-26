@@ -87,8 +87,10 @@ struct ReportEngine: Sendable {
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> GeneratedReport {
-        patchHistoryShare.adopt(now: now)
-        return try await PatchVelocityBuilder.$runShare.withValue(patchHistoryShare) {
+        // A share a caller already bound (one generateAll across formats) is the run's.
+        let share = PatchVelocityBuilder.runShare ?? patchHistoryShare
+        share.adopt(now: now)
+        return try await PatchVelocityBuilder.$runShare.withValue(share) {
             try await generateReportBody(
                 outputURL: outputURL, template: template, aiNarrative: aiNarrative,
                 csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine)
@@ -3868,16 +3870,12 @@ struct ReportEngine: Sendable {
     ) {
         let kind = PatchReleaseDateService.versionDatesKind
         // An unreadable newest file is replaced, carrying rows from the newest readable one.
+        let read = PatchReleaseDateService.newestAndCarryable(dataDir: dataDir, now: now)
         let newestUnreadable: Bool
-        if case .unreadable = PatchReleaseDateService.versionDates(dataDir: dataDir) {
-            newestUnreadable = true
-        } else {
-            newestUnreadable = false
-        }
+        if case .unreadable = read.newest { newestUnreadable = true } else { newestUnreadable = false }
         let update = PatchReleaseDateService.patchVersionDatesUpdate(
             answered: answered, currentTitles: currentTitles,
-            previous: PatchReleaseDateService.carryableVersionDates(dataDir: dataDir),
-            now: now, refreshAfter: refreshAfter)
+            previous: read.carryable, now: now, refreshAfter: refreshAfter)
         let titles = Set(update.rows.map(\.titleId)).count
         guard update.changed || newestUnreadable else {
             onLine(.init(timestamp: now, level: .info,

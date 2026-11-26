@@ -95,9 +95,7 @@ struct OverviewChanges: Equatable, Sendable {
     var computerNote: String? {
         guard let computers else { return nil }
         if computers.baselineUnreadable == true {
-            return computers.baselineUnreadableReason == .tooLarge
-                ? L("Could not be read: over the 256 MB limit")
-                : L("Could not be read: the file did not decode")
+            return Self.unreadable(computers.baselineUnreadableReason)
         }
         if let percent = computers.largeChangePercent {
             let share = PercentFormat.whole.text(Double(percent))
@@ -118,9 +116,13 @@ struct OverviewChanges: Equatable, Sendable {
         }
     }
 
-    private static func unreadable(_ reason: ComputerChanges.UnreadableReason?) -> String {
-        reason == .tooLarge
-            ? L("Could not be read: over the read limit") : L("Could not be read")
+    /// One wording for every change row: the read limit differs by kind, so it is not named.
+    static func unreadable(_ reason: ComputerChanges.UnreadableReason?) -> String {
+        switch reason {
+        case .tooLarge?: L("Could not be read: over the read limit")
+        case .undecodable?: L("Could not be read: the file did not decode")
+        case .readError?, nil: L("Could not be read")
+        }
     }
 
     /// The scan's day when it differs from `day`; nil when its stamp does not parse.

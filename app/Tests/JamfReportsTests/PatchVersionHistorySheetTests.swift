@@ -66,6 +66,33 @@ final class PatchVersionHistorySheetTests: XCTestCase {
         XCTAssertTrue(all.contains("Last 90 days, counted in version windows:"))
     }
 
+    /// One run's workbook and HTML measure the history against the run's "now", not each
+    /// their own: with the run's now 200 days ahead, both see no window in their 90 days.
+    func testTheWorkbookAndTheHTMLOfOneRunUseTheRunsNow() async throws {
+        let sidecar = #"[{"title_id":"7","title":"Firefox","version":"130.0","#
+            + #""release_date":"2026-01-01T00:00:00Z"}]"#
+        let dir = try dataDir(versions: true, sidecar: sidecar)
+        let share = PatchHistoryShare()
+        share.adopt(now: Date().addingTimeInterval(200 * 86_400))
+        let html = dir.deletingLastPathComponent().appendingPathComponent("report.html")
+        let config = try ConfigLoader.loadFromString("")
+        let dash = try dashboard(dir)
+        try await PatchVelocityBuilder.$runShare.withValue(share) {
+            try dash.writePatchVersionHistory()
+            try await ReportEngine.generateHTML(config: config, dataDir: dir, outputURL: html)
+        }
+        let lines = try texts(dash)
+        XCTAssertTrue(lines.contains { $0.contains("0 windows reached 90%") }, "\(lines)")
+        let page = try String(contentsOf: html, encoding: .utf8)
+        XCTAssertTrue(page.contains("no version window reached 90% in the last 90 days"))
+        XCTAssertFalse(page.contains("Slowest to 90% in the last 90 days"))
+
+        let unbound = try dashboard(dir)
+        try unbound.writePatchVersionHistory()
+        XCTAssertTrue(try texts(unbound).contains { $0.contains("1 window reached 90%") },
+                      "outside a run the call's own now applies")
+    }
+
     func testTheFooterSaysWhenTheSidecarIsMissingOrUnreadable() throws {
         let missing = try dashboard(try dataDir(versions: true))
         try missing.writePatchVersionHistory()

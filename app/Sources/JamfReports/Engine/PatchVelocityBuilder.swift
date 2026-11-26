@@ -118,9 +118,13 @@ enum PatchVelocityBuilder {
                 readHistory(dataDir: dataDir, releaseRows: releaseRows, now: now)
             }
         }
+        // The run's rows come from its own data folder, so no caller's rows can change the
+        // history another step of the run is served.
         return share.history(dataDir: dataDir, now: now) { runNow in
             AppLogger.signpost("Patch history") {
-                readHistory(dataDir: dataDir, releaseRows: releaseRows, now: runNow)
+                readHistory(dataDir: dataDir,
+                            releaseRows: PatchReleaseDateService.load(dataDir: dataDir),
+                            now: runNow)
             }
         }
     }

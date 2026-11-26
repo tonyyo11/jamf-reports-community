@@ -1075,10 +1075,13 @@ struct SourcesView: View {
 
     private var cliCacheDisplayPath: String {
         if workspace.demoMode { return workspaceDisplayPath(subpath: "jamf-cli-data") + "/" }
-        guard let root = WorkspacePathGuard.root(for: workspace.profile),
-              let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
+        guard let root = WorkspacePathGuard.root(for: workspace.profile) else {
             return WorkspaceRootStore.displayPath(profile: workspace.profile,
                                                   subpath: "jamf-cli-data") + "/"
+        }
+        // A refused data_dir is named as refused, never shown as the default folder.
+        guard let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
+            return L("jamf_cli.data_dir is not used on this Mac (Config Doctor says why)")
         }
         let rootPath = root.path
         let dataPath = dataDir.path

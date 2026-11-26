@@ -130,8 +130,7 @@ final class DeviceLookupIndex {
             dataDir = try WorkspacePaths.dataDir(for: profile)
         } catch {
             // Never the default folder in place of a refused one.
-            return Loaded(lastError: "jamf_cli.data_dir could not be used: "
-                + error.localizedDescription)
+            return Loaded(lastError: WorkspacePaths.dataDirRefusal(error, profile: profile))
         }
         // The data folder, so a snapshot read refuses a kind folder that is a link.
         let reader = Reader(dataRoot: dataDir)

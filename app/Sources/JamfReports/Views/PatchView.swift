@@ -134,8 +134,13 @@ struct PatchView: View {
         guard let computed = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
             read: { () -> ([TitleVelocity], [VersionVelocity], VersionDatesRead, Date) in
-                guard let dir = try? WorkspacePaths.dataDir(for: profile) else {
-                    return ([], [], .absent, Date())
+                let dir: URL
+                do {
+                    dir = try WorkspacePaths.dataDir(for: profile)
+                } catch {
+                    // Refused is not "not collected yet".
+                    return ([], [], .unreadable(WorkspacePaths.dataDirRefusal(
+                        error, profile: profile)), Date())
                 }
                 let built = PatchVelocityBuilder.computeWithVersions(
                     dataDir: dir, releaseRows: releaseRows)

@@ -293,8 +293,8 @@ fileprivate extension DeviceInventoryService {
             jamfCLIDataDir = try WorkspacePaths.dataDir(for: profile)
         } catch {
             jamfCLIDataDir = nil
-            warnings.append("jamf_cli.data_dir could not be used, so no snapshot was read: "
-                + error.localizedDescription)
+            warnings.append(WorkspacePaths.dataDirRefusal(error, profile: profile)
+                + "; no snapshot was read")
         }
 
         return ConfigHints(

@@ -900,7 +900,7 @@ func runCheck(profile: String) -> Int32 {
         } catch {
             dataDir = nil
             fputs(LogRedactor.redact(
-                "[warn] data_dir could not be used: \(error.englishDescription)") + "\n", stderr)
+                "[warn] \(WorkspacePaths.dataDirRefusal(error, profile: profile))") + "\n", stderr)
         }
         if let dataDir, !FileManager.default.fileExists(atPath: dataDir.path, isDirectory: &isDir) {
             print("[warn] data_dir does not exist yet (no collect run): \(dataDir.path)")

@@ -45,11 +45,14 @@ struct PatchFailureDrift {
             lhs.trimmingCharacters(in: .whitespaces)
                 .compare(rhs.trimmingCharacters(in: .whitespaces), options: .numeric)
         }
+        // A raw string compare breaks the numeric ties ("01" and "1"), so the order is total.
         return rows.sorted {
-            let device = order($0.deviceId, $1.deviceId)
-            return device == .orderedSame
-                ? order($0.policyId, $1.policyId) == .orderedAscending
-                : device == .orderedAscending
+            for result in [order($0.deviceId, $1.deviceId), order($0.policyId, $1.policyId),
+                           $0.deviceId.compare($1.deviceId), $0.policyId.compare($1.policyId)]
+            where result != .orderedSame {
+                return result == .orderedAscending
+            }
+            return false
         }
     }
 
@@ -67,7 +70,8 @@ struct PatchFailureDrift {
             SnapshotPair.read(url, limit: BoundedFile.limit(forKind: kind), dataDir: dataDir)
                 .flatMap { data in
                     (try? JSONDecoder().decode([PatchFailureRow].self, from: data))
-                        .map { .success($0) } ?? .failure(SnapshotReadFailure(.undecodable))
+                        .map { .success($0) }
+                        ?? .failure(SnapshotReadFailure(.undecodable, file: url))
                 }
         }
         return rows(current).flatMap { now in

@@ -49,7 +49,7 @@ struct BenchmarkRuleDrift {
             SnapshotPair.read(url, limit: BoundedFile.limit(forKind: "compliance-rules"),
                               dataDir: dataDir).flatMap {
                 ComplianceBenchmarksService.decodeRules(in: $0).map { .success($0) }
-                    ?? .failure(SnapshotReadFailure(.undecodable))
+                    ?? .failure(SnapshotReadFailure(.undecodable, file: url))
             }
         }
         return rules(current).flatMap { now in

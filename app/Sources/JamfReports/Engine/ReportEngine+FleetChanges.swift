@@ -2,34 +2,40 @@ import Foundation
 
 extension ReportEngine {
     /// The change parts of today's summary (wave B2), from what this routed run saved. Nil when
-    /// it saved neither `computers` nor `compliance-rules`. A part whose file is there but cannot
-    /// be read is stored as unreadable, with no counts, and logged once.
+    /// it saved neither `computers` nor `compliance-rules`. A part whose pair exists but a file
+    /// of which cannot be read is stored as unreadable, with no counts, and logged once naming
+    /// the file; with no earlier-day file there is no part.
     static func fleetChanges(
         landed: LandedSources, dataDir: URL, config: ReportConfig,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> FleetChangeSummary? {
         let computers = landed.computerFile.map { loadLanded($0, dataDir: dataDir) }
         let summary = FleetChangeSummary(
-            computers: computers.flatMap { loaded in
-                switch loaded {
-                case .success(let snapshot):
+            computers: landed.computerFile.flatMap { file in
+                switch computers {
+                case .success(let snapshot)?:
                     return computerChanges(
                         landed: snapshot, dataDir: dataDir, rule: config.staleRule,
-                        policy: config.resolvedSecurityPolicy)
-                case .failure(let failure):
+                        policy: config.resolvedSecurityPolicy, onLine: onLine)
+                case .failure(let failure)?:
+                    warn(failure, part: "Mac", onLine: onLine)
+                    guard let baseline = SnapshotFleetDrift.baseline(
+                        dataDir: dataDir, before: file.date) else { return nil }
                     return ComputerChanges(
-                        currentStamp: landed.computerFile?.stamp, baselineUnreadable: true,
-                        baselineUnreadableReason: failure.reason)
+                        currentStamp: file.stamp,
+                        baselineStamp: PatchReleaseDateService.snapshotStamp(of: baseline.url),
+                        baselineUnreadable: true, baselineUnreadableReason: failure.reason)
+                case nil:
+                    return nil
                 }
             },
             benchmarks: landed.complianceRulesStamp.flatMap {
-                benchmarkChanges(dataDir: dataDir, landedStamp: $0)
+                benchmarkChanges(dataDir: dataDir, landedStamp: $0, onLine: onLine)
             },
             patch: landed.patchFailuresStamp.flatMap {
                 patchChanges(dataDir: dataDir, landedStamp: $0,
-                             landed: try? computers?.get())
+                             landed: try? computers?.get(), onLine: onLine)
             })
-        logUnreadable(summary, onLine: onLine)
         return summary.isEmpty ? nil : summary
     }
 
@@ -41,26 +47,15 @@ extension ReportEngine {
             .flatMap { data in
                 ComputerDates.decodeComputerSnapshot(data).map {
                     .success(.init(stamp: file.stamp, date: file.date, snapshot: $0))
-                } ?? .failure(SnapshotReadFailure(.undecodable))
+                } ?? .failure(SnapshotReadFailure(.undecodable, file: file.url))
             }
     }
 
-    private static func logUnreadable(
-        _ summary: FleetChangeSummary, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    private static func warn(
+        _ failure: SnapshotReadFailure, part: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) {
-        let parts: [(String, ComputerChanges.UnreadableReason?)] = [
-            ("Mac", summary.computers?.baselineUnreadable == true
-                ? summary.computers?.baselineUnreadableReason ?? .undecodable : nil),
-            ("benchmark rule", summary.benchmarks?.baselineUnreadable == true
-                ? summary.benchmarks?.baselineUnreadableReason ?? .undecodable : nil),
-            ("patch policy", summary.patch?.baselineUnreadable == true
-                ? summary.patch?.baselineUnreadableReason ?? .undecodable : nil),
-        ]
-        for case let (name, reason?) in parts {
-            onLine?(.init(timestamp: Date(), level: .warn,
-                          text: "[warn] change counts: a \(name) snapshot could not be read ("
-                              + "\(SnapshotReadFailure(reason).text)); not measured"))
-        }
+        onLine?(.init(timestamp: Date(), level: .warn, text: failure.logLine(part: part)))
     }
 
     /// The Mac counts between this run's snapshot and the newest earlier-day one. Nil with no
@@ -68,7 +63,8 @@ extension ReportEngine {
     /// with no counts.
     static func computerChanges(
         landed: LandedSources.LandedComputers, dataDir: URL, rule: StaleRule,
-        policy: SecurityControlPolicy, readLimit: Int = BoundedFile.inventoryLimit
+        policy: SecurityControlPolicy, readLimit: Int = BoundedFile.inventoryLimit,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> ComputerChanges? {
         guard let baseline = SnapshotFleetDrift.baseline(dataDir: dataDir, before: landed.date)
         else { return nil }
@@ -81,12 +77,13 @@ extension ReportEngine {
         let read = SnapshotPair.read(baseline.url, limit: readLimit, dataDir: dataDir)
             .flatMap { data in
                 ComputerDates.decodeComputerSnapshot(data).map { .success($0) }
-                    ?? .failure(SnapshotReadFailure(.undecodable))
+                    ?? .failure(SnapshotReadFailure(.undecodable, file: baseline.url))
             }
         let prior: ComputerSnapshot
         switch read {
         case .success(let snapshot): prior = snapshot
         case .failure(let failure):
+            warn(failure, part: "Mac", onLine: onLine)
             changes.baselineUnreadable = true
             changes.baselineUnreadableReason = failure.reason
             return changes
@@ -112,7 +109,10 @@ extension ReportEngine {
 
     /// Benchmark rules newly failing between this run's `compliance-rules` snapshot and the
     /// newest earlier-day one. Nil with no pair; a file that cannot be read is unreadable.
-    static func benchmarkChanges(dataDir: URL, landedStamp: Date) -> BenchmarkChanges? {
+    static func benchmarkChanges(
+        dataDir: URL, landedStamp: Date,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) -> BenchmarkChanges? {
         guard let pair = BenchmarkRuleDrift.pair(dataDir: dataDir, landedStamp: landedStamp)
         else { return nil }
         var changes = BenchmarkChanges(
@@ -124,6 +124,7 @@ extension ReportEngine {
             changes.newlyFailing = drift.newlyFailing.count
             changes.notCompared = drift.notCompared
         case .failure(let failure):
+            warn(failure, part: "benchmark rule", onLine: onLine)
             changes.baselineUnreadable = true
             changes.baselineUnreadableReason = failure.reason
         }
@@ -135,7 +136,8 @@ extension ReportEngine {
     /// knowing whether its Mac is still enrolled. A scan or computers file that cannot be read
     /// is unreadable.
     static func patchChanges(
-        dataDir: URL, landedStamp: Date, landed: LandedSources.LandedComputers?
+        dataDir: URL, landedStamp: Date, landed: LandedSources.LandedComputers?,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> PatchChanges? {
         guard let pair = PatchFailureDrift.pair(dataDir: dataDir, landedStamp: landedStamp),
               let computers = patchComputerIndex(
@@ -158,6 +160,7 @@ extension ReportEngine {
             changes.notInComputers = drift.notInComputers
             changes.computersStamp = stamp
         case .failure(let failure):
+            warn(failure, part: "patch policy", onLine: onLine)
             changes.baselineUnreadable = true
             changes.baselineUnreadableReason = failure.reason
         }
@@ -179,7 +182,7 @@ extension ReportEngine {
                 ComputerDates.decodeComputerSnapshot(data).map {
                     .success((ComputerDateIndex($0.rows),
                               PatchReleaseDateService.snapshotStamp(of: file.url)))
-                } ?? .failure(SnapshotReadFailure(.undecodable))
+                } ?? .failure(SnapshotReadFailure(.undecodable, file: file.url))
             }
     }
 }

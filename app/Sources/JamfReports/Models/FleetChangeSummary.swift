@@ -53,7 +53,16 @@ struct FleetChangeSummary: Codable, Sendable, Equatable {
 /// The Mac half: `SnapshotFleetDrift` between this run's `computers` snapshot and the newest
 /// earlier-day one. A nil count was not measured, never 0.
 struct ComputerChanges: Codable, Sendable, Equatable {
-    enum UnreadableReason: String, Codable, Sendable { case tooLarge = "too_large", undecodable }
+    /// Why a snapshot could not be read. A value this build does not know (a later build's)
+    /// reads as `readError`, so the part still decodes.
+    enum UnreadableReason: String, Codable, Sendable {
+        case tooLarge = "too_large", undecodable, readError = "read_error"
+
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Self(rawValue: raw) ?? .readError
+        }
+    }
 
     var currentStamp: String?
     var baselineStamp: String?

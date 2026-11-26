@@ -19,7 +19,8 @@ extension TrendStore {
         // A data_dir the path rules refuse leaves the summaries as recorded.
         guard summaries.contains(where: { $0.mobile == nil }),
               let workspace = ProfileService.workspaceURL(for: profile),
-              let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return summaries }
+              let dataDir = WorkspacePaths.dataDirOrLog(for: profile, category: .report)
+        else { return summaries }
         let config = try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
         return resolvingMobile(
             summaries, dataDir: dataDir, staleDays: config?.thresholds?.resolvedStaleDays ?? 30)

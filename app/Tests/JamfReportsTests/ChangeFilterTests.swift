@@ -380,7 +380,7 @@ final class ChangeFilterTests: XCTestCase {
         try FileManager.default.moveItem(at: dir.appendingPathComponent("computers"), to: real)
         try FileManager.default.createSymbolicLink(
             at: dir.appendingPathComponent("computers"), withDestinationURL: real)
-        XCTAssertEqual(resolve(filter, dir)?.outcome, .unreadable(.undecodable))
+        XCTAssertEqual(resolve(filter, dir)?.outcome, .unreadable(.readError))
     }
 
     func testRuleChangedComesThroughResolveAll() throws {

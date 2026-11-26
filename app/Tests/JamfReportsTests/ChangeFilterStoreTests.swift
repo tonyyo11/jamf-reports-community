@@ -159,7 +159,7 @@ final class ChangeFilterStoreTests: XCTestCase {
             to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
         XCTAssertThrowsError(try WorkspacePaths.dataDir(for: profile), "a system folder is refused")
         let result = await resolve(store).value
-        XCTAssertEqual(result.outcome, .unreadable(.undecodable))
+        XCTAssertEqual(result.outcome, .refused)
         XCTAssertTrue(store.changeFilterCache.isEmpty)
     }
 }

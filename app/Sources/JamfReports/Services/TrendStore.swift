@@ -631,7 +631,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // 2. Resolve the data directory. With no profile, or a data_dir the path rules refuse,
         //    it is a URL that does not exist, so buildAllSeries reads summaries only and never
         //    the default folder in place of a refused one.
-        let dataDir = profile.flatMap { try? WorkspacePaths.dataDir(for: $0) }
+        let dataDir = profile.flatMap { WorkspacePaths.dataDirOrLog(for: $0, category: .report) }
             ?? URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
 
         let series = MSCPChartDataBuilder.buildAllSeries(
@@ -691,7 +691,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // that began on 2.9).
         // A data_dir the path rules refuse is not swapped for the default folder.
         guard summaries.contains(where: isRecordedPerTitle),
-              let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return summaries }
+              let dataDir = WorkspacePaths.dataDirOrLog(for: profile, category: .report)
+        else { return summaries }
         return resolvingPatch(summaries, dataDir: dataDir)
     }
 

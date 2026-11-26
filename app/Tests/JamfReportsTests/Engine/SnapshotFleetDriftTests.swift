@@ -334,8 +334,28 @@ final class SnapshotFleetDriftTests: XCTestCase {
         let elsewhere = folder.deletingLastPathComponent().appendingPathComponent("elsewhere.json")
         try FileManager.default.moveItem(at: newest, to: elsewhere)
         try FileManager.default.createSymbolicLink(at: newest, withDestinationURL: elsewhere)
-        XCTAssertThrowsError(try dash.writeFleetDrift())
+        XCTAssertThrowsError(try dash.writeFleetDrift()) {
+            XCTAssertTrue(($0 as? SheetSkippable)?.skipReason.contains("could not be read") == true,
+                          "a refused link reads as unreadable, never as not collected")
+        }
         XCTAssertNil(dash.workbook.sheet(named: "Fleet Drift")?.dedupedCells.first)
+    }
+
+    /// A baseline that is there but does not decode is named, not "no cached snapshot".
+    func testAnUndecodableBaselineSkipsWithCouldNotBeRead() throws {
+        let (old, new) = (at(-1), at(0))
+        let dash = try dashboard(files: [
+            (old, [mac(1, serial: "A1", taken: old)]), (new, [mac(1, serial: "A1", taken: new)]),
+        ])
+        let folder = dash.dataDir.appendingPathComponent("computers")
+        let oldest = folder.appendingPathComponent(try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(atPath: folder.path).sorted().first))
+        try Data("{bad".utf8).write(to: oldest)
+        XCTAssertThrowsError(try dash.writeFleetDrift()) {
+            let reason = ($0 as? SheetSkippable)?.skipReason ?? ""
+            XCTAssertTrue(reason.contains("could not be read (it did not decode)"), reason)
+            XCTAssertFalse(reason.contains("No cached jamf-cli snapshot"))
+        }
     }
 
     func testNoEarlierDaySnapshotSkipsTheSheet() throws {

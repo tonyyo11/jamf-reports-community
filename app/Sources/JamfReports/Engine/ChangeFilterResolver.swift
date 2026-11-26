@@ -119,7 +119,7 @@ enum ChangeFilterResolver {
         let folder = dataDir.appendingPathComponent(kind, isDirectory: true)
         if (try? FileManager.default.attributesOfItem(atPath: folder.path)[.type]
             as? FileAttributeType) == .typeSymbolicLink {
-            throw Failed(outcome: .unreadable(.undecodable))
+            throw Failed(outcome: .unreadable(.readError))
         }
         guard let found = TrendStore.datedSnapshots(of: kind, in: dataDir)
             .last(where: { PatchReleaseDateService.snapshotStamp(of: $0.url) == stamp })
@@ -136,7 +136,7 @@ enum ChangeFilterResolver {
             switch failure {
             case .unreadable(ENOENT): throw Failed(outcome: .fileGone)
             case .tooLarge: throw Failed(outcome: .unreadable(.tooLarge))
-            default: throw Failed(outcome: .unreadable(.undecodable))
+            default: throw Failed(outcome: .unreadable(.readError))
             }
         }
     }

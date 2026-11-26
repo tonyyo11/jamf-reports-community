@@ -163,6 +163,8 @@ struct ChangeFilterResult: Sendable, Equatable {
         case left([ComputerDates])
         case fileGone
         case unreadable(ComputerChanges.UnreadableReason)
+        /// `jamf_cli.data_dir` is refused on this Mac, so nothing was read.
+        case refused
         case cancelled
     }
 
@@ -179,7 +181,7 @@ struct ChangeFilterResult: Sendable, Equatable {
     var isStable: Bool {
         switch outcome {
         case .macs, .left, .fileGone, .unreadable(.tooLarge): true
-        case .unreadable(.undecodable), .cancelled: false
+        case .unreadable(.undecodable), .unreadable(.readError), .refused, .cancelled: false
         }
     }
 }

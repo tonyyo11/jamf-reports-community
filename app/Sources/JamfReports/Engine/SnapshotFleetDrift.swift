@@ -162,13 +162,23 @@ extension CoreDashboard {
         guard let pair = driftSnapshots() else {
             throw CoreDashboardError.noCachedData(names: ["computers (two different days)"])
         }
-        func read(_ url: URL) throws -> Data {
-            try BoundedFile.read(url, limit: BoundedFile.limit(for: url), followSymlinks: false)
+        // Read inside the data folder like every other change read; a file that is there but
+        // cannot be read says so, never "not collected".
+        func read(_ url: URL) throws -> ComputerSnapshot {
+            let result = SnapshotPair.read(url, limit: BoundedFile.inventoryLimit, dataDir: dataDir)
+                .flatMap { data in
+                    ComputerDates.decodeComputerSnapshot(data).map { .success($0) }
+                        ?? .failure(SnapshotReadFailure(.undecodable, file: url))
+                }
+            switch result {
+            case .success(let snapshot): return snapshot
+            case .failure(let failure):
+                throw CoreDashboardError.nothingToShow(
+                    "\(failure.file ?? "a computers snapshot") could not be read (\(failure.text))")
+            }
         }
-        guard let current = ComputerDates.decodeComputerSnapshot(try read(pair.current.url)),
-              let prior = ComputerDates.decodeComputerSnapshot(try read(pair.prior.url)) else {
-            throw CoreDashboardError.noCachedData(names: ["computers"])
-        }
+        let current = try read(pair.current.url)
+        let prior = try read(pair.prior.url)
         let rule = config.staleRule
         let drift = SnapshotFleetDrift(
             current: current, currentAt: pair.current.date,

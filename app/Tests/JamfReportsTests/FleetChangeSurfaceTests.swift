@@ -36,7 +36,8 @@ final class FleetChangeSurfaceTests: XCTestCase {
         partly.computers?.becameStale = nil
         partly.computers?.noLongerStale = nil
         XCTAssertEqual(ScheduledRunSignals.changesText(partly),
-                       "not measured: went stale, came back", "never No changes with a gap")
+                       "Mac counts not measured: went stale, came back",
+                       "never No changes with a gap")
         var moved = none
         moved.computers?.osChanged = 4
         XCTAssertEqual(ScheduledRunSignals.changesText(moved), "4 macOS changed")
@@ -52,8 +53,27 @@ final class FleetChangeSurfaceTests: XCTestCase {
         XCTAssertEqual(ScheduledRunSignals.changesText(FleetChangeSummary(
             benchmarks: BenchmarkChanges(baselineUnreadable: true),
             patch: PatchChanges(baselineUnreadable: true))),
-                       "patch policy failures not measured, benchmark rules not measured")
+                       "patch policy failures not measured; benchmark rules not measured")
         XCTAssertNil(ScheduledRunSignals.changesText(FleetChangeSummary()))
+
+        // Combined parts: one part's "not measured" never reads onto another's count.
+        var partlyWithPatch = partly
+        partlyWithPatch.patch = PatchChanges(startedFailing: 2, stoppedFailing: 0)
+        XCTAssertEqual(ScheduledRunSignals.changesText(partlyWithPatch),
+                       "Mac counts not measured: went stale, came back; "
+                           + "2 patch policy failures started")
+        var quietWithPatch = none
+        quietWithPatch.patch = PatchChanges(startedFailing: 2)
+        XCTAssertEqual(ScheduledRunSignals.changesText(quietWithPatch),
+                       "No Mac changes; 2 patch policy failures started")
+        var movedWithRules = moved
+        movedWithRules.benchmarks = BenchmarkChanges(newlyFailing: 1)
+        XCTAssertEqual(ScheduledRunSignals.changesText(movedWithRules),
+                       "4 macOS changed; 1 benchmark rule newly failing")
+        var quietWithZeroPatch = none
+        quietWithZeroPatch.patch = PatchChanges(startedFailing: 0, stoppedFailing: 0)
+        XCTAssertEqual(ScheduledRunSignals.changesText(quietWithZeroPatch), "No changes",
+                       "an all-zero patch part adds nothing, so the Macs are alone")
     }
 
     func testUnreadableBenchmarkAndPatchPartsShowCouldNotBeRead() throws {
@@ -116,7 +136,7 @@ final class FleetChangeSurfaceTests: XCTestCase {
                 baselineUnreadable: true, baselineUnreadableReason: .tooLarge),
             benchmarks: nil, patch: nil, agents: [])
         XCTAssertTrue(tooLarge.computerRows.isEmpty)
-        XCTAssertEqual(tooLarge.computerNote, "Could not be read: over the 256 MB limit")
+        XCTAssertEqual(tooLarge.computerNote, "Could not be read: over the read limit")
         let undecodable = OverviewChanges(
             day: "d", computers: ComputerChanges(
                 baselineUnreadable: true, baselineUnreadableReason: .undecodable),

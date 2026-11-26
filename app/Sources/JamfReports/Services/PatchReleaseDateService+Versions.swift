@@ -65,10 +65,17 @@ extension PatchReleaseDateService {
     }
 
     /// The newest sidecar in `dataDir`.
-    static func versionDates(dataDir: URL) -> VersionDatesRead {
-        let dir = dataDir.appendingPathComponent(versionDatesKind, isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: dir) else { return .absent }
-        return versionDates(at: url)
+    static func versionDates(dataDir: URL, now: Date = Date()) -> VersionDatesRead {
+        guard let newest = versionDateFiles(dataDir: dataDir, now: now).last else { return .absent }
+        return versionDates(at: newest.url)
+    }
+
+    /// The sidecars oldest first, leaving out any stamped past now (beyond the clock-skew
+    /// tolerance), so a future-dated file never stands as the newest.
+    static func versionDateFiles(dataDir: URL, now: Date = Date()) -> [(url: URL, date: Date)] {
+        let latest = now.addingTimeInterval(SharedWorkspace.clockSkewTolerance)
+        return TrendStore.datedSnapshots(of: versionDatesKind, in: dataDir)
+            .filter { $0.date <= latest }
     }
 
     /// One sidecar. Each row decodes on its own, so one odd row costs that row, not the file.
@@ -89,15 +96,21 @@ extension PatchReleaseDateService {
         return .rows(rows.rows, stamp: stamp, bytes: data)
     }
 
-    /// What a walk carries rows from: the newest sidecar, or when that one cannot be read,
-    /// the newest earlier one that can, so an unreadable file never shrinks the next.
-    static func carryableVersionDates(dataDir: URL) -> VersionDatesRead {
-        let newest = versionDates(dataDir: dataDir)
-        guard case .unreadable = newest else { return newest }
-        for file in TrendStore.datedSnapshots(of: versionDatesKind, in: dataDir).reversed() {
-            if case .rows = versionDates(at: file.url) { return versionDates(at: file.url) }
+    /// The newest sidecar, and what a walk carries rows from: the newest itself, or when it
+    /// cannot be read, the newest earlier one that can, so an unreadable file never shrinks
+    /// the next. Each file is read at most once.
+    static func newestAndCarryable(
+        dataDir: URL, now: Date = Date()
+    ) -> (newest: VersionDatesRead, carryable: VersionDatesRead) {
+        let files = versionDateFiles(dataDir: dataDir, now: now)
+        guard let last = files.last else { return (.absent, .absent) }
+        let newest = versionDates(at: last.url)
+        guard case .unreadable = newest else { return (newest, newest) }
+        for file in files.dropLast().reversed() {
+            let read = versionDates(at: file.url)
+            if case .rows = read { return (newest, read) }
         }
-        return newest
+        return (newest, newest)
     }
 
     /// The sidecar a walk should hold, and whether it differs from the newest one on disk.

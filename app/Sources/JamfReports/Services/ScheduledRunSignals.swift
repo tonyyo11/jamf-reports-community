@@ -137,63 +137,68 @@ enum ScheduledRunSignals {
         return newest.changes
     }
 
-    /// The digest's English `Changes` text: counts only, never a device. "No changes" only
-    /// when every Mac count was measured and is 0; a count not measured is named. A zero
-    /// patch or benchmark count is left out. Nil with no part, or only all-zero patch and
-    /// benchmark parts.
+    /// The digest's English `Changes` text: counts only, never a device. Parts (Macs, patch,
+    /// benchmark rules) are joined with "; " so one part's "not measured" never reads as
+    /// another's. "No changes" only when every Mac count was measured and is 0 and nothing else
+    /// changed ("No Mac changes" when another part follows); a zero patch or benchmark count is
+    /// left out. Nil with no part, or only all-zero patch and benchmark parts.
     static func changesText(_ changes: FleetChangeSummary) -> String? {
-        var parts: [String] = []
         func count(_ value: Int, _ one: String, _ many: String) -> String {
             value == 1 ? "1 \(one)" : "\(value) \(many)"
         }
-        if let computers = changes.computers {
-            let counts: [(Int?, String)] = [
-                (computers.joined, "enrolled"), (computers.left, "removed"),
-                (computers.becameStale, "went stale"), (computers.noLongerStale, "came back"),
-                (computers.fileVaultOff, "FileVault off"),
-                (computers.fileVaultStoppedReporting, "FileVault not reported"),
-                (computers.osChanged, "macOS changed"),
-            ]
-            if computers.baselineUnreadable == true || counts.allSatisfy({ $0.0 == nil }) {
-                parts.append("Mac changes not measured")
-            } else {
-                let shown = counts.compactMap { value, label in
-                    value.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
-                }
-                let missing = counts.filter { $0.0 == nil }.map(\.1)
-                if shown.isEmpty && missing.isEmpty {
-                    parts.append("No changes")
-                } else {
-                    parts += shown
-                    if !missing.isEmpty {
-                        parts.append("not measured: " + missing.joined(separator: ", "))
-                    }
-                }
-            }
-        }
+        var others: [String] = []
         if let patch = changes.patch {
             if patch.baselineUnreadable == true {
-                parts.append("patch policy failures not measured")
+                others.append("patch policy failures not measured")
             } else {
+                var shown: [String] = []
                 if let started = patch.startedFailing, started > 0 {
-                    parts.append(count(started, "patch policy failure started",
+                    shown.append(count(started, "patch policy failure started",
                                        "patch policy failures started"))
                 }
                 if let stopped = patch.stoppedFailing, stopped > 0 {
-                    parts.append(count(stopped, "patch policy failure no longer listed",
+                    shown.append(count(stopped, "patch policy failure no longer listed",
                                        "patch policy failures no longer listed"))
                 }
+                if !shown.isEmpty { others.append(shown.joined(separator: ", ")) }
             }
         }
         if let benchmarks = changes.benchmarks {
             if benchmarks.baselineUnreadable == true {
-                parts.append("benchmark rules not measured")
+                others.append("benchmark rules not measured")
             } else if let newly = benchmarks.newlyFailing, newly > 0 {
-                parts.append(count(newly, "benchmark rule newly failing",
-                                   "benchmark rules newly failing"))
+                others.append(count(newly, "benchmark rule newly failing",
+                                    "benchmark rules newly failing"))
             }
         }
-        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        var parts: [String] = []
+        if let computers = changes.computers {
+            parts.append(macClause(computers, alone: others.isEmpty))
+        }
+        parts += others
+        return parts.isEmpty ? nil : parts.joined(separator: "; ")
+    }
+
+    /// The Mac counts, with the counts not measured named last.
+    private static func macClause(_ computers: ComputerChanges, alone: Bool) -> String {
+        let counts: [(Int?, String)] = [
+            (computers.joined, "enrolled"), (computers.left, "removed"),
+            (computers.becameStale, "went stale"), (computers.noLongerStale, "came back"),
+            (computers.fileVaultOff, "FileVault off"),
+            (computers.fileVaultStoppedReporting, "FileVault not reported"),
+            (computers.osChanged, "macOS changed"),
+        ]
+        if computers.baselineUnreadable == true || counts.allSatisfy({ $0.0 == nil }) {
+            return "Mac changes not measured"
+        }
+        let shown = counts.compactMap { value, label in
+            value.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+        }
+        let missing = counts.filter { $0.0 == nil }.map(\.1)
+        var clause = shown
+        if shown.isEmpty && missing.isEmpty { clause = [alone ? "No changes" : "No Mac changes"] }
+        if !missing.isEmpty { clause.append("Mac counts not measured: " + missing.joined(separator: ", ")) }
+        return clause.joined(separator: ", ")
     }
 
     /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
@@ -878,7 +883,7 @@ struct CLIRunSignals: Sendable {
             await ScheduledRunSignals.notifyScheduledRun(
                 config: config, profile: profile, mode: mode,
                 artifact: artifact?.lastPathComponent, sheetFailures: sheetFailures,
-                recorder: recorder
+                recorder: recorder, now: startedAt
             )
             if evaluatesAlerts, let workspace {
                 await ScheduledRunSignals.notifyMetricAlerts(

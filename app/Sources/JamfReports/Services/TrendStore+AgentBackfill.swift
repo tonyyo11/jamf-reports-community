@@ -33,7 +33,8 @@ extension TrendStore {
         let days = summaries.filter { $0.securityAgentCoverage == nil }.map(\.date)
         guard !agents.isEmpty, !days.isEmpty else { return summaries }
         // A data_dir the path rules refuse leaves the summaries as recorded.
-        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return summaries }
+        guard let dataDir = WorkspacePaths.dataDirOrLog(for: profile, category: .report)
+        else { return summaries }
         let installed = agentCounts(
             onDays: Set(days), agents: agents, profile: profile, dataDir: dataDir)
         guard !installed.isEmpty else { return summaries }

@@ -35,6 +35,12 @@ final class PatchFailureDriftTests: XCTestCase {
         let again = PatchFailureDrift(
             current: ids.reversed().map { row($0, "1") }, baseline: [], computers: fleet)
         XCTAssertEqual(again.startedFailing.map(\.deviceId), sorted, "independent of input order")
+        let ties = PatchFailureDrift(
+            current: [row("1", "1"), row("01", "1")], baseline: [], computers: fleet)
+        let flipped = PatchFailureDrift(
+            current: [row("01", "1"), row("1", "1")], baseline: [], computers: fleet)
+        XCTAssertEqual(ties.startedFailing.map(\.deviceId), flipped.startedFailing.map(\.deviceId),
+                       "numeric ties broken by the raw string")
     }
 
     func testRepeatedKeyKeepsTheFirstRow() {
@@ -88,6 +94,6 @@ final class PatchFailureDriftTests: XCTestCase {
         try Data("{bad".utf8).write(to: old)
         XCTAssertThrowsError(try PatchFailureDrift.load(
             current: pair.current, baseline: pair.baseline, dataDir: dataDir, computers: fleet)
-            .get()) { XCTAssertEqual($0 as? SnapshotReadFailure, SnapshotReadFailure(.undecodable)) }
+            .get()) { XCTAssertEqual(($0 as? SnapshotReadFailure)?.reason, .undecodable) }
     }
 }

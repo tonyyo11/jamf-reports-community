@@ -60,9 +60,13 @@ struct DevicesChangeFilterBanner: View {
         case .fileGone:
             lines.append(L("Snapshot no longer on disk"))
         case .unreadable(let reason):
-            lines.append(reason == .tooLarge
-                ? L("A snapshot could not be read: over the read limit")
-                : L("A snapshot could not be read: it did not decode"))
+            switch reason {
+            case .tooLarge: lines.append(L("A snapshot could not be read: over the read limit"))
+            case .undecodable: lines.append(L("A snapshot could not be read: it did not decode"))
+            case .readError: lines.append(L("A snapshot could not be read"))
+            }
+        case .refused:
+            lines.append(L("The data folder config.yaml names is not used on this Mac; Config Doctor says why"))
         case .cancelled:
             lines.append(L("Comparing snapshots…"))
         }

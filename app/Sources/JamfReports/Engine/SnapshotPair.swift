@@ -4,16 +4,35 @@ import Foundation
 /// change count reads "Could not be read" instead of disappearing as if nothing was compared.
 struct SnapshotReadFailure: Error, Sendable, Equatable {
     let reason: ComputerChanges.UnreadableReason
+    /// The file that could not be read, for the log line that names the input.
+    var file: String?
 
-    init(_ reason: ComputerChanges.UnreadableReason) { self.reason = reason }
-
-    /// Over the read limit is `tooLarge`; a refused link, any other read error or a decode
-    /// failure is `undecodable`.
-    init(_ error: Error) {
-        reason = (error as? BoundedFile.Failure) == .tooLarge ? .tooLarge : .undecodable
+    init(_ reason: ComputerChanges.UnreadableReason, file: URL? = nil) {
+        self.reason = reason
+        self.file = file.map { ConfigSchema.displayText($0.lastPathComponent) }
     }
 
-    var text: String { reason == .tooLarge ? "over the read limit" : "it did not decode" }
+    /// Over the read limit is `tooLarge`; a refused link or any other read error is
+    /// `readError`. A decode failure is built as `.undecodable` by the caller that decodes.
+    init(_ error: Error, file: URL? = nil) {
+        self.init((error as? BoundedFile.Failure) == .tooLarge ? .tooLarge : .readError, file: file)
+    }
+
+    /// The one change-count warning: which file, why, and which part goes unmeasured.
+    func logLine(part: String) -> String {
+        "[warn] change counts: \(file ?? "a snapshot") could not be read (\(text)); "
+            + "\(part) changes not measured"
+    }
+
+    var text: String { Self.text(reason) }
+
+    static func text(_ reason: ComputerChanges.UnreadableReason) -> String {
+        switch reason {
+        case .tooLarge: "over the read limit"
+        case .undecodable: "it did not decode"
+        case .readError: "it could not be opened"
+        }
+    }
 }
 
 /// The one pairing of a snapshot with the newest one from an earlier local day, shared by the
@@ -44,7 +63,7 @@ enum SnapshotPair {
             return .success(try BoundedFile.read(
                 url, limit: limit, followSymlinks: false, inside: dataDir))
         } catch {
-            return .failure(SnapshotReadFailure(error))
+            return .failure(SnapshotReadFailure(error, file: url))
         }
     }
 }

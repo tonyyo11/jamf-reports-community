@@ -25845,6 +25845,46 @@
         }
       }
     },
+    "A snapshot could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Snapshot konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer una instantánea"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un instantané n’a pas pu être lu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere uno snapshot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スナップショットを読み取れません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler um snapshot"
+          }
+        }
+      }
+    },
     "A snapshot could not be read: it did not decode" : {
       "localizations" : {
         "de" : {
@@ -47419,46 +47459,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não foi possível ler"
-          }
-        }
-      }
-    },
-    "Could not be read: over the 256 MB limit" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Konnte nicht gelesen werden: über dem Limit von 256 MB"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo leer: supera el límite de 256 MB"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lecture impossible : au-delà de la limite de 256 Mo"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossibile leggere: oltre il limite di 256 MB"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "読み取れません: 256 MB の上限を超えています"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não foi possível ler: acima do limite de 256 MB"
           }
         }
       }
@@ -129715,6 +129715,46 @@
         }
       }
     },
+    "The data folder config.yaml names is not used on this Mac; Config Doctor says why" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der in config.yaml angegebene Datenordner wird auf diesem Mac nicht verwendet; Config Doctor nennt den Grund"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta de datos que indica config.yaml no se usa en este Mac; Config Doctor indica el motivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dossier de données indiqué dans config.yaml n’est pas utilisé sur ce Mac ; Config Doctor indique pourquoi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cartella dati indicata in config.yaml non viene usata su questo Mac; Config Doctor ne indica il motivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "config.yaml で指定されたデータフォルダはこの Mac では使用されません。理由は Config Doctor で確認できます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A pasta de dados indicada em config.yaml não é usada neste Mac; o Config Doctor explica o motivo"
+          }
+        }
+      }
+    },
     "The device-state trend and the compliance trend are set under charts in config.yaml." : {
       "localizations" : {
         "de" : {
@@ -151164,6 +151204,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "jamf-reports-community"
+          }
+        }
+      }
+    },
+    "jamf_cli.data_dir is not used on this Mac (Config Doctor says why)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir wird auf diesem Mac nicht verwendet (Config Doctor nennt den Grund)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir no se usa en este Mac (Config Doctor indica el motivo)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir n’est pas utilisé sur ce Mac (Config Doctor indique pourquoi)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir non viene usato su questo Mac (Config Doctor ne indica il motivo)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir はこの Mac では使用されません(理由は Config Doctor で確認できます)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.data_dir não é usado neste Mac (o Config Doctor explica o motivo)"
           }
         }
       }
