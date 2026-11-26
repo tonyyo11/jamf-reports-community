@@ -71,7 +71,8 @@ struct DeploymentHealthSection: View {
                         Pill(text: entry.judgement == .critical ? L("CRITICAL") : L("WARNING"),
                              tone: entry.judgement == .critical ? .danger : .warn)
                             .frame(width: 86, alignment: .leading)
-                        Text(Self.rowText(entry.row, percentFormat: percentFormat))
+                        Text(Self.rowText(entry.row, levels: card.levels,
+                                          percentFormat: percentFormat))
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Theme.Colors.fg2)
                             .textSelection(.enabled)
@@ -96,8 +97,10 @@ struct DeploymentHealthSection: View {
     }
 
     /// "name: 48 of 400 Macs failed (12%)".
-    static func rowText(_ row: DeploymentHealth.Row, percentFormat: PercentFormat) -> String {
-        let share = DeploymentHealth.share(row).map { percentFormat.text($0 * 100) } ?? ""
+    static func rowText(
+        _ row: DeploymentHealth.Row, levels: DeploymentHealth.Levels, percentFormat: PercentFormat
+    ) -> String {
+        let share = DeploymentHealth.shareText(row, levels: levels, format: percentFormat)
         return L("\(row.displayName): \(row.failed ?? 0) of \(row.inScope ?? 0) Macs failed (\(share))")
     }
 

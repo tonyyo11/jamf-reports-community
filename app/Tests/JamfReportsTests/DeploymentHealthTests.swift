@@ -202,3 +202,89 @@ final class DeploymentLevelsConfigTests: XCTestCase {
         XCTAssertTrue(order?.detail.contains("warning 10% and critical 25%") ?? false)
     }
 }
+
+/// Review round 1: the count seam, the sort, the printed share, one order on every surface.
+final class DeploymentHealthReviewTests: XCTestCase {
+
+    private func policy(_ id: String, name: String = "P", enabled: Bool = true,
+                        failed: Int?, inScope: Int?) -> DeploymentHealth.Row {
+        .init(source: .patchPolicy, id: id, name: name, enabled: enabled, failed: failed,
+              inScope: inScope, assignedElsewhere: nil, deployedVersion: nil,
+              latestVersion: nil, updateBehavior: nil, completed: nil, deferred: nil,
+              pending: nil, targetVersion: nil, softwareTitle: nil)
+    }
+
+    func testACountPastTheSeamReadsAsNotReported() throws {
+        let past = SummaryJSONParser.maxSummaryNumber + 1
+        let json = #"[{"id":"1","failed":\#(past),"completed":1,"deferred":0,"pending":0}]"#
+        let reduced = try XCTUnwrap(DeploymentSourceReduction.reduce(
+            kind: "patch-policies", payload: Data(json.utf8)))
+        let row = try XCTUnwrap(
+            (JSONSerialization.jsonObject(with: reduced) as? [[String: Any]])?.first)
+        XCTAssertNil(row["failed"])
+        let direct = try XCTUnwrap(DeploymentHealth.row(.patchPolicy, [
+            "id": "1", "policyEnabled": true, "failed": past, "completed": 1, "deferred": 0,
+            "pending": 0,
+        ]))
+        XCTAssertNil(direct.failed)
+        XCTAssertNil(direct.inScope, "a missing count leaves the row unmeasured")
+    }
+
+    func testRowsAtTheSeamJudgeAndSortWithoutTrapping() {
+        let max = SummaryJSONParser.maxSummaryNumber
+        let rows = [policy("1", failed: max, inScope: 4 * max),
+                    policy("2", failed: max, inScope: max)]
+        let levels = DeploymentHealth.Levels.defaults
+        XCTAssertEqual(DeploymentHealth.judge(rows[0], levels: levels), .critical)
+        XCTAssertEqual(DeploymentHealth.atLevel(rows, levels: levels).map(\.row.id), ["2", "1"])
+    }
+
+    func testTheTabOrderPutsRowsWithAShareFirst() {
+        let rows = [
+            policy("1", name: "B", enabled: false, failed: nil, inScope: nil),
+            policy("2", name: "A", enabled: false, failed: 50, inScope: 100),
+            policy("3", name: "C", enabled: false, failed: 10, inScope: 100),
+        ]
+        let order = DeploymentHealth.tabOrder(rows, levels: .defaults).map(\.id)
+        XCTAssertEqual(order, ["2", "3", "1"])
+        XCTAssertEqual(DeploymentHealth.tabOrder(rows.reversed(), levels: .defaults).map(\.id),
+                       order, "the same order whatever the input order")
+    }
+
+    func testAShareBesideTheCriticalLevelNeverRoundsOntoIt() {
+        let row = policy("1", failed: 246, inScope: 1000)
+        let text = DeploymentHealth.shareText(row, levels: .defaults, format: .standard)
+        XCTAssertNotEqual(text, "25%")
+        XCTAssertTrue(text.hasPrefix("24."), text)
+    }
+
+    func testTheCardTabAndHTMLListTheSameRowsInTheSameOrder() throws {
+        let rows = [policy("1", name: "Low", failed: 12, inScope: 100),
+                    policy("2", name: "High", failed: 40, inScope: 100),
+                    policy("3", name: "Mid", failed: 20, inScope: 100)]
+        let levels = DeploymentHealth.Levels.defaults
+        let card = DeploymentHealth.atLevel(rows, levels: levels).map(\.row.displayName)
+        var inputs = HtmlReport.Inputs()
+        inputs.deployments = [.patchPolicy: .rows(rows, asOf: nil, leftOut: 0),
+                              .appInstallers: .notCollected]
+        let html = HtmlReport(config: ReportConfig().withDefaults(),
+                              dataDir: URL(fileURLWithPath: "/tmp/nonexistent-html-tests"))
+            .buildDeploymentHealth(inputs).html
+        let htmlOrder = card.compactMap { name in html.range(of: name).map { (name, $0.lowerBound) } }
+            .sorted { $0.1 < $1.1 }.map(\.0)
+        let tab = DeploymentHealth.tabOrder(rows, levels: levels).prefix(card.count)
+            .map(\.displayName)
+        XCTAssertEqual(card, ["High", "Mid", "Low"])
+        XCTAssertEqual(htmlOrder, card)
+        XCTAssertEqual(tab, card)
+    }
+
+    func testDoctorNamesADeploymentKeyThatIsNotAWholeNumber() throws {
+        let yaml = "thresholds:\n  deployment_failure_warning_percent: \"ten\"\n"
+        let rows = ConfigDoctorService.valueRows(
+            try ConfigLoader.loadFromString(yaml), raw: try ConfigLoader.rawMapping(fromYAML: yaml),
+            workspace: nil, profile: "ws")
+        XCTAssertTrue(rows.contains { $0.title == "thresholds.deployment_failure_warning_percent" },
+                      "\(rows.map(\.title))")
+    }
+}

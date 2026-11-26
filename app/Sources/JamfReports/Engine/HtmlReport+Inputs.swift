@@ -152,9 +152,12 @@ extension HtmlReport {
             inputs.eaRows = EAResultRow.decodeSnapshot(data).rows
         }
         inputs.siteScope = SiteScope.persisted(dataDir: dataDir)
-        inputs.deployments = DeploymentHealth.load(
-            dataDir: dataDir, now: now, maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
-        inputs.deploymentLevels = config.thresholds?.resolvedDeploymentLevels ?? .defaults
+        // The section and the attention sentences are its only readers.
+        if sections.contains(.deploymentHealth) || sections.contains(.needsAttention) {
+            inputs.deployments = DeploymentHealth.load(
+                dataDir: dataDir, now: now, maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
+            inputs.deploymentLevels = config.thresholds?.resolvedDeploymentLevels ?? .defaults
+        }
         inputs.summaries = loadDailySummaries()
         inputs.p0 = inputs.summaries.last?.actionItemsP0 ?? inputs.fleet?.p0
         if let latest = inputs.summaries.last {

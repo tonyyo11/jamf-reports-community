@@ -54,7 +54,7 @@ extension HtmlReport {
                 [entry.row.displayName,
                  DeploymentHealth.judgementText(entry.judgement),
                  "\(entry.row.failed ?? 0) of \(entry.row.inScope ?? 0) Macs",
-                 DeploymentHealth.share(entry.row).map { config.percentFormat.text($0 * 100) } ?? ""]
+                 DeploymentHealth.shareText(entry.row, levels: levels, format: config.percentFormat)]
             }
             let shown = Array(rows.prefix(f.maxFailureRows))
             if rows.count > shown.count {

@@ -106,6 +106,16 @@ enum DeploymentHealth {
         return Double(failed) / Double(inScope)
     }
 
+    /// The share as printed beside the level it is judged against, so rounding never puts it
+    /// on the other side of that level ("24.6%", not "25%", at warning with critical 25).
+    static func shareText(_ row: Row, levels: Levels, format: PercentFormat) -> String {
+        guard let share = share(row) else { return "" }
+        // A row at a level can only round up onto the next one (warning onto critical); a row
+        // below the levels can only round up onto warning.
+        let level = judge(row, levels: levels).isAtLevel ? levels.critical : levels.warning
+        return format.text(share * 100, beside: Double(level))
+    }
+
     /// The rows at a level, critical first, then by share descending (integer cross-multiplied),
     /// then name, then id: the one order every surface shows.
     static func atLevel(_ rows: [Row], levels: Levels) -> [(row: Row, judgement: Judgement)] {
@@ -136,11 +146,16 @@ enum DeploymentHealth {
         }
     }
 
-    /// Share descending (failed × other scope, no division), then name, then id.
+    /// Rows with a share first, by share descending (failed × other scope, no division), then
+    /// rows without one; then name, then id. A strict weak order, so the sort is stable.
     private static func ordered(_ lhs: Row, _ rhs: Row) -> Bool {
-        let left = (lhs.failed ?? 0) * (rhs.inScope ?? 0)
-        let right = (rhs.failed ?? 0) * (lhs.inScope ?? 0)
-        if share(lhs) != nil, share(rhs) != nil, left != right { return left > right }
+        let (lShare, rShare) = (share(lhs) != nil, share(rhs) != nil)
+        if lShare != rShare { return lShare }
+        if lShare {
+            let left = (lhs.failed ?? 0) * (rhs.inScope ?? 0)
+            let right = (rhs.failed ?? 0) * (lhs.inScope ?? 0)
+            if left != right { return left > right }
+        }
         let (ln, rn) = (lhs.displayName, rhs.displayName)
         return ln != rn ? ln.localizedStandardCompare(rn) == .orderedAscending : lhs.id < rhs.id
     }
@@ -238,11 +253,14 @@ extension DeploymentHealth {
     static func row(_ source: Source, _ dict: [String: Any]) -> Row? {
         func text(_ value: Any?) -> String? { value as? String }
         func count(_ value: Any?) -> Int? {
-            guard let number = value as? NSNumber,
-                  CFGetTypeID(number) != CFBooleanGetTypeID(),
-                  number.doubleValue >= 0, number.doubleValue == number.doubleValue.rounded()
-            else { return nil }
-            return number.intValue
+            // 0...`maxSummaryNumber`, the snapshot-count seam: in scope then stays under 4e9,
+            // so `failed * 100` and the sort's cross-multiplication cannot overflow.
+            let double = (value as? NSNumber).flatMap {
+                CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0.doubleValue
+            }
+            guard let double, double.isFinite, double == double.rounded(), double >= 0,
+                  double <= Double(SummaryJSONParser.maxSummaryNumber) else { return nil }
+            return Int(double)
         }
         func flag(_ value: Any?) -> Bool? {
             guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID()
