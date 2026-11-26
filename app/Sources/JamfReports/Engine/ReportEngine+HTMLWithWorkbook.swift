@@ -27,6 +27,7 @@ extension ReportEngine {
         besideWorkbook workbookURL: URL,
         template: any ReportTemplate,
         aiNarrative: String? = nil,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> URL? {
         guard config.html?.writesWithWorkbook == true else { return nil }
@@ -34,7 +35,7 @@ extension ReportEngine {
         do {
             try await Self.generateHTML(
                 config: config, dataDir: dataDir, outputURL: htmlURL, workspace: workspace,
-                template: template, aiNarrative: aiNarrative, onLine: onLine)
+                template: template, aiNarrative: aiNarrative, now: now, onLine: onLine)
         } catch {
             let reason = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
             let message = Self.htmlWithWorkbookFailureMarker + reason

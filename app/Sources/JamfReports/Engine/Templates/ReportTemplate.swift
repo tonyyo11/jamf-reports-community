@@ -65,6 +65,8 @@ enum SheetID: String, Sendable, CaseIterable {
     // mSCP / STIG compliance
     case mscpCompliance      = "mSCP Compliance"
     case complianceTrend     = "Compliance Trend"
+    // Server and admin health
+    case serverAdminHealth   = "Server and Admin Health"
 }
 
 /// Logical HTML section identifiers.

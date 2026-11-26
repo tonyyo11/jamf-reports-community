@@ -425,7 +425,16 @@ extension ConfigDoctorService {
         let unknown = typed.filter {
             !ReportEngine.allSourceKinds.contains(ReportEngine.normalizedKind($0))
         }
+        let optIn = typed.filter {
+            ReportEngine.serverHealthOptInKinds.contains(ReportEngine.normalizedKind($0))
+        }
         var rows: [DoctorRow] = []
+        if !optIn.isEmpty {
+            rows.append(valueRow(
+                "jamf_cli.collect_skip",
+                optIn.count > 1 ? L("\(listed(optIn)) are collected only when collect_opt_in lists them; collect_skip does nothing for them.") : L("\(listed(optIn)) is collected only when collect_opt_in lists it; collect_skip does nothing for it."),
+                L("Turn it off by removing it from collect_opt_in, or with its switch on Data Sources."), tag: ".optIn"))
+        }
         if !core.isEmpty {
             rows.append(valueRow(
                 "jamf_cli.collect_skip",

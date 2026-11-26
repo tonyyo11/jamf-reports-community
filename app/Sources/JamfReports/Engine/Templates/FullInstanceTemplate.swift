@@ -75,6 +75,8 @@ struct FullInstanceTemplate: ReportTemplate {
             // mSCP / STIG compliance
             .mscpCompliance,
             .complianceTrend,
+            // Server and admin health
+            .serverAdminHealth,
         ]
     }
 

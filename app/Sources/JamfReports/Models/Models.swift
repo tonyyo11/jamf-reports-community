@@ -1122,6 +1122,12 @@ struct TrendSeries: Identifiable, Sendable {
         /// The summary's Jamf Security Cloud figures (P12), offered only where the environment
         /// has Security Cloud.
         case securityCloudDevices, securityCloudMatched, securityCloudHighRisk
+        /// The Jamf Pro server's own health (wave A), offered only on a Jamf Pro workspace whose
+        /// summaries carry it: days to the soonest credential expiry (computed from the stored
+        /// expiries, and negative once one has passed) and the notifications the login sees.
+        case serverCredentialSoonestDays, jamfProNotifications
+        /// LAPS rotations pending (opt-in admin hygiene).
+        case lapsPending
 
         /// Every metric that does not depend on the workspace, in their original order. The
         /// agent metrics come from `security_agents`, so they are not listed here.
@@ -1156,6 +1162,11 @@ struct TrendSeries: Identifiable, Sendable {
             .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk,
         ]
 
+        static let serverHealthMetrics: [Metric] = [
+            .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending,
+        ]
+
+        var isServerHealth: Bool { Self.serverHealthMetrics.contains(self) }
         var isMobile: Bool { Self.mobileMetrics.contains(self) }
         var isProtect: Bool { Self.protectMetrics.contains(self) }
         var isSecurityCloud: Bool { Self.securityCloudMetrics.contains(self) }
@@ -1194,6 +1205,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityCloudDevices: return "securityCloudDevices"
             case .securityCloudMatched: return "securityCloudMatched"
             case .securityCloudHighRisk: return "securityCloudHighRisk"
+            case .serverCredentialSoonestDays: return "serverCredentialSoonestDays"
+            case .jamfProNotifications: return "jamfProNotifications"
+            case .lapsPending: return "lapsPending"
             }
         }
 
@@ -1207,7 +1221,7 @@ struct TrendSeries: Identifiable, Sendable {
                 return
             }
             guard let match = (Self.allCases + Self.mobileMetrics + Self.protectMetrics
-                + Self.securityCloudMetrics)
+                + Self.securityCloudMetrics + Self.serverHealthMetrics)
                 .first(where: { $0.rawValue == rawValue }) else {
                 return nil
             }
@@ -1255,6 +1269,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityCloudDevices: return L("Security Cloud devices")
             case .securityCloudMatched: return L("Security Cloud match with inventory")
             case .securityCloudHighRisk: return L("Security Cloud high-risk devices")
+            case .serverCredentialSoonestDays: return L("Days to the soonest server credential expiry")
+            case .jamfProNotifications: return L("Jamf Pro notifications")
+            case .lapsPending: return L("LAPS rotations pending")
             }
         }
 
@@ -1278,7 +1295,8 @@ struct TrendSeries: Identifiable, Sendable {
             case .stale, .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .mobileStale, .mobileJailbroken, .protectComputers,
                  .protectOpenAlerts, .securityCloudDevices,
-                 .securityCloudHighRisk: return ""
+                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending: return ""
+            case .serverCredentialSoonestDays: return " days"
             default: return "%"
             }
         }
@@ -1289,13 +1307,13 @@ struct TrendSeries: Identifiable, Sendable {
         var polarity: FleetInsightInput.Polarity {
             switch self {
             case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts,
-                 .securityCloudHighRisk: .lowerIsBetter
+                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending: .lowerIsBetter
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .protectComputers, .securityCloudDevices: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
                  .securityScore, .sip, .firewall, .gatekeeper, .mobileOSCurrent, .mobilePasscode,
                  .mobileSupervised, .mobileDataProtection, .protectMatched,
-                 .securityCloudMatched: .higherIsBetter
+                 .securityCloudMatched, .serverCredentialSoonestDays: .higherIsBetter
             }
         }
         /// A count of devices, not a share or score: the Trends axis fits its top to the data
@@ -1304,7 +1322,8 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .managedDevices, .activeDevices, .stale, .mobileManaged, .mobileStale,
                  .mobileJailbroken, .protectComputers, .protectOpenAlerts,
-                 .securityCloudDevices, .securityCloudHighRisk: true
+                 .securityCloudDevices, .securityCloudHighRisk, .jamfProNotifications,
+                 .lapsPending: true
             default: false
             }
         }
@@ -1312,7 +1331,8 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged, .mobileStale,
                  .mobileJailbroken, .protectComputers, .protectOpenAlerts,
-                 .securityCloudDevices, .securityCloudHighRisk: return 0
+                 .securityCloudDevices, .securityCloudHighRisk,
+                 .jamfProNotifications, .lapsPending, .serverCredentialSoonestDays: return 0
             case .protectMatched, .securityCloudMatched: return 50
             case .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
                  .mobileDataProtection: return 50
@@ -1331,7 +1351,9 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .activeDevices, .managedDevices, .mobileManaged, .protectComputers,
                  .securityCloudDevices: return 1000
-            case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk: return 60
+            case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk,
+                 .jamfProNotifications, .lapsPending: return 60
+            case .serverCredentialSoonestDays: return 90
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
@@ -1512,6 +1534,7 @@ struct CustomSheetGroup: Sendable {
                 .packageLifecycle,
                 .complianceDevices,
                 .complianceRules,
+                .serverAdminHealth,
             ]),
         ]
     }

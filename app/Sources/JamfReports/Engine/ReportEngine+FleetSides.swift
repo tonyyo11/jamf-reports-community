@@ -123,6 +123,9 @@ extension ReportEngine {
         "compliance-rules": .both, "ddm-status": .both, "blueprint-status": .both,
         "policies": .mac, "scripts": .mac, "packages": .mac, "smart-computer-groups": .mac,
         "classic-computer-groups": .mac, "duplicate-serials": .mac,
+        "certificate-authority": .both,
+        "jamf-pro-notifications": .both,
+        "laps-pending-rotations": .both, "admin-accounts": .both, "api-integrations": .both,
         ddmDeviceStatusKind: .mac, mdmCommandHealthKind: .mac,
     ]
 

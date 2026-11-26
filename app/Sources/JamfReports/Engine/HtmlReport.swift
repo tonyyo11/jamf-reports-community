@@ -47,6 +47,8 @@ struct HtmlReport: Sendable {
     /// The PDF's file name when this page is rendered into one; its footer then says how to
     /// check that file (its manifest and the run log), not the temporary HTML it came from.
     var pdfFileName: String? = nil
+    /// The run's one time, so days left agree with the workbook's and the summary's.
+    var now: Date = Date()
 
     // MARK: - HTML local config
 

@@ -31,6 +31,7 @@ struct OperationalTemplate: ReportTemplate {
             .groupHygiene,
             .profileStatus,
             .appStatus,
+            .serverAdminHealth,
         ]
     }
 

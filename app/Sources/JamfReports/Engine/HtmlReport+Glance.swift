@@ -242,6 +242,15 @@ extension HtmlReport {
         if let token = ManagementReport.tokenSentence(inputs.enrollmentTokens) {
             items.append((token, nil))
         }
+        let credentials = inputs.serverHealth?.expiringCredentials ?? []
+        for credential in credentials {
+            items.append((Self.credentialSentence(credential), nil))
+        }
+        // A figure no longer measured is not a current warning; the tab says "as of".
+        if let (figure, stale) = inputs.serverHealth?.notificationFigure, stale == nil,
+           figure.total > 0 {
+            items.append((Self.notificationsSentence(figure), nil))
+        }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
             add(.securityTiles, .security, p0 == 1
@@ -285,6 +294,27 @@ extension HtmlReport {
             }
         }
         return items
+    }
+
+    /// One Needs attention sentence for an expired or expiring server credential (English: the
+    /// report is never translated).
+    static func credentialSentence(_ credential: CredentialExpiry) -> String {
+        let subject = credential.key == "ca" ? "The Jamf Pro built-in CA" : credential.label
+        let left = credential.daysLeft ?? 0
+        if credential.state == .expired {
+            return left >= 0 ? "\(subject) has expired."
+                : "\(subject) expired \(-left) day\(left == -1 ? "" : "s") ago."
+        }
+        return "\(subject) expires in \(left) day\(left == 1 ? "" : "s")."
+    }
+
+    /// The notifications the login sees, by type as Jamf names it (English, like the report).
+    static func notificationsSentence(_ figure: ServerHealth.Notifications) -> String {
+        let list = figure.shown.map { "\($0.name) (\($0.count))" }.joined(separator: ", ")
+        let more = figure.types.count > figure.shown.count
+            ? "; \(figure.shown.count) of \(figure.types.count) types shown" : ""
+        return "Jamf Pro has \(figure.total) notification\(figure.total == 1 ? "" : "s") "
+            + "for this login: \(list)\(more)."
     }
 
     /// The management lines, each only while its count is above zero.

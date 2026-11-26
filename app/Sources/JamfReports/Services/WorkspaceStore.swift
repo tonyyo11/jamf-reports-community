@@ -229,12 +229,30 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        (environmentProducts.isProtectOnly ? []
-            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
-            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
+        // Built in steps: one long `+` chain is too slow for the Swift 6.1 type checker.
+        var metrics: [TrendSeries.Metric] = []
+        if isSchoolWorkspace {
+            metrics = TrendSeries.Metric.schoolMetrics
+        } else if !environmentProducts.isProtectOnly {
+            metrics = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
+        }
+        metrics += productMetrics
+        if !isSchoolWorkspace && !environmentProducts.isProtectOnly { metrics += agentMetrics }
+        return metrics
+    }
+
+    /// The Protect, Security Cloud and server-health series this workspace offers.
+    private var productMetrics: [TrendSeries.Metric] {
+        var metrics: [TrendSeries.Metric] = []
+        if protectMetricsOffered { metrics += TrendSeries.Metric.protectMetrics }
+        if securityCloudMetricsOffered { metrics += TrendSeries.Metric.securityCloudMetrics }
+        if serverHealthMetricsOffered { metrics += TrendSeries.Metric.serverHealthMetrics }
+        return metrics
+    }
+
+    /// Server-health series: a Jamf Pro workspace, never demo (no demo history carries them).
+    var serverHealthMetricsOffered: Bool {
+        !demoMode && environmentProducts.has(.jamfPro) && !isSchoolWorkspace
     }
 
     /// An environment with Protect; each demo one has a Protect series.
@@ -242,9 +260,7 @@ final class WorkspaceStore {
 
     /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones.
     var scoreCardExtraMetrics: [TrendSeries.Metric] {
-        TrendSeries.Metric.mobileMetrics
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+        TrendSeries.Metric.mobileMetrics + productMetrics
     }
 
     /// Likewise for Jamf Security Cloud, which no demo environment has.
@@ -260,6 +276,7 @@ final class WorkspaceStore {
            DemoData.trends(for: profile)[metric] == nil { return false }
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
+        if metric.isServerHealth, !serverHealthMetricsOffered { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }

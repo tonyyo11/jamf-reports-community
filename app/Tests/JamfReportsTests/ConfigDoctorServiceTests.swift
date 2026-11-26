@@ -563,6 +563,27 @@ final class ConfigDoctorServiceTests: XCTestCase {
         XCTAssertTrue(rule?.detail.contains("unknown metric") ?? false)
     }
 
+    func testTheCredentialMetricAcceptsOnlyBelowAndDoctorSaysSo() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: "server_credential_days_left"
+              when: "above"
+              threshold: 30
+            - metric: "server_credential_days_left"
+              when: "below"
+              threshold: 30
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, eaCoverageNames: [])
+        XCTAssertEqual(row(rows, id: "alerts.rule.0")?.severity, .fail)
+        XCTAssertTrue(row(rows, id: "alerts.rule.0")?.detail.contains("only accepts 'below'") ?? false)
+        XCTAssertNil(row(rows, id: "alerts.rule.1"))
+        XCTAssertEqual(config.alerts?.resolvedRules.count, 1)
+    }
+
     func testAlertsEnabledWithoutUsableNotifyWarns() throws {
         let yaml = """
         alerts:

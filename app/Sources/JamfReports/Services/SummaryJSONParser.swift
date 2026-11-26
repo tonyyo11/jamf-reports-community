@@ -72,7 +72,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              products, protectComputerCount, protectMatched, protectOpenAlerts,
              protectAlertCounts, securityCloudDeviceCount, securityCloudMatched,
              securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
-             lastSeenBuckets
+             lastSeenBuckets,
+             // Server health (wave A): credential expiries as text, and the notification count.
+             serverCredentialExpiries, jamfProNotificationCount, lapsPendingCount
     }
 
     var id: String { date }
@@ -179,6 +181,12 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var modelFamilyCounts: [String: Int]?
     private(set) var mobileFormFactorCounts: [String: Int]?
     private(set) var lastSeenBuckets: LastSeenBuckets?
+    /// The Jamf Pro server's credential expiries by key (`ca`, `ade:<id>`); nil until measured.
+    private(set) var serverCredentialExpiries: [String: CredentialExpiryEntry]?
+    /// Jamf Pro notifications this login sees; nil unless the kind landed that day.
+    private(set) var jamfProNotificationCount: Int?
+    /// Local admin passwords waiting for rotation (opt-in); nil unless the kind landed that day.
+    private(set) var lapsPendingCount: Int?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -240,7 +248,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// replaced by each group of `protect` that this run measured.
     func withEnvironment(
         products added: [String]?, protect: ProtectSummaryFigures?,
-        securityCloud: SecurityCloudSummaryFigures? = nil
+        securityCloud: SecurityCloudSummaryFigures? = nil,
+        serverHealth: ServerHealthSummaryFigures? = nil
     ) -> DailySummary {
         var resolved = self
         if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
@@ -257,6 +266,15 @@ struct DailySummary: Codable, Identifiable, Sendable {
             resolved.securityCloudMatched = securityCloud.matched
             resolved.securityCloudRiskCounts = securityCloud.riskCounts
         }
+        if let health = serverHealth, let expiries = health.expiries {
+            // A measured ADE list replaces every earlier `ade:` key; `ca` stands unless re-measured.
+            let earlier = (resolved.serverCredentialExpiries ?? [:])
+                .filter { !(health.adeMeasured && $0.key.hasPrefix("ade:")) }
+            let merged = earlier.merging(expiries) { $1 }
+            resolved.serverCredentialExpiries = merged.isEmpty ? nil : merged
+        }
+        if let count = serverHealth?.notificationCount { resolved.jamfProNotificationCount = count }
+        if let count = serverHealth?.lapsPendingCount { resolved.lapsPendingCount = count }
         return resolved
     }
 
@@ -322,7 +340,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
             osMajorCounts: mergedOSMajor(older.osMajorCounts),
             modelFamilyCounts: modelFamilyCounts ?? older.modelFamilyCounts,
             mobileFormFactorCounts: mobileFormFactorCounts ?? older.mobileFormFactorCounts,
-            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets)
+            lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets),
+            serverCredentialExpiries: serverCredentialExpiries ?? older.serverCredentialExpiries,
+            jamfProNotificationCount: jamfProNotificationCount ?? older.jamfProNotificationCount,
+            lapsPendingCount: lapsPendingCount ?? older.lapsPendingCount
         )
     }
 
@@ -393,7 +414,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
         osMajorCounts: [String: Int]? = nil,
         modelFamilyCounts: [String: Int]? = nil,
         mobileFormFactorCounts: [String: Int]? = nil,
-        lastSeenBuckets: LastSeenBuckets? = nil
+        lastSeenBuckets: LastSeenBuckets? = nil,
+        serverCredentialExpiries: [String: CredentialExpiryEntry]? = nil,
+        jamfProNotificationCount: Int? = nil,
+        lapsPendingCount: Int? = nil
     ) {
         self.date = date
         parsedDate = Self.day(date)
@@ -441,6 +465,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.modelFamilyCounts = modelFamilyCounts
         self.mobileFormFactorCounts = mobileFormFactorCounts
         self.lastSeenBuckets = lastSeenBuckets
+        self.serverCredentialExpiries = serverCredentialExpiries
+        self.jamfProNotificationCount = jamfProNotificationCount
+        self.lapsPendingCount = lapsPendingCount
     }
 
     init(from decoder: Decoder) throws {
@@ -505,6 +532,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
             [String: Int].self, forKey: .mobileFormFactorCounts)
         lastSeenBuckets = try container.decodeIfPresent(
             LastSeenBuckets.self, forKey: .lastSeenBuckets)
+        serverCredentialExpiries = try container.decodeIfPresent(
+            [String: CredentialExpiryEntry].self, forKey: .serverCredentialExpiries)
+        jamfProNotificationCount = try container.decodeIfPresent(
+            Int.self, forKey: .jamfProNotificationCount)
+        lapsPendingCount = try container.decodeIfPresent(Int.self, forKey: .lapsPendingCount)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -554,6 +586,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(modelFamilyCounts, forKey: .modelFamilyCounts)
         try container.encodeIfPresent(mobileFormFactorCounts, forKey: .mobileFormFactorCounts)
         try container.encodeIfPresent(lastSeenBuckets, forKey: .lastSeenBuckets)
+        try container.encodeIfPresent(serverCredentialExpiries, forKey: .serverCredentialExpiries)
+        try container.encodeIfPresent(jamfProNotificationCount, forKey: .jamfProNotificationCount)
+        try container.encodeIfPresent(lapsPendingCount, forKey: .lapsPendingCount)
     }
 }
 
@@ -590,7 +625,8 @@ extension DailySummary {
         ].compactMap { $0 }.flatMap { $0.values }
         let pairs = [protectMatched, securityCloudMatched].compactMap { $0 }
             .flatMap { [$0.met, $0.of] }
-        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount]
+        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount,
+                jamfProNotificationCount, lapsPendingCount]
             .compactMap { $0 } + maps + pairs
             + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
     }

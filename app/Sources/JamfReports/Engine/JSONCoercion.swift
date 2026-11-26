@@ -17,3 +17,14 @@ func asInt(_ value: Any?) -> Int? {
     default: return nil
     }
 }
+
+/// A count from a snapshot: a JSON number (never a boolean) that is whole and not negative.
+/// Anything else is nil, so a peer-written -3, 2.7 or 1e30 is unreadable, not a count.
+func wholeCount(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+        return nil
+    }
+    let double = number.doubleValue
+    guard double == double.rounded(), let whole = wholeInt(double), whole >= 0 else { return nil }
+    return whole
+}

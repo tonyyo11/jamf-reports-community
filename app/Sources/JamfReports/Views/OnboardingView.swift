@@ -27,6 +27,8 @@ struct OnboardingView: View {
     /// The privileges for the commands a collect runs, each labelled with its source; the 1.31.1
     /// list until the installed jamf-cli's catalog has been read.
     @State private var privileges = CommandCatalog.bundledCollectPrivileges
+    /// The privileges of the opt-in admin-hygiene sources, shown apart.
+    @State private var optionalPrivileges = CommandCatalog.bundledOptionalPrivileges
 
     var body: some View {
         ScrollView {
@@ -990,6 +992,22 @@ struct OnboardingView: View {
         return Text("\(name) \(source)")
     }
 
+    /// Privileges only the opt-in admin hygiene counts need; off by default, so none is required.
+    private var optionalPrivilegesGroup: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Optional, only if you turn on admin hygiene")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.Colors.fg)
+            Text(optionalPrivileges.map(\.name).joined(separator: ", "))
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.fg2)
+            Text("View Local Admin Password can also read the passwords LAPS holds. Jamf Reports saves only a count.")
+                .font(.caption2)
+                .foregroundStyle(Theme.Colors.fg2)
+        }
+        .padding(.top, 4)
+    }
+
     private var privilegesBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Required Jamf Pro API privileges")
@@ -1008,12 +1026,15 @@ struct OnboardingView: View {
             Text("Names marked jamf-cli come from jamf-cli's command list. It lists none for report and Classic commands, so Jamf Reports adds those from its own permissions page.")
                 .font(.caption2)
                 .foregroundStyle(Theme.Colors.fg2)
+            optionalPrivilegesGroup
         }
         .task {
             let read = await Task.detached {
-                CommandCatalog.installed()?.collectPrivileges()
+                (CommandCatalog.installed()?.collectPrivileges(),
+                 CommandCatalog.installed()?.optionalPrivileges())
             }.value
-            if let read, !read.isEmpty { privileges = read }
+            if let collect = read.0, !collect.isEmpty { privileges = collect }
+            if let optional = read.1, !optional.isEmpty { optionalPrivileges = optional }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

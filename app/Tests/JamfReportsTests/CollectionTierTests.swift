@@ -45,6 +45,30 @@ final class CollectionTierLookupTests: XCTestCase {
             .contains("mobile-devices-list"))
     }
 
+    func testTheCertificateAuthorityIsExpectedOnlyWhereCollectWouldRunIt() {
+        let kind = "certificate-authority"
+        XCTAssertEqual(CollectionTier.tier(forReport: kind), .inventory)
+        func expected(
+            supported: Bool = true, platform: Bool = false, advisory: Set<String> = []
+        ) -> Bool {
+            WorkspaceStore.expectedKinds(
+                skipExpensive: false, authMethod: "oauth2",
+                jamfCLIVersion: supported ? "1.38.0" : "1.37.0",
+                workspaceAuthIsPlatform: platform, advisory: advisory).contains(kind)
+        }
+        XCTAssertTrue(expected())
+        XCTAssertFalse(expected(supported: false), "jamf-cli older than 1.38.0")
+        XCTAssertFalse(expected(platform: true), "a Platform-auth workspace profile")
+        XCTAssertFalse(expected(advisory: [kind]), "refused or not set up: advice, not stale")
+        XCTAssertFalse(
+            WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2").contains(kind),
+            "an unknown jamf-cli version fails the way the planner does")
+        XCTAssertFalse(
+            WorkspaceStore.expectedKinds(
+                skipExpensive: false, authMethod: "oauth2", collectSkip: [kind],
+                jamfCLIVersion: "1.38.0").contains(kind))
+    }
+
     func testComputersListAsksForTheSectionsTheDevicesScreenReads() {
         let argv = ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
             .first { $0.kind == "computers" }?.args ?? []
@@ -241,5 +265,20 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertGreaterThan(byTier[.refresh] ?? 0, 0)
         XCTAssertGreaterThan(byTier[.inventory] ?? 0, 0)
         XCTAssertGreaterThan(byTier[.scan] ?? 0, 0)
+    }
+
+    func testTheAdminHygieneSourcesAreInventoryTierAndExpectedOnlyWhenOptedIn() {
+        for kind in ReportEngine.serverHealthOptInKinds {
+            XCTAssertEqual(CollectionTier.tier(forReport: kind), .inventory, kind)
+            XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind), kind)
+            func expected(_ optIn: Set<String>, advisory: Set<String> = []) -> Bool {
+                WorkspaceStore.expectedKinds(
+                    skipExpensive: false, authMethod: "oauth2", jamfCLIVersion: "1.38.0",
+                    advisory: advisory, optIn: optIn).contains(kind)
+            }
+            XCTAssertFalse(expected([]), kind)
+            XCTAssertTrue(expected([kind]), kind)
+            XCTAssertFalse(expected([kind], advisory: [kind]), "a refused source is advice")
+        }
     }
 }

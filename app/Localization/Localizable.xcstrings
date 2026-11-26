@@ -2844,6 +2844,86 @@
         }
       }
     },
+    "%@ are collected only when collect_opt_in lists them; collect_skip does nothing for them." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ werden nur erfasst, wenn collect_opt_in sie aufführt; collect_skip bewirkt dafür nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ solo se recopilan cuando collect_opt_in los incluye; collect_skip no hace nada con ellos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne sont collectés que si collect_opt_in les liste ; collect_skip n’a aucun effet sur eux."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ vengono raccolti solo se collect_opt_in li elenca; collect_skip non ha effetto su di essi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は collect_opt_in に記載されている場合にのみ収集されます。collect_skip は影響しません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ só são coletados quando collect_opt_in os lista; collect_skip não faz nada por eles."
+          }
+        }
+      }
+    },
+    "%@ are not admin hygiene sources, so they turn nothing on." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ sind keine Admin-Hygiene-Quellen und aktivieren daher nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no son fuentes de higiene de administración, así que no activan nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne sont pas des sources d’hygiène d’administration ; elles n’activent rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non sono origini di igiene amministrativa, quindi non attivano nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は管理者の衛生状態のソースではないため、何もオンになりません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não são fontes de higiene de administração, então não ativam nada."
+          }
+        }
+      }
+    },
     "%@ are not managed." : {
       "localizations" : {
         "de" : {
@@ -5370,6 +5450,86 @@
         }
       }
     },
+    "%@ is collected only when collect_opt_in lists it; collect_skip does nothing for it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird nur erfasst, wenn collect_opt_in es aufführt; collect_skip bewirkt dafür nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ solo se recopila cuando collect_opt_in lo incluye; collect_skip no hace nada con él."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est collecté que si collect_opt_in le liste ; collect_skip n’a aucun effet sur lui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene raccolto solo se collect_opt_in lo elenca; collect_skip non ha effetto su di esso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は collect_opt_in に記載されている場合にのみ収集されます。collect_skip は影響しません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ só é coletado quando collect_opt_in o lista; collect_skip não faz nada por ele."
+          }
+        }
+      }
+    },
+    "%@ is collected only when you turn it on in Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird nur erfasst, wenn Sie es unter „Datenquellen“ aktivieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ solo se recopila si lo activa en Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est collecté que si vous l’activez dans Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ viene raccolto solo se attivato in Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は、データソースでオンにした場合にのみ収集されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ só é coletado quando você o ativa em Fontes de dados."
+          }
+        }
+      }
+    },
     "%@ is false, so backups here skip Jamf Pro." : {
       "localizations" : {
         "de" : {
@@ -5904,6 +6064,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não é uma data no formato yyyy-MM-dd. O relatório nunca marca esta exceção como expirada."
+          }
+        }
+      }
+    },
+    "%@ is not an admin hygiene source, so it turns nothing on." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ist keine Admin-Hygiene-Quelle und aktiviert daher nichts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no es una fuente de higiene de administración, así que no activa nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’est pas une source d’hygiène d’administration ; elle n’active rien."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non è un’origine di igiene amministrativa, quindi non attiva nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は管理者の衛生状態のソースではないため、何もオンになりません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não é uma fonte de higiene de administração, então não ativa nada."
           }
         }
       }
@@ -7050,6 +7250,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ não indica nenhuma data que o app conta, então %@."
+          }
+        }
+      }
+    },
+    "%@ needs %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ benötigt %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ necesita %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nécessite %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ richiede %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@には%@が必要です"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ precisa de %@"
           }
         }
       }
@@ -16952,6 +17192,52 @@
         }
       }
     },
+    "%lld of %lld types" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld von %2$lld Typen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld of %lld types"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld tipos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld types sur %2$lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld tipi su %2$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 種類のうち %1$lld 種類"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld de %2$lld tipos"
+          }
+        }
+      }
+    },
     "%lld of %lld values" : {
       "localizations" : {
         "de" : {
@@ -20945,6 +21231,52 @@
         }
       }
     },
+    "'%@' only accepts 'below'" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„%@“ akzeptiert nur „below“"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "'%@' only accepts 'below'"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» solo acepta «below»"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » n’accepte que « below »"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» accetta solo «below»"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は「below」のみ指定できます"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” aceita apenas “below”"
+          }
+        }
+      }
+    },
     "'%@' reaches %@ and '%@' reaches %@, so Platform API reports are skipped. Choose the Platform profile for this Jamf Pro." : {
       "localizations" : {
         "de" : {
@@ -21070,6 +21402,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "(ativo)"
+          }
+        }
+      }
+    },
+    "(as of %@, no longer measured)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Stand %@, wird nicht mehr gemessen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(a %@, ya no se mide)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(au %@, n’est plus mesuré)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(al %@, non più misurato)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（%@時点、現在は測定されていません）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(em %@, não é mais medido)"
           }
         }
       }
@@ -25759,6 +26131,46 @@
         }
       }
     },
+    "ADE tokens: see Management health" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ADE-Token: siehe Verwaltungszustand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tokens de ADE: consulte Estado de la administración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetons ADE : voir État de la gestion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token ADE: vedere Stato della gestione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ADEトークン: 「管理の状態」を参照"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tokens de ADE: veja Saúde do gerenciamento"
+          }
+        }
+      }
+    },
     "AI Audit Insight" : {
       "localizations" : {
         "de" : {
@@ -26315,6 +26727,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chave de API"
+          }
+        }
+      }
+    },
+    "API clients" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API-Clients"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clientes de API"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clients API"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Client API"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API クライアント"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clientes de API"
+          }
+        }
+      }
+    },
+    "API clients (needs Read API Integrations; counts only)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API-Clients (benötigt „Read API Integrations“; nur Anzahlen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clientes de API (requiere Read API Integrations; solo recuentos)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clients API (nécessite Read API Integrations ; nombres uniquement)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Client API (richiede Read API Integrations; solo conteggi)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API クライアント（Read API Integrations が必要。件数のみ）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clientes de API (requer Read API Integrations; apenas contagens)"
           }
         }
       }
@@ -28047,6 +28539,46 @@
         }
       }
     },
+    "Add the privilege to the API role, then Collect now. Without it the source stays off and is checked again weekly." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügen Sie der API-Rolle das Recht hinzu und wählen Sie dann „Jetzt erfassen“. Ohne es bleibt die Quelle aus und wird wöchentlich erneut geprüft."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añada el privilegio al rol de API y pulse Recopilar ahora. Sin él, la fuente sigue desactivada y se vuelve a comprobar cada semana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoutez le privilège au rôle API, puis cliquez sur Collecter maintenant. Sans lui, la source reste désactivée et est revérifiée chaque semaine."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiunga il privilegio al ruolo API, poi scelga Raccogli ora. Senza di esso l’origine resta disattivata e viene ricontrollata ogni settimana."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIロールに権限を追加してから「今すぐ収集」を実行してください。権限がない間、このソースはオフのままで、週に1回再確認されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adicione o privilégio à função de API e depois escolha Coletar agora. Sem ele, a fonte continua desativada e é verificada de novo toda semana."
+          }
+        }
+      }
+    },
     "Add the webhook URL. Nothing is sent until then, the heartbeat included." : {
       "localizations" : {
         "de" : {
@@ -28489,6 +29021,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajuste os pesos dos fatores da Pontuação de Segurança (FileVault, SIP, Firewall, EDR, mSCP e mais) na aba Config → Scoring."
+          }
+        }
+      }
+    },
+    "Admin accounts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Administratorkonten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuentas de administrador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comptes administrateur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account amministratore"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理者アカウント"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contas de administrador"
+          }
+        }
+      }
+    },
+    "Admin accounts (needs Read Accounts; counts only)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Administratorkonten (benötigt „Read Accounts“; nur Anzahlen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuentas de administrador (requiere Read Accounts; solo recuentos)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comptes administrateur (nécessite Read Accounts ; nombres uniquement)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account amministratore (richiede Read Accounts; solo conteggi)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理者アカウント（Read Accounts が必要。件数のみ）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contas de administrador (requer Read Accounts; apenas contagens)"
+          }
+        }
+      }
+    },
+    "Admin hygiene" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin-Hygiene"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higiene de administración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hygiène d’administration"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Igiene amministrativa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理者の衛生状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higiene de administração"
           }
         }
       }
@@ -35648,6 +36300,46 @@
         }
       }
     },
+    "Built-in CA" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrierte Zertifizierungsstelle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entidad de certificación integrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorité de certification intégrée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorità di certificazione integrata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組み込みの認証局"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoridade certificadora integrada"
+          }
+        }
+      }
+    },
     "Bundle written to %@ and revealed in Finder." : {
       "localizations" : {
         "de" : {
@@ -36730,6 +37422,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aviso de expiração de certificado"
+          }
+        }
+      }
+    },
+    "Certificate and token expiry warning" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnung vor Ablauf von Zertifikaten und Token"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aviso de caducidad de certificados y tokens"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alerte d’expiration des certificats et jetons"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviso di scadenza di certificati e token"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "証明書とトークンの期限警告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aviso de expiração de certificados e tokens"
           }
         }
       }
@@ -46737,6 +47469,86 @@
         }
       }
     },
+    "Could not be collected: " : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht erfasst werden: "
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo recopilar: "
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecte impossible : "
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile raccogliere: "
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収集できませんでした: "
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível coletar: "
+          }
+        }
+      }
+    },
+    "Could not be read" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht gelesen werden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture impossible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取れませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler"
+          }
+        }
+      }
+    },
     "Could not check GitHub releases: %@" : {
       "localizations" : {
         "de" : {
@@ -51423,6 +52235,46 @@
         }
       }
     },
+    "Days to the soonest server credential expiry" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tage bis zum Ablauf der nächsten Serveranmeldedaten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Días hasta que caduque la próxima credencial del servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jours avant l’expiration du prochain identifiant du serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giorni alla scadenza della prossima credenziale del server"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のサーバー資格情報の期限までの日数"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dias até o vencimento da próxima credencial do servidor"
+          }
+        }
+      }
+    },
     "Debug" : {
       "comment" : "Log level. Noun.",
       "localizations" : {
@@ -51821,46 +52673,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Configuração padrão restaurada. A configuração anterior (%@) foi salva como %@; execute novamente o guia CSV → EA e o scaffold de colunas para reconstruí-la a partir do seu CSV."
-          }
-        }
-      }
-    },
-    "Default expiry warning window for date EAs" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standard-Warnfenster vor Ablauf für Datums-EAs"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ventana predeterminada de aviso de caducidad para EA de fecha"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Délai d’alerte d’expiration par défaut pour les EA de date"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Finestra di avviso di scadenza predefinita per gli EA di tipo data"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日付EAのデフォルトの期限警告期間"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Janela padrão de aviso de expiração para EAs de data"
           }
         }
       }
@@ -56073,6 +56885,86 @@
         }
       }
     },
+    "EXPIRED" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ABGELAUFEN"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CADUCADO"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPIRÉ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SCADUTO"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限切れ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPIRADO"
+          }
+        }
+      }
+    },
+    "EXPIRING" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LÄUFT AB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "POR CADUCAR"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BIENTÔT EXPIRÉ"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IN SCADENZA"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限間近"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A EXPIRAR"
+          }
+        }
+      }
+    },
     "EXTENSION ATTRIBUTES" : {
       "localizations" : {
         "de" : {
@@ -56951,6 +57843,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ativado"
+          }
+        }
+      }
+    },
+    "Enabled state not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivierungsstatus nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de activación no informado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État d’activation non signalé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato di attivazione non segnalato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効状態が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de ativação não informado"
+          }
+        }
+      }
+    },
+    "Enabled, token over 1 day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktiviert, Token über 1 Tag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activados, token de más de 1 día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activés, jeton de plus d’un jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attivi, token oltre 1 giorno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効、トークン有効期間 1 日超"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativados, token com mais de 1 dia"
           }
         }
       }
@@ -58814,6 +59786,206 @@
         }
       }
     },
+    "Expired %lld days ago (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor %lld Tagen abgelaufen (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducó hace %lld días (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiré il y a %lld jours (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scaduto %lld giorni fa (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld日前に期限切れ（%@）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expirou há %lld dias (%@)"
+          }
+        }
+      }
+    },
+    "Expired (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abgelaufen (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducado (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiré (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scaduto (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期限切れ（%@）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expirado (%@)"
+          }
+        }
+      }
+    },
+    "Expired 1 day ago (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor 1 Tag abgelaufen (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducó hace 1 día (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiré il y a 1 jour (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scaduto 1 giorno fa (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日前に期限切れ（%@）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expirou há 1 dia (%@)"
+          }
+        }
+      }
+    },
+    "Expires in %lld days (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läuft in %lld Tagen ab (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caduca en %lld días (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expire dans %lld jours (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scade tra %lld giorni (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld日後に期限切れ（%@）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expira em %lld dias (%@)"
+          }
+        }
+      }
+    },
+    "Expires in 1 day (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Läuft in 1 Tag ab (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caduca en 1 día (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expire dans 1 jour (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scade tra 1 giorno (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1日後に期限切れ（%@）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expira em 1 dia (%@)"
+          }
+        }
+      }
+    },
     "Expiring" : {
       "localizations" : {
         "de" : {
@@ -58850,6 +60022,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Prestes a expirar"
+          }
+        }
+      }
+    },
+    "Expiry not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ablaufdatum nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caducidad no notificada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiration non signalée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scadenza non riportata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効期限は未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiração não reportada"
           }
         }
       }
@@ -60950,6 +62162,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regras com falha"
+          }
+        }
+      }
+    },
+    "Failed logins not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fehlgeschlagene Anmeldungen nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios de sesión fallidos no informados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échecs de connexion non signalés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessi non riusciti non segnalati"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログイン失敗数が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falhas de login não informadas"
           }
         }
       }
@@ -65007,6 +66259,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relatório completo da instância"
+          }
+        }
+      }
+    },
+    "Full access, federated" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollzugriff, föderiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso total, federado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accès complet, fédéré"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accesso completo, federato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フルアクセス、フェデレーション"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acesso total, federado"
+          }
+        }
+      }
+    },
+    "Full access, local" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vollzugriff, lokal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso total, local"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accès complet, local"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accesso completo, locale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フルアクセス、ローカル"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acesso total, local"
           }
         }
       }
@@ -72979,6 +74311,46 @@
         }
       }
     },
+    "Jamf Pro notifications" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf-Pro-Benachrichtigungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notificaciones de Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifiche di Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jamf Pro の通知"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notificações do Jamf Pro"
+          }
+        }
+      }
+    },
     "Jamf Pro part failed: Jamf Protect only" : {
       "localizations" : {
         "de" : {
@@ -74987,6 +76359,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detalhamento por etapa da cadeia de ataque, linha do tempo de alertas por dispositivo e distribuição de versões do agente de endpoint."
+          }
+        }
+      }
+    },
+    "LAPS rotations need a privilege that can read LAPS passwords" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für LAPS-Rotationen ist eine Berechtigung nötig, die LAPS-Passwörter lesen kann"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las rotaciones de LAPS requieren un privilegio que puede leer contraseñas de LAPS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les rotations LAPS nécessitent un privilège qui peut lire les mots de passe LAPS"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le rotazioni LAPS richiedono un privilegio che può leggere le password LAPS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LAPS ローテーションには、LAPS パスワードを読み取れる権限が必要です"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As rotações de LAPS exigem um privilégio que pode ler senhas do LAPS"
+          }
+        }
+      }
+    },
+    "LAPS rotations pending" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausstehende LAPS-Rotationen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotaciones de LAPS pendientes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotations LAPS en attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotazioni LAPS in sospeso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留中の LAPS ローテーション"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotações de LAPS pendentes"
+          }
+        }
+      }
+    },
+    "LAPS rotations pending (needs View Local Admin Password, which can also read LAPS passwords)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausstehende LAPS-Rotationen (benötigt „View Local Admin Password“, womit sich auch LAPS-Passwörter lesen lassen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotaciones de LAPS pendientes (requiere View Local Admin Password, que también puede leer contraseñas de LAPS)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotations LAPS en attente (nécessite View Local Admin Password, qui permet aussi de lire les mots de passe LAPS)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotazioni LAPS in sospeso (richiede View Local Admin Password, che può leggere anche le password LAPS)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留中の LAPS ローテーション（View Local Admin Password が必要で、LAPS パスワードも読み取れます）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotações de LAPS pendentes (requer View Local Admin Password, que também pode ler senhas do LAPS)"
           }
         }
       }
@@ -83201,6 +84693,46 @@
         }
       }
     },
+    "Needs the server health sources collected for this Jamf Pro server." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erfordert, dass die Serverstatus-Quellen für diesen Jamf-Pro-Server erfasst werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere recopilar las fuentes de estado del servidor para este servidor Jamf Pro."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite la collecte des sources d’état du serveur pour ce serveur Jamf Pro."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richiede la raccolta delle origini di stato del server per questo server Jamf Pro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Pro サーバーのサーバー状態ソースの収集が必要です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer a coleta das fontes de integridade do servidor para este servidor Jamf Pro."
+          }
+        }
+      }
+    },
     "Network ID" : {
       "localizations" : {
         "de" : {
@@ -89555,6 +91087,46 @@
         }
       }
     },
+    "None pending" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine ausstehend"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna pendiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune en attente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna in sospeso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留なし"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma pendente"
+          }
+        }
+      }
+    },
     "None selected" : {
       "localizations" : {
         "de" : {
@@ -89591,6 +91163,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nenhum selecionado"
+          }
+        }
+      }
+    },
+    "None visible to this login" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für diese Anmeldung keine sichtbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna visible para este acceso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune visible pour cet identifiant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna visibile per questo accesso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このログインでは表示されるものなし"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma visível para este login"
           }
         }
       }
@@ -90715,6 +92327,86 @@
         }
       }
     },
+    "Not permitted for this login" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für diese Anmeldung nicht zulässig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permitido para este acceso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non autorisé pour cette connexion"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non consentito per questo accesso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このログインでは許可されていません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não permitido para este login"
+          }
+        }
+      }
+    },
+    "Not permitted: " : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht zulässig: "
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permitido: "
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non autorisé : "
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non consentito: "
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可されていません: "
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não permitido: "
+          }
+        }
+      }
+    },
     "Not read by the app" : {
       "localizations" : {
         "de" : {
@@ -91071,6 +92763,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não configurados"
+          }
+        }
+      }
+    },
+    "Not set up on this server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Server nicht eingerichtet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No configurado en este servidor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configuré sur ce serveur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non configurato su questo server"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このサーバでは未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não configurado neste servidor"
           }
         }
       }
@@ -91993,6 +93725,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desativado (criptografado por hardware)"
+          }
+        }
+      }
+    },
+    "Off until turned on" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus, bis aktiviert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado hasta que se active"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé tant qu’il n’est pas activé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivato finché non viene attivato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オンにするまでオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desativado até ser ativado"
           }
         }
       }
@@ -94163,6 +95935,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abra a Auditoria de integridade para ver o contexto do achado e orientações de correção."
+          }
+        }
+      }
+    },
+    "Open Health Audit to see the server and admin health card." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen Sie die Integritätsprüfung, um die Karte „Server- und Administratorstatus“ zu sehen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra Auditoría de estado para ver la tarjeta de estado del servidor y de administración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrez l’audit de santé pour voir la carte d’état du serveur et de l’administration."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri Controllo di integrità per vedere la scheda di stato di server e amministrazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ヘルス監査を開くと、サーバーと管理者の状態カードを確認できます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abra a Auditoria de integridade para ver o cartão de integridade do servidor e da administração."
           }
         }
       }
@@ -96447,6 +98259,46 @@
         }
       }
     },
+    "Optional, only if you turn on admin hygiene" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional, nur wenn Sie die Admin-Hygiene aktivieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opcional, solo si activa la higiene de administración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Facultatif, seulement si vous activez l’hygiène d’administration"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Facoltativo, solo se attivi l’igiene amministrativa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意（管理者の衛生状態をオンにする場合のみ）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opcional, somente se você ativar a higiene de administração"
+          }
+        }
+      }
+    },
     "Optional. Leave blank to use 'archive' next to output_dir." : {
       "localizations" : {
         "de" : {
@@ -98139,6 +99991,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aprovados"
+          }
+        }
+      }
+    },
+    "Password age unknown" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passwortalter unbekannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigüedad de la contraseña desconocida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Âge du mot de passe inconnu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Età della password sconosciuta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パスワードの経過期間が不明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idade da senha desconhecida"
+          }
+        }
+      }
+    },
+    "Password over a year old" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passwort älter als ein Jahr"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña de más de un año"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mot de passe de plus d’un an"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password di oltre un anno"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 年以上前のパスワード"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senha com mais de um ano"
           }
         }
       }
@@ -116240,6 +118172,46 @@
         }
       }
     },
+    "Server and admin health" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server- und Administrationszustand"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado del servidor y de la administración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État du serveur et de l’administration"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato del server e dell’amministrazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバと管理の状態"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saúde do servidor e da administração"
+          }
+        }
+      }
+    },
     "Service" : {
       "localizations" : {
         "de" : {
@@ -121656,6 +123628,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Algumas linhas de config.yaml não foram lidas como escritas"
+          }
+        }
+      }
+    },
+    "Some server health sources are not permitted" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einige Quellen für den Serverzustand sind nicht zulässig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunas fuentes del estado del servidor no están permitidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certaines sources d’état du serveur ne sont pas autorisées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alcune origini dello stato del server non sono consentite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバの状態の一部のソースが許可されていません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algumas fontes da saúde do servidor não são permitidas"
           }
         }
       }
@@ -132034,6 +134046,46 @@
         }
       }
     },
+    "Token lifetime not reported" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token-Lebensdauer nicht gemeldet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duración del token no informada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durée de vie du jeton non signalée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durata del token non segnalata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トークンの有効期間が未報告"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vida útil do token não informada"
+          }
+        }
+      }
+    },
     "Token valid until %@" : {
       "localizations" : {
         "de" : {
@@ -133476,6 +135528,46 @@
         }
       }
     },
+    "Turn LAPS rotations off on Data Sources to take the privilege off the API role." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deaktivieren Sie die LAPS-Rotationen unter „Datenquellen“, um die Berechtigung von der API-Rolle zu entfernen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactive las rotaciones de LAPS en Fuentes de datos para quitar el privilegio del rol de API."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez les rotations LAPS dans Sources de données pour retirer le privilège du rôle d’API."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattiva le rotazioni LAPS in Origini dati per rimuovere il privilegio dal ruolo API."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データソースで LAPS ローテーションをオフにして、API ロールから権限を外してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desative as rotações de LAPS em Fontes de dados para remover o privilégio da função de API."
+          }
+        }
+      }
+    },
     "Turn Off" : {
       "localizations" : {
         "de" : {
@@ -133552,6 +135644,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transforme dados da frota já coletados em cartões de insight em linguagem simples na Visão geral, em Tendências, Auditoria, Postura de segurança e Postura de conformidade, usando o modelo de fundação no dispositivo (Apple Intelligence). Desativado por padrão. O modelo é executado neste Mac e nada sai dele."
+          }
+        }
+      }
+    },
+    "Turn it off by removing it from collect_opt_in, or with its switch on Data Sources." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernen Sie es aus collect_opt_in oder verwenden Sie den Schalter unter „Datenquellen“, um es auszuschalten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactívelo quitándolo de collect_opt_in o con su interruptor en Fuentes de datos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez-le en le retirant de collect_opt_in ou avec son interrupteur dans Sources de données."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disattivalo rimuovendolo da collect_opt_in o con il suo interruttore in Origini dati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "collect_opt_in から削除するか、データソースのスイッチでオフにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desative-o removendo-o de collect_opt_in ou com o seu botão em Fontes de dados."
           }
         }
       }
@@ -133752,6 +135884,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desative fontes com os botões em Data Sources."
+          }
+        }
+      }
+    },
+    "Turn sources on with the switches on Data Sources, or list laps-pending-rotations, admin-accounts or api-integrations." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren Sie Quellen mit den Schaltern unter „Datenquellen“ oder tragen Sie laps-pending-rotations, admin-accounts oder api-integrations ein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active las fuentes con los interruptores de Fuentes de datos, o indique laps-pending-rotations, admin-accounts o api-integrations."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez les sources avec les commutateurs de Sources de données, ou listez laps-pending-rotations, admin-accounts ou api-integrations."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva le origini con gli interruttori in Origini dati oppure elenca laps-pending-rotations, admin-accounts o api-integrations."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データソースのスイッチでソースをオンにするか、laps-pending-rotations、admin-accounts、api-integrations を記載してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ative as fontes com os interruptores em Fontes de dados ou liste laps-pending-rotations, admin-accounts ou api-integrations."
           }
         }
       }
@@ -134674,6 +136846,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Origem desconhecida"
+          }
+        }
+      }
+    },
+    "Unknown type" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unbekannter Typ"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo desconocido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type inconnu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo sconosciuto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不明な種類"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipo desconhecido"
           }
         }
       }
@@ -138048,6 +140260,86 @@
         }
       }
     },
+    "View Local Admin Password also lets the API role read the passwords LAPS holds. Jamf Reports saves only a count." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„View Local Admin Password“ erlaubt der API-Rolle auch, die von LAPS verwalteten Passwörter zu lesen. Jamf Reports speichert nur eine Anzahl."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password también permite al rol de API leer las contraseñas que guarda LAPS. Jamf Reports solo guarda un recuento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password permet aussi au rôle d’API de lire les mots de passe que détient LAPS. Jamf Reports n’enregistre qu’un nombre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password consente al ruolo API di leggere anche le password gestite da LAPS. Jamf Reports salva solo un conteggio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password により、API ロールは LAPS が保持するパスワードも読み取れます。Jamf Reports は件数のみを保存します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password também permite que a função de API leia as senhas mantidas pelo LAPS. O Jamf Reports salva apenas uma contagem."
+          }
+        }
+      }
+    },
+    "View Local Admin Password can also read the passwords LAPS holds. Jamf Reports saves only a count." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„View Local Admin Password“ kann auch die von LAPS verwalteten Passwörter lesen. Jamf Reports speichert nur eine Anzahl."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password también puede leer las contraseñas que guarda LAPS. Jamf Reports solo guarda un recuento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password peut aussi lire les mots de passe que détient LAPS. Jamf Reports n’enregistre qu’un nombre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password può leggere anche le password gestite da LAPS. Jamf Reports salva solo un conteggio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password は LAPS が保持するパスワードも読み取れます。Jamf Reports は件数のみを保存します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Local Admin Password também pode ler as senhas mantidas pelo LAPS. O Jamf Reports salva apenas uma contagem."
+          }
+        }
+      }
+    },
     "View YAML" : {
       "localizations" : {
         "de" : {
@@ -138965,6 +141257,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Severidade de aviso"
+          }
+        }
+      }
+    },
+    "Warning window in days for date EAs, the built-in certificate authority and ADE tokens" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warnzeitraum in Tagen für Datums-EAs, die integrierte Zertifizierungsstelle und ADE-Token"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ventana de aviso en días para EA de fecha, la autoridad de certificación integrada y los tokens de ADE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Délai d’alerte en jours pour les EA de date, l’autorité de certification intégrée et les jetons ADE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finestra di avviso in giorni per le EA di data, l’autorità di certificazione integrata e i token ADE"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日付EA、内蔵認証局、ADEトークンの警告期間（日数）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Janela de aviso em dias para EAs de data, a autoridade de certificação integrada e os tokens do ADE"
           }
         }
       }
@@ -140333,6 +142665,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Com dados de resultado de EA"
+          }
+        }
+      }
+    },
+    "With failed logins" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit fehlgeschlagenen Anmeldungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con inicios de sesión fallidos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avec connexions échouées"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con accessi non riusciti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログイン失敗あり"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Com logins com falha"
           }
         }
       }
@@ -148510,6 +150882,86 @@
         }
       }
     },
+    "jamf_cli.collect_opt_in is not a list, so no admin hygiene source is on." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in ist keine Liste, daher ist keine Admin-Hygiene-Quelle aktiviert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in no es una lista, así que ninguna fuente de higiene de administración está activada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in n’est pas une liste ; aucune source d’hygiène d’administration n’est activée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in non è un elenco, quindi nessuna origine di igiene amministrativa è attiva."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in はリストではないため、管理者の衛生状態のソースはオンになりません。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in não é uma lista, então nenhuma fonte de higiene de administração está ativada."
+          }
+        }
+      }
+    },
+    "jamf_cli.collect_opt_in is not used as written" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in wird nicht wie angegeben verwendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in no se usa tal como está escrito"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in n’est pas utilisé tel quel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in non viene usato come scritto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in は記述どおりには使われません"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "jamf_cli.collect_opt_in não é usado como escrito"
+          }
+        }
+      }
+    },
     "jamf_cli.require_manifest — hard-fail on tampered (mismatched or corrupt) snapshots; missing/legacy manifests are tolerated" : {
       "localizations" : {
         "de" : {
@@ -151306,6 +153758,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "não definido"
+          }
+        }
+      }
+    },
+    "not set up on this Jamf Pro server" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "auf diesem Jamf Pro Server nicht eingerichtet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no configurado en este servidor de Jamf Pro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non configuré sur ce serveur Jamf Pro"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non configurato su questo server Jamf Pro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Jamf Pro サーバでは未設定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "não configurado neste servidor Jamf Pro"
           }
         }
       }
@@ -154282,6 +156774,46 @@
         }
       }
     },
+    "the built-in certificate authority" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "die integrierte Zertifizierungsstelle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la entidad de certificación integrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l’autorité de certification intégrée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l’autorità di certificazione integrata"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組み込みの認証局"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a autoridade certificadora integrada"
+          }
+        }
+      }
+    },
     "the built-in values only" : {
       "localizations" : {
         "de" : {
@@ -154808,6 +157340,46 @@
         }
       }
     },
+    "this login cannot read %@; check the API role's privileges for it" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Anmeldung kann %@ nicht lesen; prüfen Sie die Rechte der API-Rolle dafür"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "este acceso no puede leer %@; compruebe los privilegios del rol de API para ello"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cette connexion ne peut pas lire %@ ; vérifiez les privilèges du rôle API pour cela"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "questo accesso non può leggere %@; controlli i privilegi del ruolo API per questa origine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このログインでは%@を読み取れません。APIロールの該当する権限を確認してください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "este login não consegue ler %@; verifique os privilégios da função de API para isso"
+          }
+        }
+      }
+    },
     "threshold %@ is above %lld, the largest the app accepts" : {
       "localizations" : {
         "de" : {
@@ -155090,6 +157662,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "comparação 'when' desconhecida '%@' — valores válidos: below, above, drops_more_than"
+          }
+        }
+      }
+    },
+    "unknown cause" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unbekannte Ursache"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "causa desconocida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cause inconnue"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "causa sconosciuta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原因不明"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "causa desconhecida"
           }
         }
       }

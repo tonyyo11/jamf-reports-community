@@ -72,11 +72,21 @@ func alertFacts(
     scope: String? = nil
 ) -> [WebhookNotifier.Fact] {
     guard detail == .full else {
-        let word = hits.count == 1 ? "rule" : "rules"
-        return [
-            .init(label: "Profile", value: profile),
-            .init(label: "Alerts", value: "\(hits.count) \(word) tripped"),
-        ]
+        // A credential is named by neither kind nor ID in minimal detail.
+        let rules = hits.filter { $0.credentialKey == nil }
+        let credentials = Set(hits.compactMap(\.credentialState))
+        let word = rules.count == 1 ? "rule" : "rules"
+        var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
+        if !rules.isEmpty || credentials.isEmpty {
+            facts.append(.init(label: "Alerts", value: "\(rules.count) \(word) tripped"))
+        }
+        if credentials.contains("hit") {
+            facts.append(.init(label: "Server credential", value: "A server credential is expiring"))
+        }
+        if credentials.contains("expired") {
+            facts.append(.init(label: "Server credential", value: "A server credential has expired"))
+        }
+        return facts
     }
     var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
     facts.append(contentsOf: hits.map { .init(label: $0.metricLabel, value: $0.message) })
@@ -384,7 +394,9 @@ enum ScheduledRunSignals {
         }
         let hits = evaluateHits(
             rules: rules, current: current, history: summaries, format: config.percentFormat)
-        guard !hits.isEmpty else { return }
+        let credentialHits = MetricAlertEvaluator.evaluateCredentials(
+            rules: rules, current: current, now: now)
+        guard !hits.isEmpty || !credentialHits.isEmpty else { return }
         // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
         // doesn't re-card, but a rule that trips for the first time later today does.
         let ledger = MetricAlertLedger(workspace: workspace)
@@ -392,9 +404,11 @@ enum ScheduledRunSignals {
             day: today, keys: hits.map(MetricAlertEvaluator.dedupKey(for:))
         ))
         let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
-        guard !newHits.isEmpty else { return }
+        // A credential is announced once per (rule, credential, expiry, state), not once a day.
+        let newCredentialHits = ledger.pendingCredentialHits(credentialHits)
+        guard !newHits.isEmpty || !newCredentialHits.isEmpty else { return }
         let facts = alertFacts(
-            detail: notify.resolvedDetail, profile: profile, hits: newHits,
+            detail: notify.resolvedDetail, profile: profile, hits: newHits + newCredentialHits,
             scope: SiteScope.persisted(profile: profile).summary)
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.sendAlert(
@@ -413,6 +427,7 @@ enum ScheduledRunSignals {
         // Claim the day only after a confirmed send, so a transient webhook
         // failure retries on the next run instead of silencing the rule.
         ledger.record(day: today, keys: Array(newKeys))
+        ledger.recordCredentials(newCredentialHits, now: now)
     }
 
     /// Pure hit computation: group the resolved rules by lookback, pick a strict

@@ -100,6 +100,10 @@ final class CommandCatalogTests: XCTestCase {
     private static let unmappedUnlisted: Set<String> = [
         "pro overview", "pro report compliance-devices", "pro report compliance-rules",
         "pro report ddm-status", "pro report blueprint-status",
+        // The restricted-role capture read it with no privilege, so none is needed.
+        "pro certificate-authority active",
+        // Jamf filters notifications by the caller, so the catalog lists no privilege.
+        "pro jamf-pro-notifications list",
     ]
 
     func testEverySupplementedCommandIsStillUnlistedAndEveryOtherUnlistedOneIsKnown() throws {
@@ -159,5 +163,28 @@ final class CommandCatalogTests: XCTestCase {
     func testNoCatalogIsReadWithoutAJamfCLI() {
         XCTAssertNil(CommandCatalog.installed())
         XCTAssertNil(CommandCatalog.installed(locate: { nil }))
+    }
+
+    // MARK: - Opt-in admin hygiene
+
+    func testTheSetupListLeavesOutTheOptInCommandsAndHoldsThemApart() throws {
+        let catalog = try fixture()
+        let collect = catalog.proPrivileges(forArguments: CommandCatalog.collectArguments())
+        for name in ["Read Accounts", "Read API Integrations", "View Local Admin Password"] {
+            XCTAssertFalse(collect.listed.contains(name), "\(name) is optional, not required")
+        }
+        XCTAssertFalse(CommandCatalog.collectArguments().contains {
+            $0.argv.contains("pending-rotations") || $0.argv.contains("accounts")
+                || $0.argv.contains("api-integrations")
+        })
+        let optional = catalog.optionalPrivileges()
+        XCTAssertEqual(optional.map(\.name),
+                       ["Read API Integrations", "Read Accounts", "View Local Admin Password"])
+        XCTAssertTrue(optional.allSatisfy { $0.source == .jamfCLI })
+        XCTAssertEqual(CommandCatalog.bundledOptionalPrivileges, optional)
+        XCTAssertEqual(CommandCatalog.optionalArguments().count, 3)
+        XCTAssertEqual(
+            catalog.proPrivileges(forArguments: CommandCatalog.optionalArguments()).missing, [],
+            "the opt-in commands are in the catalog")
     }
 }

@@ -104,6 +104,10 @@ struct TrendsView: View {
         if metric.isDeviceCount, let dataMax {
             return 0...deviceCountAxisTop(dataMax)
         }
+        // Days left runs below zero once a credential has expired, so the floor follows the data.
+        if metric == .serverCredentialSoonestDays {
+            return min(0, dataMin ?? 0)...max(metric.maxY, dataMax ?? 0)
+        }
         // A share or score is always drawn on 0–100%, so a small move is not a cliff.
         if metric.unit == "%" { return percentAxisDomain }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
@@ -276,7 +280,7 @@ struct TrendsView: View {
               let first = series.first, let last = series.last else {
             return noChangeText(series: series)
         }
-        let relative = metric.unit == "%" ? nil
+        let relative = !metric.isDeviceCount ? nil
             : relativeChangePercent(delta: last - first, baseline: first)
         return change.heroText(relativeChange: relative)
     }
@@ -489,7 +493,8 @@ struct TrendsView: View {
         workspaceStore.availableMetrics.filter { metric in
             // Offered where a day carries the metric: the demo workspace's series, or a live
             // history by device type.
-            if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+            if metric.isMobile || metric.isProtect || metric.isSecurityCloud
+                || metric.isServerHealth {
                 return workspaceStore.demoMode
                     ? !points(for: metric).isEmpty : trendStore.offers(metric)
             }

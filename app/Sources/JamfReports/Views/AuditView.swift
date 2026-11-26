@@ -126,6 +126,7 @@ struct AuditView: View {
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
     @State private var managementCard: ManagementCard?
+    @State private var serverHealth: ServerHealth?
     @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
@@ -589,6 +590,9 @@ struct AuditView: View {
             commandHealthSection
             ContactGapSection(findings: contactGapList)
             ManagementHealthSection(card: managementCard)
+            if workspace.environmentProducts.has(.jamfPro) {
+                ServerHealthSection(health: serverHealth)
+            }
             MobileDevicesSection(findings: mobileFindingList)
                 .id(MobileDevicesSection.anchorID)
         }
@@ -1113,6 +1117,7 @@ struct AuditView: View {
             commandFindings = []
             contactGapList = []
             managementCard = DemoData.managementCard
+            serverHealth = DemoData.serverHealth
             mobileFindingList = DemoData.mobileAuditFindings
             return
         }
@@ -1128,6 +1133,7 @@ struct AuditView: View {
         scanProgress = nil
         contactGapList = []
         managementCard = nil
+        serverHealth = nil
         mobileFindingList = []
         hasPreviousAudit = false
         let loadProfile = workspace.profile
@@ -1196,6 +1202,19 @@ struct AuditView: View {
         }.value
         guard !superseded() else { return }
         managementCard = card
+        let health = await Task.detached(priority: .userInitiated) {
+            // The reports' cache-age rule, so the card marks an aged value "as of" as they do.
+            let maxAge = ProfileService.workspaceURL(for: profile).flatMap {
+                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+            }?.jamfCli?.resolvedMaxCacheAgeHours
+            return (try? WorkspacePaths.dataDir(for: profile)).map {
+                ServerHealth.load(
+                    dataDir: $0, warningDays: warningDays,
+                    optIn: SharedConfigPin.collectOptIn(profile: profile), maxAgeHours: maxAge)
+            }
+        }.value
+        guard !superseded() else { return }
+        serverHealth = health
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
             stillCurrent: { profile == workspace.profile && !workspace.demoMode },
