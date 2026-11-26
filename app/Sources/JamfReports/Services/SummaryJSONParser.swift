@@ -650,10 +650,16 @@ extension DailySummary {
             .flatMap { [$0.met, $0.of] }
         let deployments = [appInstallersHealth, patchPolicyHealth].compactMap { $0 }
             .flatMap { [$0.judged, $0.atWarning, $0.atCritical, $0.minimumInScope] }
-        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount,
-                jamfProNotificationCount, lapsPendingCount]
-            .compactMap { $0 } + maps + pairs + deployments
-            + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
+        // Built in steps: one long `+` chain is too slow for the Swift 6.1 type checker.
+        let singles: [Int?] = [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount,
+                               jamfProNotificationCount, lapsPendingCount]
+        var counts: [Int] = singles.compactMap { $0 }
+        counts += maps
+        counts += pairs
+        counts += deployments
+        counts += lastSeenBuckets?.computers?.values ?? []
+        counts += lastSeenBuckets?.mobile?.values ?? []
+        return counts
     }
 
     /// Counts are not negative, the matched pair has met <= of (of >= 0 follows from met >= 0), and no severity has more open
