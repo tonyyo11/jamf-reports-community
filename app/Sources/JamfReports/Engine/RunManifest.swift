@@ -359,7 +359,7 @@ struct RunManifest: Codable, Equatable, Sendable {
             inspection = try TimestampToken.inspect(reply: reply)
         } catch {
             result.lines.append("FAIL  timestamp \(shown(url.lastPathComponent)): "
-                + error.localizedDescription)
+                + error.englishDescription)
             result.passed = false
             return
         }

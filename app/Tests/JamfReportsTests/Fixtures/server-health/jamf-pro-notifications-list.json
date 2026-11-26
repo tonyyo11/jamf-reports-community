@@ -1,0 +1,9 @@
+[
+  {"id": "1", "type": "BUILT_IN_CA_EXPIRING", "params": {}},
+  {"id": "2", "type": "CAN_ENABLE_PASSWORD_RESET_CLOUD_ENVIRONMENT", "params": {}},
+  {"id": "3", "type": "DEP_INSTANCE_EXPIRED", "params": {"id": 4, "name": "Example ADE Instance"}},
+  {"id": "4", "type": "EXCEEDED_LICENSE_COUNT", "params": {}},
+  {"id": "5", "type": "PATCH_EXTENTION_ATTRIBUTE", "params": {"extensionAttributeName": "Example EA", "id": "12", "softwareTitleName": "Example Title"}},
+  {"id": "6", "type": "PUSH_CERT_EXPIRED", "params": {}},
+  {"id": "7", "type": "VPP_ACCOUNT_EXPIRED", "params": {"id": "2", "name": "Example Location"}}
+]

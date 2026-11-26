@@ -53,7 +53,7 @@ extension WorkspaceStore {
                 profile: profile, config: WorkspaceStore.loadReportConfig(profile: profile))
         }.value
         if refused { return 0 }
-        beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
+        beginCollect(for: profile, status: "refreshing data in the background · \(profile)")
         defer { endCollect(for: profile) }
         Self.automaticCollectsRunning.withLock { $0 += 1 }
         defer { Self.automaticCollectsRunning.withLock { $0 -= 1 } }
@@ -183,7 +183,7 @@ extension WorkspaceStore {
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
-            for: activeProfile, status: "refreshing \(labels) data · profile=\(activeProfile)")
+            for: activeProfile, status: "refreshing \(labels) data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -231,7 +231,7 @@ extension WorkspaceStore {
         guard await manualCollectMayStart(
             full: tiers == Set(CollectionTier.allCases)) else { return }
         let activeProfile = profile
-        beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
+        beginCollect(for: activeProfile, status: "refreshing data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -283,7 +283,7 @@ extension WorkspaceStore {
         guard await manualCollectMayStart(full: true) else { return }
         let activeProfile = profile
         beginCollect(
-            for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
+            for: activeProfile, status: "collecting jamf-cli data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -775,11 +775,15 @@ extension WorkspaceStore {
             authMethod: platform.auth?.authMethod,
             tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: collectSkip,
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
+            jamfCLIVersion: jamfCLIVersion,
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil,
-            skippedSides: fleet.skipped
+            skippedSides: fleet.skipped,
+            workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
+            advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys),
+            optIn: SharedConfigPin.collectOptIn(
+                configured: config?.jamfCli?.collectOptIn, profile: profile)
         )
     }
 

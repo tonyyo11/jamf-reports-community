@@ -41,8 +41,8 @@ extension DemoData {
                 format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
         }
         let rows: [[String: Any]] = [
-            ["name": "Meridian Macs", "tokenExpirationDate": day(38)],
-            ["name": "Meridian Clinics", "tokenExpirationDate": day(210)],
+            ["id": "1", "name": "Meridian Macs", "tokenExpirationDate": day(38)],
+            ["id": "2", "name": "Meridian Clinics", "tokenExpirationDate": day(210)],
         ]
         return EnrollmentTokenSnapshot(
             tokens: rows.map {

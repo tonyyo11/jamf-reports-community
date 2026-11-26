@@ -543,8 +543,9 @@ extension WorkspaceStore {
     /// tenant-level integration can never be granted `environmentLevelKinds`,
     /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
     /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
-    /// and it skips the dashboard on a jamf-cli before 1.31.0
-    /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
+    /// and it skips a source the installed jamf-cli is too old for (`ReportEngine.minimumJamfCLI`:
+    /// the dashboard, the server-health sources; an unknown version counts as too old, as
+    /// `collect` reads it).
     /// A workspace with Protect connected (`EnvironmentProfiles.protect`) also expects the
     /// `protect-*` kinds, and one with Jamf Security Cloud connected the `security-risk` kind.
     /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
@@ -556,26 +557,39 @@ extension WorkspaceStore {
         authMethod: String?,
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
-        dashboardSupported: Bool = false,
+        jamfCLIVersion: String? = nil,
         protectConnected: Bool = false,
         securityCloudConnected: Bool = false,
         platformUnavailable: Bool = false,
-        skippedSides: Set<FleetSide> = []
+        skippedSides: Set<FleetSide> = [],
+        workspaceAuthIsPlatform: Bool = false,
+        advisory: Set<String> = [],
+        optIn: Set<String> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
+        let allows = { ReportEngine.jamfCLIAllows($0, installed: jamfCLIVersion) }
         let protect = (protectConnected
-                ? DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) } : [])
+                ? DataFreshnessHealth.protectKinds.filter {
+                    !collectSkip.contains($0) && allows($0)
+                } : [])
             + (securityCloudConnected
                 ? DataFreshnessHealth.securityCloudKinds.filter { !collectSkip.contains($0) } : [])
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
             }
-            if kind == ReportEngine.dashboardKind, !dashboardSupported { return false }
+            if !allows(kind) { return false }
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
             if collectSkip.contains(kind) { return false }
+            if ReportEngine.serverHealthOptInKinds.contains(kind), !optIn.contains(kind) {
+                return false
+            }
+            if ReportEngine.serverHealthKinds.contains(kind), workspaceAuthIsPlatform {
+                return false
+            }
+            if advisory.contains(kind) { return false }
             if ReportEngine.skippedSide(of: kind, skipped: skippedSides) != nil { return false }
             let platformOut = platformUnavailable || skipsPlatform
             return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))
@@ -676,7 +690,7 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
-        beginCollect(for: profile, status: "re-collecting stale data · profile=\(profile)")
+        beginCollect(for: profile, status: "re-collecting stale data · \(profile)")
         defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
@@ -1095,7 +1109,7 @@ extension WorkspaceStore {
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        let status = "catching up daily data · profile=\(targets.joined(separator: ", "))"
+        let status = "catching up daily data · \(targets.joined(separator: ", "))"
         targets.forEach { beginCollect(for: $0, status: status) }
         defer { targets.forEach { endCollect(for: $0) } }
         if await Self.runCatchUp(profiles: targets, collect: collect) {

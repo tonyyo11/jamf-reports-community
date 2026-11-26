@@ -122,11 +122,16 @@ final class DeviceLookupIndex {
 
     nonisolated static func read(profile: String) -> Loaded {
         guard ProfileService.isValid(profile),
-              let workspace = ProfileService.workspaceURL(for: profile) else {
+              ProfileService.workspaceURL(for: profile) != nil else {
             return Loaded(lastError: "Workspace not found for profile `\(profile)`.")
         }
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let dataDir: URL
+        do {
+            dataDir = try WorkspacePaths.dataDir(for: profile)
+        } catch {
+            // Never the default folder in place of a refused one.
+            return Loaded(lastError: WorkspacePaths.dataDirRefusal(error, profile: profile))
+        }
         // The data folder, so a snapshot read refuses a kind folder that is a link.
         let reader = Reader(dataRoot: dataDir)
         var loaded = Loaded()

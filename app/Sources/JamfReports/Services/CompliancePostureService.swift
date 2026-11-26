@@ -32,11 +32,15 @@ struct CompliancePostureService: Sendable {
             let failingDevices: Int
             let totalDevices: Int
             var warningDevices: Int = 0
+            /// Macs whose value Jamf did not report: neither failing nor passing.
+            var notReportedDevices: Int = 0
             var id: String { control }
-            var pct: Double {
-                totalDevices > 0
-                    ? (Double(failingDevices) / Double(totalDevices)) * 100
-                    : 0
+            var reportedDevices: Int { totalDevices - notReportedDevices }
+            /// Failing over the Macs that reported the control; nil when none did, never 0%.
+            var pct: Double? {
+                reportedDevices > 0
+                    ? (Double(failingDevices) / Double(reportedDevices)) * 100
+                    : nil
             }
         }
 
@@ -168,16 +172,16 @@ struct CompliancePostureService: Sendable {
         SecurityControl.allCases
             .filter { policy.level(for: $0) != .ignore }
             .map { control in
-                let verdicts = zip(devices, hardwareEncrypted).map {
-                    policy.verdict(
-                        for: control, reading: $0.reading(of: control, policy: policy),
-                        hardwareEncrypted: $1)
+                let readings = devices.map { $0.reading(of: control, policy: policy) }
+                let verdicts = zip(readings, hardwareEncrypted).map {
+                    policy.verdict(for: control, reading: $0, hardwareEncrypted: $1)
                 }
                 return Snapshot.ControlGap(
                     control: label(control),
                     failingDevices: verdicts.filter { $0 == .fail }.count,
                     totalDevices: devices.count,
-                    warningDevices: verdicts.filter { $0 == .warning }.count
+                    warningDevices: verdicts.filter { $0 == .warning }.count,
+                    notReportedDevices: readings.filter { $0 == nil }.count
                 )
             }
             .sorted { $0.failingDevices > $1.failingDevices }
@@ -264,7 +268,7 @@ extension FleetInsightInput {
         let warning: Int
         /// FileVault-off Macs the hardware rule leaves out at `ignore`; Security only.
         var notCounted = 0
-        /// Macs whose value Jamf did not report: not failing, not on; Security only.
+        /// Macs whose value Jamf did not report: not failing, not on.
         var unreported = 0
     }
 
@@ -291,10 +295,11 @@ extension FleetInsightInput {
     ) -> [PostureRow] {
         SecurityControl.allCases.compactMap { control in
             let label = CompliancePostureService.label(control)
-            guard let gap = gaps.first(where: { $0.control == label }), gap.totalDevices > 0
+            guard let gap = gaps.first(where: { $0.control == label }), let pct = gap.pct
             else { return nil }
-            return PostureRow(control: control, share: .failing(gap.pct),
-                              failing: gap.failingDevices, warning: gap.warningDevices)
+            return PostureRow(control: control, share: .failing(pct),
+                              failing: gap.failingDevices, warning: gap.warningDevices,
+                              unreported: gap.notReportedDevices)
         }
     }
 

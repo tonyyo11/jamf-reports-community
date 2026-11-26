@@ -44,6 +44,15 @@ final class FleetSidesTests: XCTestCase {
 
     // MARK: - Classification
 
+    func testTheDeploymentSourcesAreMacOnly() {
+        XCTAssertEqual(ReportEngine.sourceSides["app-installers-deployments"], SourceSides.mac)
+        XCTAssertEqual(ReportEngine.sourceSides["patch-policies"], SourceSides.mac)
+    }
+
+    func testTheCertificateAuthorityIsOnBothSidesSoNoFleetSkipsIt() {
+        XCTAssertEqual(ReportEngine.sourceSides["certificate-authority"], SourceSides.both)
+    }
+
     func testEveryJamfProSourceHasASide() {
         let classified = Set(ReportEngine.sourceSides.keys)
         let matrix = Set(ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30).map(\.kind))
@@ -128,7 +137,7 @@ final class FleetSidesTests: XCTestCase {
     func testForcedRunsSkipTheSideAndSayWhy() {
         var inputs = ReportEngine.CollectPlanInputs(
             tiers: Set(CollectionTier.allCases), force: true, skipExpensive: false,
-            nonPlatformAuth: nil, tenantLevel: false, collectSkip: [], dashboardSupported: true,
+            nonPlatformAuth: nil, tenantLevel: false, collectSkip: [],
             installedVersion: nil, now: now)
         inputs.skippedSides = [.mobile]
         let plan = ReportEngine.planCollect(
@@ -260,5 +269,11 @@ final class FleetSidesTests: XCTestCase {
         ])
         XCTAssertNil(state.computers)
         XCTAssertNil(state.mobileDevices)
+    }
+
+    func testTheAdminHygieneSourcesAreOnBothSides() {
+        for kind in ReportEngine.serverHealthOptInKinds {
+            XCTAssertEqual(ReportEngine.sourceSides[kind], SourceSides.both, kind)
+        }
     }
 }

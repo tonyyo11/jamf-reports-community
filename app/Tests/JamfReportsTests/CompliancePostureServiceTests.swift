@@ -134,6 +134,24 @@ final class CompliancePostureServiceTests: XCTestCase {
                        "sorted by failing devices, ties in control order")
     }
 
+    /// SIP and Gatekeeper are NOT_COLLECTED on 100 of 101 rows: those Macs leave the share's
+    /// denominator, and a control no Mac reported reads "Not reported", never "0 failing".
+    func testUnreportedMacsLeaveTheGapShare() throws {
+        let snapshot = try XCTUnwrap(
+            CompliancePostureService.load(from: securityFixture, policy: .default, hardware: [:]))
+        let sip = try XCTUnwrap(snapshot.controlGaps.first { $0.control == "SIP" })
+        XCTAssertEqual(sip.notReportedDevices, 100)
+        XCTAssertEqual(sip.reportedDevices, 1)
+        XCTAssertEqual(sip.pct, 0)
+        let gatekeeper = try XCTUnwrap(snapshot.controlGaps.first { $0.control == "Gatekeeper" })
+        XCTAssertEqual(gatekeeper.pct, 100)
+
+        let silent = CompliancePostureService.Snapshot.ControlGap(
+            control: "FileVault", failingDevices: 0, totalDevices: 5, notReportedDevices: 5)
+        XCTAssertNil(silent.pct)
+        XCTAssertEqual(CompliancePostureView.controlBarCountText(silent), "Not reported")
+    }
+
     func testIgnoredFirewallHasNoRowAndNoGaps() throws {
         let policy = SecurityControlPolicy(firewall: .ignore)
         let snapshot = try XCTUnwrap(

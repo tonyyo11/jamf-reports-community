@@ -1181,6 +1181,10 @@ final class OnboardingFlow {
     /// setup started in demo mode, unless the store is still in demo mode because no real
     /// profile was found. Automation is only ever turned on here, never off.
     func finishSetup(in workspaceStore: WorkspaceStore) async {
+        // A finished setup keeps what it made: Start over no longer applies, and the run is
+        // not parked when its tab goes away.
+        createdProfiles = []
+        createdWorkspaces = []
         if workspaceStore.demoMode && profileName.trimmed != DemoData.org.profile {
             workspaceStore.setDemoMode(false)
         } else {

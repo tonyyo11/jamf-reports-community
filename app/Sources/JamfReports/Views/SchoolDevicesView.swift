@@ -116,20 +116,33 @@ struct SchoolDevicesView: View {
                     title: L("Devices"),
                     trailing: shown.count == snapshot.devices.count
                         ? nil : L("\(shown.count) of \(snapshot.devices.count) shown"))
-                HStack(spacing: 12) {
-                    Picker("Show", selection: $filter) {
-                        ForEach(Filter.allCases) { Text(LShown($0.rawValue)).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    TextField("Search name, serial, model or OS", text: $search)
-                        .textFieldStyle(.roundedBorder)
+                // In a language whose five labels do not fit beside the search field, the
+                // filter becomes a menu instead of widening the page.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { segmentedFilter; searchField }
+                    HStack(spacing: 12) { menuFilter; searchField }
                 }
                 SchoolDevicesTable(rows: shown, staleDays: staleDays, now: now)
                     .pageTableHeight(rows: shown.count)
             }
         }
+    }
+
+    private var filterPicker: some View {
+        Picker("Show", selection: $filter) {
+            ForEach(Filter.allCases) { Text(LShown($0.rawValue)).tag($0) }
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private var segmentedFilter: some View { filterPicker.pickerStyle(.segmented) }
+    private var menuFilter: some View { filterPicker.pickerStyle(.menu) }
+
+    private var searchField: some View {
+        TextField("Search name, serial, model or OS", text: $search)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 200)
     }
 
     private var depCard: some View {

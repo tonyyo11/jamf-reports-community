@@ -63,7 +63,9 @@ final class DeviceScanCollectTests: XCTestCase {
           *" status-items "*) m=$(echo "$*" | sed -E 's/.*status-items ([^ ]+).*/\\1/'); \\
             emit "ddm-$m" ;;
           *" --scan-failures "*) if [ -f "$A/matrix" ] || [ -f "$A/matrix.exit" ]; then \\
-            emit matrix; fi; printf '[]'; exit 0 ;;
+            emit matrix; fi; case "$*" in *patch-status*) \\
+            printf '%s' '[{"section":"device_failures","data":[],"fetch_error":""}]' ;; \\
+            *) printf '[]' ;; esac; exit 0 ;;
           *) printf '[]'; exit 0 ;;
         esac
         """

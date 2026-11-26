@@ -130,6 +130,25 @@ final class SummaryDeviceMapsTests: XCTestCase {
         XCTAssertNil(result.lastSeen?.underOneDay)
     }
 
+    /// No captured Vision Pro row yet: the shape follows the iPad rows with Apple's identifier.
+    func testVisionProIsItsOwnFormFactorAndLeavesOSCurrent() throws {
+        let json = #"[{"deviceType":"visionOS","hardware":{"model":"Apple Vision Pro","#
+            + #""modelIdentifier":"RealityDevice14,1"},"general":{"osVersion":"26.1","#
+            + #""managed":true,"supervised":true}},"#
+            + #"{"deviceType":"iOS","hardware":{"model":"iPhone 15","modelIdentifier":"#
+            + #""iPhone15,4"},"general":{"osVersion":"18.2","managed":true}}]"#
+        let items = try JSONDecoder().decode(
+            [MobileDeviceInventoryItem].self, from: Data(json.utf8))
+        let maps = SummaryDeviceMaps.mobile(items, now: now)
+        XCTAssertEqual(maps.formFactor["Vision Pro"], 1)
+        XCTAssertEqual(maps.osMajor["visionOS 26"], 1)
+        let vision = MobileSummary.device(items[0])
+        XCTAssertNil(vision.iOSVersion, "SOFA has no visionOS feed")
+        XCTAssertEqual(vision.managed, true)
+        XCTAssertEqual(vision.supervised, true)
+        XCTAssertEqual(MobileSummary.device(items[1]).iOSVersion, "18.2")
+    }
+
     func testMobileOnlyFleetFieldsHaveNoComputerMaps() throws {
         let url = TestFixtures.dir(
             "jamf-cli-data-mobile-sections/mobile-devices-list/"

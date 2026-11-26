@@ -1,0 +1,29 @@
+[
+  {
+    "authorizationScopes": ["Example Role"],
+    "displayName": "Example Integration",
+    "enabled": true,
+    "accessTokenLifetimeSeconds": 1800,
+    "id": 1,
+    "appType": "CLIENT_CREDENTIALS",
+    "clientId": "00000000-0000-0000-0000-000000000001"
+  },
+  {
+    "authorizationScopes": ["Example Role", "Example Auditor Role"],
+    "displayName": "Example Long Token",
+    "enabled": true,
+    "accessTokenLifetimeSeconds": 604800,
+    "id": 2,
+    "appType": "CLIENT_CREDENTIALS",
+    "clientId": "00000000-0000-0000-0000-000000000002"
+  },
+  {
+    "authorizationScopes": [],
+    "displayName": "Example Disabled",
+    "enabled": false,
+    "accessTokenLifetimeSeconds": 604800,
+    "id": 3,
+    "appType": "CLIENT_CREDENTIALS",
+    "clientId": "00000000-0000-0000-0000-000000000003"
+  }
+]

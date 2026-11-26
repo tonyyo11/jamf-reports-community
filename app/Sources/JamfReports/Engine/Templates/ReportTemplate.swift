@@ -43,6 +43,7 @@ enum SheetID: String, Sendable, CaseIterable {
     case smartGroups         = "Smart Groups"
     case patchSummaryDashboard = "Patch Summary Dashboard"
     case patchVelocity       = "Patch Velocity"
+    case patchVersionHistory = "Patch Version History"
     // Device security & supervision detail
     case deviceSecurityState = "Device Security State"
     case mobileSupervisionStatus = "Mobile Supervision Status"
@@ -65,6 +66,10 @@ enum SheetID: String, Sendable, CaseIterable {
     // mSCP / STIG compliance
     case mscpCompliance      = "mSCP Compliance"
     case complianceTrend     = "Compliance Trend"
+    // Server and admin health
+    case serverAdminHealth   = "Server and Admin Health"
+    // App Installers deployments and patch policies (wave C)
+    case deploymentHealth    = "Deployment Health"
 }
 
 /// Logical HTML section identifiers.
@@ -97,12 +102,16 @@ enum SectionID: String, Sendable, CaseIterable {
     case recentFailures  = "recent_failures"
     case interventionList = "intervention_list"
     case patchQueue      = "patch_queue"
+    /// Each version's adoption window and days to 90% across titles (`patch-status` history).
+    case patchVersionHistory = "patch_version_history"
     case purchaseCohorts = "purchase_cohorts"
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"
     /// iPad, iPhone and Apple TV counts, management and posture, and OS versions, from
     /// `mobile-devices-list`; no per-device table.
     case mobileFleet     = "mobile_fleet"
+    /// App Installers deployments and patch policies with failed installs at a level.
+    case deploymentHealth = "deployment_health"
     // AI executive narrative (F3) — renders only when a narrative was passed
     // into the engine (GUI-generate only); omitted entirely otherwise.
     case aiNarrative     = "ai_narrative"

@@ -12,9 +12,24 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 @MainActor
 @Observable final class TrendStore {
     private var allSummaries: [DailySummary] = [] {
-        didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
+        didSet {
+            newestTwoSummaries = Self.newestTwo(of: allSummaries)
+            overviewChangesCache = nil
+        }
     }
     private(set) var filteredSummaries: [DailySummary] = []
+
+    /// Built once per load and format, not on every Overview redraw.
+    @ObservationIgnored private var overviewChangesCache:
+        (format: PercentFormat, value: OverviewChanges?)?
+
+    /// The Overview's "Since last collect" figures, over every loaded summary.
+    func overviewChanges(format: PercentFormat) -> OverviewChanges? {
+        if let cached = overviewChangesCache, cached.format == format { return cached.value }
+        let built = OverviewChanges.build(summaries: allSummaries, format: format)
+        overviewChangesCache = (format, built)
+        return built
+    }
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
     /// Most-recent summary file mtime for the active profile, captured at
@@ -369,7 +384,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
              .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
-             .securityCloudHighRisk:
+             .securityCloudHighRisk, .serverCredentialSoonestDays, .jamfProNotifications,
+             .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel:
             return Self.environmentValue(metric, in: summary)
         }
     }
@@ -393,6 +409,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .securityCloudDevices: return summary.securityCloudDeviceCount.map(Double.init)
         case .securityCloudMatched: return summary.securityCloudMatched?.pctOneDecimal
         case .securityCloudHighRisk: return summary.securityCloudHighRiskCount.map(Double.init)
+        case .serverCredentialSoonestDays: return summary.serverCredentialSoonestDays.map(Double.init)
+        case .jamfProNotifications: return summary.jamfProNotificationCount.map(Double.init)
+        case .lapsPending: return summary.lapsPendingCount.map(Double.init)
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            return deploymentGroup(metric, in: summary).map { Double($0.atLevel) }
         default: return nil
         }
     }
@@ -401,7 +422,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+        if metric.isMobile || metric.isProtect || metric.isSecurityCloud || metric.isServerHealth
+            || metric.isDeployment {
             return allSummaries.contains { value(for: metric, in: $0) != nil }
         }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
@@ -454,6 +476,37 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             + "there is the definition, not the fleet."
     }
 
+    /// A note under a deployment-health chart when the visible days were judged at different
+    /// levels or floors: the count steps there because the rule did. Nil when every visible
+    /// day with the group shares one basis; days without it are skipped, not a change.
+    func deploymentLevelsNote(metric: TrendSeries.Metric) -> String? {
+        Self.deploymentLevelsNote(of: metric, in: filteredSummaries)
+    }
+
+    nonisolated static func deploymentLevelsNote(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> String? {
+        let judged = summaries.compactMap { day in
+            deploymentGroup(metric, in: day).map { (date: day.date, group: $0) }
+        }.sorted { $0.date < $1.date }
+        guard let index = judged.indices.dropFirst().last(where: {
+            judged[$0].group.basis != judged[$0 - 1].group.basis
+        }) else { return nil }
+        let (date, group) = judged[index]
+        return L("The levels changed on \(date): rows are now at warning from \(group.warningPercent)% failed and at critical from \(group.criticalPercent)%, with at least \(group.minimumInScope) Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet.")
+    }
+
+    /// The deployment-health group `metric` reads; nil for any other metric.
+    nonisolated static func deploymentGroup(
+        _ metric: TrendSeries.Metric, in summary: DailySummary
+    ) -> DeploymentSummaryGroup? {
+        switch metric {
+        case .appInstallersAtLevel: return summary.appInstallersHealth
+        case .patchPoliciesAtLevel: return summary.patchPolicyHealth
+        default: return nil
+        }
+    }
+
     /// The metric's values in range since its measurement basis last changed, so a change
     /// over the range compares days measured the same way; every value for a metric with
     /// one definition.
@@ -496,6 +549,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .securityScore: read = { ($0.securityScore, $0.securityScoreBasis) }
         case .compliance: read = { ($0.compliancePct, $0.complianceIsProxy.map { "\($0)" }) }
         case .patch: read = { ($0.patchPct, $0.patchPctBasis) }
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            read = { summary in
+                let group = deploymentGroup(metric, in: summary)
+                return (group.map { Double($0.atLevel) }, group?.basis)
+            }
         default: return nil
         }
         let measured = summaries.sorted { $0.date < $1.date }.compactMap { day in
@@ -613,17 +671,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
         guard !baselines.isEmpty else { return ([:], []) }
 
-        // 2. Resolve the data directory. Uses a non-existent temp URL when the
-        //    profile is nil or dataDir lookup fails; buildAllSeries degrades to
-        //    summaries-only gracefully.
-        let dataDir: URL
-        if let profile, let dir = try? WorkspacePaths.dataDir(for: profile) {
-            dataDir = dir
-        } else if let profile, let workspace = ProfileService.workspaceURL(for: profile) {
-            dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        } else {
-            dataDir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
-        }
+        // 2. Resolve the data directory. With no profile, or a data_dir the path rules refuse,
+        //    it is a URL that does not exist, so buildAllSeries reads summaries only and never
+        //    the default folder in place of a refused one.
+        let dataDir = profile.flatMap { WorkspacePaths.dataDirOrLog(for: $0, category: .report) }
+            ?? URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
 
         let series = MSCPChartDataBuilder.buildAllSeries(
             baselines: baselines, dataDir: dataDir, summaries: summaries)
@@ -680,10 +732,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // eligible day (an undecodable file gives way to the next), off the main thread. It
         // is skipped when every recorded figure already carries the device basis (a workspace
         // that began on 2.9).
+        // A data_dir the path rules refuse is not swapped for the default folder.
         guard summaries.contains(where: isRecordedPerTitle),
-              let workspace = ProfileService.workspaceURL(for: profile) else { return summaries }
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+              let dataDir = WorkspacePaths.dataDirOrLog(for: profile, category: .report)
+        else { return summaries }
         return resolvingPatch(summaries, dataDir: dataDir)
     }
 

@@ -39,6 +39,10 @@ extension HtmlReport {
         /// `computers list`, with building and department names filled from their snapshots.
         var computers: [[String: Any]] = []
         var patchFailures: [[String: Any]] = []
+        var patchVersions: [VersionVelocity] = []
+        var patchVersionDates: VersionDatesRead = .absent
+        /// The "now" the patch history was measured against (the run's, inside a report run).
+        var patchHistoryNow = Date()
         var updateFailures: [[String: Any]] = []
         var auditFindings: [[String: Any]] = []
         var eaRows: [EAResultRow]?
@@ -62,6 +66,8 @@ extension HtmlReport {
         /// The newest `device-enrollment-instances` snapshot, with its not-collected and
         /// could-not-be-read states.
         var enrollmentTokens = EnrollmentTokenSnapshot.empty
+        /// The server's own credentials (`ServerHealth`); nil until read.
+        var serverHealth: ServerHealth?
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
         /// One figure for the tile, the attention list and the group headline, so a summary
         /// written by an older build cannot make the top of the report disagree with itself.
@@ -72,6 +78,9 @@ extension HtmlReport {
         var mobile: MobileFleetService.Snapshot?
         /// The collect's persisted site-scope verdict; only `limited` shows anything.
         var siteScope: SiteScope = .unknown
+        /// App Installers deployments and patch policies (`DeploymentHealth`), and the levels.
+        var deployments: [DeploymentHealth.Source: DeploymentHealth.SourceState] = [:]
+        var deploymentLevels = DeploymentHealth.Levels.defaults
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -131,9 +140,15 @@ extension HtmlReport {
             ?? ManagementHealth.defaultWarningDays
         inputs.management = ManagementReport.health(
             computers: inputs.computers, rule: config.staleRule, warningDays: warningDays,
-            now: Date())
+            now: now)
         inputs.enrollmentTokens = EnrollmentTokenSnapshot.load(
-            dataDir: dataDir, warningDays: warningDays)
+            dataDir: dataDir, warningDays: warningDays, now: now)
+        let optIn = workspace.map {
+            SharedConfigPin.collectOptIn(configured: config.jamfCli?.collectOptIn, profile: $0.name)
+        } ?? []
+        inputs.serverHealth = ServerHealth.load(
+            dataDir: dataDir, warningDays: warningDays, now: now, optIn: optIn,
+            maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
         (inputs.fleet, inputs.p0Gaps) = securityCounts()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),
@@ -141,6 +156,14 @@ extension HtmlReport {
             inputs.eaRows = EAResultRow.decodeSnapshot(data).rows
         }
         inputs.siteScope = SiteScope.persisted(dataDir: dataDir)
+        // The section and the attention sentences are its only readers.
+        if sections.contains(.deploymentHealth) || sections.contains(.needsAttention) {
+            _ = track("App Installers deployments", DeploymentHealth.Source.appInstallers.kind)
+            _ = track("Patch policies", DeploymentHealth.Source.patchPolicy.kind)
+            inputs.deployments = DeploymentHealth.load(
+                dataDir: dataDir, now: now, maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
+            inputs.deploymentLevels = config.thresholds?.resolvedDeploymentLevels ?? .defaults
+        }
         inputs.summaries = loadDailySummaries()
         inputs.p0 = inputs.summaries.last?.actionItemsP0 ?? inputs.fleet?.p0
         if let latest = inputs.summaries.last {
@@ -148,6 +171,13 @@ extension HtmlReport {
                 label: "Daily summaries", kind: "snapshots/summaries", date: latest.parsedDate))
         }
         if sections.contains(.orgInfo) { inputs.catalogCounts = catalogCounts() }
+        if sections.contains(.patchVersionHistory) {
+            let history = PatchVelocityBuilder.computeWithVersions(
+                dataDir: dataDir, releaseRows: PatchReleaseDateService.load(dataDir: dataDir))
+            inputs.patchVersions = history.versions
+            inputs.patchVersionDates = history.versionDates
+            inputs.patchHistoryNow = history.now
+        }
         if sections.contains(.mobileFleet) {
             let mobile = MobileFleetService.load(dataDir: dataDir)
             inputs.mobile = mobile

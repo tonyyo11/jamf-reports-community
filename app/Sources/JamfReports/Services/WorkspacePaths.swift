@@ -97,6 +97,24 @@ enum WorkspacePaths {
         }
     }
 
+    /// Why `jamf_cli.data_dir` is not used, worded through `refusal(of:)`: never the raw error,
+    /// which carries the typed config.yaml text a peer on a shared workspace can write.
+    static func dataDirRefusal(_ error: Error, profile: String) -> String {
+        "jamf_cli.data_dir is not used: "
+            + refusal(of: error, workspace: ProfileService.workspaceURL(for: profile))
+    }
+
+    /// `dataDir(for:)`, or nil with one log line naming why, for a reader that then reads
+    /// nothing (never the default folder in place of a refused one).
+    static func dataDirOrLog(for profile: String, category: AppLogger.Category) -> URL? {
+        do {
+            return try dataDir(for: profile)
+        } catch {
+            AppLogger.event(category, .notice, dataDirRefusal(error, profile: profile))
+            return nil
+        }
+    }
+
     /// `<output_dir>/archive` by default; honors `output.archive_dir`.
     ///
     /// Matches Python `Config.resolve_path("output", "archive_dir")`: when the user
