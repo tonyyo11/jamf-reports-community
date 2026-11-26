@@ -769,12 +769,11 @@ extension WorkspaceStore {
             authMethod: platform.auth?.authMethod,
             tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: collectSkip,
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
+            jamfCLIVersion: jamfCLIVersion,
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil,
             skippedSides: fleet.skipped,
-            serverHealthSupported: JamfCLIInstaller.supportsServerHealth(jamfCLIVersion),
             workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
             advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys),
             optIn: SharedConfigPin.collectOptIn(

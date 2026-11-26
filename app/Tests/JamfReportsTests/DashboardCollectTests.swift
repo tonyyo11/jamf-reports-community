@@ -39,12 +39,13 @@ final class DashboardCollectTests: XCTestCase {
     // MARK: - Pure rules
 
     func testDashboardNeedsJamfCLI131() {
-        XCTAssertFalse(JamfCLIInstaller.supportsDashboard(nil), "unknown fails toward skipping")
-        XCTAssertFalse(JamfCLIInstaller.supportsDashboard("not a version"))
-        XCTAssertFalse(JamfCLIInstaller.supportsDashboard("1.30.2"))
-        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("1.31.0"))
-        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("1.31.1"))
-        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("2.0.0"))
+        XCTAssertFalse(
+            JamfCLIInstaller.supports("1.31.0", installed: nil), "unknown fails toward skipping")
+        XCTAssertFalse(JamfCLIInstaller.supports("1.31.0", installed: "not a version"))
+        XCTAssertFalse(JamfCLIInstaller.supports("1.31.0", installed: "1.30.2"))
+        XCTAssertTrue(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0"))
+        XCTAssertTrue(JamfCLIInstaller.supports("1.31.0", installed: "1.31.1"))
+        XCTAssertTrue(JamfCLIInstaller.supports("1.31.0", installed: "2.0.0"))
     }
 
     func testMatrixRowAndTier() {
@@ -130,11 +131,11 @@ final class DashboardCollectTests: XCTestCase {
         let without = WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2")
         XCTAssertFalse(without.contains("dashboard"))
         let with = WorkspaceStore.expectedKinds(
-            skipExpensive: false, authMethod: "oauth2", dashboardSupported: true)
+            skipExpensive: false, authMethod: "oauth2", jamfCLIVersion: "1.31.0")
         XCTAssertTrue(with.contains("dashboard"))
         let listed = WorkspaceStore.expectedKinds(
             skipExpensive: false, authMethod: "oauth2", collectSkip: ["dashboard"],
-            dashboardSupported: true)
+            jamfCLIVersion: "1.31.0")
         XCTAssertFalse(listed.contains("dashboard"))
     }
 

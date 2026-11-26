@@ -224,7 +224,7 @@ final class CollectOptInTests: XCTestCase {
     func testExpectedKindsListAnOptInSourceOnlyWhenItIsOn() {
         func kinds(_ optIn: Set<String>) -> Set<String> {
             Set(WorkspaceStore.expectedKinds(
-                skipExpensive: false, authMethod: "oauth2", serverHealthSupported: true,
+                skipExpensive: false, authMethod: "oauth2", jamfCLIVersion: "1.38.0",
                 optIn: optIn))
         }
         XCTAssertFalse(kinds([]).contains("api-integrations"))
@@ -233,7 +233,7 @@ final class CollectOptInTests: XCTestCase {
     }
 
     func testTheFreshnessDefaultFailsTheSameWayAsThePlannerOnAnUnknownVersion() {
-        XCTAssertTrue(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2")
+        XCTAssertFalse(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2")
             .contains("certificate-authority"))
     }
 

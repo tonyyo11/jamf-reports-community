@@ -16,13 +16,12 @@ extension ReportEngine {
         case collectSkip
         /// The fleet has none of this side's devices (`FleetState`).
         case noDevices(FleetSide)
-        case dashboardUnsupported(installedVersion: String?)
+        /// The installed jamf-cli is older than the source needs (`minimumJamfCLI`), or unknown.
+        case needsJamfCLI(required: String, installed: String?)
         case tierNotSelected(CollectionTier)
         case notDue(lastRun: Date?, cadence: Cadence)
         /// Its last failures all timed out; left alone until `retryAfter` unless forced.
         case repeatedTimeouts(retryAfter: Date)
-        /// The server-health commands were first run on jamf-cli 1.38.0.
-        case serverHealthUnsupported
         /// The workspace's own profile is a Platform one, which does not serve them.
         case serverHealthNotOnGateway
         /// The API role lacks the privilege; checked again weekly (`StateFileStore.advisoryHold`).
@@ -50,9 +49,8 @@ extension ReportEngine {
                 return "listed in jamf_cli.collect_skip"
             case .noDevices(let side):
                 return "\(Self.noDevicesText(side)) (overview); checked again weekly"
-            case .dashboardUnsupported(let installed):
-                return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later "
-                    + "(installed: \(installed ?? "unknown"))"
+            case .needsJamfCLI(let required, let installed):
+                return "needs jamf-cli \(required) or later (installed: \(installed ?? "unknown"))"
             case .tierNotSelected(let tier):
                 return "tier \(tier.rawValue) not selected"
             case .notDue(let lastRun, let cadence):
@@ -61,8 +59,6 @@ extension ReportEngine {
                 return "timed out \(WorkspaceStore.repeatedTimeoutsBeforeBackoff) runs in a row; "
                     + "next automatic try after \(collectLogDateLabel(retryAfter)) "
                     + "(Collect now tries it sooner)"
-            case .serverHealthUnsupported:
-                return "needs jamf-cli \(JamfCLIInstaller.serverHealthVersion) or later"
             case .serverHealthNotOnGateway:
                 return "not collected through a Platform API profile yet"
             case .notPermitted: return "not permitted for this login; checked again weekly"
@@ -83,13 +79,11 @@ extension ReportEngine {
             case .platformUnavailable(let reason): return reason
             case .collectSkip: return "jamf_cli.collect_skip"
             case .noDevices(let side): return Self.noDevicesText(side)
-            case .dashboardUnsupported:
-                return "needs jamf-cli \(JamfCLIInstaller.dashboardVersion) or later"
+            case .needsJamfCLI(let required, _):
+                return "needs jamf-cli \(required) or later"
             case .tierNotSelected(let tier): return "tier \(tier.rawValue) not selected"
             case .notDue: return "not due"
             case .repeatedTimeouts: return "timed out repeatedly, left to the next day's run"
-            case .serverHealthUnsupported:
-                return "jamf-cli older than \(JamfCLIInstaller.serverHealthVersion)"
             case .serverHealthNotOnGateway: return "Platform API profile"
             case .notPermitted: return "not permitted"
             case .notConfigured: return "not set up"
@@ -123,14 +117,11 @@ extension ReportEngine {
         let nonPlatformAuth: String?
         let tenantLevel: Bool
         let collectSkip: Set<String>
-        let dashboardSupported: Bool
         let installedVersion: String?
         let now: Date
         var platformUnavailable: String?
         /// Sides of the fleet with no devices (`FleetState.skipped`); forced runs follow it too.
         var skippedSides: Set<FleetSide> = []
-        /// False only for a jamf-cli known to be older than 1.38.0.
-        var serverHealthSupported = true
         /// The workspace's own profile uses Platform auth, which serves no server-health command.
         var workspaceAuthIsPlatform = false
         /// The opt-in sources this Mac collects (`SharedConfigPin.collectOptIn`).
@@ -273,13 +264,10 @@ extension ReportEngine {
             return .noDevices(side)
         }
         if inputs.collectSkip.contains(kind) { return .collectSkip }
-        if kind == dashboardKind, !inputs.dashboardSupported {
-            return .dashboardUnsupported(installedVersion: inputs.installedVersion)
+        if serverHealthKinds.contains(kind), inputs.workspaceAuthIsPlatform {
+            return .serverHealthNotOnGateway
         }
-        if serverHealthKinds.contains(kind) {
-            if inputs.workspaceAuthIsPlatform { return .serverHealthNotOnGateway }
-            if !inputs.serverHealthSupported { return .serverHealthUnsupported }
-        }
+        if let gate = jamfCLISkip(kind, installed: inputs.installedVersion) { return gate }
         if serverHealthOptInKinds.contains(kind), !inputs.optInKinds.contains(kind) {
             return .notOptedIn
         }

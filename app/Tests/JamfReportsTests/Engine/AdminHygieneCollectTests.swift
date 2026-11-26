@@ -44,6 +44,7 @@ final class AdminHygieneCollectTests: XCTestCase {
         let stub = root.appendingPathComponent("stub-cli")
         let script = """
         #!/bin/sh
+        [ "$1" = "--version" ] && { echo "jamf-cli version 1.38.0"; exit 0; }
         [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
         case "$*" in
           *pending-rotations*) echo laps >> "\(calls.path)"; cat "\(fixture("laps-pending-rotations-list.json"))" ;;

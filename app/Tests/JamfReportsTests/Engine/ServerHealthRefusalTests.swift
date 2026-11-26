@@ -64,6 +64,7 @@ final class ServerHealthRefusalTests: XCTestCase {
         let stub = root.appendingPathComponent("stub-cli")
         let script = """
         #!/bin/sh
+        [ "$1" = "--version" ] && { echo "jamf-cli version 1.38.0"; exit 0; }
         [ "$1 $2" = "config list" ] && { printf '%s' '[{"name":"\(profile)"}]'; exit 0; }
         case "$*" in
           *\(kind)*)
@@ -120,7 +121,9 @@ final class ServerHealthRefusalTests: XCTestCase {
     }
 
     func testARefusalDoesNotFailARunThatAsksForLiveDataOnly() async throws {
-        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n  use_cached_data: false\n")
+        // The stub writes no dashboard page, which live-data-only would fail on its own.
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n  use_cached_data: false\n"
+            + "  collect_skip: [dashboard]\n")
         let (_, error) = try await collect(stdout: envelope, exit: 5)
         XCTAssertNil(error)
         XCTAssertTrue(try store.isAdvisory(kind: kind))
@@ -195,15 +198,12 @@ final class ServerHealthRefusalTests: XCTestCase {
     func testAnOlderJamfCLISkipsTheKindAndRecordsNothing() async throws {
         let plan = ReportEngine.planCollect(
             commands: ReportEngine.collectCommandMatrix(profile: profile, staleDays: 30),
-            inputs: {
-                var inputs = ReportEngine.CollectPlanInputs(
-                    tiers: [.inventory], force: true, skipExpensive: false, nonPlatformAuth: nil,
-                    tenantLevel: false, collectSkip: [], dashboardSupported: true,
-                    installedVersion: "1.37.0", now: Date())
-                inputs.serverHealthSupported = JamfCLIInstaller.supportsServerHealth("1.37.0")
-                return inputs
-            }(), lastRun: { _ in nil })
-        XCTAssertEqual(plan.first { $0.kind == kind }?.skip, .serverHealthUnsupported)
+            inputs: ReportEngine.CollectPlanInputs(
+                tiers: [.inventory], force: true, skipExpensive: false, nonPlatformAuth: nil,
+                tenantLevel: false, collectSkip: [], installedVersion: "1.37.0", now: Date()),
+            lastRun: { _ in nil })
+        XCTAssertEqual(plan.first { $0.kind == kind }?.skip,
+                       .needsJamfCLI(required: "1.38.0", installed: "1.37.0"))
     }
 }
 

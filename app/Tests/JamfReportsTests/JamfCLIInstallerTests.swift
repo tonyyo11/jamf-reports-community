@@ -29,8 +29,8 @@ final class JamfCLIInstallerTests: XCTestCase {
     }
 
     func test_featureGates_treatAPreReleaseOfTheFloorAsBelowIt() {
-        XCTAssertTrue(JamfCLIInstaller.supportsDashboard("1.31.0"))
-        XCTAssertFalse(JamfCLIInstaller.supportsDashboard("1.31.0-rc1"))
+        XCTAssertTrue(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0"))
+        XCTAssertFalse(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0-rc1"))
     }
 
     // MARK: - isTrustedFinalURL

@@ -148,12 +148,9 @@ struct CollectSourcesPlan: Equatable, Sendable {
                 skipExpensive: inputs.skipExpensive,
                 nonPlatformAuth: ReportEngine.nonPlatformAuthMethod(inputs.authMethod),
                 tenantLevel: inputs.tenantLevel, collectSkip: inputs.collectSkip,
-                dashboardSupported: JamfCLIInstaller.supportsDashboard(inputs.installedVersion),
                 installedVersion: inputs.installedVersion, now: Date(),
                 platformUnavailable: inputs.platformUnavailable,
                 skippedSides: inputs.fleet.skipped,
-                serverHealthSupported: JamfCLIInstaller.supportsServerHealth(
-                    inputs.installedVersion),
                 workspaceAuthIsPlatform: inputs.workspaceAuthIsPlatform,
                 optInKinds: ReportEngine.listedOptInKinds(inputs.optInList)),
             lastRun: { _ in nil })
@@ -277,8 +274,10 @@ struct CollectSourcesPlan: Equatable, Sendable {
         } else if ReportEngine.isCoreKind(source.kind, protectOnly: protectOnly, fleet: fleet) {
             control = .locked
         } else if isOptIn, let reason = source.skipReason,
-                  reason == Self.text(.serverHealthUnsupported)
-                      || reason == Self.text(.serverHealthNotOnGateway) {
+                  reason == Self.text(.serverHealthNotOnGateway)
+                      || ReportEngine.minimumJamfCLI[source.kind].map({
+                          reason.hasPrefix("needs jamf-cli \($0) or later")
+                      }) == true {
             // The source can never run here, so a switch would write a setting with no effect.
             control = .hidden
         } else if isOptIn {

@@ -510,8 +510,9 @@ extension WorkspaceStore {
     /// tenant-level integration can never be granted `environmentLevelKinds`,
     /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
     /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
-    /// and it skips the dashboard on a jamf-cli before 1.31.0
-    /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
+    /// and it skips a source the installed jamf-cli is too old for (`ReportEngine.minimumJamfCLI`:
+    /// the dashboard, the server-health sources; an unknown version counts as too old, as
+    /// `collect` reads it).
     /// A workspace with Protect connected (`EnvironmentProfiles.protect`) also expects the
     /// `protect-*` kinds, and one with Jamf Security Cloud connected the `security-risk` kind.
     /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
@@ -523,26 +524,28 @@ extension WorkspaceStore {
         authMethod: String?,
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
-        dashboardSupported: Bool = false,
+        jamfCLIVersion: String? = nil,
         protectConnected: Bool = false,
         securityCloudConnected: Bool = false,
         platformUnavailable: Bool = false,
         skippedSides: Set<FleetSide> = [],
-        serverHealthSupported: Bool = true,
         workspaceAuthIsPlatform: Bool = false,
         advisory: Set<String> = [],
         optIn: Set<String> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
+        let allows = { ReportEngine.jamfCLIAllows($0, installed: jamfCLIVersion) }
         let protect = (protectConnected
-                ? DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) } : [])
+                ? DataFreshnessHealth.protectKinds.filter {
+                    !collectSkip.contains($0) && allows($0)
+                } : [])
             + (securityCloudConnected
                 ? DataFreshnessHealth.securityCloudKinds.filter { !collectSkip.contains($0) } : [])
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
             }
-            if kind == ReportEngine.dashboardKind, !dashboardSupported { return false }
+            if !allows(kind) { return false }
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
@@ -551,7 +554,7 @@ extension WorkspaceStore {
                 return false
             }
             if ReportEngine.serverHealthKinds.contains(kind),
-               !serverHealthSupported || workspaceAuthIsPlatform || advisory.contains(kind) {
+               workspaceAuthIsPlatform || advisory.contains(kind) {
                 return false
             }
             if ReportEngine.skippedSide(of: kind, skipped: skippedSides) != nil { return false }
