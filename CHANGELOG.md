@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". It counts in the managed, supervised, passcode and data protection shares and, like Apple TV, not in "OS current" (there is no visionOS release feed). Vision Pro rows in OS Updates and its failure tables are kept like any other device.
 - The Health Audit has a "Server and admin health" card that shows when the Jamf Pro server's built-in certificate authority expires, from jamf-cli 1.38.0. A login without the privilege, or a server without the feature, is shown as such and checked again weekly, never as a failed run. The HTML report's Needs attention list names an expired or expiring certificate.
 - The same card, the "Server and Admin Health" tab and the HTML report's Needs attention list show the Jamf Pro notifications the login can see, counted by the type Jamf gives them. Jamf filters notifications by user and site, so zero reads "None visible to this login".
 - The daily summary records when the built-in certificate authority and each ADE token expire, and how many Jamf Pro notifications the login sees. An alert rule `server_credential_days_left` with `below` posts one webhook card the first time a credential comes within the threshold and once more when it expires; a renewed credential starts over. A rule `jamf_pro_notification_count` alerts on the count. Trends gains "Days to the soonest server credential expiry" and "Jamf Pro notifications" for a Jamf Pro workspace. A 2.12 Mac sharing the workspace drops the new summary fields when it rewrites a summary.
@@ -16,11 +17,18 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- The status bar names the workspace without `profile=` ("refreshing data · Example").
 - The workbook has a new last core tab, "Server and Admin Health", in the Full Instance and Operational templates. The Config field for the existing expiry warning window is now labelled "Certificate and token expiry warning"; the key is unchanged.
 
 ### Fixed
 
+- Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
+- The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
+- A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".
+- The Computers detail panel's jamf-cli Detail shows Jamf's status words as words ("Disabled", not "DISABLED"); names written in capitals stay as Jamf gives them.
+- Leaving the Setup tab in the middle of a setup that has already saved a jamf-cli profile or workspace folder keeps it: coming back resumes it, and Start over (now offered in the app as well as on first launch) removes what it saved.
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
+- School Devices no longer runs wider than the window in Spanish, German, Portuguese and Italian: when the five filter buttons do not fit beside the search field, the filter becomes a menu.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
 
 ## [2.12.0] - 2026-11-23

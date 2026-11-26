@@ -143,7 +143,15 @@ struct TrendsView: View {
 
     /// Nil when the metric has no points in range.
     private func displayVal(_ selected: TrendPoint?) -> Double? {
-        selected?.value ?? trendPoints.last?.value
+        selected?.value ?? currentValue
+    }
+
+    /// The newest summary's figure; nil when that summary did not measure the metric, since
+    /// the line's last point is then an older day (`TrendStore.currentPoints`).
+    private var currentValue: Double? {
+        workspaceStore.demoMode
+            ? trendPoints.last?.value
+            : trendStore.currentPoints(metric: metric).last?.value
     }
 
     private func displayDate(_ selected: TrendPoint?) -> String {
@@ -594,7 +602,12 @@ struct TrendsView: View {
     @ViewBuilder
     private func heroIdleDetail(showsRange: Bool) -> some View {
         // With no points there is no change to report; the range pill says "No snapshots".
-        if !values.isEmpty {
+        if !values.isEmpty, currentValue == nil {
+            Text("Not in the newest summary")
+                .font(Theme.Fonts.mono(14, weight: .semibold))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .lineLimit(1)
+        } else if !values.isEmpty {
             HStack(spacing: 4) {
                 Image(systemName: heroChange?.symbol ?? "minus")
                     .font(.system(size: 11, weight: .bold))
@@ -1487,7 +1500,7 @@ struct TrendsView: View {
         guard workspaceStore.beginReportRun(for: profile) else { return }
         defer { workspaceStore.clearRunInProgress(for: profile) }
         isArchiving = true
-        workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
+        workspaceStore.globalStatus = "collect + generate · \(profile)"
         // Status-bar race guard — see AuditView.runAudit comment.
         do {
             let exit = try await bridge.collectThenGenerate(profile: profile) { [weak workspaceStore] line in

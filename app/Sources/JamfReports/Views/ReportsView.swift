@@ -455,7 +455,7 @@ struct ReportsView: View {
             guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isGeneratingPDF = true
-            workspace.globalStatus = "pdf · profile=\(profile)"
+            workspace.globalStatus = "pdf · \(profile)"
             reportError = nil
             Task {
                 defer { workspace.clearRunInProgress(for: profile) }
@@ -514,7 +514,7 @@ struct ReportsView: View {
             guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isExportingCSV = true
-            workspace.globalStatus = "inventory-csv · profile=\(profile)"
+            workspace.globalStatus = "inventory-csv · \(profile)"
             reportError = nil
             Task {
                 defer { workspace.clearRunInProgress(for: profile) }
