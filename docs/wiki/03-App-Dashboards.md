@@ -47,7 +47,11 @@ Overview, Devices and Trends screens and a workbook of its own; see
   list reads "No longer listed as failed", not fixed: Jamf Pro leaves out a download that is
   still retrying.
   The counts are stored in each day's summary, so they match the Fleet Drift tab of that
-  day's workbook; a count the collect could not take reads "Not measured". On a shared
+  day's workbook; a count the collect could not take reads "Not measured". Click a count
+  to open those Macs in Computers: the list is rebuilt from the same two snapshots, removed
+  Macs show as a list above the table, and a note says when a Mac is no longer listed, the
+  rule has changed since or a snapshot is gone. Newly failing benchmark rules open Compliance
+  Benchmarks. On a shared
   workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
   reads as "someone else is working" rather than a bug. On a
   macOS 27+ host with AI insights enabled, an AI Fleet Insight card turns the same daily

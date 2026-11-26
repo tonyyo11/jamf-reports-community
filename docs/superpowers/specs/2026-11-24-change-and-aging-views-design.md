@@ -395,6 +395,10 @@ The sidecar is a sidecar of `patch-release-dates`, not a collect kind:
     the baseline is the newest scan from an earlier day.
 *   **B2c:** opening the Macs behind an Overview count in Computers. CUJ 1's "each count
     opens Computers" moves here; B2a shows counts only.
+    Built on 2026-11-26: a count above 0 opens Computers filtered to the Macs rebuilt from
+    the two snapshots the summary names (removed Macs as a list; benchmark rules open
+    Compliance Benchmarks). The patch part gained `computers_stamp`, so a summary written
+    before it has no patch button.
 
 The baseline is decoded with the existing `ComputerDates.decodeSnapshot`, with no reduced
 decode. The collect's peak memory is measured on a 20,000-Mac workspace, and a reduced
