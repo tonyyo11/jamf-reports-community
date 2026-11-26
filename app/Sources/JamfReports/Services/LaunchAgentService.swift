@@ -342,59 +342,6 @@ enum LaunchAgentService {
         }
     }
 
-    /// What a schedule list row shows for a schedule's last run.
-    struct LastRun: Sendable, Equatable {
-        let finishedAt: Date?
-        let status: Schedule.LastStatus
-        let artifacts: [String]
-    }
-
-    /// The last run of each store or managed schedule, by label, from its status file and
-    /// the newest run log's tail, judged as `parse` judges a legacy plist, so a run whose
-    /// status file says success but whose log holds `[partial]` reads Partial. A schedule
-    /// that never ran has no entry.
-    static func lastRuns(schedules: [Schedule], statusProfile: String?) -> [String: LastRun] {
-        var runs: [String: LastRun] = [:]
-        for schedule in schedules {
-            guard let label = schedule.launchAgentLabel else { continue }
-            let owner = schedule.isMulti ? statusProfile : schedule.profile
-            let status: ParsedRunStatus? = schedule.isMulti
-                ? multiRunStatus(label: label, args: [], statusProfile: statusProfile)
-                : readRunStatus(
-                    from: statusFileURL(from: [], profile: schedule.profile, label: label),
-                    profile: schedule.profile)
-            let log = owner.flatMap { newestRunLog(label: label, profile: $0) }
-            let tail = log.map(parseLogTail(from:))
-            guard status != nil || log != nil else { continue }
-            let summary = ParsedLogSummary(
-                date: log.flatMap {
-                    try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                        .contentModificationDate
-                },
-                exitCode: tail?.exitCode,
-                hasFailureMarker: tail?.hasFailureMarker ?? false,
-                hasPartialMarker: tail?.hasPartialMarker ?? false)
-            runs[label] = LastRun(
-                finishedAt: status?.finishedAt ?? summary.date,
-                status: lastStatus(from: status, logSummary: summary),
-                artifacts: status?.artifacts ?? [])
-        }
-        return runs
-    }
-
-    /// `<label>.<stamp>.log` with the latest stamp in the profile's run log folder.
-    private static func newestRunLog(label: String, profile: String) -> URL? {
-        guard let dir = try? WorkspacePaths.runHistoryDir(for: profile),
-              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
-        else { return nil }
-        // The stamp sorts as text. `parseLogTail` reads through `BoundedFile.readTail`, which
-        // refuses a link or anything but a regular file at the name.
-        return names
-            .filter { ScheduledRunRecorder.isLogName($0, of: label) }
-            .max()
-            .map { dir.appendingPathComponent($0) }
-    }
-
     /// Creation date of a profile's workspace directory; nil when it does not
     /// exist. Internal so the wiring into `healthInputs` is testable.
     static func workspaceCreationDate(profile: String) -> Date? {

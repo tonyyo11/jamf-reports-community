@@ -346,7 +346,6 @@ extension WorkspaceStore {
         let request = healthRequests
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
-            scheduleLastRuns = [:]
             return
         }
         let profile = self.profile
@@ -360,9 +359,7 @@ extension WorkspaceStore {
         // foreground pass instead of only after a relaunch. Scope to THIS
         // profile's agents plus the global managed (isMulti) agents so a
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
-        typealias HealthPass = (
-            status: TickerStatus, issues: [AutomationHealthIssue],
-            lastRuns: [String: LaunchAgentService.LastRun])
+        typealias HealthPass = (status: TickerStatus, issues: [AutomationHealthIssue])
         let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
             let status = registrar.status
             // With nothing scheduled an unregistered ticker is not a fault.
@@ -375,15 +372,12 @@ extension WorkspaceStore {
                 forProfile: profile)
             return (status: status,
                     issues: AutomationHealth.evaluate(
-                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now),
-                    lastRuns: LaunchAgentService.lastRuns(
-                        schedules: schedules, statusProfile: profile))
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
         }.value
         // A later request or a profile switch overtook this read: what it found is for
         // something else, and the newer request publishes its own.
         guard request == healthRequests, profile == self.profile else { return }
         tickerStatus = evaluated.status
-        scheduleLastRuns = evaluated.lastRuns
         // While this process holds the tick lock, and until the wake it turned away has had
         // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
         // the schedule is running. Neither the banner nor the digest calls it overdue.
