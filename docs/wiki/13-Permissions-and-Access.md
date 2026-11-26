@@ -216,12 +216,13 @@ privilege the role lacks is shown as not permitted and checked again weekly, and
 run. On a shared workspace each Mac collects only the sources it confirmed in Config Doctor.
 
 **Deployment health is on by default.** App Installers deployments and patch policies are
-collected on every Jamf Pro workspace, unlike admin hygiene. A role without *Read Mac
+collected on every Jamf Pro workspace with Macs, unlike admin hygiene. A role without *Read Mac
 Applications* or *Read Patch Policies* fails that source, and the run reads as Partial until
 the privilege is granted or the source is turned off in Data Sources (`jamf_cli.collect_skip`).
-A server without App Installers reports it as not set up, which is never a failure. The Platform
-API permissions come from jamf-cli's command catalog and Jamf's Platform API reference; no
-Platform API profile has collected these two sources yet.
+A server that has never had App Installers reports it as not set up, not as a failure, until
+App Installers is first collected; after that, an error there is an ordinary failure. The
+Platform API permissions come from jamf-cli's command catalog and Jamf's Platform API reference;
+no Platform API profile has collected these two sources yet.
 
 **The `overview` source** checks about 40 settings and inventory objects in one pass. It
 shows N/A for any line the credential cannot read and keeps the rest. The areas above cover
