@@ -134,6 +134,7 @@ extension SchedulesView {
         case .warn:    return "Last run status: Warning"
         case .fail:    return "Last run status: Failed"
         case .partial: return "Last run status: Partial"
+        case .inProgress: return "Last run status: In progress"
         }
     }
 }

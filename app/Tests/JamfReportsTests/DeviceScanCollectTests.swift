@@ -1163,7 +1163,7 @@ extension DeviceScanCollectTests {
         // The first call answers at once and raises the stop; the others hang until their
         // short timeout, so the fifth Mac's slot opens only after the stop is up.
         let lines = try await ReportEngine.$runStop.withValue({
-            FileManager.default.fileExists(atPath: stopFile.path) ? .manualRefresh : nil
+            FileManager.default.fileExists(atPath: stopFile.path) ? .manualRefresh(sameWorkspaceFull: true) : nil
         }) {
             try await runScan(
                 force: false,

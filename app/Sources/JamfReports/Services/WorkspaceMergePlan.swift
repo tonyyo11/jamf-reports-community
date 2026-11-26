@@ -504,9 +504,10 @@ private final class Builder {
 
     // MARK: Listing
 
-    /// The source's log files that are among the newest `ScheduledRunRecorder.maxRunLogs` of
-    /// both folders together, by mtime as the recorder prunes. Copying older ones would make the
-    /// target's next run prune its own logs; they stay in the moved source folder.
+    /// The source's log files that are among the newest `ScheduledRunRecorder.maxWorkspaceRunLogs`
+    /// of both folders together, by mtime as the recorder prunes its workspace total. Copying
+    /// older ones would make the target's next run prune its own logs; they stay in the moved
+    /// source folder. (The recorder's per-label cap prunes only a label's oldest logs.)
     private static func logsKept(_ srcLogs: URL, _ tgtLogs: URL) throws -> [String] {
         func dated(_ dir: URL, _ rels: [String], source: Bool) -> [(Date, String?)] {
             rels.map { rel in
@@ -522,7 +523,7 @@ private final class Builder {
         let srcAll = try recursive(srcLogs)
         let pruned = dated(srcLogs, recorderLogs(srcAll), source: true)
             + dated(tgtLogs, recorderLogs(try recursive(tgtLogs)), source: false)
-        let kept = Set(pruned.sorted { $0.0 > $1.0 }.prefix(ScheduledRunRecorder.maxRunLogs)
+        let kept = Set(pruned.sorted { $0.0 > $1.0 }.prefix(ScheduledRunRecorder.maxWorkspaceRunLogs)
             .compactMap(\.1))
         // Files the recorder never prunes (other names, subfolders) are copied as before.
         let prunable = Set(recorderLogs(srcAll))

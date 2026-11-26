@@ -222,6 +222,8 @@ struct Schedule: Identifiable, Sendable {
     }
     enum LastStatus: String, Sendable, CaseIterable {
         case ok, warn, fail, partial
+        /// A collect that stopped at its budget today and is being continued (split collect).
+        case inProgress
 
         /// VoiceOver label for a status pill describing the last run outcome.
         var accessibilityLabel: String {
@@ -230,6 +232,7 @@ struct Schedule: Identifiable, Sendable {
             case .warn:    L("Last run status: Warning")
             case .fail:    L("Last run status: Failed")
             case .partial: L("Last run status: Partial")
+            case .inProgress: L("Last run status: In progress")
             }
         }
     }

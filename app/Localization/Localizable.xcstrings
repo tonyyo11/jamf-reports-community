@@ -17736,6 +17736,52 @@
         }
       }
     },
+    "%lld of %lld sources done today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld Quellen heute erledigt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld sources done today"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld fuentes listas hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sources traitées sur %lld aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di %lld origini completate oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日%2$lld件中%1$lld件のソースが完了"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld fontes concluídas hoje"
+          }
+        }
+      }
+    },
     "%lld of %lld summaries" : {
       "localizations" : {
         "de" : {
@@ -17950,6 +17996,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de 1 dispositivo móvel gerenciado"
+          }
+        }
+      }
+    },
+    "%lld of 1 source done today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von 1 Quelle heute erledigt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 fuente lista hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld source traitée sur 1 aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di 1 origine completata oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日1件中%lld件のソースが完了"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de 1 fonte concluída hoje"
           }
         }
       }
@@ -20192,6 +20278,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld snapshots"
+          }
+        }
+      }
+    },
+    "%lld sources left today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heute noch %lld Quellen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quedan %lld fuentes hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore %lld sources aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restano %lld origini oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日残り%lld件のソース"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restam %lld fontes hoje"
           }
         }
       }
@@ -24220,6 +24346,46 @@
         }
       }
     },
+    "1 source left today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heute noch 1 Quelle"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queda 1 fuente hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore 1 source aujourd’hui"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resta 1 origine oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日残り1件のソース"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resta 1 fonte hoje"
+          }
+        }
+      }
+    },
     "1 summary" : {
       "localizations" : {
         "de" : {
@@ -27043,6 +27209,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não foi possível ler um snapshot: acima do limite de leitura"
+          }
+        }
+      }
+    },
+    "A source failed: the retry runs first, then the rest of today's collect." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Quelle ist fehlgeschlagen: Zuerst läuft die Wiederholung, dann der Rest der heutigen Erfassung."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una fuente falló: primero se ejecuta el reintento y después el resto de la recopilación de hoy."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une source a échoué : la nouvelle tentative passe d’abord, puis le reste de la collecte du jour."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un’origine non è riuscita: prima viene eseguito il nuovo tentativo, poi il resto della raccolta di oggi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソースの1つが失敗しました。先に再試行を実行し、その後で本日の収集の残りを実行します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma fonte falhou: primeiro é feita a nova tentativa e depois o restante da coleta de hoje."
           }
         }
       }
@@ -47378,6 +47584,86 @@
         }
       }
     },
+    "Continue now" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt fortsetzen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuer maintenant"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continua ora"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今すぐ続行"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar agora"
+          }
+        }
+      }
+    },
+    "Continue now could not start the background item." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "„Jetzt fortsetzen“ konnte das Hintergrundobjekt nicht starten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Continuar ahora» no pudo iniciar el elemento en segundo plano."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« Continuer maintenant » n’a pas pu lancer l’élément en arrière-plan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Continua ora» non è riuscito ad avviare l’elemento in background."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「今すぐ続行」でバックグラウンド項目を開始できませんでした。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Continuar agora” não conseguiu iniciar o item em segundo plano."
+          }
+        }
+      }
+    },
     "Continue to dashboard" : {
       "localizations" : {
         "de" : {
@@ -47454,6 +47740,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continuar sem validar"
+          }
+        }
+      }
+    },
+    "Continuing today's collect" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heutige Erfassung wird fortgesetzt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuando la recopilación de hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poursuite de la collecte du jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prosecuzione della raccolta di oggi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本日の収集を継続中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuando a coleta de hoje"
           }
         }
       }
@@ -72892,6 +73218,46 @@
         }
       }
     },
+    "IN PROGRESS" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IN ARBEIT"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EN CURSO"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EN COURS"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IN CORSO"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EM ANDAMENTO"
+          }
+        }
+      }
+    },
     "INCLUDE" : {
       "localizations" : {
         "de" : {
@@ -80442,6 +80808,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Status da última execução: falhou"
+          }
+        }
+      }
+    },
+    "Last run status: In progress" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status des letzten Laufs: In Arbeit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la última ejecución: en curso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "État de la dernière exécution : en cours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato ultima esecuzione: in corso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の実行状況: 進行中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status da última execução: em andamento"
           }
         }
       }
@@ -88226,6 +88632,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Próxima aba"
+          }
+        }
+      }
+    },
+    "Next pickup within about five minutes, once the lock is free." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter in etwa fünf Minuten, sobald die Sperre frei ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se reanuda en unos cinco minutos, cuando el bloqueo quede libre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprise dans environ cinq minutes, dès que le verrou est libre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripresa entro circa cinque minuti, appena il blocco è libero."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロックが解放されれば、約5分以内に再開します。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retomada em cerca de cinco minutos, assim que o bloqueio estiver livre."
           }
         }
       }
@@ -129571,6 +130017,46 @@
         }
       }
     },
+    "Status: In progress" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status: In Arbeit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado: en curso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statut : en cours"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stato: in corso"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ステータス: 進行中"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status: em andamento"
+          }
+        }
+      }
+    },
     "Status: OK" : {
       "localizations" : {
         "de" : {
@@ -136093,6 +136579,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estes são os atributos de extensão que o jamf-cli coletou na última atualização. Selecione os que deseja acompanhar e adote-os no config.yaml — suas configurações existentes são preservadas."
+          }
+        }
+      }
+    },
+    "These collects stopped at the run budget and are being picked up through the day." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Erfassungen haben am Laufzeitbudget angehalten und werden im Lauf des Tages fortgesetzt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas recopilaciones se detuvieron al agotar el presupuesto de ejecución y se retoman a lo largo del día."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces collectes se sont arrêtées au budget d’exécution et reprennent au fil de la journée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queste raccolte si sono fermate al budget di esecuzione e vengono riprese nel corso della giornata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "これらの収集は実行時間の上限で停止し、1日を通して再開されます。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas coletas pararam no limite de execução e são retomadas ao longo do dia."
           }
         }
       }

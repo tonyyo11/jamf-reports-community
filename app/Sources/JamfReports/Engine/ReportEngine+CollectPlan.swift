@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// What `collect` will do, decided once before its first jamf-cli command. The same data
 /// writes the `[plan]` lines at the top of the run log and drives the loop, so the log says
@@ -169,8 +170,9 @@ extension ReportEngine {
     enum RunStop: Equatable, Sendable {
         /// The run has held the lock for `jamf_cli.run_budget_minutes`.
         case budgetUsed(minutes: Int)
-        /// Someone asked for a refresh in the app (`ManualRefreshRequest`).
-        case manualRefresh
+        /// Someone asked for a refresh in the app (`ManualRefreshRequest`). `sameWorkspaceFull`:
+        /// that refresh collects everything due in this run's workspace.
+        case manualRefresh(sameWorkspaceFull: Bool)
 
         var reason: String {
             switch self {
@@ -181,9 +183,12 @@ extension ReportEngine {
 
         /// The one decision a scheduled run's `runStop` closure makes.
         static func evaluate(
-            started: Date, budgetMinutes: Int, manualRefreshPending: Bool, now: Date = Date()
+            started: Date, budgetMinutes: Int, refresh: ManualRefreshRequest.Pending,
+            profile: String, now: Date = Date()
         ) -> RunStop? {
-            if manualRefreshPending { return .manualRefresh }
+            if refresh != .none {
+                return .manualRefresh(sameWorkspaceFull: refresh.isFullRefresh(of: profile))
+            }
             return now.timeIntervalSince(started) >= Double(budgetMinutes * 60)
                 ? .budgetUsed(minutes: budgetMinutes) : nil
         }
@@ -202,8 +207,46 @@ extension ReportEngine {
         return try await $runStop.withValue({
             RunStop.evaluate(
                 started: started, budgetMinutes: budget,
-                manualRefreshPending: ManualRefreshRequest.isPending())
+                refresh: ManualRefreshRequest.pending(), profile: profile)
         }, operation: body)
+    }
+
+    /// What a scheduled run planned, what it left and why it stopped, kept as values for the tick
+    /// (`ReportEngine.runProgress`); the log lines say the same for people.
+    final class RunProgress: Sendable {
+        private struct State {
+            var planned: [String] = []
+            var left: [String] = []
+            var stop: RunStop?
+            var protectOnly = false
+        }
+        private let state = Mutex(State())
+
+        init() {}
+
+        var planned: [String] { state.withLock { $0.planned } }
+        var left: [String] { state.withLock { $0.left } }
+        var stop: RunStop? { state.withLock { $0.stop } }
+        /// Set by the scheduled run: a confirmed Protect-only environment is never continued.
+        var protectOnly: Bool {
+            get { state.withLock { $0.protectOnly } }
+            set { state.withLock { $0.protectOnly = newValue } }
+        }
+
+        func addPlanned(_ names: [String]) {
+            state.withLock { s in s.planned += names.filter { !s.planned.contains($0) } }
+        }
+
+        /// Anything left was planned, the device scan included (its plan line is not a source list).
+        /// One run can stop in several phases (Jamf Pro, then Protect, Security Cloud and the
+        /// scan, each at its first source), so each phase's leftovers are added, not replaced.
+        func recordStop(_ stop: RunStop, left: [String]) {
+            state.withLock { s in
+                s.stop = s.stop ?? stop
+                s.left += left.filter { !s.left.contains($0) }
+                s.planned += left.filter { !s.planned.contains($0) }
+            }
+        }
     }
 
     /// Starts every line that says a run stopped before its sources were done.
@@ -212,6 +255,7 @@ extension ReportEngine {
     /// True, after logging why and what is left, when `runStop` says to stop here.
     static func stopsRun(left: [String], onLine: @Sendable (CLIBridge.LogLine) -> Void) -> Bool {
         guard !left.isEmpty, let stop = runStop?() else { return false }
+        runProgress?.recordStop(stop, left: left)
         let count = left.count == 1 ? "1 source" : "\(left.count) sources"
         onLine(.init(timestamp: Date(), level: .info, text: stoppedEarlyMarker
             + "\(stop.reason); \(count) left for the next run: \(left.joined(separator: ", "))"))
@@ -431,7 +475,9 @@ extension ReportEngine {
     /// cadence; `force` (Collect now) ignores the cadence. `platformFieldsMissing` skips the
     /// blueprints kind, the one School source that needs the profile's Platform fields. A run
     /// with only the scan tier collects `school-devices`, the device scan's input, and only
-    /// when `scanDue`, ignoring that source's cadence; otherwise it stays a no-op.
+    /// when `scanDue`; otherwise it stays a no-op. Any run with the scan tier ignores
+    /// `school-devices`' cadence while the scan is due, so an unforced one (a split collect's
+    /// continuation) still hands the scan the devices it needs.
     static func planSchoolCollect(
         profile: String, tiers: Set<CollectionTier>, force: Bool,
         collectSkip: Set<String> = [], now: Date = Date(),
@@ -450,8 +496,9 @@ extension ReportEngine {
                 skip = .schoolNoPlatform
             } else if !force, let until = timeoutHold(kind), now < until {
                 skip = .repeatedTimeouts(retryAfter: until)
-            } else if !force, !CadenceResolver.isDue(
-                lastRun: lastRun(kind), cadence: cadence, now: now) {
+            } else if !force,
+                      !(scanDue && tiers.contains(.scan) && kind == SchoolFleetService.devicesKind),
+                      !CadenceResolver.isDue(lastRun: lastRun(kind), cadence: cadence, now: now) {
                 skip = .notDue(lastRun: lastRun(kind), cadence: cadence)
             } else {
                 skip = nil
@@ -534,6 +581,7 @@ extension ReportEngine {
     static func collectPlanLines(
         profile: String, running: [String], skipped: [(label: String, kinds: [String])] = []
     ) -> [String] {
+        runProgress?.addPlanned(running)
         var lines = wrappedPlanLines(
             header: "[plan] profile \(profile) — collecting \(sourceCount(running.count))",
             items: running)

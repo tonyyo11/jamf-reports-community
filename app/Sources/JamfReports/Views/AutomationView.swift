@@ -114,6 +114,7 @@ struct AutomationView: View {
                 if !workspace.automationHealthIssues.isEmpty || policy.isManaged {
                     HealthCard(issues: workspace.automationHealthIssues)
                 }
+                SplitCollectCard()
                 // Notifications apply to any scheduled run — hand-built or managed —
                 // so this card shows regardless of `isManaged`.
                 NotificationsCard(profile: workspace.profile)
