@@ -1150,6 +1150,46 @@
         }
       }
     },
+    "%@ (defaults; config.yaml could not be read)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Standardwerte; config.yaml konnte nicht gelesen werden)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (valores predeterminados; no se pudo leer config.yaml)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (valeurs par défaut ; config.yaml n’a pas pu être lu)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (valori predefiniti; impossibile leggere config.yaml)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (既定値。config.yaml を読み込めませんでした)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (padrões; não foi possível ler config.yaml)"
+          }
+        }
+      }
+    },
     "%@ (mobile devices)" : {
       "localizations" : {
         "de" : {
@@ -1964,6 +2004,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ Valores privados (nomes de servidor, caminhos, nomes de conta) são gravados no log unificado deste Mac."
+          }
+        }
+      }
+    },
+    "%@ The app uses warning %lld%% and critical %lld%%." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ Die App verwendet Warnung %2$lld %% und kritisch %3$lld %%."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ The app uses warning %2$lld%% and critical %3$lld%%."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ La app usa advertencia %2$lld %% y crítico %3$lld %%."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ L’app utilise avertissement %2$lld %% et critique %3$lld %%."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ L’app usa avviso %2$lld%% e critico %3$lld%%."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ アプリは警告 %2$lld%%、重大 %3$lld%% を使います。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ O app usa aviso %2$lld%% e crítico %3$lld%%."
           }
         }
       }
@@ -21578,46 +21664,6 @@
         }
       }
     },
-    "(defaults; config.yaml could not be read)" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(Standardwerte; config.yaml konnte nicht gelesen werden)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(valores predeterminados; no se pudo leer config.yaml)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(valeurs par défaut ; config.yaml n’a pas pu être lu)"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(valori predefiniti; impossibile leggere config.yaml)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(既定値。config.yaml を読み込めませんでした)"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(padrões; não foi possível ler config.yaml)"
-          }
-        }
-      }
-    },
     "(empty)" : {
       "localizations" : {
         "de" : {
@@ -23272,6 +23318,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 relatório"
+          }
+        }
+      }
+    },
+    "1 row with no ID left out" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Zeile ohne ID ausgelassen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 fila sin ID omitida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 ligne sans ID ignorée"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 riga senza ID esclusa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID のない 1 行を除外"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 linha sem ID deixada de fora"
           }
         }
       }
@@ -47877,6 +47963,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Não foi possível coletar: "
+          }
+        }
+      }
+    },
+    "Could not be collected: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnte nicht erfasst werden: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo recopilar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecte impossible : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile raccogliere: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収集できませんでした: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível coletar: %@"
           }
         }
       }
@@ -93065,42 +93191,42 @@
         }
       }
     },
-    "Not judged: " : {
+    "Not judged: %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nicht bewertet: "
+            "value" : "Nicht bewertet: %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sin evaluar: "
+            "value" : "Sin evaluar: %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non évalués : "
+            "value" : "Non évalués : %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non valutati: "
+            "value" : "Non valutati: %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "判定対象外: "
+            "value" : "判定対象外: %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Não avaliados: "
+            "value" : "Não avaliados: %@"
           }
         }
       }
@@ -130567,48 +130693,140 @@
         }
       }
     },
-    "The deployment failure warning level (%lld%%) is above the critical level (%lld%%). The app uses warning %lld%% and critical %lld%%." : {
+    "The deployment failure critical level (%lld%%) is below the default warning level (%lld%%)." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Warnschwelle für Bereitstellungsfehler (%1$lld %%) liegt über der kritischen Schwelle (%2$lld %%). Die App verwendet Warnung %3$lld %% und kritisch %4$lld %%."
+            "value" : "Die kritische Schwelle für Bereitstellungsfehler (%1$lld %%) liegt unter der Standard-Warnschwelle (%2$lld %%)."
           }
         },
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "The deployment failure warning level (%1$lld%%) is above the critical level (%2$lld%%). The app uses warning %3$lld%% and critical %4$lld%%."
+            "state" : "translated",
+            "value" : "The deployment failure critical level (%1$lld%%) is below the default warning level (%2$lld%%)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El nivel de advertencia de fallos de implementación (%1$lld %%) supera el nivel crítico (%2$lld %%). La app usa advertencia %3$lld %% y crítico %4$lld %%."
+            "value" : "El nivel crítico de fallos de implementación (%1$lld %%) está por debajo del nivel de advertencia predeterminado (%2$lld %%)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le seuil d’avertissement des échecs de déploiement (%1$lld %%) dépasse le seuil critique (%2$lld %%). L’app utilise avertissement %3$lld %% et critique %4$lld %%."
+            "value" : "Le seuil critique des échecs de déploiement (%1$lld %%) est inférieur au seuil d’avertissement par défaut (%2$lld %%)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La soglia di avviso per gli errori di distribuzione (%1$lld%%) supera quella critica (%2$lld%%). L’app usa avviso %3$lld%% e critico %4$lld%%."
+            "value" : "La soglia critica per gli errori di distribuzione (%1$lld%%) è inferiore alla soglia di avviso predefinita (%2$lld%%)."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配布失敗の警告しきい値 (%1$lld%%) が重大しきい値 (%2$lld%%) を上回っています。アプリは警告 %3$lld%%、重大 %4$lld%% を使います。"
+            "value" : "配布失敗の重大しきい値 (%1$lld%%) が既定の警告しきい値 (%2$lld%%) を下回っています。"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O nível de aviso de falhas de implantação (%1$lld%%) está acima do nível crítico (%2$lld%%). O app usa aviso %3$lld%% e crítico %4$lld%%."
+            "value" : "O nível crítico de falhas de implantação (%1$lld%%) está abaixo do nível de aviso padrão (%2$lld%%)."
+          }
+        }
+      }
+    },
+    "The deployment failure warning level (%lld%%) is above the critical level (%lld%%)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Warnschwelle für Bereitstellungsfehler (%1$lld %%) liegt über der kritischen Schwelle (%2$lld %%)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The deployment failure warning level (%1$lld%%) is above the critical level (%2$lld%%)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nivel de advertencia de fallos de implementación (%1$lld %%) supera el nivel crítico (%2$lld %%)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le seuil d’avertissement des échecs de déploiement (%1$lld %%) dépasse le seuil critique (%2$lld %%)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La soglia di avviso per gli errori di distribuzione (%1$lld%%) supera quella critica (%2$lld%%)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配布失敗の警告しきい値 (%1$lld%%) が重大しきい値 (%2$lld%%) を上回っています。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O nível de aviso de falhas de implantação (%1$lld%%) está acima do nível crítico (%2$lld%%)."
+          }
+        }
+      }
+    },
+    "The deployment failure warning level (%lld%%) is above the default critical level (%lld%%)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Warnschwelle für Bereitstellungsfehler (%1$lld %%) liegt über der kritischen Standardschwelle (%2$lld %%)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The deployment failure warning level (%1$lld%%) is above the default critical level (%2$lld%%)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nivel de advertencia de fallos de implementación (%1$lld %%) supera el nivel crítico predeterminado (%2$lld %%)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le seuil d’avertissement des échecs de déploiement (%1$lld %%) dépasse le seuil critique par défaut (%2$lld %%)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La soglia di avviso per gli errori di distribuzione (%1$lld%%) supera la soglia critica predefinita (%2$lld%%)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配布失敗の警告しきい値 (%1$lld%%) が既定の重大しきい値 (%2$lld%%) を上回っています。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O nível de aviso de falhas de implantação (%1$lld%%) está acima do nível crítico padrão (%2$lld%%)."
           }
         }
       }
@@ -131627,16 +131845,16 @@
     },
     "The levels changed on %@: rows are now at warning from %lld%% failed and at critical from %lld%%, with at least %lld Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet." : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The levels changed on %1$@: rows are now at warning from %2$lld%% failed and at critical from %3$lld%%, with at least %4$lld Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet."
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Die Stufen haben sich am %@ geändert: Zeilen erreichen jetzt die Warnstufe ab %lld%% fehlgeschlagen und die kritische Stufe ab %lld%%, bei mindestens %lld Macs im Bereich. Frühere Tage behalten die Anzahl, mit der sie bewertet wurden; der Sprung dort ist die Regel, nicht die Flotte."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The levels changed on %1$@: rows are now at warning from %2$lld%% failed and at critical from %3$lld%%, with at least %4$lld Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet."
           }
         },
         "es" : {

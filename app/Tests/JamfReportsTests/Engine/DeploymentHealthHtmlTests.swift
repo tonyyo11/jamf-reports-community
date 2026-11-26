@@ -36,7 +36,8 @@ final class DeploymentHealthHtmlTests: XCTestCase {
         XCTAssertTrue(block.isShown)
         let html = block.html
         XCTAssertTrue(html.contains("id=\"deployment-health\""))
-        XCTAssertTrue(html.contains("25 of 30 shown."))
+        XCTAssertTrue(html.contains("5 more rows are in the workbook."), "the shared cap")
+        XCTAssertFalse(html.contains("of 30 shown"), "no second note beside it")
         XCTAssertTrue(html.contains("Not set up on this Jamf Pro server"))
         var none = HtmlReport.Inputs()
         none.deployments = [.patchPolicy: .notCollected, .appInstallers: .notCollected]

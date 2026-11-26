@@ -45,6 +45,10 @@ extension HtmlReport {
                 body += "<p class=\"block-note\">" + f.escapeHTML(
                     "As of \(ISO8601Time.string(asOf)), no longer current.") + "</p>"
             }
+            if case .rows(_, _, let leftOut) = state, leftOut > 0 {
+                body += "<p class=\"block-note\">"
+                    + f.escapeHTML(DeploymentHealth.leftOutText(leftOut) + ".") + "</p>"
+            }
             let atLevel = DeploymentHealth.atLevel(state.rows, levels: levels)
             guard !atLevel.isEmpty else {
                 body += "<p class=\"empty\">None at a level.</p>"
@@ -53,15 +57,12 @@ extension HtmlReport {
             let rows = atLevel.map { entry -> [String] in
                 [entry.row.displayName,
                  DeploymentHealth.judgementText(entry.judgement),
-                 "\(entry.row.failed ?? 0) of \(entry.row.inScope ?? 0) Macs",
+                 "\(entry.failed) of \(entry.inScope) Macs",
                  DeploymentHealth.shareText(entry.row, levels: levels, format: config.percentFormat)]
             }
-            let shown = Array(rows.prefix(f.maxFailureRows))
-            if rows.count > shown.count {
-                body += "<p class=\"block-note\">\(shown.count) of \(rows.count) shown.</p>"
-            }
             body += f.renderCappedTable(
-                headers: ["Name", "Level", "Failed", "Failed %"], rows: shown, expanded: expandAll)
+                headers: ["Name", "Level", "Failed", "Failed %"], rows: rows,
+                maxRows: f.maxFailureRows, expanded: expandAll)
         }
         return .shown(f.block(id: "deployment-health", title: "Deployments and patch policies",
                               body: body))

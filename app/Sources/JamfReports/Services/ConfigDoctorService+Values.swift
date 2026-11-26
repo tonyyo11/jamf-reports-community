@@ -287,22 +287,31 @@ extension ConfigDoctorService {
             ("deployment_failure_warning_percent", limits.deploymentFailureWarningPercent),
             ("deployment_failure_critical_percent", limits.deploymentFailureCriticalPercent),
         ] {
-            guard let typed, !(1...100).contains(typed) else { continue }
+            guard let typed, ThresholdsConfig.usableDeploymentPercent(typed) == nil else { continue }
             rows.append(valueRow(
                 "thresholds.\(key)",
                 L("\(typed) is not from 1 to 100. The app uses warning \(used.warning)% and critical \(used.critical)%."),
                 L("Set a whole number from 1 to 100, or remove the key for the default.")))
         }
-        let typedWarning = limits.deploymentFailureWarningPercent.flatMap {
-            (1...100).contains($0) ? $0 : nil
-        } ?? DeploymentHealth.Levels.defaults.warning
-        let typedCritical = limits.deploymentFailureCriticalPercent.flatMap {
-            (1...100).contains($0) ? $0 : nil
-        } ?? DeploymentHealth.Levels.defaults.critical
-        if typedWarning > typedCritical {
+        let defaults = DeploymentHealth.Levels.defaults
+        let typedWarning = ThresholdsConfig.usableDeploymentPercent(
+            limits.deploymentFailureWarningPercent)
+        let typedCritical = ThresholdsConfig.usableDeploymentPercent(
+            limits.deploymentFailureCriticalPercent)
+        let (warning, critical) = (typedWarning ?? defaults.warning, typedCritical ?? defaults.critical)
+        if warning > critical {
+            // Name only what was typed: a default level is called the default.
+            let detail = switch (typedWarning, typedCritical) {
+            case (.some, .some):
+                L("The deployment failure warning level (\(warning)%) is above the critical level (\(critical)%).")
+            case (.some, nil):
+                L("The deployment failure warning level (\(warning)%) is above the default critical level (\(critical)%).")
+            default:
+                L("The deployment failure critical level (\(critical)%) is below the default warning level (\(warning)%).")
+            }
             rows.append(valueRow(
                 "thresholds.deployment_failure_warning_percent",
-                L("The deployment failure warning level (\(typedWarning)%) is above the critical level (\(typedCritical)%). The app uses warning \(used.warning)% and critical \(used.critical)%."),
+                L("\(detail) The app uses warning \(used.warning)% and critical \(used.critical)%."),
                 L("Set the warning at or below the critical one."), tag: ".order"))
         }
         return rows

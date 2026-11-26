@@ -154,6 +154,8 @@ extension HtmlReport {
         inputs.siteScope = SiteScope.persisted(dataDir: dataDir)
         // The section and the attention sentences are its only readers.
         if sections.contains(.deploymentHealth) || sections.contains(.needsAttention) {
+            _ = track("App Installers deployments", DeploymentHealth.Source.appInstallers.kind)
+            _ = track("Patch policies", DeploymentHealth.Source.patchPolicy.kind)
             inputs.deployments = DeploymentHealth.load(
                 dataDir: dataDir, now: now, maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
             inputs.deploymentLevels = config.thresholds?.resolvedDeploymentLevels ?? .defaults

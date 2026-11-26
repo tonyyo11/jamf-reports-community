@@ -107,6 +107,19 @@ final class DeploymentSummaryTests: XCTestCase {
         XCTAssertEqual(s.patchPolicyHealth?.atLevel, 0)
     }
 
+    /// Nothing could be read: rows with no ID, or rows with no counts and none judged. That is
+    /// no measurement, so no group (never `judged: 0`), and the earlier value stands.
+    func testRowsLeftOutOrUnmeasuredWithNoneJudgedWriteNoGroup() throws {
+        try makeRoot()
+        try writeMDMSummary()
+        try save(#"[{"name":"no id"}]"#, "app-installers-deployments")
+        try save(#"[{"id":"1","policyEnabled":true,"failed":1}]"#, "patch-policies")
+        try finalize(landed: ["app-installers-deployments", "patch-policies"])
+        let s = try summary()
+        XCTAssertNil(s.appInstallersHealth, "rows with no ID are not a measured zero")
+        XCTAssertNil(s.patchPolicyHealth, "an unmeasured row is not a measured zero")
+    }
+
     func testAnUnreadableSnapshotWritesNoGroup() throws {
         try makeRoot()
         try writeMDMSummary()

@@ -21,7 +21,8 @@ final class DeploymentHealthTests: XCTestCase {
     func testTheRulesApplyInOrder() {
         XCTAssertEqual(DeploymentHealth.judge(app(enabled: false, failed: nil), levels: levels),
                        .notJudged, "not enabled wins over a missing count")
-        XCTAssertEqual(DeploymentHealth.judge(app(enabled: nil), levels: levels), .notJudged)
+        XCTAssertEqual(DeploymentHealth.judge(app(enabled: nil), levels: levels), .unmeasured,
+                       "an absent flag is not 'off'")
         XCTAssertEqual(DeploymentHealth.judge(app(failed: nil), levels: levels), .unmeasured)
         XCTAssertEqual(DeploymentHealth.judge(app(inScope: 0), levels: levels), .nothingInScope)
         XCTAssertEqual(DeploymentHealth.judge(app(failed: 9, inScope: 9), levels: levels),
@@ -125,6 +126,47 @@ final class DeploymentHealthTests: XCTestCase {
         XCTAssertEqual(states[.appInstallers], .unreadable)
     }
 
+    /// A role without the privilege, a timeout or a refusal: the source failed and has no
+    /// snapshot, which is not "not collected yet", and the card, tab and HTML say so.
+    func testAFailedSourceWithNoSnapshotReadsAsFailedOnEverySurface() throws {
+        let dir = try dataDir()
+        let store = StateFileStore(directory: dir.appendingPathComponent("state"))
+        for kind in ["app-installers-deployments", "patch-policies"] {
+            store.record(.failed(exitCode: 5), report: kind, at: Date(),
+                         cause: FailureCause(kind: .missingPermission, names: [], hint: nil,
+                                             exitCode: 5))
+        }
+        let states = DeploymentHealth.load(dataDir: dir)
+        XCTAssertEqual(states[.patchPolicy], .failed("missing permission"))
+        XCTAssertEqual(DeploymentHealth.stateText(states[.patchPolicy]!),
+                       "Could not be collected: missing permission")
+
+        let card = DeploymentHealthCard(states: states, levels: .defaults)
+        XCTAssertFalse(card.isEmpty, "a failed source is not an empty card")
+
+        var inputs = HtmlReport.Inputs()
+        inputs.deployments = states
+        let html = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dir)
+            .buildDeploymentHealth(inputs).html
+        XCTAssertTrue(html.contains("Could not be collected: missing permission"), html)
+
+        let workbook = Workbook()
+        try CoreDashboard(config: ReportConfig(), dataDir: dir, workbook: workbook)
+            .writeDeploymentHealth()
+        let sheet = try XCTUnwrap(workbook.sheet(named: "Deployment Health"), "the tab is written")
+        XCTAssertTrue(try XCTUnwrap(sheet.csvText()).contains("Could not be collected: missing permission"))
+    }
+
+    func testRowsLeftOutAreNotNone() {
+        let state = DeploymentHealth.SourceState.rows([], asOf: nil, leftOut: 2)
+        XCTAssertNil(DeploymentHealth.stateText(state), "the left-out note shows instead")
+        XCTAssertTrue(DeploymentHealthSection.summaryLines(state, levels: levels)
+            .contains("2 rows with no ID left out"))
+        XCTAssertTrue(DeploymentHealthSection.summaryLines(
+            .rows([], asOf: nil, leftOut: 1), levels: levels).contains("1 row with no ID left out"))
+        XCTAssertEqual(DeploymentHealth.leftOutText(1), "1 row with no ID left out")
+    }
+
     func testNotSetUpComesFromTheStateFiles() throws {
         let dir = try dataDir()
         StateFileStore(directory: dir.appendingPathComponent("state")).record(
@@ -196,10 +238,17 @@ final class DeploymentLevelsConfigTests: XCTestCase {
         XCTAssertNotNil(range, "0 is out of range")
         let order = rows.first {
             $0.title == "thresholds.deployment_failure_warning_percent"
-                && $0.detail.contains("above the critical level")
+                && $0.detail.contains("above the default critical level (25%)")
         }
-        XCTAssertNotNil(order, "30 against the default 25 is inverted")
+        XCTAssertNotNil(order, "30 against the default 25 is inverted, and 25 was never typed")
         XCTAssertTrue(order?.detail.contains("warning 10% and critical 25%") ?? false)
+
+        let both = "thresholds:\n  deployment_failure_warning_percent: 30\n"
+            + "  deployment_failure_critical_percent: 20\n"
+        let typed = ConfigDoctorService.valueRows(
+            try ConfigLoader.loadFromString(both), raw: try ConfigLoader.rawMapping(fromYAML: both),
+            workspace: nil, profile: "ws")
+        XCTAssertTrue(typed.contains { $0.detail.contains("above the critical level (20%)") })
     }
 }
 

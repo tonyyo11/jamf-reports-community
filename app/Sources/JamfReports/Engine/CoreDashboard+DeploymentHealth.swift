@@ -37,7 +37,17 @@ extension CoreDashboard {
         }
         row += 1
         if let text = DeploymentHealth.stateText(state) {
-            ws.write(text, row: row, col: 0, format: state == .unreadable ? .yellow : .cell)
+            let warns: Bool
+            switch state {
+            case .unreadable, .failed: warns = true
+            default: warns = false
+            }
+            ws.write(text, row: row, col: 0, format: warns ? .yellow : .cell)
+            if case .rows(_, _, let leftOut) = state, leftOut > 0 {
+                ws.write(DeploymentHealth.leftOutText(leftOut), row: row + 1, col: 0,
+                         format: .yellow)
+                return row + 2
+            }
             return row + 1
         }
         let headers = source == .appInstallers
@@ -62,7 +72,7 @@ extension CoreDashboard {
             row += 1
         }
         if case .rows(_, _, let leftOut) = state, leftOut > 0 {
-            ws.write("\(leftOut) rows with no ID left out", row: row, col: 0, format: .yellow)
+            ws.write(DeploymentHealth.leftOutText(leftOut), row: row, col: 0, format: .yellow)
             row += 1
         }
         return row

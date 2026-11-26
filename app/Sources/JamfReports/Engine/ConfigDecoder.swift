@@ -499,13 +499,17 @@ struct ThresholdsConfig: Decodable, Sendable {
     /// critical takes both defaults. Warning equal to critical is valid (every such row is
     /// critical). The one reader of the two keys: every surface and Config Doctor use it.
     var resolvedDeploymentLevels: DeploymentHealth.Levels {
-        let range = 1...100
         let defaults = DeploymentHealth.Levels.defaults
-        let warning = deploymentFailureWarningPercent.flatMap { range.contains($0) ? $0 : nil }
+        let warning = Self.usableDeploymentPercent(deploymentFailureWarningPercent)
             ?? defaults.warning
-        let critical = deploymentFailureCriticalPercent.flatMap { range.contains($0) ? $0 : nil }
+        let critical = Self.usableDeploymentPercent(deploymentFailureCriticalPercent)
             ?? defaults.critical
         return warning > critical ? defaults : .init(warning: warning, critical: critical)
+    }
+
+    /// A typed deployment level the app uses as written (1-100); nil means the default applies.
+    static func usableDeploymentPercent(_ value: Int?) -> Int? {
+        value.flatMap { (1...100).contains($0) ? $0 : nil }
     }
 }
 

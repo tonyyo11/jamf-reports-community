@@ -71,7 +71,8 @@ struct DeploymentHealthSection: View {
                         Pill(text: entry.judgement == .critical ? L("CRITICAL") : L("WARNING"),
                              tone: entry.judgement == .critical ? .danger : .warn)
                             .frame(width: 86, alignment: .leading)
-                        Text(Self.rowText(entry.row, levels: card.levels,
+                        Text(Self.rowText(entry.row, failed: entry.failed,
+                                          inScope: entry.inScope, levels: card.levels,
                                           percentFormat: percentFormat))
                             .font(.footnote.monospacedDigit())
                             .foregroundStyle(Theme.Colors.fg2)
@@ -98,10 +99,11 @@ struct DeploymentHealthSection: View {
 
     /// "name: 48 of 400 Macs failed (12%)".
     static func rowText(
-        _ row: DeploymentHealth.Row, levels: DeploymentHealth.Levels, percentFormat: PercentFormat
+        _ row: DeploymentHealth.Row, failed: Int, inScope: Int, levels: DeploymentHealth.Levels,
+        percentFormat: PercentFormat
     ) -> String {
         let share = DeploymentHealth.shareText(row, levels: levels, format: percentFormat)
-        return L("\(row.displayName): \(row.failed ?? 0) of \(row.inScope ?? 0) Macs failed (\(share))")
+        return L("\(row.displayName): \(failed) of \(inScope) Macs failed (\(share))")
     }
 
     /// The judged line, the not-judged line, the "as of" and left-out notes; parts that are 0
@@ -125,16 +127,19 @@ struct DeploymentHealthSection: View {
             counts[.unmeasured].map { L("\($0) unmeasured") },
         ].compactMap { $0 }
         if !parts.isEmpty {
-            lines.append(L("Not judged: ") + parts.joined(separator: ", "))
+            lines.append(L("Not judged: \(parts.joined(separator: ", "))"))
         }
-        if leftOut > 0 { lines.append(L("\(leftOut) rows with no ID left out")) }
+        if leftOut == 1 {
+            lines.append(L("1 row with no ID left out"))
+        } else if leftOut > 1 {
+            lines.append(L("\(leftOut) rows with no ID left out"))
+        }
         return lines
     }
 
     static func levelsLine(_ card: DeploymentHealthCard) -> String {
         let text = L("Levels: warning \(card.levels.warning)%, critical \(card.levels.critical)% of a deployment's or policy's Macs")
-        return card.levelsAreDefaults
-            ? text + " " + L("(defaults; config.yaml could not be read)") : text
+        return card.levelsAreDefaults ? L("\(text) (defaults; config.yaml could not be read)") : text
     }
 }
 

@@ -70,6 +70,9 @@ enum DeploymentHealth {
         /// Exit 4 recorded and the kind never landed: not on this server.
         case notSetUp
         case unreadable
+        /// The kind failed and has no snapshot: the cause's label (a missing privilege, a
+        /// timeout), never "not collected yet".
+        case failed(String)
         /// `asOf` is set only when the snapshot is no longer current (failed since, or older
         /// than `max_cache_age_hours`). `leftOut` counts rows with no id.
         case rows([Row], asOf: Date?, leftOut: Int)
@@ -91,7 +94,9 @@ enum DeploymentHealth {
     /// The ordered rules: the first that applies decides; shares compare in integers, so exactly
     /// a level is at that level.
     static func judge(_ row: Row, levels: Levels) -> Judgement {
-        guard row.enabled == true else { return .notJudged }
+        // An absent flag is not "off": only an explicit false is not enabled.
+        guard let enabled = row.enabled else { return .unmeasured }
+        guard enabled else { return .notJudged }
         guard let failed = row.failed, let inScope = row.inScope else { return .unmeasured }
         if inScope == 0 { return .nothingInScope }
         if inScope < minimumInScope { return .belowMinimumScope }
@@ -100,10 +105,15 @@ enum DeploymentHealth {
         return .belowLevels
     }
 
+    /// Both counts, with at least one Mac in scope; nil otherwise.
+    static func measured(_ row: Row) -> (failed: Int, inScope: Int)? {
+        guard let failed = row.failed, let inScope = row.inScope, inScope > 0 else { return nil }
+        return (failed, inScope)
+    }
+
     /// The failed share as a fraction, for display only; nil with nothing in scope.
     static func share(_ row: Row) -> Double? {
-        guard let failed = row.failed, let inScope = row.inScope, inScope > 0 else { return nil }
-        return Double(failed) / Double(inScope)
+        measured(row).map { Double($0.failed) / Double($0.inScope) }
     }
 
     /// The share as printed beside the level it is judged against, so rounding never puts it
@@ -118,13 +128,18 @@ enum DeploymentHealth {
 
     /// The rows at a level, critical first, then by share descending (integer cross-multiplied),
     /// then name, then id: the one order every surface shows.
-    static func atLevel(_ rows: [Row], levels: Levels) -> [(row: Row, judgement: Judgement)] {
-        rows.map { ($0, judge($0, levels: levels)) }
-            .filter { $0.1.isAtLevel }
-            .sorted { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 == .critical }
-                return ordered(lhs.0, rhs.0)
-            }
+    static func atLevel(_ rows: [Row], levels: Levels)
+        -> [(row: Row, judgement: Judgement, failed: Int, inScope: Int)] {
+        rows.compactMap { row in
+            let judgement = judge(row, levels: levels)
+            // A row at a level always has both counts; `measured` carries them unwrapped.
+            guard judgement.isAtLevel, let counts = measured(row) else { return nil }
+            return (row, judgement, counts.failed, counts.inScope)
+        }
+        .sorted { lhs, rhs in
+            if lhs.judgement != rhs.judgement { return lhs.judgement == .critical }
+            return ordered(lhs.row, rhs.row)
+        }
     }
 
     /// Every row in the tab's order: enabled rows by level then share, disabled ones last.
@@ -147,17 +162,19 @@ enum DeploymentHealth {
     }
 
     /// Rows with a share first, by share descending (failed × other scope, no division), then
-    /// rows without one; then name, then id. A strict weak order, so the sort is stable.
+    /// rows without one; then the name as Jamf gives it, then id. A strict weak order, and
+    /// locale-free, so the card matches the English workbook and HTML.
     private static func ordered(_ lhs: Row, _ rhs: Row) -> Bool {
-        let (lShare, rShare) = (share(lhs) != nil, share(rhs) != nil)
-        if lShare != rShare { return lShare }
-        if lShare {
-            let left = (lhs.failed ?? 0) * (rhs.inScope ?? 0)
-            let right = (rhs.failed ?? 0) * (lhs.inScope ?? 0)
-            if left != right { return left > right }
+        switch (measured(lhs), measured(rhs)) {
+        case let (left?, right?):
+            let (l, r) = (left.failed * right.inScope, right.failed * left.inScope)
+            if l != r { return l > r }
+        case (.some, nil): return true
+        case (nil, .some): return false
+        case (nil, nil): break
         }
-        let (ln, rn) = (lhs.displayName, rhs.displayName)
-        return ln != rn ? ln.localizedStandardCompare(rn) == .orderedAscending : lhs.id < rhs.id
+        let names = (lhs.name ?? "").compare(rhs.name ?? "", options: [.caseInsensitive, .numeric])
+        return names != .orderedSame ? names == .orderedAscending : lhs.id < rhs.id
     }
 
     static func figures(_ rows: [Row], levels: Levels) -> Figures {
@@ -215,15 +232,17 @@ extension DeploymentHealth {
         of source: Source, dataDir: URL, store: StateFileStore, now: Date, maxAgeHours: Int?
     ) -> SourceState {
         let failed = store.failures(report: source.kind) != nil
-        if failed, store.cause(for: source.kind)?.kind == .notConfiguredOnServer,
-           store.isAdvisory(kind: source.kind) {
+        let cause = failed ? store.cause(for: source.kind) : nil
+        if cause?.kind == .notConfiguredOnServer, store.isAdvisory(kind: source.kind) {
             return .notSetUp
         }
         let kindDir = dataDir.appendingPathComponent(source.kind, isDirectory: true)
         if FileManager.plantedNewestSnapshot(in: kindDir, fileExtension: "json") != nil {
             return .unreadable
         }
-        guard let url = FileManager.newestJSONFile(in: kindDir) else { return .notCollected }
+        guard let url = FileManager.newestJSONFile(in: kindDir) else {
+            return failed ? .failed(cause?.label ?? L("unknown cause")) : .notCollected
+        }
         guard let data = BoundedFile.readSnapshotLogged(url),
               let object = try? JSONSerialization.jsonObject(with: data),
               let list = object as? [Any] else { return .unreadable }
@@ -312,8 +331,16 @@ extension DeploymentHealth {
         case .notCollected: L("Not collected yet")
         case .notSetUp: L("Not set up on this Jamf Pro server")
         case .unreadable: L("Could not be read")
-        case .rows(let rows, _, _): rows.isEmpty ? L("None on this server") : nil
+        case .failed(let cause): L("Could not be collected: \(cause)")
+        // Rows left out for having no ID are not "none": the left-out note says so instead.
+        case .rows(let rows, _, let leftOut):
+            rows.isEmpty && leftOut == 0 ? L("None on this server") : nil
         }
+    }
+
+    /// "N rows with no ID left out", English for the workbook and HTML report.
+    static func leftOutText(_ count: Int) -> String {
+        count == 1 ? "1 row with no ID left out" : "\(count) rows with no ID left out"
     }
 
     static func judgementText(_ judgement: Judgement) -> String {

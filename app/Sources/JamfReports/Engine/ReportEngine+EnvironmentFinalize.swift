@@ -204,7 +204,8 @@ extension ReportEngine {
             maxCacheAgeHours: maxCacheAgeHours, now: day)
         let deploymentFigures = environment.jamfPro == nil ? nil : deploymentSummaryFigures(
             dataDir: dataDir, landed: landed[.jamfPro] ?? [], levels: deploymentLevels, now: day)
-        guard !slots.isEmpty || figures != nil || serverFigures != nil else {
+        guard !slots.isEmpty || figures != nil || serverFigures != nil
+            || deploymentFigures != nil else {
             return .keptExisting
         }
         summary = summary.withEnvironment(
