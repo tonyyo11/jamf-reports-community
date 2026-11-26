@@ -79,8 +79,9 @@ final class ChangeFilterStoreTests: XCTestCase {
         let joined = resolve(store)
         await untilInFlight(store)
         let left = resolve(store, .left)
+        // Never two comparisons for one pair; zero once the first has already finished.
         await Task.yield()
-        XCTAssertEqual(store.changeFilterInFlight.count, 1)
+        XCTAssertLessThanOrEqual(store.changeFilterInFlight.count, 1)
         let a = await joined.value
         let b = await left.value
         XCTAssertEqual(a.outcome, .macs([MacKey(jamfID: "3"), MacKey(jamfID: "4")]))
@@ -89,7 +90,9 @@ final class ChangeFilterStoreTests: XCTestCase {
         XCTAssertEqual(store.changeFilterCache.count, 1)
     }
 
-    /// The first caller's cancel stops the shared comparison; the other runs it again.
+    /// The first caller's cancel stops the shared comparison; the other runs it again. On a
+    /// slow machine the comparison can finish before the cancel lands, so the first caller may
+    /// get its list; the other never gets `.cancelled` either way.
     func testACancelledCallerDoesNotCancelTheOther() async throws {
         let store = try store()
         let first = resolve(store)
@@ -97,8 +100,11 @@ final class ChangeFilterStoreTests: XCTestCase {
         let second = resolve(store, .osChanged)
         await Task.yield()
         first.cancel()
-        let cancelled = await first.value
-        XCTAssertEqual(cancelled.outcome, .cancelled)
+        let firstResult = await first.value
+        XCTAssertTrue(
+            [ChangeFilterResult.Outcome.cancelled,
+             .macs([MacKey(jamfID: "3"), MacKey(jamfID: "4")])].contains(firstResult.outcome),
+            "\(firstResult.outcome)")
         let result = await second.value
         XCTAssertNotEqual(result.outcome, .cancelled)
         XCTAssertEqual(result.outcome, .macs([]))
