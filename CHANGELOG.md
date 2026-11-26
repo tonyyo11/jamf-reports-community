@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- A cross-platform overview on Fleet Overview (Jamf Pro) and on the School Overview (Jamf School): one section for each platform the daily summaries name (macOS, iOS, iPadOS, tvOS), with its device count, OS version breakdown, version adoption over the last 12 weeks and a button that opens that platform's device list. It reads the daily summaries the app already writes, so it works on-prem and needs no new collect. macOS also shows how many model families it has, its share on the current release and its FileVault, SIP and firewall gaps (the Security Posture P0 count); a figure the summaries do not hold for a platform is left out.
+
+### Changed
+
+- Fleet Overview's Mac models, Operating systems and Mobile device types tiles are replaced by the per-platform sections. The Mac section shows how many model families there are, not the count for each family. The two last-seen tiles stay.
+
 ### Fixed
 
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.

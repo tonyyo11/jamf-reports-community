@@ -7902,6 +7902,46 @@
         }
       }
     },
+    "%@ version adoption over time" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionsverbreitung von %@ im Zeitverlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adopción de versiones de %@ a lo largo del tiempo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoption des versions de %@ au fil du temps"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adozione delle versioni di %@ nel tempo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のバージョン普及の推移"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoção de versões do %@ ao longo do tempo"
+          }
+        }
+      }
+    },
     "%@ visibility" : {
       "localizations" : {
         "de" : {
@@ -10460,6 +10500,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@: %lld dispositivos"
+          }
+        }
+      }
+    },
+    "%@: %lld devices, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld Geräte, %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld dispositivos, %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ : %lld appareils, %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld dispositivi, %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld 台のデバイス、%@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld dispositivos, %@"
           }
         }
       }
@@ -16568,6 +16648,46 @@
         }
       }
     },
+    "%lld of %lld iOS and iPadOS devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld iOS- und iPadOS-Geräten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld dispositivos iOS e iPadOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sur %lld appareils iOS et iPadOS"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld di %lld dispositivi iOS e iPadOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS および iPadOS デバイス %lld 台中 %lld 台"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld dispositivos iOS e iPadOS"
+          }
+        }
+      }
+    },
     "%lld of %lld identified Jamf Protect computers match this environment's inventory ('%@' against %@)." : {
       "localizations" : {
         "de" : {
@@ -16828,6 +16948,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld de %2$lld valores"
+          }
+        }
+      }
+    },
+    "%lld of %lld versions are drawn; the older ones are pooled as Other." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld von %lld Versionen werden gezeigt; ältere sind unter Andere zusammengefasst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se muestran %lld de %lld versiones; las más antiguas se agrupan como Otras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld versions sur %lld sont tracées ; les plus anciennes sont regroupées sous Autre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sono tracciate %lld versioni su %lld; le più vecchie sono raggruppate in Altro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld バージョン中 %1$lld バージョンを表示しています。古いバージョンは「その他」にまとめています。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld versões são exibidas; as mais antigas são agrupadas em Outras."
           }
         }
       }
@@ -29284,6 +29444,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos os alertas, abertos e resolvidos"
+          }
+        }
+      }
+    },
+    "All mobile devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Mobilgeräte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos los dispositivos móviles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les appareils mobiles"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tutti i dispositivi mobili"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのモバイルデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos os dispositivos móveis"
           }
         }
       }
@@ -49372,6 +49572,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS atual"
+          }
+        }
+      }
+    },
+    "Current release" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktuelle Version"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version actuelle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release attuale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新リリース"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão atual"
           }
         }
       }
@@ -71961,6 +72201,46 @@
         }
       }
     },
+    "Jailbroken" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gejailbreakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con jailbreak"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jailbreakés"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con jailbreak"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "脱獄済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Com jailbreak"
+          }
+        }
+      }
+    },
     "Jailbroken mobile devices" : {
       "localizations" : {
         "de" : {
@@ -76433,6 +76713,46 @@
         }
       }
     },
+    "Latest release of their major version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neueste Version ihrer Hauptversion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última versión de su versión principal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière version de leur version majeure"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima release della loro versione principale"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メジャーバージョンの最新リリース"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão mais recente da sua versão principal"
+          }
+        }
+      }
+    },
     "Latest successful summary" : {
       "localizations" : {
         "de" : {
@@ -78759,46 +79079,6 @@
         }
       }
     },
-    "Mac models" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mac-Modelle"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modelos de Mac"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modèles de Mac"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modelli di Mac"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mac のモデル"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modelos de Mac"
-          }
-        }
-      }
-    },
     "Mac ops engineers, NOC staff" : {
       "localizations" : {
         "de" : {
@@ -78835,6 +79115,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Engenheiros de operações de Mac, equipe do NOC"
+          }
+        }
+      }
+    },
+    "MacBook Air, Mac mini and so on" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air, Mac mini usw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air, Mac mini, etc."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air, Mac mini, etc."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air, Mac mini e così via"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air、Mac mini など"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacBook Air, Mac mini etc."
           }
         }
       }
@@ -80788,46 +81108,6 @@
         }
       }
     },
-    "Mobile device types" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mobilgerätetypen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos de dispositivos móviles"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Types d'appareils mobiles"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipi di dispositivi mobili"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "モバイルデバイスの種類"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tipos de dispositivos móveis"
-          }
-        }
-      }
-    },
     "Mobile devices" : {
       "localizations" : {
         "de" : {
@@ -80904,6 +81184,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Último contato dos dispositivos móveis"
+          }
+        }
+      }
+    },
+    "Mobile devices of every type" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobilgeräte aller Typen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos móviles de todos los tipos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appareils mobiles de tous types"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivi mobili di ogni tipo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべての種類のモバイルデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos móveis de todos os tipos"
           }
         }
       }
@@ -81105,6 +81425,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Modelo"
+          }
+        }
+      }
+    },
+    "Model families" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modellfamilien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Familias de modelos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Familles de modèles"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Famiglie di modelli"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルファミリー"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Famílias de modelos"
           }
         }
       }
@@ -91630,6 +91990,46 @@
         }
       }
     },
+    "OS versions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Betriebssystemversionen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versiones del sistema operativo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versions du système"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versioni del sistema operativo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS バージョン"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versões do sistema operacional"
+          }
+        }
+      }
+    },
     "Off" : {
       "comment" : "Toggle and picker value. Adjective: turned off.",
       "localizations" : {
@@ -96001,46 +96401,6 @@
         }
       }
     },
-    "Operating systems" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Betriebssysteme"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sistemas operativos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Systèmes d'exploitation"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sistemi operativi"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オペレーティングシステム"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sistemas operacionais"
-          }
-        }
-      }
-    },
     "Operational" : {
       "localizations" : {
         "de" : {
@@ -96362,6 +96722,46 @@
         }
       }
     },
+    "Other (%lld versions)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere (%lld Versionen)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras (%lld versiones)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre (%lld versions)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro (%lld versioni)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他（%lld バージョン）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outras (%lld versões)"
+          }
+        }
+      }
+    },
     "Other (%lld)" : {
       "localizations" : {
         "de" : {
@@ -96398,6 +96798,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Outros (%lld)"
+          }
+        }
+      }
+    },
+    "Other (1 version)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Andere (1 Version)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras (1 versión)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre (1 version)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altro (1 versione)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他（1 バージョン）"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outras (1 versão)"
           }
         }
       }
@@ -107300,6 +107740,46 @@
         }
       }
     },
+    "Reporting an OS version" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit gemeldeter Betriebssystemversion"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Que indican una versión del sistema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indiquant une version du système"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Che riportano una versione del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS バージョンを報告しているデバイス"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Que informam uma versão do sistema"
+          }
+        }
+      }
+    },
     "Reports" : {
       "localizations" : {
         "de" : {
@@ -114906,6 +115386,46 @@
         }
       }
     },
+    "Security gaps" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherheitslücken"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brechas de seguridad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacunes de sécurité"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacune di sicurezza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セキュリティ上の不備"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lacunas de segurança"
+          }
+        }
+      }
+    },
     "Security policy configuration" : {
       "localizations" : {
         "de" : {
@@ -118274,6 +118794,46 @@
         }
       }
     },
+    "Share" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteil"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quota"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "割合"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporção"
+          }
+        }
+      }
+    },
     "Share of all %lld computer, No Data included" : {
       "localizations" : {
         "de" : {
@@ -118630,6 +119190,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Espaço de trabalho compartilhado em %@"
+          }
+        }
+      }
+    },
+    "Shares of the devices reporting an OS version, over the last %lld weeks of daily summaries." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteile der Geräte mit gemeldeter Betriebssystemversion in den letzten %lld Wochen der Tageszusammenfassungen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporción de los dispositivos que indican una versión del sistema, en las últimas %lld semanas de resúmenes diarios."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parts des appareils indiquant une version du système, sur les %lld dernières semaines de résumés quotidiens."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote dei dispositivi che riportano una versione del sistema, nelle ultime %lld settimane di riepiloghi giornalieri."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OS バージョンを報告しているデバイスに占める割合（日次サマリーの直近 %lld 週間）。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proporção dos dispositivos que informam uma versão do sistema, nas últimas %lld semanas de resumos diários."
           }
         }
       }
@@ -127007,6 +127607,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A verificação da conexão não conseguiu confirmar o ID. Você pode continuar; se as telas continuarem vazias após a primeira coleta, verifique o ID com Atualizar credenciais em Fontes de dados."
+          }
+        }
+      }
+    },
+    "The daily summary holds these for mobile devices together, not per platform." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Tageszusammenfassung enthält diese Werte für alle Mobilgeräte gemeinsam, nicht pro Plattform."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El resumen diario guarda estas cifras para todos los dispositivos móviles juntos, no por plataforma."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le résumé quotidien regroupe ces valeurs pour tous les appareils mobiles, et non par plateforme."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il riepilogo giornaliero contiene questi valori per tutti i dispositivi mobili insieme, non per piattaforma."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日次サマリーでは、これらの値はプラットフォーム別ではなくモバイルデバイス全体で保持されています。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O resumo diário guarda esses valores para todos os dispositivos móveis juntos, não por plataforma."
           }
         }
       }
@@ -137721,6 +138361,46 @@
         }
       }
     },
+    "Version adoption over time" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versionsverbreitung im Zeitverlauf"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adopción de versiones a lo largo del tiempo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoption des versions au fil du temps"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adozione delle versioni nel tempo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン普及の推移"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoção de versões ao longo do tempo"
+          }
+        }
+      }
+    },
     "View" : {
       "comment" : "Button. Verb: show the list.",
       "localizations" : {
@@ -137838,6 +138518,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ver tudo"
+          }
+        }
+      }
+    },
+    "View all %@ devices" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle %@-Geräte anzeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver todos los dispositivos %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voir tous les appareils %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostra tutti i dispositivi %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべての %@ デバイスを表示"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver todos os dispositivos %@"
           }
         }
       }
