@@ -91,23 +91,24 @@ extension ReportEngine {
                 landed: landed, dataDir: dataDir, scanDate: landedStamp),
               let drift = PatchFailureDrift.load(
                 current: pair.current, baseline: pair.baseline, dataDir: dataDir,
-                computers: computers)
+                computers: computers.index)
         else { return nil }
         return PatchChanges(
             currentStamp: PatchReleaseDateService.snapshotStamp(of: pair.current),
             baselineStamp: PatchReleaseDateService.snapshotStamp(of: pair.baseline),
             startedFailing: drift.startedFailing.count,
             stoppedFailing: drift.noLongerListed.count,
-            leftOut: drift.leftOut, notInComputers: drift.notInComputers)
+            leftOut: drift.leftOut, notInComputers: drift.notInComputers,
+            computersStamp: computers.stamp)
     }
 
     /// The Macs a patch scan's dropped pairs are checked against: this run's landed
-    /// `computers` snapshot, else the newest file stamped at or before the scan. Nil with no
-    /// file, or one that cannot be read or decoded.
+    /// `computers` snapshot, else the newest file stamped at or before the scan, with that
+    /// snapshot's stamp. Nil with no file, or one that cannot be read or decoded.
     static func patchComputerIndex(
         landed: LandedSources.LandedComputers?, dataDir: URL, scanDate: Date
-    ) -> ComputerDateIndex? {
-        if let landed { return ComputerDateIndex(landed.snapshot.rows) }
+    ) -> (index: ComputerDateIndex, stamp: String?)? {
+        if let landed { return (ComputerDateIndex(landed.snapshot.rows), landed.stamp) }
         guard let file = TrendStore.datedSnapshots(of: "computers", in: dataDir)
                 .last(where: { $0.date <= scanDate }),
               let data = try? BoundedFile.read(
@@ -115,6 +116,6 @@ extension ReportEngine {
                 inside: dataDir),
               let snapshot = ComputerDates.decodeComputerSnapshot(data)
         else { return nil }
-        return ComputerDateIndex(snapshot.rows)
+        return (ComputerDateIndex(snapshot.rows), PatchReleaseDateService.snapshotStamp(of: file.url))
     }
 }

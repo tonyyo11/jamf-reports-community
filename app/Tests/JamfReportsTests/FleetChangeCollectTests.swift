@@ -126,6 +126,10 @@ final class FleetChangeCollectTests: XCTestCase {
         XCTAssertEqual(patch.startedFailing, 1, "the captured Mac 101 on policy 11")
         XCTAssertEqual(patch.stoppedFailing, 1, "Mac 1 is in this run's computers")
         XCTAssertEqual(patch.notInComputers, 1, "Mac 99 is not")
+        let stamp = try XCTUnwrap(patch.computersStamp)
+        XCTAssertNotNil(PatchReleaseDateService.stampDate(stamp))
+        XCTAssertNotEqual(stamp, GoldenFleetClock.stamp(yesterday),
+                          "the landed computers snapshot's stamp, not the seeded file's")
     }
 
     func testScanWithNoDeviceSectionIsNotSavedAndHasACause() async throws {

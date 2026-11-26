@@ -161,6 +161,61 @@ final class FleetChangeSurfaceTests: XCTestCase {
         XCTAssertNil(built.patchScanDay)
     }
 
+    // MARK: - Opening the Macs (B2c)
+
+    private let stamped = ComputerChanges(
+        currentStamp: "20261102T060000", baselineStamp: "20261101T060000",
+        currentCount: 10, priorCount: 9, joined: 2, left: 1, osChanged: 0, becameStale: nil,
+        noLongerStale: 0, fileVaultOff: 1, fileVaultStoppedReporting: 0)
+
+    func testOnlyACountAboveZeroOpensTheMacs() throws {
+        let built = try XCTUnwrap(OverviewChanges.build(
+            summaries: [try day("2026-11-02", changes: FleetChangeSummary(
+                computers: stamped, benchmarks: BenchmarkChanges(newlyFailing: 0)))],
+            format: .standard))
+        let byLabel = Dictionary(uniqueKeysWithValues: built.computerRows.map { ($0.label, $0) })
+        XCTAssertEqual(byLabel["Enrolled"]?.filter?.kind, .joined)
+        XCTAssertEqual(byLabel["Removed"]?.filter?.kind, .left)
+        XCTAssertEqual(byLabel["FileVault turned off"]?.filter?.kind, .fileVaultOff)
+        XCTAssertNil(byLabel["macOS version changed"]?.filter, "0")
+        XCTAssertNil(byLabel["Went stale"]?.filter, "not measured")
+        XCTAssertNil(built.benchmarkRow?.opens, "0 rules opens nothing")
+        let info = try XCTUnwrap(OverviewChangesCard.navigation(for: try XCTUnwrap(byLabel["Enrolled"])))
+        XCTAssertEqual(info["tab"], Tab.devices.rawValue)
+        XCTAssertEqual(info[ChangeFilter.userInfoKey].flatMap(ChangeFilter.init(json:)),
+                       byLabel["Enrolled"]?.filter)
+        XCTAssertNil(OverviewChangesCard.navigation(for: try XCTUnwrap(byLabel["Went stale"])))
+    }
+
+    func testUnreadableCountsAndBenchmarkRows() throws {
+        let unreadable = try XCTUnwrap(OverviewChanges.build(summaries: [try day(
+            "2026-11-02", changes: FleetChangeSummary(
+                computers: ComputerChanges(currentStamp: "20261102T060000",
+                                           baselineStamp: "20261101T060000",
+                                           baselineUnreadable: true),
+                benchmarks: BenchmarkChanges(newlyFailing: 3)))], format: .standard))
+        XCTAssertTrue(unreadable.computerRows.isEmpty)
+        let rules = try XCTUnwrap(unreadable.benchmarkRow)
+        XCTAssertEqual(rules.opens, .complianceBenchmarks)
+        XCTAssertNil(rules.filter)
+        XCTAssertEqual(OverviewChangesCard.navigation(for: rules),
+                       ["tab": Tab.complianceBenchmarks.rawValue])
+    }
+
+    func testPatchRowsOpenOnlyWithTheComputersStamp() throws {
+        var part = PatchChanges(
+            currentStamp: "20261102T060000", baselineStamp: "20261026T060000",
+            startedFailing: 2, stoppedFailing: 0)
+        func rows() throws -> [OverviewChanges.Row] {
+            try XCTUnwrap(OverviewChanges.build(
+                summaries: [try day("2026-11-02", changes: FleetChangeSummary(patch: part))],
+                format: .standard)).patchRows
+        }
+        XCTAssertTrue(try rows().allSatisfy { $0.filter == nil }, "a summary from before B2c")
+        part.computersStamp = "20261102T050000"
+        XCTAssertEqual(try rows().map { $0.filter?.kind }, [.patchStarted, nil])
+    }
+
     // MARK: - Demo
 
     func testDemoFleetChangesAgreeWithTheDemoFleet() throws {

@@ -85,6 +85,13 @@ final class WorkspaceStore {
     var pendingDevicesFilter: String? = nil
     /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
     var pendingMobileFilter: String? = nil
+    /// A "Since last collect" count to open in Computers (`ChangeFilter` JSON).
+    var pendingChangeFilter: String? = nil
+    /// The lists behind those counts, per snapshot pair, for the session; emptied on a
+    /// profile switch. `changeFilterInFlight` holds one comparison per pair.
+    @ObservationIgnored var changeFilterCache: [ChangeFilterCacheKey: [ChangeKind: ChangeFilterResult]] = [:]
+    @ObservationIgnored var changeFilterInFlight:
+        [ChangeFilterCacheKey: Task<[ChangeKind: ChangeFilterResult], Never>] = [:]
     /// How long a manual refresh waits for a scheduled run in another process to stop at its
     /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
     var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait
@@ -469,6 +476,7 @@ final class WorkspaceStore {
         guard ProfileService.isValid(id) else { return }
         profile = id
         authStatus = nil
+        changeFilterCache = [:]
         if !demoMode {
             org = Self.org(for: profiles.first(where: { $0.name == id }))
             // PR-24: a profile switch backfills the new profile's Refresh-tier

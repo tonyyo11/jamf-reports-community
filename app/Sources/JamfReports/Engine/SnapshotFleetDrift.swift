@@ -296,7 +296,7 @@ extension CoreDashboard {
         else { return notCompared("no readable computers snapshot") }
         guard let drift = PatchFailureDrift.load(
             current: pair.current, baseline: pair.baseline, dataDir: dataDir,
-            computers: computers)
+            computers: computers.index)
         else { return notCompared("a scan did not decode") }
         let note = [
             drift.leftOut > 0

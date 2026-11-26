@@ -2,7 +2,7 @@ import Foundation
 
 /// The three Jamf Pro dates of one Mac in a `computers` snapshot, with the identifiers that
 /// find it from a row of another snapshot.
-struct ComputerDates: Sendable, Equatable {
+struct ComputerDates: Sendable, Hashable {
     var jamfID: String?
     var serial: String?
     /// `general.lastCheckIn`: the Jamf binary checking in.

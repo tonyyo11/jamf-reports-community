@@ -29,6 +29,14 @@ final class FleetChangeSummaryTests: XCTestCase {
         XCTAssertEqual(try SummaryJSONParser.decode(data).changes, day.changes)
     }
 
+    func testPatchPartWithoutComputersStampStillDecodes() throws {
+        let day = try summary(#","changes":{"patch":{"started_failing":2}}"#)
+        XCTAssertEqual(day.changes?.patch?.startedFailing, 2)
+        XCTAssertNil(day.changes?.patch?.computersStamp)
+        let stamped = try summary(#","changes":{"patch":{"computers_stamp":"20261102T060000"}}"#)
+        XCTAssertEqual(stamped.changes?.patch?.computersStamp, "20261102T060000")
+    }
+
     func testMalformedPartIsDroppedAlone() throws {
         let day = try summary(#","changes":{"computers":{"joined":"many"},"#
             + #""benchmarks":{"newly_failing":3}}"#)
@@ -64,13 +72,15 @@ final class FleetChangeSummaryTests: XCTestCase {
     func testPatchComputerIndex() throws {
         let landedIndex = try XCTUnwrap(ReportEngine.patchComputerIndex(
             landed: landed(), dataDir: try dataDir(baseline: nil), scanDate: at(0)))
-        XCTAssertTrue(landedIndex.contains(jamfID: "1", serial: nil))
+        XCTAssertTrue(landedIndex.index.contains(jamfID: "1", serial: nil))
+        XCTAssertEqual(landedIndex.stamp, "x", "a landed snapshot gives its own stamp")
 
         let rows: [[String: Any]] = [["id": "7"]]
         let dir = try dataDir(baseline: JSONSerialization.data(withJSONObject: rows))
         let fromFile = try XCTUnwrap(ReportEngine.patchComputerIndex(
             landed: nil, dataDir: dir, scanDate: at(0)))
-        XCTAssertTrue(fromFile.contains(jamfID: "7", serial: nil))
+        XCTAssertTrue(fromFile.index.contains(jamfID: "7", serial: nil))
+        XCTAssertEqual(fromFile.stamp, GoldenFleetClock.stamp(at(-1)), "the fallback file's stamp")
         XCTAssertNil(ReportEngine.patchComputerIndex(landed: nil, dataDir: dir, scanDate: at(-2)),
                      "a file stamped after the scan is not used")
         XCTAssertNil(ReportEngine.patchComputerIndex(

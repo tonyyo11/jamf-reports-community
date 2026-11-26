@@ -7,6 +7,10 @@ struct OverviewChanges: Equatable, Sendable {
     struct Row: Equatable, Sendable, Identifiable {
         let label: String
         let value: String
+        /// The Computers list behind the count; nil for 0, not measured or no snapshot pair.
+        var filter: ChangeFilter? = nil
+        /// The screen the row opens without a filter (benchmark rules).
+        var opens: Tab? = nil
         var id: String { label }
     }
 
@@ -67,18 +71,15 @@ struct OverviewChanges: Equatable, Sendable {
     /// One row per Mac count; "Not measured" for a count the collect could not take.
     var computerRows: [Row] {
         guard let computers, computers.baselineUnreadable != true else { return [] }
-        func value(_ count: Int?) -> String { count.map { "\($0)" } ?? L("Not measured") }
-        return [
-            Row(label: L("Enrolled"), value: value(computers.joined)),
-            Row(label: L("Removed"), value: value(computers.left)),
-            Row(label: L("Went stale"), value: value(computers.becameStale)),
-            Row(label: L("Checking in again"), value: value(computers.noLongerStale)),
-            Row(label: L("FileVault turned off"), value: value(computers.fileVaultOff)),
-            Row(label: L("FileVault stopped reporting"),
-                value: value(computers.fileVaultStoppedReporting)),
-            Row(label: L("macOS version changed"), value: value(computers.osChanged)),
-        ]
+        let kinds: [ChangeKind] = [.joined, .left, .becameStale, .noLongerStale, .fileVaultOff,
+                                   .fileVaultStoppedReporting, .osChanged]
+        return kinds.map { kind in
+            Row(label: kind.label, value: Self.value(kind.count(in: computers)),
+                filter: ChangeFilter.from(computers, kind: kind))
+        }
     }
+
+    private static func value(_ count: Int?) -> String { count.map { "\($0)" } ?? L("Not measured") }
 
     /// Why the counts are missing, or the large-change note; nil when neither applies.
     var computerNote: String? {
@@ -97,11 +98,10 @@ struct OverviewChanges: Equatable, Sendable {
     /// The patch rows; none without a part.
     var patchRows: [Row] {
         guard let patch else { return [] }
-        func value(_ count: Int?) -> String { count.map { "\($0)" } ?? L("Not measured") }
-        return [
-            Row(label: L("Started failing a patch policy"), value: value(patch.startedFailing)),
-            Row(label: L("No longer listed as failed"), value: value(patch.stoppedFailing)),
-        ]
+        return [ChangeKind.patchStarted, .patchNoLongerListed].map { kind in
+            Row(label: kind.label, value: Self.value(kind.count(in: patch)),
+                filter: ChangeFilter.from(patch, kind: kind))
+        }
     }
 
     /// The scan's day when it differs from `day`; nil when its stamp does not parse.
@@ -114,6 +114,7 @@ struct OverviewChanges: Equatable, Sendable {
 
     var benchmarkRow: Row? {
         guard let newly = benchmarks?.newlyFailing else { return nil }
-        return Row(label: L("Benchmark rules newly failing"), value: "\(newly)")
+        return Row(label: L("Benchmark rules newly failing"), value: "\(newly)",
+                   opens: newly > 0 ? .complianceBenchmarks : nil)
     }
 }

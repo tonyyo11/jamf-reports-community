@@ -131,9 +131,13 @@ struct PatchChanges: Codable, Sendable, Equatable {
     var stoppedFailing: Int?
     var leftOut: Int?
     var notInComputers: Int?
+    /// The stamp of the `computers` file the dropped pairs were checked against, so the
+    /// Computers screen can rebuild the same lists.
+    var computersStamp: String?
 
     private enum CodingKeys: String, CodingKey {
         case currentStamp = "current_stamp", baselineStamp = "baseline_stamp"
+        case computersStamp = "computers_stamp"
         case startedFailing = "started_failing", stoppedFailing = "stopped_failing"
         case leftOut = "left_out", notInComputers = "not_in_computers"
     }

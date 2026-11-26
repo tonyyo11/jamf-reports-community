@@ -25,6 +25,10 @@ extension DevicesView {
         var osFilter: String?
         var filter: DeviceFilter
         var sortOrder: [KeyPathComparator<DeviceSortRow>]
+        /// The "Since last collect" list in force, and a number bumped with each result, so a
+        /// new result rebuilds the rows without hashing the set.
+        var change: ChangeFilter? = nil
+        var changeRevision = 0
     }
 
     /// The table's rows with the lookups the panels read beside them.
@@ -152,6 +156,15 @@ extension DevicesView {
         return policy.reading(raw, for: control) == false
     }
 
+    /// What a change list keeps: only the matched Macs once its Macs are known; nothing while
+    /// it compares, for a list of removed Macs, or when a snapshot is gone or unreadable.
+    nonisolated static func changeKeep(
+        _ result: ChangeFilterResult?, match: ChangeMatch?
+    ) -> (DeviceInventoryRecord) -> Bool {
+        guard case .macs = result?.outcome, let match else { return { _ in false } }
+        return { match.contains($0) }
+    }
+
     /// The rows for `devices` under the screen's filters and sort order. `risk` is the screen's
     /// own rating, so the Priority filter, the Risk sort and the Risk pill cannot disagree.
     nonisolated static func buildRows(
@@ -159,12 +172,14 @@ extension DevicesView {
         sortOrder: [KeyPathComparator<DeviceSortRow>], policy: SecurityControlPolicy,
         staleRule: StaleRule, contactGapDays: Int,
         needsManagementAttention: (DeviceInventoryRecord) -> Bool = { _ in false },
+        changeKeep: ((DeviceInventoryRecord) -> Bool)? = nil,
         searchableText: (DeviceInventoryRecord) -> String,
         risk: (DeviceInventoryRecord) -> DeviceRisk
     ) -> [DeviceSortRow] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? nil : query.lowercased()
         let matching = devices.filter { device in
+            if let changeKeep, !changeKeep(device) { return false }
             if let needle, !searchableText(device).contains(needle) { return false }
             if let osFilter, device.osVersion != osFilter { return false }
             switch filter {
