@@ -568,6 +568,20 @@ final class MobileFleetServiceTests: XCTestCase {
             .appleTV)
     }
 
+    /// Jamf Pro 11.34 reports Apple Vision Pro in update plans as `VISION_PRO`. Shapes follow
+    /// Apple's model identifier and Jamf's type name; no real inventory row was captured yet.
+    func testClassifyFormFactorKnowsVisionPro() {
+        XCTAssertEqual(MobileFleetService.classifyFormFactor(
+            model: "Apple Vision Pro", modelIdentifier: "RealityDevice14,1", deviceType: "visionOS"),
+            .visionPro)
+        XCTAssertEqual(MobileFleetService.classifyFormFactor(
+            model: nil, modelIdentifier: nil, deviceType: "VISION_PRO"), .visionPro)
+        XCTAssertEqual(MobileFleetService.classifyFormFactor(
+            model: "Apple Vision Pro", modelIdentifier: nil, deviceType: nil), .visionPro)
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .visionPro, deviceType: nil),
+                       "Apple Vision Pro")
+    }
+
     func testClassifyFormFactorDeviceTypeIsOnlyOSFamily() {
         // deviceType "iOS" alone carries no form factor → other.
         XCTAssertEqual(

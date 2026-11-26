@@ -254,6 +254,13 @@ final class ManagementDisplayValueTests: XCTestCase {
         XCTAssertEqual(ManagementDetail.displayValue("PENDING"), "Pending")
         XCTAssertEqual(ManagementDetail.displayValue("Device Enrollment"), "Device Enrollment")
         XCTAssertEqual(ManagementDetail.displayValue(" 85% "), "85%")
+        XCTAssertEqual(ManagementDetail.displayValue("DISABLED"), "Disabled")
+        XCTAssertEqual(ManagementDetail.displayValue("C02XK1ABJG5H"), "C02XK1ABJG5H", "a serial")
+        XCTAssertEqual(ManagementDetail.displayValue("MDM"), "MDM", "a short acronym")
+        XCTAssertEqual(ManagementDetail.statusValue("DISABLED"), "Disabled")
+        XCTAssertEqual(ManagementDetail.statusValue("NOT_COLLECTED"), "Not collected")
+        XCTAssertEqual(ManagementDetail.statusValue("JSMITH"), "JSMITH", "a name in capitals")
+        XCTAssertEqual(ManagementDetail.statusValue("FINANCE"), "FINANCE")
     }
 
     func testTimestampTextKeepsWhatItCannotParse() {
