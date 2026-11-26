@@ -368,6 +368,19 @@ final class HtmlReportFollowupsTests: XCTestCase {
                 + "(missing permission: Inventory: Devices (Read))")
     }
 
+    func testAVisionProGetsItsOwnCardAndHeadlinePart() throws {
+        var vision = mobile("9", identifier: "RealityDevice14,1", model: "Apple Vision Pro",
+                            os: "26.1", managed: true, supervised: true)
+        vision["deviceType"] = "visionOS"
+        let fleet = [mobile("1", identifier: "iPad13,1", model: "iPad Air", os: "17.4",
+                            managed: true, supervised: true), vision]
+        let report = try workspace(snapshots: [(MobileFleetService.deviceKind, fleet)])
+        let html = mobileSection(report).html
+        XCTAssertTrue(html.contains("<div class=\"count-label\">Vision Pro</div>"), html)
+        let snapshot = try XCTUnwrap(report.loadInputs(for: [.mobileFleet]).mobile)
+        XCTAssertEqual(report.mobileHeadline(snapshot), ["2 devices", "1 iPad", "1 Vision Pro"])
+    }
+
     func testAnEmptySnapshotIsNotCalledUncollected() throws {
         let report = try workspace(snapshots: [(MobileFleetService.deviceKind, [])])
         XCTAssertEqual(

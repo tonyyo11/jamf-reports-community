@@ -10,6 +10,9 @@ struct OnboardingView: View {
     @State private var isStartingOver = false
     /// Set on first launch only: returns to the chooser, where the path was picked.
     var onStartOver: (() -> Void)?
+    /// The in-shell run this view shows (`ContentView`'s counter); nil on first launch. A run
+    /// that has created something is parked on the workspace store when the tab goes away.
+    var run: Int?
 
     /// The profile name as the commands on this screen show it.
     private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
@@ -41,12 +44,18 @@ struct OnboardingView: View {
         .background(Theme.Colors.winBG)
         // The jamf-cli probe waits on child processes, so it starts here and runs off the main
         // actor, never from `OnboardingFlow.init()` while this view is being built.
+        .onAppear {
+            if let parked = workspaceStore.takeParkedOnboarding(run: run) { flow = parked }
+            // A command that was running when the tab was left may have saved something since.
+            workspaceStore.onboardingRunHasWork = flow.startOverRemovesSomething
+        }
         .task { await flow.refreshJamfCLIStatus() }
-        // The flow goes with the view (the Add sheet starting a new onboarding, a tab switch),
-        // so its typed secrets are wiped first.
-        .onDisappear { [flow, workspaceStore] in
+        // The view goes on a tab switch or a new onboarding; its typed secrets are wiped first.
+        // A run that has saved a profile or folder is parked, not dropped, so coming back still
+        // offers Start over; the Add sheet stays refused meanwhile.
+        .onDisappear { [flow, workspaceStore, run] in
             flow.clearAllSecrets()
-            workspaceStore.onboardingRunHasWork = false
+            workspaceStore.leaveOnboarding(run: run, flow: flow)
         }
         .onChange(of: flow.startOverRemovesSomething) { _, hasWork in
             workspaceStore.onboardingRunHasWork = hasWork
@@ -1037,7 +1046,8 @@ struct OnboardingView: View {
             .accessibilityLabel(flow.currentStep == .welcome
                 ? L("Back to the first screen") : L("Back to step \(max(1, flow.stepPosition - 1))"))
 
-            if onStartOver != nil && flow.currentStep != .welcome {
+            if (onStartOver != nil || flow.startOverRemovesSomething)
+                && flow.currentStep != .welcome {
                 PNPButton(title: L("Start over"), icon: "arrow.uturn.backward") {
                     requestStartOver()
                 }
@@ -1082,7 +1092,15 @@ struct OnboardingView: View {
             let problems = await flow.startOver()
             isStartingOver = false
             if problems.isEmpty {
-                onStartOver?()
+                if let onStartOver {
+                    onStartOver()
+                } else {
+                    // In the shell there is no chooser to return to: a fresh setup.
+                    flow = OnboardingFlow()
+                    workspaceStore.onboardingRunHasWork = false
+                    workspaceStore.reloadFromDisk()
+                    await flow.refreshJamfCLIStatus()
+                }
             } else {
                 flow.lastError = problems.joined(separator: "\n")
             }

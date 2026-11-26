@@ -1124,6 +1124,7 @@ struct MobileFleetView: View {
         case let t where t.contains("ipad"): return .teal
         case let t where t.contains("iphone"): return .gold
         case let t where t.contains("tv"): return .warn
+        case let t where t.contains("vision"): return .warn
         default: return .muted
         }
     }

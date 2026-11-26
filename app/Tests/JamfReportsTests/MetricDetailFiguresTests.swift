@@ -35,5 +35,8 @@ final class MetricDetailFiguresTests: XCTestCase {
         XCTAssertEqual([run.previous, run.change], ["71.0%", "+2.0pp"])
         XCTAssertEqual(MetricDetailFigures.summaryCount(0), "0 summaries")
         XCTAssertEqual(MetricDetailFigures.summaryCount(1), "1 summary")
+        XCTAssertEqual(MetricDetailFigures.summaryCount(0, of: 4), "0 of 4 summaries",
+                       "summaries exist, none carries the metric")
+        XCTAssertEqual(MetricDetailFigures.summaryCount(3, of: 3), "3 summaries")
     }
 }

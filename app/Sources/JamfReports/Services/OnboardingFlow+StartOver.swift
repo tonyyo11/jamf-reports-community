@@ -8,6 +8,10 @@ extension OnboardingFlow {
             || isConnectingProtect || isConnectingSchool
     }
 
+    /// Whether an in-shell run is kept when its tab goes away: one that has saved something
+    /// Start over would remove, or that is still running a command that may save one.
+    var parksWhenLeft: Bool { isBusy || startOverRemovesSomething }
+
     /// True when Start over has something to remove, so it asks first.
     var startOverRemovesSomething: Bool { !createdWorkspaces.isEmpty || !createdProfiles.isEmpty }
 

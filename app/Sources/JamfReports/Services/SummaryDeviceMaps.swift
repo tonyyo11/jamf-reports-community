@@ -175,11 +175,13 @@ enum SummaryDeviceMaps {
         case .iPad: return "iPadOS"
         case .iPhone: return "iOS"
         case .appleTV: return "tvOS"
+        case .visionPro: return "visionOS"
         case .other:
             switch (deviceType ?? "").lowercased() {
             case "ios": return "iOS"
             case "ipados": return "iPadOS"
             case "tvos": return "tvOS"
+            case "visionos": return "visionOS"
             default: return ""
             }
         }
@@ -190,6 +192,7 @@ enum SummaryDeviceMaps {
         case .iPad: "iPad"
         case .iPhone: "iPhone"
         case .appleTV: "Apple TV"
+        case .visionPro: "Vision Pro"
         case .other: "Other"
         }
     }
