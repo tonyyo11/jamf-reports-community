@@ -284,6 +284,85 @@ final class CollectTimeoutTests: XCTestCase {
         XCTAssertEqual(walk.snapshots, [])
     }
 
+    // MARK: - patch-version-dates (B1)
+
+    private static let oneDefinition =
+        #"printf '%s' '[{"version":"1.0","releaseDate":"2026-01-01T00:00:00Z","absoluteOrderId":"0"}]'; exit 0"#
+
+    /// The newest `patch-version-dates` sidecar's bytes and name, if any.
+    private func newestVersionDates() throws -> (name: String, data: Data)? {
+        let folder = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent(PatchReleaseDateService.versionDatesKind)
+        guard let url = FileManager.newestJSONFile(in: folder) else { return nil }
+        return (url.lastPathComponent, try Data(contentsOf: url))
+    }
+
+    func testAnAnsweredWalkWritesTheSidecarAt0600AndAnIdenticalWalkWritesNothing() async throws {
+        let first = try await runDefinitionWalk(Self.oneDefinition)
+        XCTAssertTrue(first.texts.contains { $0.contains("[ok] patch-version-dates: 12 title(s)") },
+                      "\(first.texts)")
+        let written = try XCTUnwrap(try newestVersionDates())
+        let folder = try WorkspacePaths.dataDir(for: profile)
+        for kind in [PatchReleaseDateService.versionDatesKind, "patch-release-dates"] {
+            let url = try XCTUnwrap(FileManager.newestJSONFile(
+                in: folder.appendingPathComponent(kind)))
+            let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
+            XCTAssertEqual((mode as? NSNumber)?.intValue, 0o600, kind)
+        }
+        let second = try await runDefinitionWalk(Self.oneDefinition)
+        XCTAssertTrue(second.texts.contains {
+            $0.contains("[info] patch-version-dates: 12 title(s), unchanged") }, "\(second.texts)")
+        XCTAssertEqual(try newestVersionDates()?.data, written.data)
+    }
+
+    func testATitleThatFailsKeepsItsEarlierRowsMarkedStale() async throws {
+        _ = try await runDefinitionWalk(Self.oneDefinition)
+        let firstStamp = try XCTUnwrap(PatchReleaseDateService.snapshotStamp(
+            of: URL(fileURLWithPath: try XCTUnwrap(try newestVersionDates()).name)))
+        try await Task.sleep(nanoseconds: 1_100_000_000)  // a new stamp for the next file
+        let walk = try await runDefinitionWalk(
+            #"case "$*" in *"definitions 3 "*) exit 1 ;; esac; "# + Self.oneDefinition)
+        XCTAssertTrue(walk.texts.contains { $0.contains("[ok] patch-version-dates: 12 title(s)") },
+                      "\(walk.texts)")
+        let rows = try JSONDecoder().decode(
+            [PatchVersionDate].self, from: try XCTUnwrap(try newestVersionDates()).data)
+        XCTAssertEqual(rows.first { $0.titleId == "3" }?.staleSince, firstStamp)
+        XCTAssertNil(rows.first { $0.titleId == "4" }?.staleSince)
+    }
+
+    func testDefinitionsWithNoUsableVersionCarryTheEarlierRows() async throws {
+        _ = try await runDefinitionWalk(Self.oneDefinition)
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+        _ = try await runDefinitionWalk(
+            #"printf '%s' '[{"version":" ","releaseDate":"2026-01-01T00:00:00Z"}]'; exit 0"#)
+        let rows = try JSONDecoder().decode(
+            [PatchVersionDate].self, from: try XCTUnwrap(try newestVersionDates()).data)
+        XCTAssertFalse(rows.contains { $0.noVersions == true }, "Jamf did list definitions")
+        XCTAssertEqual(rows.first { $0.titleId == "1" }?.version, "1.0")
+        XCTAssertNotNil(rows.first { $0.titleId == "1" }?.staleSince)
+    }
+
+    func testAStoppedWalkLeavesTheSidecarAsItWas() async throws {
+        _ = try await runDefinitionWalk(Self.oneDefinition)
+        let before = try XCTUnwrap(try newestVersionDates())
+        let walk = try await runDefinitionWalk("exit 3")
+        XCTAssertFalse(walk.texts.contains { $0.contains("patch-version-dates") }, "\(walk.texts)")
+        XCTAssertEqual(try newestVersionDates()?.data, before.data)
+    }
+
+    func testASidecarThatCannotBeWrittenIsAWarningAndTheWalkStillLands() async throws {
+        let blocker = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent(PatchReleaseDateService.versionDatesKind)
+        try FileManager.default.createDirectory(
+            at: blocker.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not a folder".utf8).write(to: blocker)
+        let walk = try await runDefinitionWalk(Self.oneDefinition)
+        XCTAssertTrue(walk.texts.contains {
+            $0.contains("[warn] patch-version-dates: could not write snapshot") }, "\(walk.texts)")
+        XCTAssertTrue(walk.texts.contains { $0.contains("[ok] patch-release-dates: 12 title(s)") })
+        XCTAssertEqual(walk.snapshots.count, 1)
+    }
+
     func testATimedOutAttemptIsAFailureForTheVerdictsButNotAuthOrUsage() {
         let timedOut = [ReportEngine.CollectOutcome(
             kind: "computers", exitCode: CLIBridge.exitCodeTimedOut)]

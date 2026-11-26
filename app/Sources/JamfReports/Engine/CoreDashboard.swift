@@ -22,10 +22,17 @@ struct CoreDashboard: Sendable {
     let aiNarrative: String?
     /// The generate run's log, for a sheet's `[warn]` line. Nil writes to stdout only.
     let onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    /// The admin-hygiene sources this Mac collects (`SharedConfigPin.collectOptIn`); the Server
+    /// and Admin Health tab shows only these.
+    let optInKinds: Set<String>
+    /// The generate run's one time, so the tabs of a workbook agree on days left.
+    let now: Date
     /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
     private let hardwareIndex = OnceCache<[String: Bool]>()
     /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
     private let computerDateIndex = OnceCache<ComputerDateIndex?>()
+    /// Patch Velocity, Patch Version History and its footer share one read of the history.
+    private let patchHistoryCache = OnceCache<PatchHistory>()
     /// Each snapshot read once per report: the sheets read `computers` about seven times.
     private let snapshotData = SnapshotDataCache()
     /// Protect agent currency, measured once per report on the computers file the tabs read.
@@ -37,9 +44,13 @@ struct CoreDashboard: Sendable {
         workbook: Workbook,
         provenance: Provenance? = nil,
         aiNarrative: String? = nil,
-        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil,
+        optInKinds: Set<String> = [],
+        now: Date = Date()
     ) {
+        self.now = now
         self.onLine = onLine
+        self.optInKinds = optInKinds
         self.config = config
         self.dataDir = dataDir
         self.workbook = workbook
@@ -118,6 +129,7 @@ struct CoreDashboard: Sendable {
             // --- Parity / detail sheets (sheets 41–44) ---
             ("Patch Summary Dashboard", writePatchSummaryDashboard),
             ("Patch Velocity", writePatchVelocity),
+            ("Patch Version History", writePatchVersionHistory),
             ("Device Security State", writeDeviceSecurityState),
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
             // --- OS currency (sheet 45) ---
@@ -125,6 +137,10 @@ struct CoreDashboard: Sendable {
             // --- mSCP / STIG compliance (sheets 46–47) ---
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
+            // --- Server and admin health ---
+            (SheetID.serverAdminHealth.rawValue, writeServerAdminHealth),
+            // --- Deployment health (last core tab; EA and Charts tabs follow) ---
+            (SheetID.deploymentHealth.rawValue, writeDeploymentHealth),
         ]
         // --- Protect (sheets 35–40, optional) ---
         return leading + protectSheetPlan + trailing
@@ -381,8 +397,7 @@ struct CoreDashboard: Sendable {
     /// present but honest. nils render "—" (never fabricated zeros). The top-titles
     /// trend chart embeds below the table when charts are enabled.
     func writePatchVelocity() throws {
-        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
-        let velocities = PatchVelocityBuilder.compute(dataDir: dataDir, releaseRows: releaseRows)
+        let velocities = patchHistory.velocities
 
         let ws = workbook.addSheet("Patch Velocity")
         let ts = ISO8601Time.string(Date())
@@ -437,6 +452,117 @@ struct CoreDashboard: Sendable {
         }
 
         embedPatchVelocityChart(ws: ws, row: &row, velocities: velocities)
+    }
+
+    // MARK: - Patch Version History
+    // Source: dated `patch-status` snapshots, the `patch-version-dates` sidecar and the
+    // dated `patch-release-dates` snapshots.
+
+    /// One row per version window: each stretch of days Jamf reported a version as the
+    /// title's latest, with its observed days to 50% and 90% from the release date. Then the
+    /// fleet figure for the last 90 days. Versions with no window are counted in a footer.
+    func writePatchVersionHistory() throws {
+        let versions = patchHistory.versions
+        guard !versions.isEmpty else {
+            throw CoreDashboardError.nothingToShow("no patch-status history")
+        }
+        let ws = workbook.addSheet("Patch Version History")
+        var row = ws.writeSheetHeader(
+            title: t("Patch Version History"),
+            subtitle: "Adoption of each version while it was the latest — Generated: "
+                + ISO8601Time.string(Date()),
+            ncols: 8)
+        ws.setColumnWidth(0, 0, 36)
+        ws.setColumnWidth(1, 7, 16)
+        let headers = ["Title", "Version", "Released", "Window start", "Window end",
+                       "Days to 50%", "Days to 90%", "Outcome"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+        let dash = "\u{2014}"
+        let day = patchVelocityDateFormatter
+        for version in versions.sorted(by: Self.titleThenFirstWindow) {
+            for window in version.windows {
+                for (col, text) in Self.versionWindowCells(version, window, day: day, dash: dash)
+                    .enumerated() {
+                    ws.write(text, row: row, col: col, format: .cell)
+                }
+                row += 1
+            }
+        }
+        row += 1
+        ws.write(patchVersionFooter(versions), row: row, col: 0, format: .cell)
+        row += 2
+        for line in Self.fleetVersionLines(
+            PatchVelocityBuilder.summary(versions, now: patchHistory.now)) {
+            ws.write(line, row: row, col: 0, format: .cell)
+            row += 1
+        }
+    }
+
+    private static func titleThenFirstWindow(
+        _ lhs: VersionVelocity, _ rhs: VersionVelocity
+    ) -> Bool {
+        let order = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if order != .orderedSame { return order == .orderedAscending }
+        let left: Date = lhs.windows.first?.start ?? .distantPast
+        let right: Date = rhs.windows.first?.start ?? .distantPast
+        return left < right
+    }
+
+    private static func versionWindowCells(
+        _ version: VersionVelocity, _ window: VersionWindow, day: DateFormatter, dash: String
+    ) -> [String] {
+        let released: String = window.releaseDate.map { day.string(from: $0) } ?? dash
+        let ended: String = window.end.map { day.string(from: $0) } ?? dash
+        let to50: String = window.daysTo50.map { String($0) } ?? dash
+        let to90: String = window.daysTo90.map { String($0) } ?? dash
+        return [version.title, version.version, released, day.string(from: window.start),
+                ended, to50, to90, window.outcome.label]
+    }
+
+    private var patchHistory: PatchHistory {
+        patchHistoryCache.value {
+            PatchVelocityBuilder.computeWithVersions(
+                dataDir: dataDir, releaseRows: PatchReleaseDateService.load(dataDir: dataDir))
+        }
+    }
+
+    /// How many defined versions never had a window, or why that is unknown.
+    private func patchVersionFooter(_ versions: [VersionVelocity]) -> String {
+        switch patchHistory.versionDates {
+        case .absent:
+            return "Release dates not read: the patch definitions have not been collected yet."
+        case .unreadable:
+            return "Release dates could not be read."
+        case .rows(let rows, _, _):
+            let windowed = Set(versions.map { "\($0.titleId)|\($0.version)" })
+            let defined = Set(rows.compactMap { row in row.version.map { "\(row.titleId)|\($0)" } })
+            let count = defined.subtracting(windowed).count
+            return count == 1
+                ? "1 defined version had no window in the history and is not listed."
+                : "\(count) defined versions had no window in the history and are not listed."
+        }
+    }
+
+    /// The fleet figure as plain lines, shared by the workbook tab and the HTML report.
+    static func fleetVersionLines(_ summary: FleetVersionSummary) -> [String] {
+        var lines = ["Last 90 days, counted in version windows:"]
+        if let median = summary.median, let p90 = summary.p90 {
+            lines.append("Days to 90% from release: median \(median), 90th percentile \(p90) "
+                + "(\(summary.crossed) windows)")
+        } else {
+            let crossed = summary.crossed == 1
+                ? "1 window reached 90%" : "\(summary.crossed) windows reached 90%"
+            lines.append("Days to 90% from release: \(crossed), "
+                + "fewer than \(FleetVersionSummary.minimumForMedian) needed for a median")
+        }
+        lines.append("Reached 90% with no release date: \(summary.noReleaseDate)")
+        lines.append("Superseded before 90%: \(summary.superseded)")
+        lines.append("Not yet at 90%: \(summary.notYet)")
+        lines.append("Already at 90% when first seen: \(summary.alreadyAt90)")
+        return lines
     }
 
     /// Embed a line chart of the five lowest-adoption titles' series below the table.
@@ -2619,18 +2745,8 @@ struct CoreDashboard: Sendable {
                                          hardwareEncrypted: nil, neverInventoried: true)
             }
 
-            let diskEncryption = item["diskEncryption"] as? [String: Any]
-            let fileVaultEnabled = diskEncryption?["fileVault2Enabled"] as? Bool
-            let bootDetails = diskEncryption?["bootPartitionEncryptionDetails"] as? [String: Any]
-            let fvState = bootDetails?["partitionFileVault2State"] as? String
-            let fileVaultStr: String
-            if let state = fvState, !state.isEmpty {
-                fileVaultStr = state
-            } else if let enabled = fileVaultEnabled {
-                fileVaultStr = enabled ? "ENCRYPTED" : "UNENCRYPTED"
-            } else {
-                fileVaultStr = ""
-            }
+            // The raw value, so on_values of "true"/"false" judge it; only the cell maps them.
+            let fileVaultStr = FileVaultValue.raw(computer: item) ?? ""
 
             let security = item["security"] as? [String: Any]
             let sipStr = security?["sipStatus"] as? String ?? ""
@@ -2681,7 +2797,8 @@ struct CoreDashboard: Sendable {
                 row += 1
                 continue
             }
-            ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
+            ws.write(Self.fileVaultCell(policy.fileVaultLabel(
+                        r.fileVault, hardwareEncrypted: r.hardwareEncrypted)),
                      row: row, col: 2, format: securityVerdictFormat(
                         .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
             ws.write(r.sip, row: row, col: 3,
@@ -2695,6 +2812,16 @@ struct CoreDashboard: Sendable {
             ws.write(r.bootstrapToken, row: row, col: 6,
                      format: escrowed.map { $0 ? CellFormat.green : .red } ?? .cell)
             row += 1
+        }
+    }
+
+    /// A FileVault cell: jamf-cli's `fileVault2Enabled` Bool reads as Jamf's own words, so a
+    /// sheet never shows a bare "true" beside "ENCRYPTED" from another Mac.
+    static func fileVaultCell(_ label: String) -> String {
+        switch label.lowercased() {
+        case "true", "1": "ENCRYPTED"
+        case "false", "0": "UNENCRYPTED"
+        default: label
         }
     }
 
@@ -3338,6 +3465,13 @@ struct CoreDashboard: Sendable {
                 + "grants, and whether signatures, agent and connection are current.",
             "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
                 + "Med-Low / Medium / High with count and percent.",
+            "Server and Admin Health": "The Jamf Pro server's own credentials, such as the "
+                + "built-in certificate authority, with days left, the Jamf Pro notifications this "
+                + "login sees and, when turned on, admin hygiene counts, or why one could not "
+                + "be read.",
+            "Deployment Health": "App Installers deployments and patch policies with the share "
+                + "of their own Macs that failed, judged against the organization's warning and "
+                + "critical levels; deployed versus latest version, pinned or lagging.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
             "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
@@ -3350,6 +3484,8 @@ struct CoreDashboard: Sendable {
             "Patch Summary Dashboard": "Fleet and patch overview from patch-status and "
                 + "device-compliance.",
             "Patch Velocity": "How fast each patch title is adopted after its release.",
+            "Patch Version History":
+                "Each version's adoption while it was the latest, and days to 90% across titles.",
             "Device Security State": "Per-Mac FileVault, SIP, Gatekeeper and Firewall state.",
             "Mobile Supervision Status": "Supervised and unsupervised mobile devices per "
                 + "device family.",
@@ -3936,6 +4072,8 @@ struct CoreDashboard: Sendable {
 enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
     case protectDisabled
+    /// No server-health source has landed, so the tab would hold only refusals.
+    case noServerHealthData
     /// The snapshot was read and holds nothing this tab can use; the text says what.
     case nothingToShow(String)
 
@@ -3947,6 +4085,8 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
             return reason
         case .protectDisabled:
             return "protect.enabled is off"
+        case .noServerHealthData:
+            return "No server-health source has been collected for this server"
         case .noCachedData(let names):
             if let refusal = BoundedFile.sizeRefusal(forAnyOf: names) {
                 return "\(refusal.sentence); left out"

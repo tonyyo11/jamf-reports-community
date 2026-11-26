@@ -274,11 +274,17 @@ struct SourcesView: View {
         // The label wraps at its full height: truncated, it still reserved the wrapped
         // height below the cards row.
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Mono(text: source.command,
-                 color: source.skipReason == nil ? Theme.Text.secondary
-                    : Theme.Text.tertiary(contrast))
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Mono(text: source.command,
+                     color: source.skipReason == nil ? Theme.Text.secondary
+                        : Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note = ServerHealth.optInLabel(source.kind) {
+                    Text(note).font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(Self.rowStatus(source, state: state.control, cachedAt: cachedAt[source.kind]))
                 .font(.caption)
                 .foregroundStyle(state.changedOnAnotherMac
@@ -312,8 +318,18 @@ struct SourcesView: View {
     private func sourceSwitch(
         _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch
     ) -> some View {
-        if state == .on || state == .off || state == .locked {
-            let held = sourcesPlan?.changedOnAnotherMac == true
+        if case .optIn(let on) = state {
+            Toggle("", isOn: Binding(
+                get: { on },
+                set: { newValue in setOptedIn(source.kind, newValue) }))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .accessibilityLabel(L("Collect \(source.kind)"))
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+        } else if state == .on || state == .off || state == .locked {
+            let held = sourcesPlan?.holdsSkipSwitches == true
             Toggle("", isOn: Binding(
                 get: { state != .off },
                 set: { on in
@@ -356,6 +372,25 @@ struct SourcesView: View {
         }
     }
 
+    /// Writes an opt-in switch. A removal is always written; an addition waits for no one.
+    private func setOptedIn(_ kind: String, _ on: Bool) {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try CollectSkipConfigWriter.setOptedIn(on, kind: kind, profile: profile)
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            if let failure { workspace.toast = Toast(message: failure, style: .danger) }
+            reloadSourcesPlan()
+            await workspace.refreshDataFreshness()
+        }
+    }
+
     /// The row's trailing text: the switch's state in words, else `sourceStatus`.
     nonisolated static func rowStatus(
         _ source: CollectSourcesPlan.Source, state: CollectSourcesPlan.SourceSwitch,
@@ -363,6 +398,7 @@ struct SourcesView: View {
     ) -> String {
         switch state {
         case .off: L("Turned off in this workspace")
+        case .optIn(on: false): L("Off until turned on")
         case .followsPatchStatus: L("Turned off with patch-status")
         case .noDevices(.mac): L("No computers in Jamf Pro")
         case .noDevices(.mobile): L("No mobile devices in Jamf Pro")
@@ -373,6 +409,10 @@ struct SourcesView: View {
     /// What turning `kind` off does, one sentence per source family: it stops updating, the
     /// screens keep its last data with its date, and the daily summary stops using it.
     nonisolated static func quietSentence(for kind: String) -> String {
+        // Not patch-status data: it feeds no Security Score part.
+        if kind == "patch-policies" {
+            return L("Patch policy results stop updating. Screens and report tabs keep showing what was last collected, with its date; the daily summary stops using it.")
+        }
         if kind.hasPrefix("patch-") {
             return L("Patch data stops updating. Patch screens and report tabs keep showing what was last collected, with its date; the daily summary and the patch part of the Security Score stop using it.")
         }
@@ -907,6 +947,8 @@ struct SourcesView: View {
                 let typedSkip = config?.jamfCli?.collectSkip
                 let skipList = SharedConfigPin.collectSkipList(
                     configured: typedSkip, profile: profile)
+                let optInList = SharedConfigPin.collectOptInList(
+                    configured: config?.jamfCli?.collectOptIn, profile: profile)
                 let plan = CollectSourcesPlan.build(.init(
                     product: detected.type, profile: profile,
                     protectProfile: protectProfile,
@@ -928,7 +970,12 @@ struct SourcesView: View {
                     fleet: detected.type == .jamfPro
                         ? FleetState.load(dataDir: try? WorkspacePaths.dataDir(for: profile))
                         : .unknown,
-                    platformUnavailable: routed.unavailable))
+                    platformUnavailable: routed.unavailable,
+                    workspaceAuthIsPlatform:
+                        JamfCLIAuthMethod(raw: workspaceAuth?.authMethod)?.isPlatform == true,
+                    advisory: StateFileStore.advisoryCauses(profile: profile),
+                    optInList: optInList.effective, optInDrifted: optInList.drifted,
+                    optInInFile: optInList.drifted ? config?.jamfCli?.collectOptIn ?? [] : nil))
                 let school = detected.type == .jamfSchool ? workspaceAuth : nil
                 // The derived Platform slot can equal the MDM profile: resolve each name once.
                 var resolved: [String: ProfileAuthMethod.Resolved?] = [:]
@@ -1050,9 +1097,9 @@ struct SourcesView: View {
     /// workspace path guard. A kind with no snapshot is absent.
     nonisolated static func newestSnapshots(kinds: [String], profile: String) -> [String: Date] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [:] }
-        let configured = (try? WorkspacePaths.dataDir(for: profile))
-            ?? root.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        guard let dataDir = WorkspacePathGuard.validate(configured, under: root) else { return [:] }
+        // A data_dir the path rules refuse shows no dates, never the default folder's.
+        guard let configured = try? WorkspacePaths.dataDir(for: profile),
+              let dataDir = WorkspacePathGuard.validate(configured, under: root) else { return [:] }
         var dates: [String: Date] = [:]
         for kind in kinds {
             let names = [kind] + (legacyCacheNames[kind] ?? [])
@@ -1075,10 +1122,13 @@ struct SourcesView: View {
 
     private var cliCacheDisplayPath: String {
         if workspace.demoMode { return workspaceDisplayPath(subpath: "jamf-cli-data") + "/" }
-        guard let root = WorkspacePathGuard.root(for: workspace.profile),
-              let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
+        guard let root = WorkspacePathGuard.root(for: workspace.profile) else {
             return WorkspaceRootStore.displayPath(profile: workspace.profile,
                                                   subpath: "jamf-cli-data") + "/"
+        }
+        // A refused data_dir is named as refused, never shown as the default folder.
+        guard let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
+            return L("jamf_cli.data_dir is not used on this Mac (Config Doctor says why)")
         }
         let rootPath = root.path
         let dataPath = dataDir.path

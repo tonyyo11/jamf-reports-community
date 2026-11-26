@@ -22,6 +22,9 @@ struct TickState: Codable, Sendable {
     /// retry leaves out the profiles whose entry says a retry would fetch nothing. Per Mac, like
     /// the retry count: a peer's run says nothing about what this Mac's collect fetched.
     var profileOutcomes: [String: [ProfileOutcome]] = [:]
+    /// Labels whose collect stopped at its budget today and is being continued (split collect).
+    /// Per Mac, like the outcomes.
+    var splitDay: [String: SplitDay] = [:]
 
     init() {}
 
@@ -39,6 +42,7 @@ struct TickState: Codable, Sendable {
         // cost the stamps above, which would re-run every schedule.
         profileOutcomes = (try? c.decodeIfPresent(
             [String: [ProfileOutcome]].self, forKey: .profileOutcomes)) ?? [:]
+        splitDay = (try? c.decodeIfPresent([String: SplitDay].self, forKey: .splitDay)) ?? [:]
     }
 
     static func load(url: URL = TickState.defaultURL) -> TickState {
@@ -65,9 +69,13 @@ struct TickState: Codable, Sendable {
             retryCount[label] = 0
             // Yesterday's outcomes must not decide today's retry if this run dies mid-way.
             profileOutcomes[label] = nil
+            splitDay[label] = nil
         case .retry:
             lastStarted[label] = now
             retryCount[label] = (retryCount[label] ?? 0) + 1
+        case .continuation:
+            // The day is paid by the run that opened it; the failure backoff is not spent.
+            lastStarted[label] = now
         case .runNow: break
         }
     }
@@ -87,6 +95,24 @@ struct TickState: Codable, Sendable {
     }
 }
 
+/// Why a collect run stopped before its sources were done, as the tick reads it. Only `budget`
+/// and `otherRefresh` are continued (`SplitCollect.continuableStop`).
+enum SplitStop: String, Codable, Sendable {
+    case budget
+    /// A full manual refresh of the same workspace, which collects everything left.
+    case manualRefresh = "manual_refresh"
+    /// A refresh of another workspace, or of only some tiers.
+    case otherRefresh = "other_refresh"
+
+    init(_ stop: ReportEngine.RunStop) {
+        switch stop {
+        case .budgetUsed: self = .budget
+        case .manualRefresh(let sameWorkspaceFull): self = sameWorkspaceFull
+            ? .manualRefresh : .otherRefresh
+        }
+    }
+}
+
 /// How one profile of a multi-profile run ended, as `retryCouldHelp(profile:exitCode:since:)`
 /// judged it. Stored in `tick-state.json` as `profiles` under the schedule's label.
 struct ProfileOutcome: Codable, Sendable, Equatable {
@@ -96,17 +122,113 @@ struct ProfileOutcome: Codable, Sendable, Equatable {
     let retryCouldHelp: Bool
     let started: Date
     let finished: Date
+    /// Why the run stopped early when it may be continued; nil otherwise.
+    let stop: SplitStop?
+    /// `retryCouldHelp` for failures alone, leaving out a stop.
+    let failureRetryCouldHelp: Bool
+    /// Source names the run planned, and those it left (`ReportEngine.RunProgress`).
+    let planned: [String]
+    let left: [String]
+
+    init(
+        profile: String, exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool,
+        started: Date, finished: Date, stop: SplitStop? = nil,
+        failureRetryCouldHelp: Bool? = nil, planned: [String] = [], left: [String] = []
+    ) {
+        self.profile = profile
+        self.exitCode = exitCode
+        self.incomplete = incomplete
+        self.retryCouldHelp = retryCouldHelp
+        self.started = started
+        self.finished = finished
+        self.stop = stop
+        self.failureRetryCouldHelp = failureRetryCouldHelp ?? retryCouldHelp
+        self.planned = planned
+        self.left = left
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let couldHelp = try c.decode(Bool.self, forKey: .retryCouldHelp)
+        self.init(
+            profile: try c.decode(String.self, forKey: .profile),
+            exitCode: try c.decode(Int32.self, forKey: .exitCode),
+            incomplete: try c.decode(Bool.self, forKey: .incomplete),
+            retryCouldHelp: couldHelp,
+            started: try c.decode(Date.self, forKey: .started),
+            finished: try c.decode(Date.self, forKey: .finished),
+            stop: try? c.decodeIfPresent(SplitStop.self, forKey: .stop),
+            failureRetryCouldHelp: try? c.decodeIfPresent(
+                Bool.self, forKey: .failureRetryCouldHelp),
+            planned: (try? c.decodeIfPresent([String].self, forKey: .planned)) ?? [],
+            left: (try? c.decodeIfPresent([String].self, forKey: .left)) ?? [])
+    }
 
     private enum CodingKeys: String, CodingKey {
-        case profile, incomplete, started, finished
+        case profile, incomplete, started, finished, stop, planned, left
         case exitCode = "exit"
         case retryCouldHelp = "retry_could_help"
+        case failureRetryCouldHelp = "failure_retry_could_help"
     }
 }
 
 extension ProfileOutcome {
     /// Exit 0 and complete: nothing to fetch and nothing standing.
     var isClean: Bool { exitCode == 0 && !incomplete }
+}
+
+/// One label's split day: the local day its collect stopped at the budget, and per profile
+/// (`""` for a single-profile schedule) what the day planned and what is still left.
+struct SplitDay: Codable, Sendable, Equatable {
+    struct ProfileProgress: Codable, Sendable, Equatable {
+        var planned: [String]
+        var left: [String]
+        var lastFinished: Date
+    }
+
+    var day: Date
+    var profiles: [String: ProfileProgress]
+    /// The newest run also failed in a way a retry could fetch: the 1, 2, 4 h retries go first.
+    var failed: Bool
+
+    func isOpen(on now: Date) -> Bool {
+        !profiles.isEmpty && Calendar.current.isDate(day, inSameDayAs: now)
+    }
+}
+
+extension TickState {
+    /// Folds a run's outcome into the label's split day. A continuable stop opens or updates a
+    /// profile's entry, anything else closes it; a run started on another day starts over. A
+    /// profile the run no longer answers for (removed, excluded, no jamf-cli profile) loses its
+    /// entry, as in `noteProfileOutcomes`. `failed` is the label's failure verdict over every
+    /// profile's stored outcome, not only those that ran. A plain Run now records nothing. True
+    /// when the split day changed.
+    mutating func noteSplitDay(
+        _ label: String, outcome: ScheduleRunOutcome, failed: Bool,
+        reason: TickScheduler.Reason, startedAt: Date, finishedAt: Date
+    ) -> Bool {
+        guard reason != .runNow else { return false }
+        let before = splitDay[label]
+        var day = before.flatMap {
+            Calendar.current.isDate($0.day, inSameDayAs: startedAt) ? $0 : nil
+        } ?? SplitDay(day: Calendar.current.startOfDay(for: startedAt), profiles: [:], failed: false)
+        if let considered = outcome.considered {
+            day.profiles = day.profiles.filter { considered.contains($0.key) }
+        }
+        let ran: [(String, SplitStop?, [String], [String])] = outcome.considered == nil
+            ? [("", outcome.stop, outcome.planned, outcome.left)]
+            : outcome.profiles.map { ($0.profile, $0.stop, $0.planned, $0.left) }
+        for (profile, stop, planned, left) in ran {
+            guard stop != nil else { day.profiles[profile] = nil; continue }
+            let earlier = day.profiles[profile]?.planned ?? []
+            day.profiles[profile] = SplitDay.ProfileProgress(
+                planned: earlier + planned.filter { !earlier.contains($0) },
+                left: left, lastFinished: finishedAt)
+        }
+        day.failed = failed
+        splitDay[label] = day.profiles.isEmpty ? nil : day
+        return splitDay[label] != before
+    }
 }
 
 extension TickState {
@@ -159,16 +281,29 @@ struct ScheduleRunOutcome: Sendable {
     /// multi-profile run; nil for a single-profile schedule. Outcomes of any other profile are
     /// stale.
     let considered: Set<String>?
+    /// A single-profile run's continuable stop and source names; a multi-profile run keeps them
+    /// per profile in `profiles`.
+    let stop: SplitStop?
+    let planned: [String]
+    let left: [String]
+    /// `retryCouldHelp` for failures alone: a stop the tick continues is not a failure.
+    let failureRetryCouldHelp: Bool
 
     init(
         exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil,
-        profiles: [ProfileOutcome] = [], considered: Set<String>? = nil
+        profiles: [ProfileOutcome] = [], considered: Set<String>? = nil,
+        stop: SplitStop? = nil, planned: [String] = [], left: [String] = [],
+        failureRetryCouldHelp: Bool? = nil
     ) {
         self.exitCode = exitCode
         self.incomplete = incomplete
         self.retryCouldHelp = retryCouldHelp ?? incomplete
         self.profiles = profiles
         self.considered = considered
+        self.stop = stop
+        self.planned = planned
+        self.left = left
+        self.failureRetryCouldHelp = failureRetryCouldHelp ?? self.retryCouldHelp
     }
 
     /// The schedule's outcome over every profile's latest (`all`), of which this run's
@@ -178,7 +313,8 @@ struct ScheduleRunOutcome: Sendable {
             exitCode: all.contains { $0.exitCode != 0 } ? 1 : 0,
             incomplete: all.contains(where: \.incomplete),
             retryCouldHelp: all.contains(where: \.retryCouldHelp), profiles: ran,
-            considered: considered)
+            considered: considered,
+            failureRetryCouldHelp: all.contains(where: \.failureRetryCouldHelp))
     }
 
     /// Exit 0 with nothing left on the table.
@@ -196,8 +332,9 @@ enum TickScheduler {
     static let nonCatchUpWindow: TimeInterval = 15 * 60
 
     /// Waits before each same-day retry of a collect that failed or came back
-    /// incomplete; after the last one, the next calendar fire. Spaced so the
-    /// tick alone never re-polls an on-prem server inside an hour.
+    /// incomplete; after the last one, the next calendar fire. Spaced so a failing collect is not
+    /// re-polled inside an hour. A split collect's continuations (a budget stop, no failure) are
+    /// the exception: they run at the next free wake (Tony, 2026-11-25).
     static let retryBackoffs: [TimeInterval] = [1 * 3600, 2 * 3600, 4 * 3600]
 
     /// Wait between retries once `retryBackoffs` are spent, while today's summary is missing.
@@ -210,7 +347,9 @@ enum TickScheduler {
     /// Why a run is due — the tick stamps each differently (`TickState.noteStarted`). A
     /// `catchUp` is a daily schedule's run on the first wake after the Mac was off, for a day
     /// whose fire it may be off for again; it is stamped as a `fire`.
-    enum Reason: Sendable, Equatable { case runNow, fire, catchUp, retry }
+    /// A `continuation` picks up a collect that stopped at its budget, on a day a fire or
+    /// catch-up already started; it spends no retry.
+    enum Reason: Sendable, Equatable { case runNow, fire, catchUp, retry, continuation }
 
     struct DueRun: Sendable {
         let schedule: Schedule
@@ -218,6 +357,8 @@ enum TickScheduler {
         /// Profiles a multi-profile retry leaves alone: their last run left nothing a retry
         /// could fetch. Empty for every other reason, so a fire or Run now runs them all.
         var skipProfiles: Set<String> = []
+        /// A continuation's split day: only its profiles run, each knowing what is left.
+        var continuing: SplitDay?
     }
 
     /// The profiles a multi-profile run covers: `profiles` less `skip`, or all of them when
@@ -232,13 +373,14 @@ enum TickScheduler {
     /// profile); that profile is not `considered`, so its old outcome goes.
     static func runProfiles(
         names: [String], skipping skip: Set<String>,
+        leftOutNote: String? = nil,
         onLine: (String) -> Void = { fputs($0 + "\n", stderr) },
         run: (String) async -> ProfileOutcome?
     ) async -> (ran: [ProfileOutcome], considered: Set<String>) {
         let toRun = TickScheduler.profilesToRun(names, skipping: skip)
         let leftOut = names.filter { !toRun.contains($0) }
         if !leftOut.isEmpty {
-            onLine("[info] retrying only profiles that need it; leaving out: "
+            onLine("[info] \(leftOutNote ?? "retrying only profiles that need it"); leaving out: "
                    + leftOut.joined(separator: ", "))
         }
         var ran: [ProfileOutcome] = []
@@ -276,7 +418,7 @@ enum TickScheduler {
         summaryMissingToday: (Schedule) -> Bool = { _ in false }
     ) -> [DueRun] {
         let anchor = min(nonCatchUpAnchor ?? now, now)
-        return schedules.compactMap { schedule -> DueRun? in
+        let due = schedules.compactMap { schedule -> DueRun? in
             guard let label = schedule.launchAgentLabel else { return nil }
             // A disabled schedule's marker still runs.
             let runNow = runNowLabels.contains(label) ? DueRun(schedule: schedule, reason: .runNow)
@@ -296,6 +438,10 @@ enum TickScheduler {
                schedule.mode.runsAtLoad || anchor.timeIntervalSince(fire) <= nonCatchUpWindow {
                 return DueRun(schedule: schedule, reason: reason)
             }
+            // Continue now (a Run now marker) on a split day runs as a continuation.
+            if runNow != nil, let split = openSplitDay(schedule, label: label, state: state, now: now) {
+                return DueRun(schedule: schedule, reason: .continuation, continuing: split)
+            }
             let retry = retryIsDue(
                 mode: schedule.mode, label: label, daily: daily, state: state, now: now,
                 summaryMissing: { summaryMissingToday(schedule) })
@@ -305,6 +451,25 @@ enum TickScheduler {
                 schedule: schedule, reason: .retry,
                 skipProfiles: runNow == nil ? state.profilesNotNeedingRetry(label) : [])
         }
+        guard due.isEmpty else { return due }
+        // Nothing else this wake: continue one split collect.
+        for schedule in schedules {
+            guard let label = schedule.launchAgentLabel,
+                  let split = openSplitDay(schedule, label: label, state: state, now: now),
+                  !split.failed || (state.retryCount[label] ?? 0) >= retryBackoffs.count
+            else { continue }
+            return [DueRun(schedule: schedule, reason: .continuation, continuing: split)]
+        }
+        return []
+    }
+
+    /// `label`'s split day when it is today's, the schedule is enabled and collects.
+    private static func openSplitDay(
+        _ schedule: Schedule, label: String, state: TickState, now: Date
+    ) -> SplitDay? {
+        guard schedule.enabled, schedule.mode.runsAtLoad,
+              let split = state.splitDay[label], split.isOpen(on: now) else { return nil }
+        return split
     }
 
     /// `.fire` when the latest fire is unpaid, `.catchUp` when only the off gap makes a daily
@@ -366,6 +531,8 @@ enum TickScheduler {
         summaryMissing: () -> Bool
     ) -> Bool {
         guard mode.runsAtLoad else { return false }
+        // A budget stop with no failure is continued, never retried, whatever the gap.
+        if let split = state.splitDay[label], split.isOpen(on: now), !split.failed { return false }
         // A success stamped beyond clock skew ahead (a clock set ahead once) is no success yet.
         let succeeded = state.lastSucceeded[label].flatMap {
             $0.timeIntervalSince(now) <= SharedWorkspace.clockSkewTolerance ? $0 : nil

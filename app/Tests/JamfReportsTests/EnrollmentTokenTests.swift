@@ -118,4 +118,17 @@ final class EnrollmentTokenTests: XCTestCase {
             .appendingPathComponent("device-enrollment-instances_20261115_100000.json")
         XCTAssertNil(BoundedFile.readLogged(through, inside: dataDir), "the read itself refuses")
     }
+
+    func testTheIdAndRawDayAreKept() {
+        let tokenRow = EnrollmentToken(
+            row: ["id": "7", "name": "A", "tokenExpirationDate": "2026-11-20"],
+            warningDays: 90, now: now, calendar: calendar)
+        XCTAssertEqual(tokenRow.id, "7")
+        XCTAssertEqual(tokenRow.expiryDay, "2026-11-20")
+        let numeric = EnrollmentToken(
+            row: ["id": 8, "tokenExpirationDate": "2026-11-20T00:00:00Z"],
+            warningDays: 90, now: now, calendar: calendar)
+        XCTAssertEqual(numeric.id, "8")
+        XCTAssertNil(numeric.expiryDay, "an instant is not this token's date-only shape")
+    }
 }

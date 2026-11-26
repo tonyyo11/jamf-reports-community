@@ -5,14 +5,32 @@ import Foundation
 /// status strings are shown as given.
 enum ManagementDetail {
     /// A Jamf status string for the screen only: `ALLOW_BOOTING_FROM_EXTERNAL_MEDIA` reads
-    /// "Allow booting from external media". A value that already has lowercase letters is kept.
-    /// Workbook, HTML and CSV keep the raw value.
+    /// "Allow booting from external media", `DISABLED` "Disabled". Only upper-case letters and
+    /// underscores, four letters or more, are rewritten, so a serial, a version or an acronym
+    /// such as MDM is kept as given. Workbook, HTML and CSV keep the raw value.
     static func displayValue(_ raw: String) -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.contains(where: \.isLowercase) else { return text }
+        guard text.filter(\.isLetter).count >= 4,
+              text.allSatisfy({ ($0.isUppercase && $0.isASCII) || $0 == "_" })
+        else { return text }
         let words = text.lowercased().replacingOccurrences(of: "_", with: " ")
         return words.prefix(1).uppercased() + words.dropFirst()
     }
+
+    /// `displayValue` for a field of any kind (a jamf-cli Detail row, which can hold a name):
+    /// only a value with an underscore or a known status word is rewritten, so a user, site or
+    /// department written in capitals ("JSMITH", "FINANCE") stays as given.
+    static func statusValue(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.contains("_") || statusWords.contains(text) else { return text }
+        return displayValue(text)
+    }
+
+    private static let statusWords: Set<String> = [
+        "ENABLED", "DISABLED", "PENDING", "ACTIVE", "INACTIVE", "UNKNOWN", "NONE", "COMPLETE",
+        "COMPLETED", "FAILED", "ERROR", "ENCRYPTED", "UNENCRYPTED", "ESCROWED", "SUPPORTED",
+        "UNSUPPORTED", "ALLOWED", "DENIED", "TRUE", "FALSE",
+    ]
 
     static func rows(
         _ facts: ManagementFacts, now: Date, calendar: Calendar = .current

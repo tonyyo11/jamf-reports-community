@@ -28,6 +28,9 @@ struct ReportEngine: Sendable {
     /// The sources turned off for this run (`SharedConfigPin.collectSkip`); nil reads them for
     /// `workspace`. The daily summary treats them as absent, never as current.
     var turnedOffKinds: Set<String>? = nil
+    /// The patch history this engine's workbook and the HTML beside it share (one read, one
+    /// "now" per run).
+    let patchHistoryShare = PatchHistoryShare()
 
     /// The trend-chart tab, the one tab no sheet plan writes.
     static let chartsSheetName = "Charts"
@@ -84,6 +87,25 @@ struct ReportEngine: Sendable {
         now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> GeneratedReport {
+        // A share a caller already bound (one generateAll across formats) is the run's.
+        let share = PatchVelocityBuilder.runShare ?? patchHistoryShare
+        share.adopt(now: now)
+        return try await PatchVelocityBuilder.$runShare.withValue(share) {
+            try await generateReportBody(
+                outputURL: outputURL, template: template, aiNarrative: aiNarrative,
+                csvFolder: csvFolder, locateJamfCLI: locateJamfCLI, now: now, onLine: onLine)
+        }
+    }
+
+    private func generateReportBody(
+        outputURL: URL,
+        template: any ReportTemplate,
+        aiNarrative: String?,
+        csvFolder: Bool,
+        locateJamfCLI: @Sendable () -> URL?,
+        now: Date,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) async throws -> GeneratedReport {
         let workspaceName = workspace?.name ?? ""
 
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
@@ -110,7 +132,11 @@ struct ReportEngine: Sendable {
         // with a warning — they are engine-team follow-ups, not fatal errors.
         BoundedFile.resetSizeRefusals()
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
-                                 provenance: prov, aiNarrative: aiNarrative, onLine: onLine)
+                                 provenance: prov, aiNarrative: aiNarrative, onLine: onLine,
+                                 optInKinds: SharedConfigPin.collectOptIn(
+                                     configured: config.jamfCli?.collectOptIn,
+                                     profile: workspaceName),
+                                 now: now)
         let registry = SheetRegistry(plan: core.sheetPlan)
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
@@ -472,6 +498,7 @@ struct ReportEngine: Sendable {
         provenance: Provenance? = nil,
         liveKinds: Set<String>? = nil,
         day: Date = Date(),
+        changes: FleetChangeSummary? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> SummaryEmitOutcome {
         let fm = FileManager.default
@@ -501,7 +528,8 @@ struct ReportEngine: Sendable {
             // the existing file. The rebuild keeps every value the existing summary had that
             // this run cannot measure, so nothing goes from known to nil.
             if let built = buildSummaryFromCLI(
-                date: today, provenance: provenance, liveKinds: liveKinds),
+                date: today, provenance: provenance, liveKinds: liveKinds
+               ).map({ var summary = $0; summary.changes = changes; return summary }),
                let existing = try? SummaryJSONParser.decode(existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: built) {
                 var fresh = built.filling(from: existing)
@@ -520,7 +548,7 @@ struct ReportEngine: Sendable {
             return .keptExisting
         }
 
-        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds) else {
+        guard var summary = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds) else {
             // buildSummaryFromCLI returns nil when no cached jamf-cli snapshots
             // are available to summarize (fresh workspace, failed/skipped collect).
             // Surface this so operators understand why
@@ -536,6 +564,7 @@ struct ReportEngine: Sendable {
             return .nothingToSummarize
         }
 
+        summary.changes = changes
         return Self.writeSummaryFile(summary, to: summaryFile, onLine: onLine)
             ? .wrote : .writeFailed
     }
@@ -563,6 +592,8 @@ struct ReportEngine: Sendable {
         // A run that read no Macs (their sources absent or past max_cache_age_hours) must not
         // replace a day that counted them with a mobile-only point.
         if fresh.totalDevices == 0, existing.totalDevices > 0 { return false }
+        // A change part this run measured is newer than the morning's.
+        if fresh.changes?.isEmpty == false { return true }
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
@@ -1869,6 +1900,17 @@ struct ReportEngine: Sendable {
         "audit",
         // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
         "duplicate-serials",
+        // Server-health (jamf-cli 1.38.0+): the built-in CA's expiry.
+        "certificate-authority",
+        // Server-health: Jamf Pro's own notifications, by type.
+        "jamf-pro-notifications",
+        // Admin hygiene counts (jamf-cli 1.38.0+), collected only when opted in.
+        "laps-pending-rotations",
+        "admin-accounts",
+        "api-integrations",
+        // Deployment health (jamf-cli 1.35.0+): App Installers deployments and patch policies.
+        "app-installers-deployments",
+        "patch-policies",
         // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
         "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
@@ -1907,9 +1949,38 @@ struct ReportEngine: Sendable {
     struct CollectOutcome: Equatable, Sendable {
         let kind: String
         let exitCode: Int32
+        /// A refusal or "not set up" answer of a server-health kind: advice, not a failure,
+        /// so the loop keeps it out of every verdict.
+        var advisory = false
         /// The failed attempt's classified cause; nil for successes and launch failures.
         var cause: FailureCause.Kind? = nil
     }
+
+    /// The server-health sources: credentials and server-side processes that fail quietly.
+    static let serverHealthKinds: Set<String> = Set([
+        "certificate-authority", "jamf-pro-notifications",
+    ]).union(serverHealthOptInKinds)
+    /// The server-health sources that need a privilege reaching secrets or accounts: off until
+    /// `jamf_cli.collect_opt_in` lists them (`SharedConfigPin.collectOptIn`).
+    static let serverHealthOptInKinds: Set<String> = [
+        "laps-pending-rotations", "admin-accounts", "api-integrations",
+    ]
+    /// These calls are small; a hung one must not hold the run for the 60-minute kind limit.
+    static let serverHealthTimeout: TimeInterval = 180
+    /// The deployment-health lists (wave C), judged per row against the organization's levels.
+    static let deploymentKinds: Set<String> = ["app-installers-deployments", "patch-policies"]
+    /// The limit for one kind's call: the small server-health and deployment lists get
+    /// `serverHealthTimeout`, everything else the run's kind limit.
+    static func callTimeout(for kind: String, kindTimeout: TimeInterval) -> TimeInterval {
+        serverHealthKinds.contains(kind) || deploymentKinds.contains(kind)
+            ? min(kindTimeout, serverHealthTimeout) : kindTimeout
+    }
+    /// Kinds whose exit 4 means the feature is not set up on this server, not a fault.
+    static let notSetUpOnExit4Kinds: Set<String> =
+        serverHealthKinds.union(["app-installers-deployments"])
+    /// Of those, the kinds quiet on exit 4 only until they first land: a Jamf Cloud server that
+    /// answered once and later says not found has a real fault, not a feature that went away.
+    static let untilFirstLandingKinds: Set<String> = ["app-installers-deployments"]
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
     /// dead (vs a partial failure that should fall back to cache).
@@ -2229,6 +2300,8 @@ struct ReportEngine: Sendable {
     /// Asked before each source of a scheduled run: non-nil stops the run there, leaving what
     /// is left due for the next one (`RunStop`). nil outside a scheduled run.
     @TaskLocal static var runStop: (@Sendable () -> RunStop?)?
+    /// Set by a scheduled run around its collect; `collectPlanLines` and `stopsRun` record into it.
+    @TaskLocal static var runProgress: RunProgress?
 
     /// The Platform route for this run (spec 3.2, D19), from the config `collect` loaded.
     static func platformRoute(config: ReportConfig?, workspace: WorkspaceID) -> PlatformRoute {
@@ -2424,11 +2497,22 @@ struct ReportEngine: Sendable {
             collectSkip: collectSkip, installedVersion: detectedVersion, now: collectStart)
         planInputs.platformUnavailable = platformUnavailable
         planInputs.skippedSides = fleet.skipped
+        planInputs.optInKinds = SharedConfigPin.collectOptIn(
+            configured: loadedConfig?.jamfCli?.collectOptIn, profile: workspace.name)
+        planInputs.workspaceAuthIsPlatform =
+            JamfCLIAuthMethod(raw: profileAuth?.authMethod)?.isPlatform == true
         let lastDuration: (String) -> Int? = { stateStore?.lastDuration(for: $0) }
         let plan = Self.slowLast(
             Self.planCollect(
                 commands: commands, inputs: planInputs,
                 timeoutHold: { stateStore?.timeoutHoldUntil(report: $0, now: collectStart) },
+                advisoryHold: { kind in
+                    guard let store = stateStore,
+                          let until = store.advisoryHoldUntil(report: kind, now: collectStart),
+                          collectStart < until else { return nil }
+                    return store.cause(for: kind)?.kind == .notConfiguredOnServer
+                        ? .notConfigured : .notPermitted
+                },
                 lastRun: { stateStore?.lastRun(report: $0) }
             ), lastDuration: lastDuration)
         let scanPlan = Self.planDeviceScan(
@@ -2578,7 +2662,7 @@ struct ReportEngine: Sendable {
                     }
                 }
             }
-            outcomes.append(result.outcome)
+            if !result.outcome.advisory { outcomes.append(result.outcome) }
             if result.saved { savedKinds.insert(kind) }
         }
 
@@ -2899,6 +2983,8 @@ struct ReportEngine: Sendable {
                          text: "[info] collecting patch-release-dates for \(profile)"))
             if let result = await collectPatchReleaseDates(
                 profile: profile, bin: bin, dataDir: dataDir,
+                refreshAfter: patchVersionRefreshInterval(
+                    workspace: workspace, config: loadedConfig),
                 limits: patchDefinitionLimits, onLine: onLine
             ) {
                 switch result {
@@ -2939,7 +3025,12 @@ struct ReportEngine: Sendable {
                                                 sofaRefreshed: sofaRefreshSucceeded)
             unwritten = engine.emitSummaryJSON(
                 summariesDir: summariesDir, provenance: prov,
-                liveKinds: liveKinds, day: day, onLine: onLine
+                liveKinds: liveKinds, day: day,
+                changes: Self.landedSources.flatMap {
+                    Self.fleetChanges(
+                        landed: $0, dataDir: dataDir, config: config, onLine: onLine)
+                },
+                onLine: onLine
             ).partialReason
         } else if loadedConfig == nil {
             unwritten = "no config.yaml to summarize from"
@@ -3142,6 +3233,22 @@ struct ReportEngine: Sendable {
             // failure mode on old binaries is a clean non-zero exit.
             (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
              "duplicate-serials"),
+            // jamf-cli 1.38.0+; `collect` skips it on an older binary.
+            (["-p", profile, "pro", "certificate-authority", "active", "--output", "json"],
+             "certificate-authority"),
+            (["-p", profile, "pro", "jamf-pro-notifications", "list", "--output", "json"],
+             "jamf-pro-notifications"),
+            // Opt-in (`collect_opt_in`): counts only, reduced before they are saved.
+            (["-p", profile, "pro", "local-admin-password", "pending-rotations",
+              "--output", "json"], "laps-pending-rotations"),
+            (["-p", profile, "pro", "accounts", "list", "--output", "json"], "admin-accounts"),
+            (["-p", profile, "pro", "api-integrations", "list", "--output", "json"],
+             "api-integrations"),
+            // jamf-cli 1.35.0+; `collect` skips both on an older or unknown binary.
+            (["-p", profile, "pro", "app-installers-deployments", "list", "--output", "json"],
+             "app-installers-deployments"),
+            (["-p", profile, "pro", "patch-policies", "list", "--output", "json"],
+             "patch-policies"),
             // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
             // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
             // profile; `collect` skips the row on an older binary. `--output json` only
@@ -3201,7 +3308,8 @@ struct ReportEngine: Sendable {
         let attemptStart = Date()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, timeout: kindTimeout,
+            bin: bin, bridge: bridge,
+            timeout: callTimeout(for: kind, kindTimeout: kindTimeout),
             onLine: stderrWatcher.forwarding(to: onLine),
             beforeRetry: { stderrWatcher.reset() }
         )
@@ -3221,7 +3329,9 @@ struct ReportEngine: Sendable {
             )
         }
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
+        // A reduced count from a partial list would look complete, so exit 7 is a failure here.
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
+            && !serverHealthKinds.contains(kind) && !deploymentKinds.contains(kind)
         // A failed blueprint listing exits non-zero, so exit 0 with jamf-cli's
         // "No blueprints found." line is a real empty answer, not lost output.
         let noBlueprints = exitCode == 0 && data.isEmpty && stderrWatcher.sawNoBlueprints
@@ -3309,14 +3419,29 @@ struct ReportEngine: Sendable {
         collectStart: Date,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) throws -> KindCollectResult {
-        let cause = FailureCause.classify(
-            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
-            sawNoDeclarationDataOnStderr: sawNoDeclarationData,
-            sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff,
-            sawKeychainLockedOnStderr: sawKeychainLocked)
-        let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
+        // Exit 4 on a server-health command means the feature is not set up on the server;
+        // `classify` cannot tell which kind it is, so the caller says so. A kind that is quiet
+        // only until it first lands is classified normally once it has landed.
+        let landedBefore = untilFirstLandingKinds.contains(kind)
+            && stateStore?.lastRun(report: kind) != nil
+        let cause = notSetUpOnExit4Kinds.contains(kind) && !landedBefore
+            && exitCode == CLIBridge.exitCodeNotFound
+            ? FailureCause(kind: .notConfiguredOnServer, names: [], hint: nil, exitCode: exitCode)
+            : FailureCause.classify(
+                exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
+                sawNoDeclarationDataOnStderr: sawNoDeclarationData,
+                sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff,
+                sawKeychainLockedOnStderr: sawKeychainLocked)
+        var outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
         stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
                            cause: cause)
+        // Decided after the failure is recorded and before the `use_cached_data` abort, so a
+        // refusal never fails a run that asked for live data only.
+        if stateStore?.isAdvisory(kind: kind) == true {
+            onLine(.init(timestamp: Date(), level: .info, text: advisoryLine(kind, cause)))
+            outcome.advisory = true
+            return KindCollectResult(outcome: outcome, saved: false)
+        }
         guard useCachedData else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
@@ -3332,6 +3457,16 @@ struct ReportEngine: Sendable {
                      text: "[warn] \(kind): \(Self.exitText(exitCode))\(reason) — \(cacheNote)"
                         + Self.causeSuffix(cause)))
         return KindCollectResult(outcome: outcome, saved: false)
+    }
+
+    /// The `[info]` line for a refused or not-set-up server-health kind.
+    private static func advisoryLine(_ kind: String, _ cause: FailureCause) -> String {
+        if cause.kind == .notConfiguredOnServer {
+            return "[info] \(kind): not set up on this Jamf Pro server"
+        }
+        // Names come only from jamf-cli's hint; with none, the line says only that it is refused.
+        let names = cause.names.isEmpty ? "" : " (\(cause.names.joined(separator: ", ")))"
+        return "[info] \(kind): not permitted for this login\(names); see Config Doctor"
     }
 
     /// One kind's jamf-cli invocation plus the single in-run retry. nil means
@@ -3427,9 +3562,25 @@ struct ReportEngine: Sendable {
         // generic guard, because the generic path would otherwise file
         // the compliance section under patch-device-failures on any
         // tenant with no failures.
-        let salvaged = sectionedCollectKinds.contains(kind)
-            ? Self.patchDeviceFailurePayload(from: data, onLine: onLine)
-            : jsonPayload(from: data)
+        let salvaged: Data?
+        if sectionedCollectKinds.contains(kind) {
+            switch Self.patchDeviceFailurePayload(from: data) {
+            case .rows(let rows):
+                salvaged = rows
+            case .noDeviceSection where Self.patchFetchError(in: data) == nil:
+                // The fetch_error path's recorder, so the cause, the [warn] wording and the
+                // run's [partial] line are the same; saving [] would read as no failures.
+                return Self.recordSectionFetchError(
+                    kind: kind, section: "device_failures",
+                    error: "no device_failures section in jamf-cli output",
+                    exitCode: outcome.exitCode, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine)
+            case .noDeviceSection, .unreadable:
+                salvaged = nil
+            }
+        } else {
+            salvaged = jsonPayload(from: data)
+        }
         guard let payload = salvaged else {
             if sectionedCollectKinds.contains(kind), let fetch = Self.patchFetchError(in: data) {
                 return Self.recordSectionFetchError(
@@ -3472,6 +3623,29 @@ struct ReportEngine: Sendable {
             }
             AttentionLog.clear(.lostModeStripFailed)
             saved = stripped
+        } else if deploymentKinds.contains(kind) {
+            // Always reduced to the keys a reader uses; a list that is not of objects saves
+            // nothing rather than a guess.
+            guard let reduced = DeploymentSourceReduction.reduce(kind: kind, payload: payload)
+            else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): unexpected payload shape — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = reduced
+        } else if serverHealthKinds.contains(kind) {
+            // Always reduced, whatever `keep_account_names` says: nothing here is a person.
+            guard let reduced = ServerHealthReduction.reduce(
+                kind: kind, payload: payload, now: collectStart) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): unexpected payload shape — snapshot not saved"))
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart)
+                return KindCollectResult(outcome: outcome, saved: false)
+            }
+            saved = reduced
         } else if kind == "computers" {
             guard let stripped = Self.reducingComputers(
                 payload, keepAccountNames: keepAccountNames) else {
@@ -3507,10 +3681,11 @@ struct ReportEngine: Sendable {
             saved = stripped
         }
         do {
-            try saveSnapshot(
+            let file = try saveSnapshot(
                 data: saved, kind: kind, dataDir: dataDir,
                 recordManifest: recordManifest, onLine: onLine
             )
+            Self.landedSources?.noteSaved(kind: kind, file: file)
         } catch {
             // The throw aborts the whole collect, so without this the kind
             // that caused it would be the one kind with no record of having
@@ -3666,6 +3841,7 @@ struct ReportEngine: Sendable {
         profile: String,
         bin: URL,
         dataDir: URL,
+        refreshAfter: TimeInterval,
         limits: DeviceCallLimits = DeviceCallLimits(timeout: patchDefinitionTimeout),
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> PatchReleaseResult? {
@@ -3690,9 +3866,13 @@ struct ReportEngine: Sendable {
         var attempted = 0
         var answered = 0
         var lastFailure: Int32?
+        // Every definition of each title whose body parsed, for `patch-version-dates`.
+        var versionRows: [String: [PatchVersionDate]] = [:]
+        var currentTitles: [String: String] = [:]
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            currentTitles[titleId] = patchItem.title
             // titleId is server-supplied and lands in a bare positional argv
             // slot below — refuse a leading dash exactly like singleDeviceDetail
             // already refuses one. The rejected value is not echoed.
@@ -3738,6 +3918,11 @@ struct ReportEngine: Sendable {
             guard let definitions = try? JSONSerialization.jsonObject(with: data)
                     as? [[String: Any]]
             else { continue }
+            // Definitions with no usable version are not an answer of "no versions": the
+            // title keeps its earlier rows. Only a literal `[]` is.
+            let rows = PatchReleaseDateService.versionRows(
+                fromDefinitions: definitions, titleId: titleId, title: patchItem.title)
+            if definitions.isEmpty || !rows.isEmpty { versionRows[titleId] = rows }
             let (version, releaseDate) = PatchReleaseDateService.latestDefinitionDate(
                 definitions: definitions, latestVersion: patchItem.latest)
             guard !releaseDate.isEmpty else { continue }
@@ -3759,11 +3944,15 @@ struct ReportEngine: Sendable {
             try writePatchReleaseDates(merged, stamp: ts, dataDir: dataDir)
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] patch-release-dates: \(merged.count) title(s)"))
+            updatePatchVersionDates(
+                answered: versionRows, currentTitles: currentTitles,
+                refreshAfter: refreshAfter,
+                dataDir: dataDir, onLine: onLine)
             return .landed
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] patch-release-dates: could not write snapshot — " +
-                               error.localizedDescription))
+                               error.englishDescription))
             return .failed(exitCode: nil)
         }
     }
@@ -3774,13 +3963,77 @@ struct ReportEngine: Sendable {
     static func writePatchReleaseDates(
         _ merged: [[String: String]], stamp: String, dataDir: URL
     ) throws -> URL {
-        let outDir = try WorkspacePaths.confinedFolder([patchReleaseDatesKind], under: dataDir)
-        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-        let outFile = outDir.appendingPathComponent("\(patchReleaseDatesKind)_\(stamp).json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted]
-        try encoder.encode(merged).write(to: outFile, options: .atomic)
+        return try writePatchKind(
+            patchReleaseDatesKind, data: encoder.encode(merged), stamp: stamp, dataDir: dataDir)
+    }
+
+    /// Writes one `patch-version-dates` sidecar with the bytes `patchVersionDatesUpdate` encoded.
+    @discardableResult
+    static func writePatchVersionDates(_ data: Data, stamp: String, dataDir: URL) throws -> URL {
+        try writePatchKind(
+            PatchReleaseDateService.versionDatesKind, data: data, stamp: stamp, dataDir: dataDir)
+    }
+
+    /// One dated file in a patch kind folder: 0700 folder, 0600 file, written atomically, as
+    /// `saveSnapshot` writes every snapshot.
+    private static func writePatchKind(
+        _ kind: String, data: Data, stamp: String, dataDir: URL
+    ) throws -> URL {
+        let outDir = try WorkspacePaths.confinedFolder([kind], under: dataDir)
+        try FileManager.default.createDirectory(
+            at: outDir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let outFile = outDir.appendingPathComponent("\(kind)_\(stamp).json")
+        try AtomicInstall.write(data, to: outFile, mode: 0o600)
         return outFile
+    }
+
+    /// After `patch-release-dates` lands: merge this walk's definitions with the newest
+    /// sidecar and write a new one only when it changed or the newest has aged past
+    /// `refreshAfter`. A failure is one `[warn]`; the walk's own result stands.
+    static func updatePatchVersionDates(
+        answered: [String: [PatchVersionDate]], currentTitles: [String: String],
+        refreshAfter: TimeInterval, dataDir: URL, now: Date = Date(),
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) {
+        let kind = PatchReleaseDateService.versionDatesKind
+        // An unreadable newest file is replaced, carrying rows from the newest readable one.
+        let read = PatchReleaseDateService.newestAndCarryable(dataDir: dataDir, now: now)
+        let newestUnreadable: Bool
+        if case .unreadable = read.newest { newestUnreadable = true } else { newestUnreadable = false }
+        let update = PatchReleaseDateService.patchVersionDatesUpdate(
+            answered: answered, currentTitles: currentTitles,
+            previous: read.carryable, now: now, refreshAfter: refreshAfter)
+        let titles = Set(update.rows.map(\.titleId)).count
+        guard update.changed || newestUnreadable else {
+            onLine(.init(timestamp: now, level: .info,
+                         text: "[info] \(kind): \(titles) title(s), unchanged"))
+            return
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        do {
+            try writePatchVersionDates(
+                update.data, stamp: formatter.string(from: now), dataDir: dataDir)
+            onLine(.init(timestamp: now, level: .ok, text: "[ok] \(kind): \(titles) title(s)"))
+        } catch {
+            onLine(.init(timestamp: now, level: .warn,
+                         text: "[warn] \(kind): could not write snapshot — "
+                             + error.englishDescription))
+        }
+    }
+
+    /// The effective retention of the collect's own workspace and loaded config (never the
+    /// `-p` profile, which can name another slot's login), with the shared-config pin applied
+    /// as the sweep applies it.
+    private static func patchVersionRefreshInterval(
+        workspace: WorkspaceID, config: ReportConfig?
+    ) -> TimeInterval {
+        PatchReleaseDateService.patchVersionRefreshInterval(SharedConfigPin.effectiveRetention(
+            config?.retention, check: SharedConfigPin.check(profile: workspace.name)))
     }
 
     /// How `collectPatchReleaseDates` ended when it attempted the walk.
@@ -3914,6 +4167,7 @@ struct ReportEngine: Sendable {
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
@@ -3924,7 +4178,7 @@ struct ReportEngine: Sendable {
         let report = htmlReport(
             config: config, dataDir: dataDir, workspace: workspace, template: template,
             aiNarrative: aiNarrative, expandAll: false, locateJamfCLI: locateJamfCLI,
-            onLine: onLine)
+            now: now, onLine: onLine)
         let configProfile = workspace?.name ?? ""
         let digest = try await report.generate(
             outputURL: outputURL, profileName: configProfile, sections: template.htmlSections
@@ -3950,6 +4204,7 @@ struct ReportEngine: Sendable {
         aiNarrative: String? = nil,
         expandAll: Bool,
         locateJamfCLI: @Sendable () -> URL?,
+        now: Date = Date(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) -> HtmlReport {
         var report = HtmlReport(
@@ -3958,6 +4213,7 @@ struct ReportEngine: Sendable {
         report.templateName = template.displayName
         report.openSections = Set(template.htmlOpenSections)
         report.expandAll = expandAll
+        report.now = now
         report.jamfCLIVersion = locateJamfCLI()
             .flatMap { JamfCLIInstaller.installedVersion(at: $0) }
         return report
@@ -4729,50 +4985,35 @@ struct ReportEngine: Sendable {
         return sections
     }
 
-    /// Picks the device-failure rows out of a `patch-status --scan-failures`
-    /// stream.
-    ///
-    /// The stream carries up to three arrays — title compliance, policies with
-    /// failures, then devices — and only the last is what this kind holds. The
-    /// first is always present, so taking the first (or the last) parseable
-    /// document would file compliance rows under `patch-device-failures` on the
-    /// common tenant that has no failures at all. Devices are identified by
-    /// their `device_id` field rather than by heading text or position.
-    ///
-    /// Returns an empty array when the stream parsed but carried no device
-    /// section: that means no failures, which is a real answer. Returns nil only
-    /// when nothing parsed, so genuinely broken output still trips the caller's
-    /// guard instead of being recorded as a clean zero.
-    ///
-    /// A multi-section stream with no device rows warns through `onLine`. On a
-    /// healthy tenant that is the normal shape (compliance, sometimes policies,
-    /// no devices), but it is also what an upstream field rename would look
-    /// like — and a rename would be indistinguishable from a clean zero without
-    /// a line saying which shape produced it.
-    ///
-    /// From jamf-cli 1.29.0 the command prints one document of labelled sections
-    /// instead of the heading stream; `envelopeDeviceRows` reads that shape.
-    static func patchDeviceFailurePayload(
-        from data: Data,
-        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
-    ) -> Data? {
+    /// What `patch-status --scan-failures` gave for the device-failures kind.
+    enum PatchFailurePayload: Equatable {
+        /// The device rows; `[]` is a real "no failures".
+        case rows(Data)
+        /// JSON with no device-failures section (or a fetch error): not an answer, so it is
+        /// recorded as not landed rather than saved as a clean zero.
+        case noDeviceSection
+        /// Nothing parsed.
+        case unreadable
+    }
+
+    /// Picks the device-failure rows out of a `patch-status --scan-failures` stream: a 1.29
+    /// envelope of `{section, data, fetch_error}` objects, or older `── section ──` arrays whose
+    /// device rows carry `device_id`. Taking the first or last parseable document would file
+    /// compliance rows under `patch-device-failures`, so devices are found by section name or
+    /// field. Output that parsed but carried no device section is `.noDeviceSection`: saving
+    /// it as `[]` would read, against an earlier scan, as every failure clearing at once.
+    static func patchDeviceFailurePayload(from data: Data) -> PatchFailurePayload {
         let sections = jsonSections(from: data)
-        guard !sections.isEmpty else { return nil }
+        guard !sections.isEmpty else { return .unreadable }
         for section in sections {
             guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
-                    as? [[String: Any]] else { continue }
-            guard let first = rows.first else { continue }
-            if first["section"] != nil { return envelopeDeviceRows(rows) }
-            if first["device_id"] != nil { return section }
+                    as? [[String: Any]], let first = rows.first else { continue }
+            if first["section"] != nil {
+                return envelopeDeviceRows(rows).map(PatchFailurePayload.rows) ?? .noDeviceSection
+            }
+            if first["device_id"] != nil { return .rows(section) }
         }
-        if sections.count > 1 {
-            onLine(.init(
-                timestamp: Date(), level: .warn,
-                text: "[warn] patch-device-failures: \(sections.count) sections parsed, "
-                    + "none carried device rows — treating as no failures"
-            ))
-        }
-        return Data("[]".utf8)
+        return .noDeviceSection
     }
 
     /// The device rows from jamf-cli 1.29's `--scan-failures` document: one array
@@ -5017,17 +5258,11 @@ struct ReportEngine: Sendable {
             }
             return reduced
         }
-        let result: Any
-        if let rows = object as? [Any] {
-            guard let reduced = reduce(rows) else { return nil }
-            result = reduced
-        } else if var envelope = object as? [String: Any],
-                  let rows = envelope["results"] as? [Any] {
-            guard let reduced = reduce(rows) else { return nil }
+        guard let rows = listRows(of: object), let reduced = reduce(rows) else { return nil }
+        var result: Any = reduced
+        if var envelope = object as? [String: Any] {
             envelope["results"] = reduced
             result = envelope
-        } else {
-            return nil
         }
         guard removed else { return data }
         return try? JSONSerialization.data(withJSONObject: result)
@@ -5091,6 +5326,7 @@ struct ReportEngine: Sendable {
         return Data(trimmed)
     }
 
+    @discardableResult
     static func saveSnapshot(
         data: Data,
         kind: String,
@@ -5098,7 +5334,7 @@ struct ReportEngine: Sendable {
         fileExtension: String = "json",
         recordManifest: Bool = false,
         onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
-    ) throws {
+    ) throws -> URL {
         // A kind folder that is a symlink would send the snapshot wherever a peer pointed it.
         let dir = try WorkspacePaths.confinedFolder([kind], under: dataDir)
         try FileManager.default.createDirectory(
@@ -5139,6 +5375,7 @@ struct ReportEngine: Sendable {
                 ))
             }
         }
+        return file
     }
 
     /// Thrown by `loadLatestSnapshotData` when the newest snapshot for `kind`
@@ -5190,7 +5427,8 @@ struct ReportEngine: Sendable {
     static func latestSnapshotURL(
         kind: String,
         dataDir: URL,
-        maxCacheAgeHours: Int = 0
+        maxCacheAgeHours: Int = 0,
+        now: Date = Date()
     ) throws -> URL {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
@@ -5220,7 +5458,7 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.snapshotParseError(kind)
         }
         if maxCacheAgeHours > 0 {
-            let ageHours = Int(Date().timeIntervalSince(snapshotDate(url)) / 3600)
+            let ageHours = Int(now.timeIntervalSince(snapshotDate(url)) / 3600)
             if ageHours > maxCacheAgeHours {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }

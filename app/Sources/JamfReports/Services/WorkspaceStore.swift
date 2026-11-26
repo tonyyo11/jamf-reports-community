@@ -78,6 +78,9 @@ final class WorkspaceStore {
     private let discoverProfiles: @MainActor () -> [JamfCLIProfile]
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
+    /// The active workspace's collects being continued today (`SplitCollectCard`); refreshed
+    /// with automation health, empty in demo mode and until the new profile's pass after a switch.
+    var splitCollectRows: [SplitCollectRow] = []
     var globalStatus: String? = nil
     /// A Devices filter another screen asked for (`DevicesView.DeviceFilter` raw value),
     /// held until Devices appears and applies it, since the view does not exist when the
@@ -85,6 +88,13 @@ final class WorkspaceStore {
     var pendingDevicesFilter: String? = nil
     /// The same for Mobile Devices (`MobileFinding` raw value), from a Health Audit count.
     var pendingMobileFilter: String? = nil
+    /// A "Since last collect" count to open in Computers (`ChangeFilter` JSON).
+    var pendingChangeFilter: String? = nil
+    /// The lists behind those counts, per snapshot pair, for the session; emptied on a
+    /// profile switch. `changeFilterInFlight` holds one comparison per pair.
+    @ObservationIgnored var changeFilterCache: [ChangeFilterCacheKey: [ChangeKind: ChangeFilterResult]] = [:]
+    @ObservationIgnored var changeFilterInFlight:
+        [ChangeFilterCacheKey: Task<[ChangeKind: ChangeFilterResult]?, Never>] = [:]
     /// How long a manual refresh waits for a scheduled run in another process to stop at its
     /// next source, and how often it looks. 0 refuses at once, as before 2.12 (tests).
     var manualRefreshWait: TimeInterval = WorkspaceStore.defaultManualRefreshWait
@@ -110,6 +120,28 @@ final class WorkspaceStore {
     /// The setup on screen has registered a jamf-cli profile or created a workspace folder and
     /// is not finished; `AddSheetPlan.addRefusal` keeps the Add sheet closed meanwhile.
     var onboardingRunHasWork = false
+    /// That setup's flow while its tab is not shown, by `ContentView`'s onboarding run, so
+    /// leaving the tab and coming back keeps what Start over has to remove.
+    @ObservationIgnored var parkedOnboarding: (run: Int, flow: OnboardingFlow)?
+
+    /// The flow parked for `run`, removed from the store; a flow parked for another run is
+    /// dropped, since that run has ended.
+    func takeParkedOnboarding(run: Int?) -> OnboardingFlow? {
+        defer { parkedOnboarding = nil }
+        guard let run, let parked = parkedOnboarding, parked.run == run else { return nil }
+        return parked.flow
+    }
+
+    /// Parks a run that has saved something or is running a command (which may save a profile
+    /// after the tab is gone), and keeps the Add sheet refused while it is parked.
+    func leaveOnboarding(run: Int?, flow: OnboardingFlow) {
+        if let run, flow.parksWhenLeft {
+            parkedOnboarding = (run, flow)
+            onboardingRunHasWork = true
+        } else {
+            onboardingRunHasWork = false
+        }
+    }
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
@@ -207,12 +239,34 @@ final class WorkspaceStore {
     /// Every metric the Trends picker can show for this workspace; a Jamf School workspace has
     /// only what its summary measures. Trends offers a mobile metric only where a day carries it.
     var availableMetrics: [TrendSeries.Metric] {
-        (environmentProducts.isProtectOnly ? []
-            : isSchoolWorkspace ? TrendSeries.Metric.schoolMetrics
-            : TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics)
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
-            + (isSchoolWorkspace || environmentProducts.isProtectOnly ? [] : agentMetrics)
+        // Built in steps: one long `+` chain is too slow for the Swift 6.1 type checker.
+        var metrics: [TrendSeries.Metric] = []
+        if isSchoolWorkspace {
+            metrics = TrendSeries.Metric.schoolMetrics
+        } else if !environmentProducts.isProtectOnly {
+            metrics = TrendSeries.Metric.allCases + TrendSeries.Metric.mobileMetrics
+        }
+        metrics += productMetrics
+        if deploymentMetricsOffered { metrics += TrendSeries.Metric.deploymentMetrics }
+        if !isSchoolWorkspace && !environmentProducts.isProtectOnly { metrics += agentMetrics }
+        return metrics
+    }
+
+    /// The Protect, Security Cloud and server-health series this workspace offers.
+    private var productMetrics: [TrendSeries.Metric] {
+        var metrics: [TrendSeries.Metric] = []
+        if protectMetricsOffered { metrics += TrendSeries.Metric.protectMetrics }
+        if securityCloudMetricsOffered { metrics += TrendSeries.Metric.securityCloudMetrics }
+        if serverHealthMetricsOffered { metrics += TrendSeries.Metric.serverHealthMetrics }
+        return metrics
+    }
+
+    /// Deployment-health series: the server-health rule (Jamf Pro, not School, never demo).
+    var deploymentMetricsOffered: Bool { serverHealthMetricsOffered }
+
+    /// Server-health series: a Jamf Pro workspace, never demo (no demo history carries them).
+    var serverHealthMetricsOffered: Bool {
+        !demoMode && environmentProducts.has(.jamfPro) && !isSchoolWorkspace
     }
 
     /// An environment with Protect; each demo one has a Protect series.
@@ -220,9 +274,7 @@ final class WorkspaceStore {
 
     /// The mobile, Protect and Security Cloud cards the Overview's picker adds to the Mac ones.
     var scoreCardExtraMetrics: [TrendSeries.Metric] {
-        TrendSeries.Metric.mobileMetrics
-            + (protectMetricsOffered ? TrendSeries.Metric.protectMetrics : [])
-            + (securityCloudMetricsOffered ? TrendSeries.Metric.securityCloudMetrics : [])
+        TrendSeries.Metric.mobileMetrics + productMetrics
     }
 
     /// Likewise for Jamf Security Cloud, which no demo environment has.
@@ -238,6 +290,9 @@ final class WorkspaceStore {
            DemoData.trends(for: profile)[metric] == nil { return false }
         if metric.isProtect, !protectMetricsOffered { return false }
         if metric.isSecurityCloud, !securityCloudMetricsOffered { return false }
+        if metric.isServerHealth, !serverHealthMetricsOffered { return false }
+        // Trends series only: never an Overview score card.
+        if metric.isDeployment { return false }
         guard metric.isOffered(under: securityPolicy, in: environmentComposition) else {
             return false
         }
@@ -469,6 +524,7 @@ final class WorkspaceStore {
         guard ProfileService.isValid(id) else { return }
         profile = id
         authStatus = nil
+        changeFilterCache = [:]
         if !demoMode {
             org = Self.org(for: profiles.first(where: { $0.name == id }))
             // PR-24: a profile switch backfills the new profile's Refresh-tier
@@ -477,6 +533,7 @@ final class WorkspaceStore {
             observeProfileSwitchRefresh(for: id)
         }
         if !demoMode {
+            splitCollectRows = []
             schedules = Self.loadSchedules(baseProfile: id)
                 .filter { $0.isMulti || $0.profile == id }
             Task {
@@ -623,6 +680,8 @@ final class WorkspaceStore {
     /// another Mac collects into, or a workspace kept after its profile was removed.
     nonisolated static func workspaceHoldsCollectedData(profile: String) -> Bool {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        // Keeps the default-folder fallback on purpose: this guards a demo-workspace delete, so it
+        // must also find data in the default folder when data_dir is refused.
         let dataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let kinds = visibleEntries(of: dataDir).filter {
@@ -731,7 +790,7 @@ final class WorkspaceStore {
         isInitializingWorkspace = true
         defer { isInitializingWorkspace = false }
         workspaceInitMessage = L("Initializing workspace…")
-        globalStatus = "initializing workspace · profile=\(profile)"
+        globalStatus = "initializing workspace · \(profile)"
         let bridge = CLIBridge()
         do {
             let exit = try await bridge.initializeWorkspace(

@@ -104,6 +104,10 @@ struct TrendsView: View {
         if metric.isDeviceCount, let dataMax {
             return 0...deviceCountAxisTop(dataMax)
         }
+        // Days left runs below zero once a credential has expired, so the floor follows the data.
+        if metric == .serverCredentialSoonestDays {
+            return min(0, dataMin ?? 0)...max(metric.maxY, dataMax ?? 0)
+        }
         // A share or score is always drawn on 0–100%, so a small move is not a cliff.
         if metric.unit == "%" { return percentAxisDomain }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
@@ -139,7 +143,15 @@ struct TrendsView: View {
 
     /// Nil when the metric has no points in range.
     private func displayVal(_ selected: TrendPoint?) -> Double? {
-        selected?.value ?? trendPoints.last?.value
+        selected?.value ?? currentValue
+    }
+
+    /// The newest summary's figure; nil when that summary did not measure the metric, since
+    /// the line's last point is then an older day (`TrendStore.currentPoints`).
+    private var currentValue: Double? {
+        workspaceStore.demoMode
+            ? trendPoints.last?.value
+            : trendStore.currentPoints(metric: metric).last?.value
     }
 
     private func displayDate(_ selected: TrendPoint?) -> String {
@@ -268,7 +280,7 @@ struct TrendsView: View {
               let first = series.first, let last = series.last else {
             return noChangeText(series: series)
         }
-        let relative = metric.unit == "%" ? nil
+        let relative = !metric.isDeviceCount ? nil
             : relativeChangePercent(delta: last - first, baseline: first)
         return change.heroText(relativeChange: relative)
     }
@@ -481,7 +493,8 @@ struct TrendsView: View {
         workspaceStore.availableMetrics.filter { metric in
             // Offered where a day carries the metric: the demo workspace's series, or a live
             // history by device type.
-            if metric.isMobile || metric.isProtect || metric.isSecurityCloud {
+            if metric.isMobile || metric.isProtect || metric.isSecurityCloud
+                || metric.isServerHealth || metric.isDeployment {
                 return workspaceStore.demoMode
                     ? !points(for: metric).isEmpty : trendStore.offers(metric)
             }
@@ -589,7 +602,12 @@ struct TrendsView: View {
     @ViewBuilder
     private func heroIdleDetail(showsRange: Bool) -> some View {
         // With no points there is no change to report; the range pill says "No snapshots".
-        if !values.isEmpty {
+        if !values.isEmpty, currentValue == nil {
+            Text("Not in the newest summary")
+                .font(Theme.Fonts.mono(14, weight: .semibold))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .lineLimit(1)
+        } else if !values.isEmpty {
             HStack(spacing: 4) {
                 Image(systemName: heroChange?.symbol ?? "minus")
                     .font(.system(size: 11, weight: .bold))
@@ -1114,6 +1132,11 @@ struct TrendsView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
+        } else if metric.isDeployment, let note = trendStore.deploymentLevelsNote(metric: metric) {
+            Text(note)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1482,7 +1505,7 @@ struct TrendsView: View {
         guard workspaceStore.beginReportRun(for: profile) else { return }
         defer { workspaceStore.clearRunInProgress(for: profile) }
         isArchiving = true
-        workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
+        workspaceStore.globalStatus = "collect + generate · \(profile)"
         // Status-bar race guard — see AuditView.runAudit comment.
         do {
             let exit = try await bridge.collectThenGenerate(profile: profile) { [weak workspaceStore] line in

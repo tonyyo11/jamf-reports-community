@@ -122,7 +122,9 @@ struct OverviewCustomizeSheet: View {
             get: { workspace.overviewLayout.isVisible(section) },
             set: { workspace.overviewLayout.setVisible(section, $0) }
         )
-        let isLeftOut = !section.availability(in: workspace.environmentComposition).isShown
+        let isLeftOut = !section.availability(
+            in: workspace.environmentComposition,
+            hasJamfPro: workspace.environmentProducts.has(.jamfPro)).isShown
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: section.sfSymbol)
                 .font(.system(size: 14, weight: .medium))
@@ -138,7 +140,9 @@ struct OverviewCustomizeSheet: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let reason = section.availability(in: workspace.environmentComposition).reason {
+                if let reason = section.availability(
+            in: workspace.environmentComposition,
+            hasJamfPro: workspace.environmentProducts.has(.jamfPro)).reason {
                     leftOutNote(reason)
                 } else if let why = unavailable(section) {
                     unavailableNote(why.reason)

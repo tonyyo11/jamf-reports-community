@@ -33,6 +33,18 @@ final class JamfCLIInstallerTests: XCTestCase {
         XCTAssertFalse(JamfCLIInstaller.supports("1.31.0", installed: "1.31.0-rc1"))
     }
 
+    func test_deploymentSources_needAKnownVersionOf1_35_0OrLater() {
+        for kind in ReportEngine.deploymentKinds {
+            XCTAssertEqual(ReportEngine.jamfCLISkip(kind, installed: "1.34.9"),
+                           .needsJamfCLI(required: "1.35.0", installed: "1.34.9"))
+            XCTAssertNil(ReportEngine.jamfCLISkip(kind, installed: "1.35.0"))
+            XCTAssertNil(ReportEngine.jamfCLISkip(kind, installed: "1.38.0"))
+            XCTAssertEqual(ReportEngine.jamfCLISkip(kind, installed: nil),
+                           .needsJamfCLI(required: "1.35.0", installed: nil))
+            XCTAssertNotNil(ReportEngine.jamfCLISkip(kind, installed: "not a version"))
+        }
+    }
+
     // MARK: - isTrustedFinalURL
 
     /// The download follows redirects, so the host that answered is checked after the fact.

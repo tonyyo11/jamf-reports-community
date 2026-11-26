@@ -49,6 +49,10 @@ final class TrendsViewNoDataTests: XCTestCase {
                        "Not comparable")
         XCTAssertEqual(TrendsView.heroChangeText(metric: .patch, series: [], format: .standard), "—")
         XCTAssertEqual(TrendsView.heroChangeText(metric: .stale, series: [40, 30], format: .standard), "10 (-25.0%)")
+        XCTAssertFalse(
+            TrendsView.heroChangeText(
+                metric: .serverCredentialSoonestDays, series: [40, 20], format: .standard)
+                .contains("%"), "a days-left series has no relative change")
         XCTAssertEqual(TrendsView.heroChangeText(metric: .patch, series: [70, 70], format: .standard), "No change")
     }
 

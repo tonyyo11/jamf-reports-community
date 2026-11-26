@@ -46,6 +46,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// The login keychain is locked (or unreachable in this session, such as over SSH or
         /// before login), so jamf-cli could not read the profile's `keychain:` credentials.
         case keychainLocked
+        /// A server-health command exited 4: the feature (SSO, volume purchasing) is not set up on
+        /// this Jamf Pro server, which is no failure and no missing privilege.
+        case notConfiguredOnServer
         /// jamf-cli exited 0 with output this app cannot read (not JSON, or not the shape it
         /// reduces). Recorded by collect, never classified; a retry gets the same output.
         case unexpectedOutput
@@ -145,7 +148,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
              .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark,
-             .retiredGateway, .unexpectedOutput: true
+             .retiredGateway, .notConfiguredOnServer, .unexpectedOutput: true
         case .edgeBlocked, .keychainLocked, .other: false
         }
     }
@@ -164,6 +167,7 @@ struct FailureCause: Codable, Equatable, Sendable {
             names.isEmpty
                 ? L("missing permission")
                 : L("missing permission: ") + names.joined(separator: "; ")
+        case .notConfiguredOnServer: L("not set up on this Jamf Pro server")
         case .noDeclarationData:
             L("no DDM declaration data: the environment has none, or each device's report was refused (Deployment > Declarations reporting)")
         case .softwareUpdatePlansOff:

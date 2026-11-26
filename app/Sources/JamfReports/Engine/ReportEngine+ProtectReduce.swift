@@ -1,6 +1,7 @@
 import Foundation
 
-/// The Protect sources added in 2.13 (wave E) and what reaches disk of each.
+/// The jamf-cli version gate (one table for every source an older jamf-cli cannot
+/// serve), and the Protect sources added in 2.13 (wave E) and what reaches disk of each.
 extension ReportEngine {
 
     static let protectSignatureVersionsKind = "protect-signature-versions"
@@ -12,14 +13,23 @@ extension ReportEngine {
         "protect-overview", "protect-alerts", "protect-computers", "protect-plans",
     ]
 
-    /// The sources a jamf-cli older than this cannot serve: `dashboard` is the 1.31.0 command,
-    /// `threat-prevention-versions list` came in 1.38.0, and `downloads summary` is gated at
-    /// 1.35.0, the oldest command catalog that lists it (not checked on 1.29-1.34, where an
+    /// The sources a jamf-cli older than this cannot serve: `dashboard` is the 1.31.0 command;
+    /// `threat-prevention-versions list` and the server-health commands were first run on
+    /// 1.38.0; `downloads summary`, App Installers deployments and patch policies are gated at
+    /// 1.35.0, the oldest command catalog that lists them (not checked on 1.29-1.34, where an
     /// unknown command would print help and read as a failed source).
     static let minimumJamfCLI: [String: String] = [
         dashboardKind: "1.31.0",
         protectSignatureVersionsKind: "1.38.0",
         protectInstallerKind: "1.35.0",
+        "certificate-authority": "1.38.0",
+        "jamf-pro-notifications": "1.38.0",
+        "laps-pending-rotations": "1.38.0",
+        "admin-accounts": "1.38.0",
+        "api-integrations": "1.38.0",
+        // The oldest catalog the app ships (1.35.0) lists both; earlier versions are unchecked.
+        "app-installers-deployments": "1.35.0",
+        "patch-policies": "1.35.0",
     ]
 
     /// Whether `installed` can serve `kind`: always for a kind with no entry.

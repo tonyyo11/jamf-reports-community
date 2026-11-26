@@ -192,6 +192,8 @@ struct ContentView: View {
                     from: note.userInfo, destination: newTab)
                 workspace.pendingMobileFilter = MobileFinding.pending(
                     from: note.userInfo, destination: newTab)
+                workspace.pendingChangeFilter = ChangeFilter.pending(
+                    from: note.userInfo, destination: newTab)
                 workspace.pendingAuditSection = newTab == .audit
                     ? note.userInfo?[MobileDevicesSection.userInfoKey] as? String : nil
                 tab = newTab
@@ -458,7 +460,7 @@ struct TabPage: View {
         case .sources:           SourcesView()
         case .backups:           BackupsView()
         case .settings:          SettingsView()
-        case .onboarding:        OnboardingView().id(onboardingRun)
+        case .onboarding:        OnboardingView(run: onboardingRun).id(onboardingRun)
         case .securityPosture:   SecurityPostureView()
         case .compliancePosture: CompliancePostureView()
         case .complianceBenchmarks: ComplianceBenchmarksView()

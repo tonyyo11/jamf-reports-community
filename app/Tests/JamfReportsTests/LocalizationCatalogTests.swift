@@ -66,7 +66,8 @@ struct LocalizationCatalogTests {
 
     /// rc1 showed "重大" beside an English "WARNING": a translation can be filled in with the source.
     @Test func japaneseStatusPillsAreTranslated() {
-        let pills = ["CRITICAL", "WARNING", "WARN", "INFO", "FAIL", "PASS", "RUNNING", "PARTIAL"]
+        let pills = ["CRITICAL", "WARNING", "WARN", "INFO", "FAIL", "PASS", "RUNNING", "PARTIAL",
+                     "IN PROGRESS"]
         let untranslated = pills.filter { key in
             Self.catalog.first { $0.key == key }?.units["ja"]?.first?.value ?? key == key
         }

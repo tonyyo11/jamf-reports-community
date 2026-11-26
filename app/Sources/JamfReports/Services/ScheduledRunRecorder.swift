@@ -27,6 +27,9 @@ final class ScheduledRunRecorder: Sendable {
     /// files matching this recorder's `<label>.<timestamp>.log` pattern are
     /// pruned — legacy `.out.log` / `.err.log` files are never touched.
     static let maxRunLogs = 50
+    /// Logs kept per workspace across every label. `maxRunLogs` is per label, so a schedule that
+    /// runs several times a day (a split collect) never pushes another schedule's history out.
+    static let maxWorkspaceRunLogs = 200
 
     /// The line a refused run's log ends on, before the exit footer; Run History reads it as a
     /// warning, not an OK.
@@ -173,7 +176,9 @@ final class ScheduledRunRecorder: Sendable {
         writeStatusJSON(
             exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts,
             refused: refused)
-        Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
+        let logs = logURL.deletingLastPathComponent()
+        Self.pruneRunLogs(in: logs, keep: Self.maxRunLogs, label: label)
+        Self.pruneRunLogs(in: logs, keep: Self.maxWorkspaceRunLogs)
     }
 
     private func closeHandle() {

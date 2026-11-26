@@ -8,6 +8,7 @@ import Foundation
 /// Overview used before it could be customized.
 enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     case aiInsight
+    case changes
     case managedDevices
     case scoreCards
     case osDistribution
@@ -24,6 +25,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
         case .managedDevices:  L("Managed Devices")
         case .scoreCards:      L("Score Cards")
         case .aiInsight:       L("AI Fleet Insight")
+        case .changes:         L("Since last collect")
         case .osDistribution:  L("macOS Distribution")
         case .mobileDevices:   L("Mobile Devices")
         case .topFailingRules: L("Top Failing Rules")
@@ -43,6 +45,8 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
             L("The metric tiles you pick below, each with its trend.")
         case .aiInsight:
             L("A plain-language reading of the latest summary, generated on this Mac.")
+        case .changes:
+            L("Macs that enrolled, left, went stale or turned FileVault off, and patch policy failures, since the collect on an earlier day.")
         case .osDistribution:
             L("Macs per macOS version, and the share on a current release.")
         case .mobileDevices:
@@ -63,6 +67,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
         case .managedDevices:  "desktopcomputer"
         case .scoreCards:      "square.grid.2x2"
         case .aiInsight:       "sparkles"
+        case .changes:         "arrow.left.arrow.right"
         case .osDistribution:  "chart.pie"
         case .mobileDevices:   "ipad.and.iphone"
         case .topFailingRules: "list.number"
@@ -80,8 +85,13 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
     /// Whether this environment can have anything to show here. A section whose data cannot
     /// exist is left out, not drawn as an Unavailable notice: a figure that could exist after
     /// a collect or a setup step is `OverviewUnavailable`'s job instead.
-    func availability(in composition: EnvironmentComposition) -> OverviewAvailability {
+    func availability(
+        in composition: EnvironmentComposition, hasJamfPro: Bool = true
+    ) -> OverviewAvailability {
         switch self {
+        case .changes:
+            guard hasJamfPro else { return .leftOut(L("Needs Jamf Pro.")) }
+            return composition.allowsMacs ? .shown : .leftOut(L("No Macs in this environment."))
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
             return composition.allowsMacs ? .shown : .leftOut(L("No Macs in this environment."))
         case .mobileDevices:
@@ -287,6 +297,10 @@ extension TrendSeries.Metric {
             L("Needs Jamf Protect collected for this environment.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Needs Jamf Security Cloud collected for this environment.")
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
+            L("Needs the server health sources collected for this Jamf Pro server.")
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            L("Needs App Installers deployments or patch policies collected for this Jamf Pro server.")
         }
     }
 
@@ -310,7 +324,7 @@ extension TrendSeries.Metric {
         under policy: SecurityControlPolicy, in composition: EnvironmentComposition = .unknown
     ) -> Bool {
         // WorkspaceStore.isOffered checks the product
-        if isProtect || isSecurityCloud { return true }
+        if isProtect || isSecurityCloud || isServerHealth || isDeployment { return true }
         if isMobile { return composition.allowsMobile }
         guard composition.allowsMacs else { return false }
         guard let control = securityControl else { return true }

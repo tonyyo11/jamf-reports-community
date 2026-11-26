@@ -81,6 +81,19 @@ enum RunHistoryService {
             .sorted { $0.date > $1.date }
     }
 
+    /// The newest finished run of each run label in `profile`'s Run History, keyed by the label
+    /// without its `.yyyyMMdd-HHmmss` stamp. The schedule list's status pill reads this, so the
+    /// pill and Run History judge a run the same way.
+    static func newestFinishedRuns(profile: String) -> [String: RunSummary] {
+        var newest: [String: RunSummary] = [:]
+        for run in list(profile: profile) where !run.isRunning {
+            let label = run.label.replacingOccurrences(
+                of: #"\.\d{8}-\d{6}$"#, with: "", options: .regularExpression)
+            if newest[label] == nil { newest[label] = run }
+        }
+        return newest
+    }
+
     // MARK: - Load log
 
     /// Read `url` into classified log lines, capping at 5 MB (tail for larger files).

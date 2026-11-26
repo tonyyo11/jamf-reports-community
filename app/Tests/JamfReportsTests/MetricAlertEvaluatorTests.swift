@@ -535,4 +535,117 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         XCTAssertTrue(first.isEmpty)
         XCTAssertEqual(first, second, "evaluate is deterministic regardless of the skip log")
     }
+
+    // MARK: - Server credentials
+
+    private let now = Date.testNoon
+
+    private func credentialSummary(_ entries: [String: (Int, String)]) -> DailySummary {
+        let map = entries.mapValues { days, _ in
+            CredentialExpiryEntry(
+                expires: ISO8601Time.string(now.addingTimeInterval(Double(days) * 86_400)),
+                asOf: "2026-06-15")
+        }
+        return DailySummary(
+            date: "2026-06-15", totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "test", serverCredentialExpiries: map)
+    }
+
+    private let below45 = AlertRule(
+        metric: "server_credential_days_left", when: "below", threshold: 45)
+
+    func testAnExpiredCredentialPastTheRetentionWindowIsSkipped() {
+        let rule = AlertRule(metric: "server_credential_days_left", when: "below", threshold: 0)
+        func states(_ days: Int) -> [String?] {
+            MetricAlertEvaluator.evaluateCredentials(
+                rules: [rule], current: credentialSummary(["ca": (days, "")]), now: now)
+                .map(\.credentialState)
+        }
+        XCTAssertEqual(states(-60), ["expired"])
+        XCTAssertTrue(states(-61).isEmpty, "the ledger forgets it at 61, so evaluation stops")
+    }
+
+    func testAPlantedCredentialMapIsReducedToTheKeysTheWriterMakes() {
+        var entries: [String: (Int, String)] = ["ca": (5, ""), "junk": (5, ""),
+                                                "ade:bad id": (5, ""), "ade:": (5, "")]
+        for index in 0..<500 { entries["ade:\(index)"] = (5, "") }
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: [below45], current: credentialSummary(entries), now: now)
+        XCTAssertLessThanOrEqual(hits.count, ReportEngine.maxADEInstances + 1)
+        XCTAssertTrue(hits.allSatisfy {
+            $0.credentialKey == "ca" || $0.credentialKey?.hasPrefix("ade:") == true })
+        XCTAssertFalse(hits.contains { $0.credentialKey == "junk" || $0.credentialKey == "ade:bad id" })
+    }
+
+    func testACredentialInsideTheThresholdHitsOnceWithItsKeyAndState() {
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: [below45], current: credentialSummary(["ca": (40, ""), "ade:1": (90, "")]),
+            now: now)
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertEqual(hits[0].credentialKey, "ca")
+        XCTAssertEqual(hits[0].credentialState, "hit")
+        XCTAssertEqual(hits[0].ruleDescription, "below 45")
+        XCTAssertTrue(hits[0].message.hasPrefix("Built-in CA expires in 40 days ("), hits[0].message)
+        XCTAssertEqual(hits[0].current, 40)
+    }
+
+    func testAnExpiredCredentialHitsAsExpiredWhateverTheThreshold() {
+        let rule = AlertRule(metric: "server_credential_days_left", when: "below", threshold: 0)
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: [rule], current: credentialSummary(["ade:7": (-3, "")]), now: now)
+        XCTAssertEqual(hits.map(\.credentialState), ["expired"])
+        XCTAssertEqual(hits.first?.message, "ADE token expired 3 days ago", "kind only, no ID")
+    }
+
+    func testTwoRulesAndOneExpiredCredentialGiveOneExpiredLine() {
+        let rules = [below45, AlertRule(
+            metric: "server_credential_days_left", when: "below", threshold: 10)]
+        let hits = MetricAlertEvaluator.evaluateCredentials(
+            rules: rules, current: credentialSummary(["ca": (-3, "")]), now: now)
+        XCTAssertEqual(hits.map(\.credentialState), ["expired"])
+        // A live credential inside both thresholds still hits once per rule.
+        let live = MetricAlertEvaluator.evaluateCredentials(
+            rules: rules, current: credentialSummary(["ca": (5, "")]), now: now)
+        XCTAssertEqual(live.map(\.credentialState), ["hit", "hit"])
+    }
+
+    func testTheKeyCarriesTheExpiryAndStateSoARenewalIsANewKey() {
+        let old = MetricAlertEvaluator.evaluateCredentials(
+            rules: [below45], current: credentialSummary(["ca": (40, "")]), now: now)[0]
+        let renewed = MetricAlertEvaluator.evaluateCredentials(
+            rules: [below45], current: credentialSummary(["ca": (41, "")]), now: now)[0]
+        XCTAssertNotEqual(MetricAlertEvaluator.dedupKey(for: old),
+                          MetricAlertEvaluator.dedupKey(for: renewed))
+    }
+
+    func testTheCredentialMetricNeverFiresThroughTheOrdinaryPath() {
+        XCTAssertTrue(MetricAlertEvaluator.evaluate(
+            rules: [below45], current: credentialSummary(["ca": (1, "")]), prior: nil).isEmpty)
+        XCTAssertNil(AlertMetric.serverCredentialDaysLeft.value(in: credentialSummary([:])))
+    }
+
+    func testOnlyBelowIsAcceptedForTheCredentialMetric() throws {
+        let rules = [
+            AlertRule(metric: "server_credential_days_left", when: "above", threshold: 5),
+            AlertRule(metric: "server_credential_days_left", when: "drops_more_than", threshold: 5),
+            below45,
+        ]
+        XCTAssertEqual(AlertsConfig(enabled: true, rules: rules).resolvedRules, [below45])
+        XCTAssertTrue(AlertMetric.serverCredentialDaysLeft.accepts(.below))
+        XCTAssertTrue(AlertMetric.staleCount.accepts(.above))
+    }
+
+    func testNotificationCountIsAnOrdinaryCountMetric() {
+        var current = credentialSummary([:])
+        XCTAssertNil(AlertMetric.jamfProNotificationCount.value(in: current))
+        current = DailySummary(
+            date: "2026-06-15", totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "test", jamfProNotificationCount: 4)
+        let rule = AlertRule(metric: "jamf_pro_notification_count", when: "above", threshold: 2)
+        let hits = MetricAlertEvaluator.evaluate(rules: [rule], current: current, prior: nil)
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertFalse(AlertMetric.jamfProNotificationCount.isPercentage)
+    }
 }

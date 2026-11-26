@@ -42,6 +42,11 @@ enum AlertMetric: String, CaseIterable, Sendable {
     case securityCloudDeviceCount = "security_cloud_device_count"
     case securityCloudMatchedPct = "security_cloud_matched_pct"
     case securityCloudHighRiskCount = "security_cloud_high_risk_count"
+    // Jamf Pro server health. The credential metric is evaluated once per credential
+    // (`MetricAlertEvaluator.evaluateCredentials`), not through `value(in:)`.
+    case serverCredentialDaysLeft = "server_credential_days_left"
+    case jamfProNotificationCount = "jamf_pro_notification_count"
+    case lapsPendingCount = "laps_pending_count"
 
     /// Short human label for the alert card (never a percentage sign — the
     /// message string carries units).
@@ -79,7 +84,16 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .securityCloudDeviceCount: return "Security Cloud devices"
         case .securityCloudMatchedPct: return "Security Cloud match with inventory"
         case .securityCloudHighRiskCount: return "Security Cloud high-risk devices"
+        case .serverCredentialDaysLeft: return "Server credential days left"
+        case .jamfProNotificationCount: return "Jamf Pro notifications"
+        case .lapsPendingCount: return "LAPS rotations pending"
         }
+    }
+
+    /// Whether `comparison` means something for this metric: days left only falls, so only
+    /// `below` can warn about it. `resolvedRules` and Config Doctor both ask.
+    func accepts(_ comparison: AlertRule.Comparison) -> Bool {
+        self != .serverCredentialDaysLeft || comparison == .below
     }
 
     /// True for percentage metrics (0–100). Used only for message formatting.
@@ -88,7 +102,9 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .staleCount, .actionItemsP0, .totalDevices, .mobileStaleCount,
              .mobileJailbrokenCount, .protectComputerCount, .protectOpenAlertCount,
              .protectHighAlertCount, .securityCloudDeviceCount,
-             .securityCloudHighRiskCount, .protectSignaturesBehindCount,
+             .securityCloudHighRiskCount, .serverCredentialDaysLeft,
+             .jamfProNotificationCount, .lapsPendingCount,
+                 .protectSignaturesBehindCount,
              .protectAgentBehindCount, .protectDisconnectedCount: return false
         default: return true
         }
@@ -139,6 +155,10 @@ enum AlertMetric: String, CaseIterable, Sendable {
         case .securityCloudMatchedPct: return summary.securityCloudMatched?.pctOneDecimal
         // Risk counts were recorded and none is HIGH: a real 0.
         case .securityCloudHighRiskCount: return summary.securityCloudHighRiskCount.map(Double.init)
+        case .jamfProNotificationCount: return summary.jamfProNotificationCount.map(Double.init)
+        case .lapsPendingCount: return summary.lapsPendingCount.map(Double.init)
+        // One value per credential, read by `evaluateCredentials`.
+        case .serverCredentialDaysLeft: return nil
         }
     }
 }
@@ -155,6 +175,11 @@ struct MetricAlertHit: Sendable, Equatable {
     let prior: Double?
     /// One-line message suitable for a webhook fact value.
     let message: String
+    /// For a server-credential hit: which credential (`ca`, `ade:<id>`), its `expires` text and
+    /// `hit` or `expired`. Together with the rule they are the dedup identity.
+    var credentialKey: String? = nil
+    var expires: String? = nil
+    var credentialState: String? = nil
 }
 
 /// Pure metric-threshold evaluator (2.6 "trust trio" #1). No I/O.
@@ -174,11 +199,77 @@ enum MetricAlertEvaluator {
         prior: DailySummary?,
         format: PercentFormat = .standard
     ) -> [MetricAlertHit] {
-        rules.compactMap { rule in
+        rules.filter { $0.resolvedMetric != .serverCredentialDaysLeft }.compactMap { rule in
             hit(for: rule, current: current, prior: prior, format: format)
         }
     }
 
+    /// One hit per stored credential that is expired, or has fewer days left than a
+    /// `server_credential_days_left` rule's threshold. Days are whole calendar days from `now`;
+    /// an expired credential always hits, once per expiry text, so a renewal re-arms it.
+    static func evaluateCredentials(
+        rules: [AlertRule], current: DailySummary, now: Date, calendar: Calendar = .current
+    ) -> [MetricAlertHit] {
+        // The map comes from a summary another Mac can write: only the keys the writer makes,
+        // and no more of them than it makes.
+        let entries = (current.serverCredentialExpiries ?? [:])
+            .filter { isWrittenCredentialKey($0.key) }
+            .sorted { $0.key < $1.key }.prefix(ReportEngine.maxADEInstances + 1)
+        var hits: [MetricAlertHit] = []
+        // An expired credential is one line however many rules cover it.
+        var expiredSeen: Set<String> = []
+        for rule in rules where rule.resolvedMetric == .serverCredentialDaysLeft {
+            guard rule.resolvedComparison == .below, let threshold = rule.threshold else { continue }
+            for (key, entry) in entries {
+                let credential = CredentialExpiry(
+                    key: key, label: key, raw: entry.expires, warningDays: 0, now: now,
+                    calendar: calendar)
+                guard let left = credential.daysLeft, credential.state != .notReported else {
+                    continue
+                }
+                let expired = credential.state == .expired
+                // The ledger forgets an entry past this window, so evaluation stops here too:
+                // otherwise a long-expired credential would post again after the prune.
+                guard left >= -MetricAlertLedger.credentialRetentionDays else { continue }
+                guard expired || Double(left) < threshold else { continue }
+                if expired, !expiredSeen.insert("\(key)|\(entry.expires)").inserted { continue }
+                hits.append(MetricAlertHit(
+                    metricLabel: AlertMetric.serverCredentialDaysLeft.label,
+                    ruleDescription: "below \(trim(threshold))",
+                    current: Double(left), prior: nil,
+                    message: credentialMessage(key, credential, expired: expired),
+                    credentialKey: key, expires: entry.expires,
+                    credentialState: expired ? "expired" : "hit"))
+            }
+        }
+        return hits
+    }
+
+    private static func isWrittenCredentialKey(_ key: String) -> Bool {
+        key == "ca" || (key.hasPrefix("ade:") && ReportEngine.isSafeKeyPart(String(key.dropFirst(4))))
+    }
+
+    /// The credential's kind, never an ID or a name.
+    static func credentialName(_ key: String) -> String {
+        switch key.split(separator: ":").first.map(String.init) ?? key {
+        case "ca": return "Built-in CA"
+        case "ade": return "ADE token"
+        default: return "Server credential"
+        }
+    }
+
+    private static func credentialMessage(
+        _ key: String, _ credential: CredentialExpiry, expired: Bool
+    ) -> String {
+        let name = credentialName(key)
+        let left = credential.daysLeft ?? 0
+        if expired {
+            return left >= 0 ? "\(name) has expired"
+                : "\(name) expired \(-left) day\(left == -1 ? "" : "s") ago"
+        }
+        let day = ServerHealth.expiryDay(credential).map { " (\($0))" } ?? ""
+        return "\(name) expires in \(left) day\(left == 1 ? "" : "s")\(day)"
+    }
     private static func hit(
         for rule: AlertRule,
         current: DailySummary,
@@ -263,7 +354,9 @@ enum MetricAlertEvaluator {
     /// uses it to card each rule at most once per day. Derived from the hit's own
     /// fields (no separate rule handle needed).
     static func dedupKey(for hit: MetricAlertHit) -> String {
-        "\(hit.metricLabel)|\(hit.ruleDescription)"
+        guard let key = hit.credentialKey else { return "\(hit.metricLabel)|\(hit.ruleDescription)" }
+        return "\(hit.metricLabel)|\(hit.ruleDescription)|\(key)|\(hit.expires ?? "")"
+            + "|\(hit.credentialState ?? "")"
     }
 
     /// A value with its unit for the message: a percentage through the workspace's format,

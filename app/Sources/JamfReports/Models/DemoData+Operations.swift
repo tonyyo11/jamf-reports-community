@@ -49,6 +49,61 @@ extension DemoData {
         uniquingKeysWith: { first, _ in first }
     )
 
+    /// Version history for the Patch screen's card, built by the real calculator from daily
+    /// rows: each title's previous version reached 95% before its latest shipped, and the
+    /// latest climbs to today's compliance by `referenceDate`.
+    static var patchVersionHistory: (versions: [VersionVelocity], dates: VersionDatesRead) {
+        let calendar = Calendar(identifier: .gregorian)
+        var days: [Date: [PatchStatusRow]] = [:]
+        var versionRows: [PatchVersionDate] = []
+        for title in patchTitles {
+            let id = patchTitleID(title.title)
+            guard let iso = patchReleaseDates[title.title],
+                  let released = SOFAFeedService.parseSOFADate(iso),
+                  let start = calendar.date(byAdding: .day, value: -21, to: released)
+            else { continue }
+            let previous = previousDemoVersion(title.latestVersion)
+            let previousDate = calendar.date(byAdding: .day, value: -24, to: released) ?? released
+            versionRows += [
+                PatchVersionDate(titleId: id, title: title.title, version: title.latestVersion,
+                                 releaseDate: iso, absoluteOrderId: "0"),
+                PatchVersionDate(titleId: id, title: title.title, version: previous,
+                                 releaseDate: ISO8601Time.string(previousDate),
+                                 absoluteOrderId: "1"),
+            ]
+            var day = calendar.startOfDay(for: start)
+            let span = max(referenceDate.timeIntervalSince(released), 1)
+            while day <= referenceDate {
+                let isLatest = day >= calendar.startOfDay(for: released)
+                let share = isLatest
+                    ? 0.1 + (Double(title.compliant) / Double(title.total) - 0.1)
+                        * min(day.timeIntervalSince(released) / span, 1)
+                    : min(0.6 + day.timeIntervalSince(start) / (21 * 86_400) * 0.35, 0.95)
+                let onLatest = Int((share * Double(title.total)).rounded())
+                days[day, default: []].append(PatchStatusRow(
+                    title: title.title, id: id, onLatest: onLatest,
+                    onOther: title.total - onLatest, total: title.total,
+                    latest: isLatest ? title.latestVersion : previous, compliancePct: ""))
+                day = calendar.date(byAdding: .day, value: 1, to: day)
+                    ?? referenceDate.addingTimeInterval(1)
+            }
+        }
+        let lookup = ReleaseDateLookup(versionRows: versionRows, releaseFilesNewestFirst: [])
+        let rows = days.map { PatchVelocityBuilder.DayRows(date: $0.key, rows: $0.value) }
+        let versions = PatchVelocityBuilder.versions(days: rows, lookup: lookup)
+        return (versions, .rows(versionRows, stamp: "20260425T060100", bytes: Data()))
+    }
+
+    /// The demo's earlier version: the last numeric part one lower, else "<version> (earlier)".
+    private static func previousDemoVersion(_ version: String) -> String {
+        var parts = version.split(separator: ".").map(String.init)
+        guard let last = parts.last, let number = Int(last), number > 0 else {
+            return version + " (earlier)"
+        }
+        parts[parts.count - 1] = String(number - 1)
+        return parts.joined(separator: ".")
+    }
+
     /// One row per failing Mac and title, from the patch failures the Devices
     /// screen shows: seven failures on four Macs, Apr 21–25.
     static let patchFailures: [PatchFailureRow] = deviceInventory.flatMap { device in

@@ -181,6 +181,7 @@ extension DemoData {
 
     private static let refreshKinds = [
         "overview", "security", "inventory-summary", "patch-status", "policy-status", "audit",
+        "app-installers-deployments", "patch-policies",
     ]
     private static let inventoryKinds = [
         "computers", "mobile-devices-list", "ea-results", "app-status", "update-status",
@@ -201,6 +202,7 @@ extension DemoData {
         "protect-computers": 128_774, "protect-plans": 6_912,
         "protect-signature-versions": 812, "protect-installer": 38,
         "school-overview": 1_204, "school-devices": 612_480, "school-users": 488_116,
+        "app-installers-deployments": 14_208, "patch-policies": 6_344,
     ]
 
     private static func collectLines(_ kinds: [String], profile: String) -> [String] {

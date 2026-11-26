@@ -54,6 +54,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .smartGroups,
             .patchSummaryDashboard,
             .patchVelocity,
+            .patchVersionHistory,
             // Device security & supervision detail
             .deviceSecurityState,
             .mobileSupervisionStatus,
@@ -75,6 +76,9 @@ struct FullInstanceTemplate: ReportTemplate {
             // mSCP / STIG compliance
             .mscpCompliance,
             .complianceTrend,
+            // Server and admin health
+            .serverAdminHealth,
+            .deploymentHealth,
         ]
     }
 
@@ -95,8 +99,10 @@ struct FullInstanceTemplate: ReportTemplate {
             // Patching
             .patchBar,
             .patchQueue,
+            .patchVersionHistory,
             .osAdoptionChart,
             .osCurrency,
+            .deploymentHealth,
             // Devices, policies, trends, failures
             .interventionList,
             .policyTable,

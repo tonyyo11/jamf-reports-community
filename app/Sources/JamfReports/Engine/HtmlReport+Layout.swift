@@ -36,6 +36,7 @@ extension SectionID {
         case .auditEvidence: "Audit findings"
         case .patchBar: "Patch compliance chart"
         case .patchQueue: "Patch titles behind"
+        case .patchVersionHistory: "Patch version history"
         case .osAdoptionChart: "OS version distribution"
         case .osCurrency: "OS currency"
         case .interventionList: "Macs needing intervention"
@@ -49,6 +50,7 @@ extension SectionID {
         case .buildingBreakdown: "Buildings"
         case .departmentBreakdown: "Departments"
         case .mobileFleet: "Mobile devices"
+        case .deploymentHealth: "Deployments and patch policies"
         case .orgInfo: "Catalog overview"
         }
     }
@@ -79,7 +81,8 @@ enum HtmlDetailGroup: String, CaseIterable {
         case .security:
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
              .protectAgents, .auditEvidence]
-        case .patching: [.patchBar, .patchQueue, .osAdoptionChart, .osCurrency]
+        case .patching: [.patchBar, .patchQueue, .patchVersionHistory, .osAdoptionChart,
+                         .osCurrency, .deploymentHealth]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
         case .trends: [.timeline]
@@ -249,6 +252,9 @@ extension HtmlReport {
         case .patchBar:
             return buildPatchChart(patchStatus: inputs.patchStatus)
         case .patchQueue: return buildPatchQueue(patchStatus: inputs.patchStatus)
+        case .patchVersionHistory:
+            return buildPatchVersionHistory(
+                inputs.patchVersions, dates: inputs.patchVersionDates, now: inputs.patchHistoryNow)
         case .osAdoptionChart:
             return buildOSChart(osVersions: inputs.security.filter {
                 $0["section"] as? String == "os_version"
@@ -278,6 +284,7 @@ extension HtmlReport {
             return buildDepartmentBreakdown(computersInventory: inputs.computers)
         case .orgInfo: return buildCatalogSection(counts: inputs.catalogCounts)
         case .mobileFleet: return buildMobileFleet(inputs.mobile)
+        case .deploymentHealth: return buildDeploymentHealth(inputs)
         case .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix:
             return .omitted("drawn outside the detail groups")
         }

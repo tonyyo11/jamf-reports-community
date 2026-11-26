@@ -83,6 +83,9 @@ struct ConfigState: Equatable, Sendable {
     var staleBasis: [StaleBasis] = StaleBasis.default
     /// `thresholds.contact_gap_days`, as typed; the default when the file has none.
     var contactGapDays = String(ContactGap.defaultDays)
+    /// `thresholds.deployment_failure_*_percent` as typed on Config › Thresholds.
+    var deploymentFailureWarningPercent = String(DeploymentHealth.Levels.defaults.warning)
+    var deploymentFailureCriticalPercent = String(DeploymentHealth.Levels.defaults.critical)
     var complianceEnabled: Bool
     var baselineLabel: String
     var failuresCountColumn: String
@@ -756,6 +759,12 @@ enum ConfigService {
             )
             state.certWarningDays = string(thresholds, "cert_warning_days", fallback: state.certWarningDays)
             state.profileErrorWarning = string(thresholds, "profile_error_warning", fallback: state.profileErrorWarning)
+            state.deploymentFailureWarningPercent = string(
+                thresholds, "deployment_failure_warning_percent",
+                fallback: state.deploymentFailureWarningPercent)
+            state.deploymentFailureCriticalPercent = string(
+                thresholds, "deployment_failure_critical_percent",
+                fallback: state.deploymentFailureCriticalPercent)
             state.staleBasis = staleBasisSetting(thresholds).resolved
             state.contactGapDays = string(
                 thresholds, "contact_gap_days", fallback: state.contactGapDays)
@@ -994,6 +1003,10 @@ enum ConfigService {
             (["thresholds", "critical_disk_percent"], state.criticalDiskPercent),
             (["thresholds", "cert_warning_days"], state.certWarningDays),
             (["thresholds", "profile_error_warning"], state.profileErrorWarning),
+            (["thresholds", "deployment_failure_warning_percent"],
+             state.deploymentFailureWarningPercent),
+            (["thresholds", "deployment_failure_critical_percent"],
+             state.deploymentFailureCriticalPercent),
             (["output", "keep_latest_runs"], state.keepLatestRuns),
         ]
     }

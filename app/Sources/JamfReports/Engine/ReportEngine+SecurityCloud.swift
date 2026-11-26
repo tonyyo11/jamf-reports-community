@@ -71,8 +71,8 @@ extension ReportEngine {
         }
         let bridge = CLIBridge()
         var unlanded: [String] = []
-        for (args, kind) in commands {
-            if stopsRun(left: running, onLine: onLine) { return [] }
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: Array(running[index...]), onLine: onLine) { return [] }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let watcher = StderrSignalWatcher()

@@ -40,6 +40,45 @@ calls:
   weekly rather than daily, "days to 50%" reflects the first weekly sample at or above
   the threshold — an upper bound on the true crossing date, not an exact one.
 
+## Version history
+
+Patch Velocity looks at each title's current version. **Version History** looks at every
+version:
+
+- **Patch Compliance screen.** The Version History card has a title picker. For the title you
+  pick, it lists every version Jamf defines, newest first (the first 20, then "Show all"), with
+  its release date and how far it got while it was the latest. Above the list is the fleet
+  figure for the last 90 days.
+- **Generated reports.** The workbook's "Patch Version History" tab has one row per version
+  window: Title, Version, Released, Window start, Window end, Days to 50%, Days to 90% and
+  Outcome, then the fleet figure. The HTML report's Patching group lists the slowest windows
+  to reach 90%.
+
+How it's computed:
+
+- **A version window** is the run of days Jamf reported that version as the title's latest:
+  from the first such day to the first day it named another. A version that becomes the
+  latest again gets a second window. A day Jamf names no version, or the title has no
+  devices, adds nothing to a window.
+- **Outcome**, from the adoption in the window: reached 90%, already at 90% when first seen,
+  superseded before 90%, or not yet at 90%.
+- **Days to 50% and 90%** count from the version's release date to the first day it reached
+  the threshold, under the same rules as Patch Velocity: only observed crossings, never an
+  estimate.
+- **The fleet figure** is the median and 90th percentile of days to 90% over the last 90
+  days, counted in windows. It needs at least 5 windows that reached 90% and have a release
+  date. Versions that were superseded first, are not there yet, were already at 90%, or
+  reached 90% with no release date are counted beside it, never in it.
+- **Release dates** come from the patch definitions the app already reads for Patch Velocity,
+  which list every version of a title. The app keeps them in a `patch-version-dates` file
+  beside `patch-release-dates`, written only when the definitions change. A title whose
+  definitions call did not answer keeps its earlier dates, and the card shows which day they
+  are from. Older dated `patch-release-dates` files (more than 180 days) are not
+  searched; the newest one is always read, and the version-dates file covers older versions.
+
+Patch Velocity's figures come from the same windows: its release date, days behind and days
+to 50% and 90% are those of the window of each title's current version.
+
 ## What it needs
 
 - **Dated patch-status history.** The velocity card and sheet need more than one day

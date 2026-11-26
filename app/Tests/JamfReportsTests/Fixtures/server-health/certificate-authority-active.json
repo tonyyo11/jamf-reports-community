@@ -1,0 +1,17 @@
+{
+  "subjectX500Principal": "CN=Example Built-in CA,OU=Example Unit,O=Example Org,C=US",
+  "issuerX500Principal": "CN=Example Built-in CA,OU=Example Unit,O=Example Org,C=US",
+  "serialNumber": "1234567890123456789",
+  "version": 3,
+  "notAfter": 1893456000,
+  "notBefore": 1735689600,
+  "signature": {
+    "algorithm": "SHA256withRSA",
+    "algorithmOid": "1.2.840.113549.1.1.11",
+    "value": "ZXhhbXBsZXNpZ25hdHVyZQ=="
+  },
+  "keyUsage": ["digitalSignature", "keyEncipherment", "keyCertSign", "cRLSign"],
+  "keyUsageExtended": ["clientAuth"],
+  "sha1Fingerprint": "0123456789abcdef0123456789abcdef01234567",
+  "sha256Fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
