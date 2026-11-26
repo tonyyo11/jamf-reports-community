@@ -1381,7 +1381,7 @@ PatchSpan { deviceKey, policyId, firstScan: Date, lastScan: Date, endScan: Date?
 
 ### Verification Plan
 
-*   **Build:** `cd app && swift build --build-tests`, also in the `ci-macos15-xcode16.4` VM
+*   **Build:** `cd app && swift build --build-tests`, also under Xcode 16.4 (Swift 6.1)
     for the Swift 6.1 floor.
 *   **Unit tests:** each suite above with `swift test --filter`, then the full suite on the
     stage's branch tip (`/tip-test`, the repo's skill that builds and tests a ref in a clean
