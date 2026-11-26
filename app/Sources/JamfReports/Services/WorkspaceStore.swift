@@ -631,6 +631,8 @@ final class WorkspaceStore {
     /// another Mac collects into, or a workspace kept after its profile was removed.
     nonisolated static func workspaceHoldsCollectedData(profile: String) -> Bool {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        // Keeps the default-folder fallback on purpose: this guards a demo-workspace delete, so it
+        // must also find data in the default folder when data_dir is refused.
         let dataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let kinds = visibleEntries(of: dataDir).filter {

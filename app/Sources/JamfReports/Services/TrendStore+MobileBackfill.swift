@@ -16,10 +16,10 @@ extension TrendStore {
     nonisolated static func resolvingMobile(
         _ summaries: [DailySummary], profile: String
     ) -> [DailySummary] {
+        // A data_dir the path rules refuse leaves the summaries as recorded.
         guard summaries.contains(where: { $0.mobile == nil }),
-              let workspace = ProfileService.workspaceURL(for: profile) else { return summaries }
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+              let workspace = ProfileService.workspaceURL(for: profile),
+              let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return summaries }
         let config = try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
         return resolvingMobile(
             summaries, dataDir: dataDir, staleDays: config?.thresholds?.resolvedStaleDays ?? 30)

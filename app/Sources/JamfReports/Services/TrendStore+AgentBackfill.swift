@@ -32,8 +32,8 @@ extension TrendStore {
         let agents = SecurityScoreInputs.namedAgents(in: config)
         let days = summaries.filter { $0.securityAgentCoverage == nil }.map(\.date)
         guard !agents.isEmpty, !days.isEmpty else { return summaries }
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        // A data_dir the path rules refuse leaves the summaries as recorded.
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return summaries }
         let installed = agentCounts(
             onDays: Set(days), agents: agents, profile: profile, dataDir: dataDir)
         guard !installed.isEmpty else { return summaries }

@@ -1050,9 +1050,9 @@ struct SourcesView: View {
     /// workspace path guard. A kind with no snapshot is absent.
     nonisolated static func newestSnapshots(kinds: [String], profile: String) -> [String: Date] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [:] }
-        let configured = (try? WorkspacePaths.dataDir(for: profile))
-            ?? root.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        guard let dataDir = WorkspacePathGuard.validate(configured, under: root) else { return [:] }
+        // A data_dir the path rules refuse shows no dates, never the default folder's.
+        guard let configured = try? WorkspacePaths.dataDir(for: profile),
+              let dataDir = WorkspacePathGuard.validate(configured, under: root) else { return [:] }
         var dates: [String: Date] = [:]
         for kind in kinds {
             let names = [kind] + (legacyCacheNames[kind] ?? [])

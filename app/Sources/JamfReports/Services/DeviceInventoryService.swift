@@ -7,7 +7,8 @@ import Foundation
 enum DeviceInventoryService {
 
     fileprivate struct ConfigHints {
-        var jamfCLIDataDir: URL
+        /// Nil when `jamf_cli.data_dir` is refused: nothing is read, never the default folder.
+        var jamfCLIDataDir: URL?
         /// `thresholds.stale_device_days` (default 30). Drives `record.stale`
         /// so the Devices/Outreach screens agree with the Overview/Fleet tiles
         /// and the summary writer at any configured threshold.
@@ -204,8 +205,9 @@ fileprivate extension DeviceInventoryService {
     /// One warning per folder Devices reads that is a link: `validatedDirectory` refuses it,
     /// and without this the screen would go blank with no reason given.
     static func linkedFolderWarnings(config: ConfigHints, root: URL) -> [String] {
+        guard let dataDir = config.jamfCLIDataDir else { return [] }
         let folders = snapshotKinds.flatMap(\.names).map {
-            config.jamfCLIDataDir.appendingPathComponent($0, isDirectory: true)
+            dataDir.appendingPathComponent($0, isDirectory: true)
         }
         return folders.filter(isLink).map {
             "Ignoring \(displayPath($0, root: root)) — it is a symbolic link, and Computers reads "
@@ -285,8 +287,15 @@ fileprivate extension DeviceInventoryService {
         }
 
         let profile = profileName(ofWorkspace: root)
-        let jamfCLIDataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? resolvedDirectory("jamf-cli-data", fallback: "jamf-cli-data", root: root)
+        // A refused data_dir reads nothing, never the default folder in its place.
+        let jamfCLIDataDir: URL?
+        do {
+            jamfCLIDataDir = try WorkspacePaths.dataDir(for: profile)
+        } catch {
+            jamfCLIDataDir = nil
+            warnings.append("jamf_cli.data_dir could not be used, so no snapshot was read: "
+                + error.localizedDescription)
+        }
 
         return ConfigHints(
             jamfCLIDataDir: jamfCLIDataDir,
@@ -302,22 +311,14 @@ fileprivate extension DeviceInventoryService {
                 ?? ContactGap.defaultDays
         )
     }
-
-    static func resolvedDirectory(_ raw: String?, fallback: String, root: URL) -> URL {
-        let value = (raw.flatMap { $0.isEmpty ? nil : $0 } ?? fallback)
-            .replacingOccurrences(of: "~", with: FileManager.default.homeDirectoryForCurrentUser.path)
-        let candidate = value.hasPrefix("/")
-            ? URL(fileURLWithPath: value, isDirectory: true)
-            : root.appendingPathComponent(value, isDirectory: true)
-        return secureURL(candidate, root: root) ?? root.appendingPathComponent(fallback, isDirectory: true)
-    }
 }
 
 // MARK: - Current source lookup
 
 private extension DeviceInventoryService {
 
-    static func latestCachedJSON(dataDir: URL, names: [String], root: URL) -> URL? {
+    static func latestCachedJSON(dataDir: URL?, names: [String], root: URL) -> URL? {
+        guard let dataDir else { return nil }
         var candidates: [URL] = []
         for name in names {
             let reportDir = dataDir.appendingPathComponent(name, isDirectory: true)
@@ -553,7 +554,7 @@ extension DeviceInventoryService {
 private extension DeviceInventoryService {
 
     static func loadPatchTitles(
-        dataDir: URL,
+        dataDir: URL?,
         root: URL,
         sourceFiles: inout [String],
         newestSourceDate: inout Date?,

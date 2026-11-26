@@ -23,6 +23,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- When `jamf_cli.data_dir` names a folder the app refuses, Computers, Device Lookup, Data Sources and the Trends history backfills now read nothing and say why, instead of quietly reading the workspace's default `jamf-cli-data` folder.
 - A patch failure scan whose output has no device-failures section is no longer saved as "no failures". It is recorded as a failed attempt with its cause, so it cannot read as every failure clearing at once.
 - Short labels in the translated app now carry a note for translators saying whether each is a button, a label or a status. Some translations that read the wrong sense were corrected, such as Japanese "Previous" on the Overview drill-down, which read as "go back". The Environment card's button now reads "Change…" and the Policies table's column reads "Finding", so neither shares its text with a label that means something else.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
