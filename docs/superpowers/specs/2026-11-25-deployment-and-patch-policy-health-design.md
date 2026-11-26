@@ -597,7 +597,7 @@ Checkpoint suites: `DeploymentSummaryTests`, `SummaryJSONParserTests`, `TrendSto
 
 *   **Compilation/Build**: `cd app && swift build --build-tests` at every phase checkpoint.
 *   **Unit Tests**: each phase's suites through filtered `swift test`; the full suite through the `tip-test` skill on the branch tip before the PR, with the counts reported.
-*   **Swift 6.1 floor**: the `vm-test` skill in `ci-macos15-xcode16.4`, then `ci-macos26-xcode26.0.1`.
+*   **Swift 6.1 floor**: the CI-parity check on macOS 15 with Xcode 16.4 (Swift 6.1), then on macOS 26 with Xcode 26.0.1.
 *   **Static Analysis & Linting**: no `.pre-commit-config.yaml`; `xcrun swift-format lint` on the touched files as a hint only.
 *   **Localization**: `LocalizationCatalogTests` and `HTMLWithWorkbookGUITests.testNoTranslatedTextReachesAReportOrItsLog` (in `HTMLWithWorkbookTests.swift`) pass.
 *   **Real data**:
