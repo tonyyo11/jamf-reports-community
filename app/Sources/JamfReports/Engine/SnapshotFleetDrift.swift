@@ -270,11 +270,46 @@ extension CoreDashboard {
                     [$0.current.name ?? "", $0.current.serial ?? "", $0.current.jamfID ?? "",
                      $0.prior.fileVault ?? "", $0.current.fileVault ?? "Not reported"]
                 })
+        if let patch = patchFailureSection() {
+            section("Patch policy failures since the last scan", note: patch.note,
+                    empty: patch.empty,
+                    ["Computer", "Jamf ID", "Policy", "Policy ID", "Change"], patch.rows)
+        }
         if let benchmarks = benchmarkRuleSection() {
             section("Benchmark rules newly failing", note: benchmarks.note,
                     empty: benchmarks.empty,
                     ["Benchmark", "Rule ID", "Rule", "Failing devices"], benchmarks.rows)
         }
+    }
+
+    /// The patch section's rows; nil when the workspace has no `patch-device-failures` file.
+    private func patchFailureSection() -> (note: String?, empty: String, rows: [[String]])? {
+        guard let newest = TrendStore.datedSnapshots(of: PatchFailureDrift.kind, in: dataDir).last
+        else { return nil }
+        func notCompared(_ why: String) -> (String?, String, [[String]]) {
+            (nil, "Not compared (\(why))", [])
+        }
+        guard let pair = PatchFailureDrift.pair(dataDir: dataDir, landedStamp: newest.date)
+        else { return notCompared("one scan") }
+        guard let computers = ReportEngine.patchComputerIndex(
+            landed: nil, dataDir: dataDir, scanDate: newest.date)
+        else { return notCompared("no readable computers snapshot") }
+        guard let drift = PatchFailureDrift.load(
+            current: pair.current, baseline: pair.baseline, dataDir: dataDir,
+            computers: computers)
+        else { return notCompared("a scan did not decode") }
+        let note = [
+            drift.leftOut > 0
+                ? "\(drift.leftOut) rows with no Jamf ID or policy ID left out" : nil,
+            drift.notInComputers > 0
+                ? "\(drift.notInComputers) Macs not in the computers snapshot" : nil,
+        ].compactMap { $0 }
+        func row(_ failure: PatchFailureRow, _ change: String) -> [String] {
+            [failure.device, failure.deviceId, failure.policy, failure.policyId, change]
+        }
+        return (note.isEmpty ? nil : note.joined(separator: "; "), "No changes",
+                drift.startedFailing.map { row($0, "Started failing") }
+                    + drift.noLongerListed.map { row($0, "No longer listed as failed") })
     }
 
     /// The benchmark section's rows; nil when the workspace has no `compliance-rules` file.

@@ -74,19 +74,19 @@ final class FleetChangeSurfaceTests: XCTestCase {
 
     func testOverviewRowsAndNotes() {
         let notMeasured = OverviewChanges(
-            day: "d", computers: ComputerChanges(joined: 1, left: 0), benchmarks: nil, agents: [])
+            day: "d", computers: ComputerChanges(joined: 1, left: 0), benchmarks: nil, patch: nil, agents: [])
         XCTAssertTrue(notMeasured.computerRows.contains {
             $0.label == "Went stale" && $0.value == "Not measured" })
         let tooLarge = OverviewChanges(
             day: "d", computers: ComputerChanges(
                 baselineUnreadable: true, baselineUnreadableReason: .tooLarge),
-            benchmarks: nil, agents: [])
+            benchmarks: nil, patch: nil, agents: [])
         XCTAssertTrue(tooLarge.computerRows.isEmpty)
         XCTAssertEqual(tooLarge.computerNote, "Could not be read: over the 256 MB limit")
         let undecodable = OverviewChanges(
             day: "d", computers: ComputerChanges(
                 baselineUnreadable: true, baselineUnreadableReason: .undecodable),
-            benchmarks: nil, agents: [])
+            benchmarks: nil, patch: nil, agents: [])
         XCTAssertEqual(undecodable.computerNote, "Could not be read: the file did not decode")
     }
 
@@ -103,6 +103,64 @@ final class FleetChangeSurfaceTests: XCTestCase {
         XCTAssertEqual(OverviewLayout(order: saved).order.last, .changes)
     }
 
+    // MARK: - Patch (B2b)
+
+    private let patch = FleetChangeSummary(patch: PatchChanges(
+        currentStamp: "20261101T060000", startedFailing: 2, stoppedFailing: 0,
+        leftOut: 0, notInComputers: 0))
+
+    func testPatchDigestText() {
+        XCTAssertEqual(ScheduledRunSignals.changesText(patch), "2 started failing a patch policy")
+        let quiet = FleetChangeSummary(patch: PatchChanges(startedFailing: 0, stoppedFailing: 0))
+        XCTAssertNil(ScheduledRunSignals.changesText(quiet), "an all-zero part adds nothing")
+    }
+
+    /// Mac counts come every two days and patch scans weekly: each part is read from the
+    /// newest summary that has it, in both directions.
+    func testEachPartComesFromTheNewestSummaryThatHasIt() throws {
+        let built = try XCTUnwrap(OverviewChanges.build(summaries: [
+            try day("2026-11-01", changes: patch),
+            try day("2026-11-02", changes: counts),
+        ], format: .standard))
+        XCTAssertEqual(built.day, "2026-11-02")
+        XCTAssertEqual(built.patchRows.first?.value, "2")
+        XCTAssertEqual(built.patchScanDay, "2026-11-01")
+
+        let mirrored = try XCTUnwrap(OverviewChanges.build(summaries: [
+            try day("2026-11-01", changes: counts),
+            try day("2026-11-02", changes: patch),
+        ], format: .standard))
+        XCTAssertEqual(mirrored.day, "2026-11-01", "a patch-only day keeps the Mac rows")
+        XCTAssertEqual(mirrored.computerRows.first?.value, "2")
+    }
+
+    func testOldPatchPartIsNotShown() throws {
+        let built = try XCTUnwrap(OverviewChanges.build(summaries: [
+            try day("2026-10-10", changes: patch),
+            try day("2026-10-30", changes: counts),
+        ], format: .standard))
+        XCTAssertNil(built.patch)
+        XCTAssertTrue(built.patchRows.isEmpty)
+    }
+
+    func testPatchAgeLimitBoundary() throws {
+        func shows(_ patchDay: String) throws -> Bool {
+            let built = try XCTUnwrap(OverviewChanges.build(summaries: [
+                try day(patchDay, changes: patch), try day("2026-11-10", changes: counts),
+            ], format: .standard))
+            return built.patch != nil
+        }
+        XCTAssertTrue(try shows("2026-11-02"), "8 days is within the limit")
+        XCTAssertFalse(try shows("2026-11-01"), "9 days is past it")
+    }
+
+    func testPatchRowsOnlyWithAPart() throws {
+        let built = try XCTUnwrap(OverviewChanges.build(
+            summaries: [try day("2026-11-02", changes: counts)], format: .standard))
+        XCTAssertTrue(built.patchRows.isEmpty)
+        XCTAssertNil(built.patchScanDay)
+    }
+
     // MARK: - Demo
 
     func testDemoFleetChangesAgreeWithTheDemoFleet() throws {
@@ -115,5 +173,15 @@ final class FleetChangeSurfaceTests: XCTestCase {
         XCTAssertLessThanOrEqual(computers.fileVaultOff ?? 0, gaps)
         XCTAssertTrue(computers.isValid)
         XCTAssertTrue(DemoData.overviewChanges.agents.isEmpty)
+        let demoPatch = try XCTUnwrap(DemoData.fleetChanges.patch)
+        XCTAssertLessThanOrEqual(demoPatch.startedFailing ?? 0, DemoData.patchFailures.count)
+        XCTAssertTrue(demoPatch.isValid)
+        XCTAssertEqual(DemoData.overviewChanges.patchRows.count, 2)
+        for stamp in [computers.currentStamp, computers.baselineStamp, demoPatch.currentStamp,
+                      demoPatch.baselineStamp] {
+            let date = try XCTUnwrap(stamp.flatMap(PatchReleaseDateService.stampDate))
+            XCTAssertLessThanOrEqual(date, DemoData.referenceDate, "no demo date after reference")
+        }
+        XCTAssertNil(DemoData.overviewChanges.patchScanDay, "the demo scan is the same day")
     }
 }

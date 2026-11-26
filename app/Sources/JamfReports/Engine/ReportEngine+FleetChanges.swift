@@ -13,6 +13,9 @@ extension ReportEngine {
             },
             benchmarks: landed.complianceRulesStamp.flatMap {
                 benchmarkChanges(dataDir: dataDir, landedStamp: $0)
+            },
+            patch: landed.patchFailuresStamp.flatMap {
+                patchChanges(dataDir: dataDir, landedStamp: $0, landed: landed.computerSnapshot)
             })
         return summary.isEmpty ? nil : summary
     }
@@ -75,5 +78,43 @@ extension ReportEngine {
             currentStamp: PatchReleaseDateService.snapshotStamp(of: pair.current),
             baselineStamp: PatchReleaseDateService.snapshotStamp(of: pair.baseline),
             newlyFailing: drift.newlyFailing.count, notCompared: drift.notCompared)
+    }
+
+    /// Patch policy failures that started or dropped off since the newest earlier-day scan.
+    /// Nil with no pair, a scan that does not decode, or no readable computers snapshot: a
+    /// dropped pair cannot be counted without knowing whether its Mac is still enrolled.
+    static func patchChanges(
+        dataDir: URL, landedStamp: Date, landed: LandedSources.LandedComputers?
+    ) -> PatchChanges? {
+        guard let pair = PatchFailureDrift.pair(dataDir: dataDir, landedStamp: landedStamp),
+              let computers = patchComputerIndex(
+                landed: landed, dataDir: dataDir, scanDate: landedStamp),
+              let drift = PatchFailureDrift.load(
+                current: pair.current, baseline: pair.baseline, dataDir: dataDir,
+                computers: computers)
+        else { return nil }
+        return PatchChanges(
+            currentStamp: PatchReleaseDateService.snapshotStamp(of: pair.current),
+            baselineStamp: PatchReleaseDateService.snapshotStamp(of: pair.baseline),
+            startedFailing: drift.startedFailing.count,
+            stoppedFailing: drift.noLongerListed.count,
+            leftOut: drift.leftOut, notInComputers: drift.notInComputers)
+    }
+
+    /// The Macs a patch scan's dropped pairs are checked against: this run's landed
+    /// `computers` snapshot, else the newest file stamped at or before the scan. Nil with no
+    /// file, or one that cannot be read or decoded.
+    static func patchComputerIndex(
+        landed: LandedSources.LandedComputers?, dataDir: URL, scanDate: Date
+    ) -> ComputerDateIndex? {
+        if let landed { return ComputerDateIndex(landed.snapshot.rows) }
+        guard let file = TrendStore.datedSnapshots(of: "computers", in: dataDir)
+                .last(where: { $0.date <= scanDate }),
+              let data = try? BoundedFile.read(
+                file.url, limit: BoundedFile.inventoryLimit, followSymlinks: false,
+                inside: dataDir),
+              let snapshot = ComputerDates.decodeComputerSnapshot(data)
+        else { return nil }
+        return ComputerDateIndex(snapshot.rows)
     }
 }

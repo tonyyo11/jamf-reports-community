@@ -48,6 +48,13 @@ final class LandedSources: Sendable {
         set { rulesStamp.withLock { $0 = newValue } }
     }
 
+    private let patchStamp = Mutex<Date?>(nil)
+    /// The stamp of the `patch-device-failures` scan this run saved.
+    var patchFailuresStamp: Date? {
+        get { patchStamp.withLock { $0 } }
+        set { patchStamp.withLock { $0 = newValue } }
+    }
+
     /// Records what the change counts need from a snapshot this run saved.
     func noteSaved(kind: String, file: URL, payload: Data) {
         guard let date = CloudStorage.snapshotTimestamp(of: file) else { return }
@@ -58,6 +65,8 @@ final class LandedSources: Sendable {
                 stamp: PatchReleaseDateService.snapshotStamp(of: file) ?? "", date: date, snapshot: snapshot)
         case "compliance-rules":
             complianceRulesStamp = date
+        case PatchFailureDrift.kind:
+            patchFailuresStamp = date
         default:
             break
         }

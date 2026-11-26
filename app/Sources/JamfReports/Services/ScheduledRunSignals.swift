@@ -156,6 +156,13 @@ enum ScheduledRunSignals {
                 parts.append(shown.isEmpty ? "No changes" : shown.joined(separator: ", "))
             }
         }
+        if let patch = changes.patch {
+            let counts = [(patch.startedFailing, "started failing a patch policy"),
+                          (patch.stoppedFailing, "no longer listed as failed")]
+            parts += counts.compactMap { count, label in
+                count.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+            }
+        }
         if let newly = changes.benchmarks?.newlyFailing {
             parts.append("\(newly) benchmark rules newly failing")
         }

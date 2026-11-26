@@ -28769,10 +28769,10 @@
     },
     "Agent coverage" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couverture des agents"
+            "value" : "Agentenabdeckung"
           }
         },
         "es" : {
@@ -28781,16 +28781,10 @@
             "value" : "Cobertura de agentes"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agentenabdeckung"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cobertura de agentes"
+            "value" : "Couverture des agents"
           }
         },
         "it" : {
@@ -28803,6 +28797,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "エージェントのカバー率"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cobertura de agentes"
           }
         }
       }
@@ -35004,10 +35004,10 @@
     },
     "Benchmark rules newly failing" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Règles de benchmark nouvellement en échec"
+            "value" : "Neu fehlschlagende Benchmark-Regeln"
           }
         },
         "es" : {
@@ -35016,16 +35016,10 @@
             "value" : "Reglas de benchmark con fallos nuevos"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Neu fehlschlagende Benchmark-Regeln"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Regras de benchmark com nova falha"
+            "value" : "Règles de benchmark nouvellement en échec"
           }
         },
         "it" : {
@@ -35038,6 +35032,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新たに不合格になったベンチマークルール"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regras de benchmark com nova falha"
           }
         }
       }
@@ -37734,10 +37734,10 @@
     },
     "Checking in again" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se reconnectent de nouveau"
+            "value" : "Melden sich wieder"
           }
         },
         "es" : {
@@ -37746,16 +37746,10 @@
             "value" : "Vuelven a conectarse"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Melden sich wieder"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voltaram a fazer check-in"
+            "value" : "Se reconnectent de nouveau"
           }
         },
         "it" : {
@@ -37768,6 +37762,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "チェックイン再開"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voltaram a fazer check-in"
           }
         }
       }
@@ -46733,10 +46733,10 @@
     },
     "Could not be read: over the 256 MB limit" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lecture impossible : au-delà de la limite de 256 Mo"
+            "value" : "Konnte nicht gelesen werden: über dem Limit von 256 MB"
           }
         },
         "es" : {
@@ -46745,16 +46745,10 @@
             "value" : "No se pudo leer: supera el límite de 256 MB"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Konnte nicht gelesen werden: über dem Limit von 256 MB"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não foi possível ler: acima do limite de 256 MB"
+            "value" : "Lecture impossible : au-delà de la limite de 256 Mo"
           }
         },
         "it" : {
@@ -46768,15 +46762,21 @@
             "state" : "translated",
             "value" : "読み取れません: 256 MB の上限を超えています"
           }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler: acima do limite de 256 MB"
+          }
         }
       }
     },
     "Could not be read: the file did not decode" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lecture impossible : le fichier n’a pas pu être décodé"
+            "value" : "Konnte nicht gelesen werden: Die Datei ließ sich nicht dekodieren"
           }
         },
         "es" : {
@@ -46785,16 +46785,10 @@
             "value" : "No se pudo leer: el archivo no se pudo decodificar"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Konnte nicht gelesen werden: Die Datei ließ sich nicht dekodieren"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não foi possível ler: o arquivo não pôde ser decodificado"
+            "value" : "Lecture impossible : le fichier n’a pas pu être décodé"
           }
         },
         "it" : {
@@ -46807,6 +46801,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "読み取れません: ファイルをデコードできませんでした"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler: o arquivo não pôde ser decodificado"
           }
         }
       }
@@ -57151,10 +57151,10 @@
     },
     "Enrolled" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inscrits"
+            "value" : "Registriert"
           }
         },
         "es" : {
@@ -57163,16 +57163,10 @@
             "value" : "Inscritos"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Registriert"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registrados"
+            "value" : "Inscrits"
           }
         },
         "it" : {
@@ -57185,6 +57179,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登録済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registrados"
           }
         }
       }
@@ -62351,10 +62351,10 @@
     },
     "FileVault stopped reporting" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FileVault ne remonte plus"
+            "value" : "FileVault meldet nicht mehr"
           }
         },
         "es" : {
@@ -62363,16 +62363,10 @@
             "value" : "FileVault dejó de informar"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FileVault meldet nicht mehr"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "FileVault parou de informar"
+            "value" : "FileVault ne remonte plus"
           }
         },
         "it" : {
@@ -62386,15 +62380,21 @@
             "state" : "translated",
             "value" : "FileVault の報告が停止"
           }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault parou de informar"
+          }
         }
       }
     },
     "FileVault turned off" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FileVault désactivé"
+            "value" : "FileVault deaktiviert"
           }
         },
         "es" : {
@@ -62403,16 +62403,10 @@
             "value" : "FileVault desactivado"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FileVault deaktiviert"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "FileVault desativado"
+            "value" : "FileVault désactivé"
           }
         },
         "it" : {
@@ -62425,6 +62419,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "FileVault がオフ"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FileVault desativado"
           }
         }
       }
@@ -65046,10 +65046,10 @@
     },
     "From the summary of %@" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "D’après le résumé du %@"
+            "value" : "Aus der Zusammenfassung vom %@"
           }
         },
         "es" : {
@@ -65058,16 +65058,10 @@
             "value" : "Según el resumen del %@"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aus der Zusammenfassung vom %@"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Do resumo de %@"
+            "value" : "D’après le résumé du %@"
           }
         },
         "it" : {
@@ -65080,6 +65074,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ の概要から"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do resumo de %@"
           }
         }
       }
@@ -75468,10 +75468,10 @@
     },
     "Large change: %lld%% of the fleet joined or left. Check that the last collect finished." : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Changement important : %lld %% du parc est arrivé ou parti. Vérifiez que la dernière collecte s’est terminée."
+            "value" : "Große Änderung: %lld %% der Flotte kamen hinzu oder fielen weg. Prüfen Sie, ob die letzte Erfassung abgeschlossen wurde."
           }
         },
         "es" : {
@@ -75480,16 +75480,10 @@
             "value" : "Cambio grande: el %lld %% de la flota entró o salió. Compruebe que la última recopilación terminó."
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Große Änderung: %lld %% der Flotte kamen hinzu oder fielen weg. Prüfen Sie, ob die letzte Erfassung abgeschlossen wurde."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mudança grande: %lld%% da frota entrou ou saiu. Verifique se a última coleta terminou."
+            "value" : "Changement important : %lld %% du parc est arrivé ou parti. Vérifiez que la dernière collecte s’est terminée."
           }
         },
         "it" : {
@@ -75502,6 +75496,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "大きな変化: フリートの %lld%% が追加または削除されました。前回の収集が完了したか確認してください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudança grande: %lld%% da frota entrou ou saiu. Verifique se a última coleta terminou."
           }
         }
       }
@@ -79765,42 +79765,42 @@
         }
       }
     },
-    "Macs that enrolled, left, went stale or turned FileVault off since the collect on an earlier day." : {
+    "Macs that enrolled, left, went stale or turned FileVault off, and patch policy failures, since the collect on an earlier day." : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac inscrits, retirés, devenus inactifs ou dont FileVault a été désactivé depuis la collecte d’un jour précédent."
+            "value" : "Macs, die seit der Erfassung an einem früheren Tag registriert wurden, weggefallen sind, veraltet sind oder FileVault ausgeschaltet haben, sowie Patch-Richtlinienfehler."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Macs que se inscribieron, salieron, quedaron inactivos o desactivaron FileVault desde la recopilación de un día anterior."
+            "value" : "Macs que se inscribieron, salieron, quedaron inactivos o desactivaron FileVault, y fallos de políticas de parches, desde la recopilación de un día anterior."
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Macs, die seit der Erfassung an einem früheren Tag registriert wurden, weggefallen sind, veraltet sind oder FileVault ausgeschaltet haben."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Macs que foram registrados, saíram, ficaram inativos ou desativaram o FileVault desde a coleta de um dia anterior."
+            "value" : "Mac inscrits, retirés, devenus inactifs ou dont FileVault a été désactivé, et les échecs de règles de correctifs, depuis la collecte d’un jour précédent."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac registrati, usciti, diventati inattivi o con FileVault disattivato dalla raccolta di un giorno precedente."
+            "value" : "Mac registrati, usciti, diventati inattivi o con FileVault disattivato, ed errori dei criteri di patch, dalla raccolta di un giorno precedente."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前日以前の収集以降に登録、削除、非アクティブ化、または FileVault がオフになった Mac。"
+            "value" : "前日以前の収集以降に登録、削除、非アクティブ化、または FileVault がオフになった Mac と、パッチポリシーの失敗。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macs que foram registrados, saíram, ficaram inativos ou desativaram o FileVault, e falhas de políticas de patch, desde a coleta de um dia anterior."
           }
         }
       }
@@ -83163,10 +83163,10 @@
     },
     "Needs Jamf Pro." : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nécessite Jamf Pro."
+            "value" : "Erfordert Jamf Pro."
           }
         },
         "es" : {
@@ -83175,16 +83175,10 @@
             "value" : "Requiere Jamf Pro."
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Erfordert Jamf Pro."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requer o Jamf Pro."
+            "value" : "Nécessite Jamf Pro."
           }
         },
         "it" : {
@@ -83197,6 +83191,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jamf Pro が必要です。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requer o Jamf Pro."
           }
         }
       }
@@ -86184,10 +86184,10 @@
     },
     "No comparison yet: needs computers collected on two different days." : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pas encore de comparaison : il faut des ordinateurs collectés sur deux jours différents."
+            "value" : "Noch kein Vergleich: Computer müssen an zwei verschiedenen Tagen erfasst worden sein."
           }
         },
         "es" : {
@@ -86196,16 +86196,10 @@
             "value" : "Aún no hay comparación: se necesitan ordenadores recopilados en dos días distintos."
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Noch kein Vergleich: Computer müssen an zwei verschiedenen Tagen erfasst worden sein."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ainda sem comparação: é preciso coletar os computadores em dois dias diferentes."
+            "value" : "Pas encore de comparaison : il faut des ordinateurs collectés sur deux jours différents."
           }
         },
         "it" : {
@@ -86218,6 +86212,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "まだ比較できません: 2 つの異なる日にコンピュータを収集する必要があります。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ainda sem comparação: é preciso coletar os computadores em dois dias diferentes."
           }
         }
       }
@@ -88018,6 +88018,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nenhum perfil local do jamf-cli encontrado."
+          }
+        }
+      }
+    },
+    "No longer listed as failed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht mehr als fehlgeschlagen gelistet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya no figura como fallido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne figure plus parmi les échecs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non più elencato come non riuscito"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗として表示されなくなった"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não aparece mais como falha"
           }
         }
       }
@@ -91277,10 +91317,10 @@
     },
     "Not measured" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non mesuré"
+            "value" : "Nicht gemessen"
           }
         },
         "es" : {
@@ -91289,16 +91329,10 @@
             "value" : "No medido"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nicht gemessen"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Não medido"
+            "value" : "Non mesuré"
           }
         },
         "it" : {
@@ -91311,6 +91345,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未測定"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não medido"
           }
         }
       }
@@ -107535,10 +107575,10 @@
     },
     "Removed" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Retirés"
+            "value" : "Entfernt"
           }
         },
         "es" : {
@@ -107547,16 +107587,10 @@
             "value" : "Retirados"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Entfernt"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removidos"
+            "value" : "Retirés"
           }
         },
         "it" : {
@@ -107569,6 +107603,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "削除済み"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removidos"
           }
         }
       }
@@ -121341,10 +121381,10 @@
     },
     "Since last collect" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Depuis la dernière collecte"
+            "value" : "Seit der letzten Erfassung"
           }
         },
         "es" : {
@@ -121353,16 +121393,10 @@
             "value" : "Desde la última recopilación"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seit der letzten Erfassung"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desde a última coleta"
+            "value" : "Depuis la dernière collecte"
           }
         },
         "it" : {
@@ -121375,6 +121409,92 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "前回の収集以降"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde a última coleta"
+          }
+        }
+      }
+    },
+    "Since the last patch scan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seit dem letzten Patch-Scan"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde el último análisis de parches"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis la dernière analyse des correctifs"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dall’ultima scansione delle patch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のパッチスキャン以降"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde a última verificação de patches"
+          }
+        }
+      }
+    },
+    "Since the last patch scan (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seit dem letzten Patch-Scan (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde el último análisis de parches (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis la dernière analyse des correctifs (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dall’ultima scansione delle patch (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のパッチスキャン以降 (%@)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde a última verificação de patches (%@)"
           }
         }
       }
@@ -123904,6 +124024,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recomeçar a mesclagem?"
+          }
+        }
+      }
+    },
+    "Started failing a patch policy" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu fehlschlagende Patch-Richtlinie"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezó a fallar una política de parches"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec récent d’une règle de correctif"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inizia a non riuscire un criterio di patch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッチポリシーの失敗が発生"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Começou a falhar em uma política de patch"
           }
         }
       }
@@ -141064,10 +141224,10 @@
     },
     "Went stale" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Devenus inactifs"
+            "value" : "Veraltet"
           }
         },
         "es" : {
@@ -141076,16 +141236,10 @@
             "value" : "Quedaron inactivos"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veraltet"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ficaram inativos"
+            "value" : "Devenus inactifs"
           }
         },
         "it" : {
@@ -141098,6 +141252,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "非アクティブ化"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ficaram inativos"
           }
         }
       }
@@ -150838,10 +150998,10 @@
     },
     "macOS version changed" : {
       "localizations" : {
-        "fr" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Version de macOS modifiée"
+            "value" : "macOS-Version geändert"
           }
         },
         "es" : {
@@ -150850,16 +151010,10 @@
             "value" : "Versión de macOS cambiada"
           }
         },
-        "de" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS-Version geändert"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Versão do macOS alterada"
+            "value" : "Version de macOS modifiée"
           }
         },
         "it" : {
@@ -150872,6 +151026,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS バージョンが変更"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão do macOS alterada"
           }
         }
       }

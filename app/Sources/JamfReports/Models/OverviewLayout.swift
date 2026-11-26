@@ -46,7 +46,7 @@ enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
         case .aiInsight:
             L("A plain-language reading of the latest summary, generated on this Mac.")
         case .changes:
-            L("Macs that enrolled, left, went stale or turned FileVault off since the collect on an earlier day.")
+            L("Macs that enrolled, left, went stale or turned FileVault off, and patch policy failures, since the collect on an earlier day.")
         case .osDistribution:
             L("Macs per macOS version, and the share on a current release.")
         case .mobileDevices:

@@ -26,6 +26,14 @@ struct OverviewChangesCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 rows(changes.computerRows + [changes.benchmarkRow].compactMap { $0 })
+                if !changes.patchRows.isEmpty {
+                    Text(changes.patchScanDay.map {
+                        L("Since the last patch scan (\(FleetInsightInput.safeDate($0)))")
+                    } ?? L("Since the last patch scan"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    rows(changes.patchRows)
+                }
                 if !changes.agents.isEmpty {
                     Text(L("Agent coverage"))
                         .font(.footnote.weight(.semibold))

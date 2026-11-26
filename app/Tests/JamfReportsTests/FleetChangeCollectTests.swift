@@ -48,7 +48,13 @@ final class FleetChangeCollectTests: XCTestCase {
         return try SummaryJSONParser.decode(Data(contentsOf: dir.appendingPathComponent(name)))
     }
 
-    private func collect(landed: LandedSources?) async throws {
+    private static let healthyScan =
+        #"[{"section":"device_failures","data":[],"fetch_error":""}]"#
+
+    private func collect(
+        landed: LandedSources?, scan: String = healthyScan,
+        lines: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws {
         let computers = #"[{"id":"1","general":{"name":"Mac-1"},"#
             + #""diskEncryption":{"fileVault2Enabled":false}},"#
             + #"{"id":"2","general":{"name":"Mac-2"}}]"#
@@ -66,6 +72,7 @@ final class FleetChangeCollectTests: XCTestCase {
           *"compliance-benchmarks list"*) printf '%s' '[{"title":"CIS"}]'; exit 0 ;;
           *"compliance-rules"*) printf '%s' '\(rules)'; exit 0 ;;
           *"report security"*) printf '%s' '\(security)'; exit 0 ;;
+          *"patch-status"*"--scan-failures"*) printf '%s' '\(scan)'; exit 0 ;;
           *) printf '[]'; exit 0 ;;
         esac
         """.write(to: stub, atomically: true, encoding: .utf8)
@@ -74,7 +81,7 @@ final class FleetChangeCollectTests: XCTestCase {
             try await ReportEngine.collect(
                 workspace: WorkspaceID(validating: self.profile), profile: self.profile,
                 workspacePaths: WorkspacePaths.self, tiers: Set(CollectionTier.allCases),
-                force: true, locateJamfCLI: { stub }, onLine: { _ in })
+                force: true, locateJamfCLI: { stub }, onLine: lines ?? { _ in })
         }
         if let landed {
             try await ReportEngine.$landedSources.withValue(landed) { try await run() }
@@ -104,4 +111,42 @@ final class FleetChangeCollectTests: XCTestCase {
         try await collect(landed: nil)
         XCTAssertNil(try todaysSummary().changes)
     }
+
+    // MARK: - Patch (B2b)
+
+    func testRoutedCollectWritesThePatchPart() async throws {
+        try seed("computers", #"[{"id":"101"},{"id":"1"}]"#)
+        try seed("patch-device-failures",
+                 #"[{"device_id":"1","policy_id":"11"},{"device_id":"99","policy_id":"11"}]"#)
+        let captured = try String(contentsOf: TestFixtures.dir("patch")
+            .appendingPathComponent("patch-scan-failures-captured.json"), encoding: .utf8)
+        try await collect(landed: LandedSources(),
+                          scan: captured.replacingOccurrences(of: "\n", with: " "))
+        let patch = try XCTUnwrap(try todaysSummary().changes?.patch)
+        XCTAssertEqual(patch.startedFailing, 1, "the captured Mac 101 on policy 11")
+        XCTAssertEqual(patch.stoppedFailing, 1, "Mac 1 is in this run's computers")
+        XCTAssertEqual(patch.notInComputers, 1, "Mac 99 is not")
+    }
+
+    func testScanWithNoDeviceSectionIsNotSavedAndHasACause() async throws {
+        try seed("patch-device-failures", "[]")
+        let lines = Lines()
+        try await collect(landed: LandedSources(),
+                          scan: #"[{"section":"title_compliance","data":[]}]"#,
+                          lines: lines.append)
+        XCTAssertNil(try todaysSummary().changes?.patch)
+        let warnings = lines.texts.filter { $0.contains("no device_failures section") }
+        XCTAssertEqual(warnings.count, 1, "\(lines.texts)")
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNotNil(store.cause(for: "patch-device-failures"))
+    }
+}
+
+private final class Lines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in self.lock.lock(); defer { self.lock.unlock() }; self.lines.append(line.text) }
+    }
+    var texts: [String] { lock.lock(); defer { lock.unlock() }; return lines }
 }

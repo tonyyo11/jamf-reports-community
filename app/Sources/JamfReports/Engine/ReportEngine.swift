@@ -567,7 +567,7 @@ struct ReportEngine: Sendable {
         // replace a day that counted them with a mobile-only point.
         if fresh.totalDevices == 0, existing.totalDevices > 0 { return false }
         // A change part this run measured is newer than the morning's.
-        if fresh.changes?.computers != nil || fresh.changes?.benchmarks != nil { return true }
+        if fresh.changes?.isEmpty == false { return true }
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
@@ -3431,9 +3431,30 @@ struct ReportEngine: Sendable {
         // generic guard, because the generic path would otherwise file
         // the compliance section under patch-device-failures on any
         // tenant with no failures.
-        let salvaged = sectionedCollectKinds.contains(kind)
-            ? Self.patchDeviceFailurePayload(from: data, onLine: onLine)
-            : jsonPayload(from: data)
+        let salvaged: Data?
+        if sectionedCollectKinds.contains(kind) {
+            switch Self.patchDeviceFailurePayload(from: data) {
+            case .rows(let rows):
+                salvaged = rows
+            case .noDeviceSection where Self.patchFetchError(in: data) == nil:
+                let cause = FailureCause.fetchError(
+                    "no device_failures section in jamf-cli output", exitCode: outcome.exitCode)
+                stateStore?.record(
+                    .failed(exitCode: outcome.exitCode), report: kind, at: collectStart,
+                    cause: cause)
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): no device_failures section in jamf-cli output; "
+                        + "not saved"))
+                return KindCollectResult(
+                    outcome: CollectOutcome(
+                        kind: kind, exitCode: outcome.exitCode, cause: cause.kind),
+                    saved: false)
+            case .noDeviceSection, .unreadable:
+                salvaged = nil
+            }
+        } else {
+            salvaged = jsonPayload(from: data)
+        }
         guard let payload = salvaged else {
             if sectionedCollectKinds.contains(kind), let fetch = Self.patchFetchError(in: data) {
                 return Self.recordSectionFetchError(
@@ -4778,50 +4799,35 @@ struct ReportEngine: Sendable {
         return sections
     }
 
-    /// Picks the device-failure rows out of a `patch-status --scan-failures`
-    /// stream.
-    ///
-    /// The stream carries up to three arrays — title compliance, policies with
-    /// failures, then devices — and only the last is what this kind holds. The
-    /// first is always present, so taking the first (or the last) parseable
-    /// document would file compliance rows under `patch-device-failures` on the
-    /// common tenant that has no failures at all. Devices are identified by
-    /// their `device_id` field rather than by heading text or position.
-    ///
-    /// Returns an empty array when the stream parsed but carried no device
-    /// section: that means no failures, which is a real answer. Returns nil only
-    /// when nothing parsed, so genuinely broken output still trips the caller's
-    /// guard instead of being recorded as a clean zero.
-    ///
-    /// A multi-section stream with no device rows warns through `onLine`. On a
-    /// healthy tenant that is the normal shape (compliance, sometimes policies,
-    /// no devices), but it is also what an upstream field rename would look
-    /// like — and a rename would be indistinguishable from a clean zero without
-    /// a line saying which shape produced it.
-    ///
-    /// From jamf-cli 1.29.0 the command prints one document of labelled sections
-    /// instead of the heading stream; `envelopeDeviceRows` reads that shape.
-    static func patchDeviceFailurePayload(
-        from data: Data,
-        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
-    ) -> Data? {
+    /// What `patch-status --scan-failures` gave for the device-failures kind.
+    enum PatchFailurePayload: Equatable {
+        /// The device rows; `[]` is a real "no failures".
+        case rows(Data)
+        /// JSON with no device-failures section (or a fetch error): not an answer, so it is
+        /// recorded as not landed rather than saved as a clean zero.
+        case noDeviceSection
+        /// Nothing parsed.
+        case unreadable
+    }
+
+    /// Picks the device-failure rows out of a `patch-status --scan-failures` stream: a 1.29
+    /// envelope of `{section, data, fetch_error}` objects, or older `── section ──` arrays whose
+    /// device rows carry `device_id`. Taking the first or last parseable document would file
+    /// compliance rows under `patch-device-failures`, so devices are found by section name or
+    /// field. Output that parsed but carried no device section is `.noDeviceSection`: saving
+    /// it as `[]` would read, against an earlier scan, as every failure clearing at once.
+    static func patchDeviceFailurePayload(from data: Data) -> PatchFailurePayload {
         let sections = jsonSections(from: data)
-        guard !sections.isEmpty else { return nil }
+        guard !sections.isEmpty else { return .unreadable }
         for section in sections {
             guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
-                    as? [[String: Any]] else { continue }
-            guard let first = rows.first else { continue }
-            if first["section"] != nil { return envelopeDeviceRows(rows) }
-            if first["device_id"] != nil { return section }
+                    as? [[String: Any]], let first = rows.first else { continue }
+            if first["section"] != nil {
+                return envelopeDeviceRows(rows).map(PatchFailurePayload.rows) ?? .noDeviceSection
+            }
+            if first["device_id"] != nil { return .rows(section) }
         }
-        if sections.count > 1 {
-            onLine(.init(
-                timestamp: Date(), level: .warn,
-                text: "[warn] patch-device-failures: \(sections.count) sections parsed, "
-                    + "none carried device rows — treating as no failures"
-            ))
-        }
-        return Data("[]".utf8)
+        return .noDeviceSection
     }
 
     /// The device rows from jamf-cli 1.29's `--scan-failures` document: one array

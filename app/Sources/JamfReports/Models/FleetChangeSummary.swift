@@ -5,27 +5,34 @@ import Foundation
 struct FleetChangeSummary: Codable, Sendable, Equatable {
     var computers: ComputerChanges?
     var benchmarks: BenchmarkChanges?
+    var patch: PatchChanges?
 
-    private enum CodingKeys: String, CodingKey { case computers, benchmarks }
+    private enum CodingKeys: String, CodingKey { case computers, benchmarks, patch }
 
-    init(computers: ComputerChanges? = nil, benchmarks: BenchmarkChanges? = nil) {
+    init(
+        computers: ComputerChanges? = nil, benchmarks: BenchmarkChanges? = nil,
+        patch: PatchChanges? = nil
+    ) {
         self.computers = computers
         self.benchmarks = benchmarks
+        self.patch = patch
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         computers = try? container.decodeIfPresent(ComputerChanges.self, forKey: .computers)
         benchmarks = try? container.decodeIfPresent(BenchmarkChanges.self, forKey: .benchmarks)
+        patch = try? container.decodeIfPresent(PatchChanges.self, forKey: .patch)
     }
 
-    var isEmpty: Bool { computers == nil && benchmarks == nil }
+    var isEmpty: Bool { computers == nil && benchmarks == nil && patch == nil }
 
     /// Each part this summary measured replaces the older one; one it did not keeps it.
     func filling(from older: FleetChangeSummary?) -> FleetChangeSummary {
         FleetChangeSummary(
             computers: computers ?? older?.computers,
-            benchmarks: benchmarks ?? older?.benchmarks)
+            benchmarks: benchmarks ?? older?.benchmarks,
+            patch: patch ?? older?.patch)
     }
 
     /// Drops a part whose numbers cannot be true (a hand edit, a peer's bad write); nil when
@@ -33,7 +40,8 @@ struct FleetChangeSummary: Codable, Sendable, Equatable {
     func validated() -> FleetChangeSummary? {
         let result = FleetChangeSummary(
             computers: computers.flatMap { $0.isValid ? $0 : nil },
-            benchmarks: benchmarks.flatMap { $0.isValid ? $0 : nil })
+            benchmarks: benchmarks.flatMap { $0.isValid ? $0 : nil },
+            patch: patch.flatMap { $0.isValid ? $0 : nil })
         return result.isEmpty ? nil : result
     }
 
@@ -112,4 +120,25 @@ struct BenchmarkChanges: Codable, Sendable, Equatable {
     }
 
     var isValid: Bool { FleetChangeSummary.inRange([newlyFailing, notCompared]) }
+}
+
+/// Patch policy failures between two scans. `stopped_failing` is a pair jamf-cli no longer
+/// lists as failed, which is not the same as fixed (see `PatchFailureDrift`).
+struct PatchChanges: Codable, Sendable, Equatable {
+    var currentStamp: String?
+    var baselineStamp: String?
+    var startedFailing: Int?
+    var stoppedFailing: Int?
+    var leftOut: Int?
+    var notInComputers: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case currentStamp = "current_stamp", baselineStamp = "baseline_stamp"
+        case startedFailing = "started_failing", stoppedFailing = "stopped_failing"
+        case leftOut = "left_out", notInComputers = "not_in_computers"
+    }
+
+    var isValid: Bool {
+        FleetChangeSummary.inRange([startedFailing, stoppedFailing, leftOut, notInComputers])
+    }
 }

@@ -225,15 +225,27 @@ extension DemoData {
     /// The demo fleet's "Since last collect": 523 Macs yesterday, 524 today (2 enrolled,
     /// 1 removed). `DemoDataOperationsTests` checks these against the demo's own facts.
     static let fleetChanges = FleetChangeSummary(computers: ComputerChanges(
-        currentStamp: "20261101T060000", baselineStamp: "20261031T060000",
+        currentStamp: demoStamp(daysBefore: 0), baselineStamp: demoStamp(daysBefore: 1),
         currentCount: totalDevices, priorCount: totalDevices - 1,
         staleDays: 30, staleBasis: [StaleBasis.checkIn.rawValue],
         joined: 2, left: 1, osChanged: 4, becameStale: 3, noLongerStale: 1,
-        fileVaultOff: 1, fileVaultStoppedReporting: 0, unidentified: 0, ambiguous: 0))
+        fileVaultOff: 1, fileVaultStoppedReporting: 0, unidentified: 0, ambiguous: 0),
+        patch: PatchChanges(
+            currentStamp: demoStamp(daysBefore: 0), baselineStamp: demoStamp(daysBefore: 7),
+            startedFailing: 2, stoppedFailing: 1, leftOut: 0, notInComputers: 0))
+
+    /// A snapshot stamp on `referenceDate` or before, so no demo date passes it.
+    private static func demoStamp(daysBefore days: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'060000"
+        return formatter.string(from: referenceDate.addingTimeInterval(-Double(days) * 86_400))
+    }
 
     static var overviewChanges: OverviewChanges {
         OverviewChanges(
             day: SummaryJSONParser.dateFormatter.string(from: referenceDate),
-            computers: fleetChanges.computers, benchmarks: nil, agents: [])
+            computers: fleetChanges.computers, benchmarks: nil, patch: fleetChanges.patch,
+            agents: [])
     }
 }

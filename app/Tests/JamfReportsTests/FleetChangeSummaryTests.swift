@@ -38,6 +38,47 @@ final class FleetChangeSummaryTests: XCTestCase {
         XCTAssertNil(try summary(#","changes":"nonsense""#).changes)
     }
 
+    func testPatchPartRoundTripAndChecks() throws {
+        var day = try summary()
+        day.changes = FleetChangeSummary(patch: PatchChanges(
+            currentStamp: "a", baselineStamp: "b", startedFailing: 1, stoppedFailing: 2,
+            leftOut: 0, notInComputers: 1))
+        let data = try JSONEncoder().encode(day)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("\"stopped_failing\":2"))
+        XCTAssertEqual(try SummaryJSONParser.decode(data).changes, day.changes)
+        let malformed = try summary(#","changes":{"patch":{"started_failing":"x"},"#
+            + #""benchmarks":{"newly_failing":1}}"#)
+        XCTAssertNil(malformed.changes?.patch)
+        XCTAssertNotNil(malformed.changes?.benchmarks)
+        XCTAssertNil(FleetChangeSummary(patch: PatchChanges(startedFailing: -1)).validated())
+        var older = try summary()
+        older.changes = day.changes
+        XCTAssertEqual(try summary().filling(from: older).changes?.patch, day.changes?.patch)
+        var fresh = try summary()
+        fresh.changes = FleetChangeSummary(patch: PatchChanges(startedFailing: 0))
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: try summary(), fresh: fresh))
+    }
+
+    // MARK: - patchComputerIndex
+
+    func testPatchComputerIndex() throws {
+        let landedIndex = try XCTUnwrap(ReportEngine.patchComputerIndex(
+            landed: landed(), dataDir: try dataDir(baseline: nil), scanDate: at(0)))
+        XCTAssertTrue(landedIndex.contains(jamfID: "1", serial: nil))
+
+        let rows: [[String: Any]] = [["id": "7"]]
+        let dir = try dataDir(baseline: JSONSerialization.data(withJSONObject: rows))
+        let fromFile = try XCTUnwrap(ReportEngine.patchComputerIndex(
+            landed: nil, dataDir: dir, scanDate: at(0)))
+        XCTAssertTrue(fromFile.contains(jamfID: "7", serial: nil))
+        XCTAssertNil(ReportEngine.patchComputerIndex(landed: nil, dataDir: dir, scanDate: at(-2)),
+                     "a file stamped after the scan is not used")
+        XCTAssertNil(ReportEngine.patchComputerIndex(
+            landed: nil, dataDir: try dataDir(baseline: Data("{bad".utf8)), scanDate: at(0)))
+        XCTAssertNil(ReportEngine.patchComputerIndex(
+            landed: nil, dataDir: try dataDir(baseline: nil), scanDate: at(0)))
+    }
+
     func testValidatedRule() {
         var unreadable = ComputerChanges(baselineUnreadable: true)
         XCTAssertTrue(unreadable.isValid)

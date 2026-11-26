@@ -70,7 +70,8 @@ final class SnapshotFleetDriftTests: XCTestCase {
         let sheet = try XCTUnwrap(dash.workbook.sheet(named: "Fleet Drift"))
         let cells = sheet.dedupedCells.sorted { ($0.row, $0.col) < ($1.row, $1.col) }
         let titles: Set = ["New Enrollments", "Departed Devices", "New Stale", "Recovered Stale",
-                           "OS Changed", "FileVault changes", "Benchmark rules newly failing"]
+                           "OS Changed", "FileVault changes", "Patch policy failures since the last scan",
+                           "Benchmark rules newly failing"]
         guard let start = cells.firstIndex(where: { $0.col == 0 && $0.row > 0 && text($0.value) == title })
         else { return [] }
         let body = cells[(start + 1)...].prefix { !($0.col == 0 && titles.contains(text($0.value))) }
@@ -493,6 +494,68 @@ final class SnapshotFleetDriftTests: XCTestCase {
         XCTAssertEqual(try section("Benchmark rules newly failing", in: dash),
                        ["Benchmark", "CIS"])
         XCTAssertTrue(try texts(dash).contains("1 rules not compared"))
+    }
+
+    // MARK: - Patch policy failures (wave B2b)
+
+    private func scan(_ rows: [[String: Any]], at date: Date, in dash: CoreDashboard) throws {
+        _ = try GoldenFleetWorkspace.writeSnapshot(
+            kind: "patch-device-failures", dataDir: dash.dataDir, at: date, rows: rows)
+    }
+
+    private func failure(_ device: String, _ policy: String) -> [String: Any] {
+        ["device": "Mac-\(device)", "device_id": device, "policy": "Policy \(policy)",
+         "policy_id": policy, "attempt": "2"]
+    }
+
+    func testPatchSectionRows() throws {
+        let dash = try dashboard(files: [(at(-7), [mac(1, taken: at(-7)), mac(2, taken: at(-7))]),
+                                         (at(0), [mac(1, taken: at(0)), mac(2, taken: at(0))])])
+        try scan([failure("1", "5"), failure("99", "5"), ["device_id": "", "policy_id": "5"]],
+                 at: at(-7), in: dash)
+        try scan([failure("2", "5")], at: at(0), in: dash)
+        try dash.writeFleetDrift()
+        let cells = try texts(dash)
+        XCTAssertEqual(try section("Patch policy failures since the last scan", in: dash),
+                       ["Computer", "Mac-2", "Mac-1"])
+        XCTAssertTrue(cells.contains("Started failing"))
+        XCTAssertTrue(cells.contains("No longer listed as failed"))
+        XCTAssertTrue(cells.contains(
+            "1 rows with no Jamf ID or policy ID left out; 1 Macs not in the computers snapshot"))
+    }
+
+    func testPatchSectionNotComparedCases() throws {
+        let one = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                        (at(0), [mac(1, taken: at(0))])])
+        try scan([], at: at(0), in: one)
+        try one.writeFleetDrift()
+        XCTAssertEqual(try section("Patch policy failures since the last scan", in: one),
+                       ["Computer", "Not compared (one scan)"])
+
+        let bad = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                        (at(0), [mac(1, taken: at(0))])])
+        try scan([], at: at(-1), in: bad)
+        try scan([], at: at(0), in: bad)
+        let badFile = try XCTUnwrap(TrendStore.datedSnapshots(
+            of: "patch-device-failures", in: bad.dataDir).first?.url)
+        try Data("{bad".utf8).write(to: badFile)
+        try bad.writeFleetDrift()
+        XCTAssertEqual(try section("Patch policy failures since the last scan", in: bad),
+                       ["Computer", "Not compared (a scan did not decode)"])
+
+        // Both scans predate every computers file, so no Mac list is readable for them.
+        let noMacs = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                           (at(0), [mac(1, taken: at(0))])])
+        try scan([], at: at(-9), in: noMacs)
+        try scan([], at: at(-8), in: noMacs)
+        try noMacs.writeFleetDrift()
+        XCTAssertEqual(try section("Patch policy failures since the last scan", in: noMacs),
+                       ["Computer", "Not compared (no readable computers snapshot)"])
+
+        let none = try dashboard(files: [(at(-1), [mac(1, taken: at(-1))]),
+                                         (at(0), [mac(1, taken: at(0))])])
+        try none.writeFleetDrift()
+        XCTAssertFalse(try texts(none).contains("Patch policy failures since the last scan"))
     }
 }
 
