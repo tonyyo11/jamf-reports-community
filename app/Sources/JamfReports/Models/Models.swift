@@ -1306,7 +1306,8 @@ struct TrendSeries: Identifiable, Sendable {
             case .stale, .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .mobileStale, .mobileJailbroken, .protectComputers,
                  .protectOpenAlerts, .securityCloudDevices,
-                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel: return ""
+                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending,
+                 .appInstallersAtLevel, .patchPoliciesAtLevel: return ""
             case .serverCredentialSoonestDays: return " days"
             default: return "%"
             }
@@ -1318,7 +1319,8 @@ struct TrendSeries: Identifiable, Sendable {
         var polarity: FleetInsightInput.Polarity {
             switch self {
             case .stale, .mobileStale, .mobileJailbroken, .protectOpenAlerts,
-                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel: .lowerIsBetter
+                 .securityCloudHighRisk, .jamfProNotifications, .lapsPending,
+                 .appInstallersAtLevel, .patchPoliciesAtLevel: .lowerIsBetter
             case .activeDevices, .mscpBandTrend, .managedDevices, .mobileManaged,
                  .protectComputers, .securityCloudDevices: .neutral
             case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
@@ -1364,7 +1366,8 @@ struct TrendSeries: Identifiable, Sendable {
             case .activeDevices, .managedDevices, .mobileManaged, .protectComputers,
                  .securityCloudDevices: return 1000
             case .stale, .mobileStale, .protectOpenAlerts, .securityCloudHighRisk,
-                 .jamfProNotifications, .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel: return 60
+                 .jamfProNotifications, .lapsPending,
+                 .appInstallersAtLevel, .patchPoliciesAtLevel: return 60
             case .serverCredentialSoonestDays: return 90
             case .mobileJailbroken: return 10
             case .mscpBandTrend: return 500  // Per-band device count max
