@@ -42,6 +42,12 @@ struct DevicesView: View {
     // Tracks the Devices page width so the inventory table can hide low-priority
     // columns under 1200pt — avoids truncation on 13" displays.
     @State private var pageWidth: CGFloat = 1400
+    /// The "Since last collect" count the list was opened from, and its Macs once compared.
+    @State private var changeFilter: ChangeFilter?
+    @State private var changeResult: ChangeFilterResult?
+    @State private var changeMatch: ChangeMatch?
+    @State private var changeRevision = 0
+    @State private var changeNotInList: Int?
     @FocusState private var isSearchFocused: Bool
 
     private enum DeviceDetailState: Equatable {
@@ -166,13 +172,17 @@ struct DevicesView: View {
     private var derivedList: DerivedList {
         let data = dataKey
         let key = ListKey(
-            data: data, query: query, osFilter: osFilter, filter: filter, sortOrder: sortOrder)
+            data: data, query: query, osFilter: osFilter, filter: filter, sortOrder: sortOrder,
+            change: changeFilter, changeRevision: changeRevision)
         return listCache.list(for: key) {
             Self.buildRows(
                 devices: activeSnapshot.devices, query: query, osFilter: osFilter, filter: filter,
                 sortOrder: sortOrder, policy: activeSnapshot.securityPolicy, staleRule: staleRule,
                 contactGapDays: activeSnapshot.contactGapDays,
                 needsManagementAttention: { figures.management.needsAttention($0) },
+                changeKeep: changeFilter.map { _ in
+                    Self.changeKeep(changeResult, match: changeMatch)
+                },
                 searchableText: { listCache.searchableText(of: $0, key: data) },
                 risk: { priorityRisk(for: $0, key: data) })
         }
@@ -205,9 +215,101 @@ struct DevicesView: View {
     /// Applies the filter another screen asked for (`DeviceFilter.pending`) once, on appear or
     /// when a post arrives while Devices is already showing.
     private func applyPendingFilter() {
-        guard let raw = workspace.pendingDevicesFilter else { return }
-        workspace.pendingDevicesFilter = nil
-        if let requested = DeviceFilter(deepLink: raw) { filter = requested }
+        if let raw = workspace.pendingDevicesFilter {
+            workspace.pendingDevicesFilter = nil
+            if let requested = DeviceFilter(deepLink: raw) {
+                filter = requested
+                endChangeFilter()
+            }
+        }
+        if let raw = workspace.pendingChangeFilter {
+            workspace.pendingChangeFilter = nil
+            guard let requested = ChangeFilter(json: raw) else { return }
+            filter = .all
+            osFilter = nil
+            query = ""
+            // The same count again keeps its result: the comparison task would not restart.
+            guard requested != changeFilter else { return }
+            changeResult = nil
+            changeMatch = nil
+            changeNotInList = nil
+            changeFilter = requested
+            changeRevision += 1
+        }
+    }
+
+    private func endChangeFilter() {
+        guard changeFilter != nil else { return }
+        changeFilter = nil
+        changeResult = nil
+        changeMatch = nil
+        changeNotInList = nil
+        changeRevision += 1
+    }
+
+    /// The comparison's inputs: a new filter, workspace or rule starts it again.
+    private struct ChangeTaskID: Hashable {
+        var source: String
+        var filter: ChangeFilter?
+        var staleDays: Int
+        var staleBasis: [String]
+        var fileVaultFingerprint: String
+    }
+
+    /// The rule and policy the collect counted with: the loaded inventory's, which come from
+    /// the same config.yaml read (`ReportConfig.staleRule`, `resolvedSecurityPolicy`), never the
+    /// Config screen's text. Nil until the inventory of this workspace has loaded.
+    private var changeRule: (rule: StaleRule, policy: SecurityControlPolicy)? {
+        guard workspace.demoMode || loadedSource == dataSource else { return nil }
+        let snapshot = activeSnapshot
+        return (StaleRule(days: snapshot.staleDays, basis: snapshot.staleBasis),
+                snapshot.securityPolicy)
+    }
+
+    private var changeTaskID: ChangeTaskID {
+        let rule = changeRule
+        return ChangeTaskID(
+            source: dataSource, filter: changeFilter, staleDays: rule?.rule.days ?? -1,
+            staleBasis: rule?.rule.basis.map(\.rawValue) ?? [],
+            fileVaultFingerprint: rule?.policy.fileVaultFingerprint ?? "")
+    }
+
+    /// Compares the count's two snapshots off the main actor; a result lands only while the
+    /// same filter and workspace are on screen.
+    private func resolveChange() async {
+        // A workspace switch clears the filter in the same update; let that land first.
+        await Task.yield()
+        // Waits for the inventory, whose rule the comparison uses; the task id changes when it lands.
+        guard let filter = changeFilter, let rule = changeRule, !Task.isCancelled else { return }
+        let source = dataSource
+        if changeResult != nil {
+            changeResult = nil
+            changeMatch = nil
+            changeNotInList = nil
+            changeRevision += 1
+        }
+        let result = await workspace.resolveChangeFilter(
+            filter, rule: rule.rule, policy: rule.policy)
+        guard result.outcome != .cancelled, changeFilter == filter, source == dataSource
+        else { return }
+        changeResult = result
+        if case .macs(let keys) = result.outcome { changeMatch = ChangeMatch(keys) }
+        changeRevision += 1
+        updateChangeNotInList()
+    }
+
+    /// Counted only against a loaded inventory, so it never reads every Mac as missing.
+    private func updateChangeNotInList() {
+        guard let changeMatch, workspace.demoMode || loadedSource == dataSource else {
+            changeNotInList = nil
+            return
+        }
+        changeNotInList = changeMatch.unmatchedCount(in: activeSnapshot.devices)
+    }
+
+    /// The segmented bar: choosing a segment ends a change list.
+    private var filterSelection: Binding<DeviceFilter> {
+        Binding(get: { filter }, set: { filter = $0; endChangeFilter() })
     }
 
     /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
@@ -298,6 +400,11 @@ struct DevicesView: View {
                 } else {
                     controls
                     summary
+                    if let changeFilter {
+                        DevicesChangeFilterBanner(
+                            filter: changeFilter, result: changeResult,
+                            notInList: changeNotInList, onClear: endChangeFilter)
+                    }
                     inventoryAndDetail
                 }
             }
@@ -322,6 +429,13 @@ struct DevicesView: View {
             staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .onChange(of: workspace.pendingDevicesFilter, initial: true) { applyPendingFilter() }
+        .onChange(of: workspace.pendingChangeFilter, initial: true) { applyPendingFilter() }
+        .onChange(of: dataSource) {
+            workspace.pendingChangeFilter = nil
+            endChangeFilter()
+        }
+        .onChange(of: dataRevision) { updateChangeNotInList() }
+        .task(id: changeTaskID) { await resolveChange() }
         .task(id: dataSource) {
             await reload()
         }
@@ -470,13 +584,14 @@ struct DevicesView: View {
     @ViewBuilder
     private var filterControls: some View {
         SegmentedControl(
-            selection: $filter,
+            selection: filterSelection,
             options: DeviceFilter.segments.map { ($0, $0.label, $0.icon) }
         )
 
         if let control = filter.offControl {
             filterChip(label: filter.label, hint: L("Show all computers, not only those with \(control.displayName) off")) {
                 filter = .all
+                endChangeFilter()
             }
         }
 
@@ -533,6 +648,7 @@ struct DevicesView: View {
         filter = requested
         osFilter = nil
         query = ""
+        endChangeFilter()
     }
 
     private var summary: some View {

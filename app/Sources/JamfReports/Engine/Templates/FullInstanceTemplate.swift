@@ -54,6 +54,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .smartGroups,
             .patchSummaryDashboard,
             .patchVelocity,
+            .patchVersionHistory,
             // Device security & supervision detail
             .deviceSecurityState,
             .mobileSupervisionStatus,
@@ -97,6 +98,7 @@ struct FullInstanceTemplate: ReportTemplate {
             // Patching
             .patchBar,
             .patchQueue,
+            .patchVersionHistory,
             .osAdoptionChart,
             .osCurrency,
             .deploymentHealth,

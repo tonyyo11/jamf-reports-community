@@ -28,6 +28,57 @@ final class LandedSources: Sendable {
         set { scanPlan.withLock { $0 = newValue } }
     }
 
+    /// The `computers` snapshot this run saved (wave B2), decoded once when the change
+    /// counts are built.
+    struct LandedComputers: Sendable {
+        let stamp: String
+        let date: Date
+        let snapshot: ComputerSnapshot
+    }
+
+    /// Where that snapshot was saved; the collect does not decode it again on the hot path.
+    struct LandedFile: Sendable {
+        let stamp: String
+        let date: Date
+        let url: URL
+    }
+
+    private let computers = Mutex<LandedFile?>(nil)
+    var computerFile: LandedFile? {
+        get { computers.withLock { $0 } }
+        set { computers.withLock { $0 = newValue } }
+    }
+
+    private let rulesStamp = Mutex<Date?>(nil)
+    /// The stamp of the `compliance-rules` snapshot this run saved.
+    var complianceRulesStamp: Date? {
+        get { rulesStamp.withLock { $0 } }
+        set { rulesStamp.withLock { $0 = newValue } }
+    }
+
+    private let patchStamp = Mutex<Date?>(nil)
+    /// The stamp of the `patch-device-failures` scan this run saved.
+    var patchFailuresStamp: Date? {
+        get { patchStamp.withLock { $0 } }
+        set { patchStamp.withLock { $0 = newValue } }
+    }
+
+    /// Records what the change counts need from a snapshot this run saved.
+    func noteSaved(kind: String, file: URL) {
+        guard let date = CloudStorage.snapshotTimestamp(of: file) else { return }
+        switch kind {
+        case "computers":
+            guard let stamp = PatchReleaseDateService.snapshotStamp(of: file) else { return }
+            computerFile = LandedFile(stamp: stamp, date: date, url: file)
+        case "compliance-rules":
+            complianceRulesStamp = date
+        case PatchFailureDrift.kind:
+            patchFailuresStamp = date
+        default:
+            break
+        }
+    }
+
     private let unwritten = Mutex(false)
     /// The MDM step logged `summaryNotWrittenMarker` this run.
     var mdmSummaryUnwritten: Bool {

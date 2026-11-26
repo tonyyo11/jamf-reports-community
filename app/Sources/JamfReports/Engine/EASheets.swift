@@ -397,7 +397,7 @@ struct EASheets: Sendable {
 
     /// The decoder's own wording names the shape that was wrong, never a value from the file.
     private static func reason(_ error: Error) -> String {
-        guard let decoding = error as? DecodingError else { return error.localizedDescription }
+        guard let decoding = error as? DecodingError else { return error.englishDescription }
         switch decoding {
         case .typeMismatch(_, let context), .valueNotFound(_, let context),
              .keyNotFound(_, let context), .dataCorrupted(let context):

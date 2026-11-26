@@ -21,7 +21,8 @@ func successFacts(
     artifact: String?,
     sheetFailures: Int,
     products: String? = nil,
-    scope: String? = nil
+    scope: String? = nil,
+    changes: FleetChangeSummary? = nil
 ) -> [WebhookNotifier.Fact] {
     let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
@@ -36,6 +37,9 @@ func successFacts(
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
     if let products { facts.append(.init(label: "Products", value: products)) }
     if let scope { facts.append(.init(label: "Scope", value: scope)) }
+    if let changes, let text = ScheduledRunSignals.changesText(changes) {
+        facts.append(.init(label: "Changes", value: text))
+    }
     return facts
 }
 
@@ -135,6 +139,78 @@ func scheduledRunEcho(_ line: CLIBridge.LogLine, verbose: Bool) -> String? {
 /// meaning for a single CLI invocation.
 enum ScheduledRunSignals {
 
+    /// Today's change part for the digest: the newest summary, only when it is today's (a
+    /// generate-only run repeats the morning's part, which is still today's news).
+    static func digestChanges(summaries: [DailySummary], today: String) -> FleetChangeSummary? {
+        guard let newest = summaries.max(by: { $0.date < $1.date }), newest.date == today
+        else { return nil }
+        return newest.changes
+    }
+
+    /// The digest's English `Changes` text: counts only, never a device. Parts (Macs, patch,
+    /// benchmark rules) are joined with "; " so one part's "not measured" never reads as
+    /// another's. "No changes" only when every Mac count was measured and is 0 and nothing else
+    /// changed ("No Mac changes" when another part follows); a zero patch or benchmark count is
+    /// left out. Nil with no part, or only all-zero patch and benchmark parts.
+    static func changesText(_ changes: FleetChangeSummary) -> String? {
+        func count(_ value: Int, _ one: String, _ many: String) -> String {
+            value == 1 ? "1 \(one)" : "\(value) \(many)"
+        }
+        var others: [String] = []
+        if let patch = changes.patch {
+            if patch.baselineUnreadable == true {
+                others.append("patch policy failures not measured")
+            } else {
+                var shown: [String] = []
+                if let started = patch.startedFailing, started > 0 {
+                    shown.append(count(started, "patch policy failure started",
+                                       "patch policy failures started"))
+                }
+                if let stopped = patch.stoppedFailing, stopped > 0 {
+                    shown.append(count(stopped, "patch policy failure no longer listed",
+                                       "patch policy failures no longer listed"))
+                }
+                if !shown.isEmpty { others.append(shown.joined(separator: ", ")) }
+            }
+        }
+        if let benchmarks = changes.benchmarks {
+            if benchmarks.baselineUnreadable == true {
+                others.append("benchmark rules not measured")
+            } else if let newly = benchmarks.newlyFailing, newly > 0 {
+                others.append(count(newly, "benchmark rule newly failing",
+                                    "benchmark rules newly failing"))
+            }
+        }
+        var parts: [String] = []
+        if let computers = changes.computers {
+            parts.append(macClause(computers, alone: others.isEmpty))
+        }
+        parts += others
+        return parts.isEmpty ? nil : parts.joined(separator: "; ")
+    }
+
+    /// The Mac counts, with the counts not measured named last.
+    private static func macClause(_ computers: ComputerChanges, alone: Bool) -> String {
+        let counts: [(Int?, String)] = [
+            (computers.joined, "enrolled"), (computers.left, "removed"),
+            (computers.becameStale, "went stale"), (computers.noLongerStale, "came back"),
+            (computers.fileVaultOff, "FileVault off"),
+            (computers.fileVaultStoppedReporting, "FileVault not reported"),
+            (computers.osChanged, "macOS changed"),
+        ]
+        if computers.baselineUnreadable == true || counts.allSatisfy({ $0.0 == nil }) {
+            return "Mac changes not measured"
+        }
+        let shown = counts.compactMap { value, label in
+            value.flatMap { $0 > 0 ? "\($0) \(label)" : nil }
+        }
+        let missing = counts.filter { $0.0 == nil }.map(\.1)
+        var clause = shown
+        if shown.isEmpty && missing.isEmpty { clause = [alone ? "No changes" : "No Mac changes"] }
+        if !missing.isEmpty { clause.append("Mac counts not measured: " + missing.joined(separator: ", ")) }
+        return clause.joined(separator: ", ")
+    }
+
     /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
     /// is enabled with a usable https URL. Best-effort — never affects the run.
     ///
@@ -148,15 +224,22 @@ enum ScheduledRunSignals {
         mode: Schedule.RunMode,
         artifact: String?,
         sheetFailures: Int = 0,
-        recorder: ScheduledRunRecorder?
+        recorder: ScheduledRunRecorder?,
+        now: Date = Date()
     ) async {
         guard let notify = SharedConfigPin.effectiveNotify(config?.notify, profile: profile),
               notify.isUsable else { return }
+        let changes = notify.resolvedDetail == .full
+            ? digestChanges(
+                summaries: TrendStore.readSummaries(profile: profile),
+                today: SummaryJSONParser.dateFormatter.string(from: now))
+            : nil
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
             artifact: artifact, sheetFailures: sheetFailures,
             products: EnvironmentProducts.webhookValue(workspace: profile),
-            scope: SiteScope.persisted(profile: profile).summary
+            scope: SiteScope.persisted(profile: profile).summary,
+            changes: changes
         )
         let failure = WebhookNotifier.DeliveryFailure()
         let sent = await WebhookNotifier.send(
@@ -815,7 +898,7 @@ struct CLIRunSignals: Sendable {
             await ScheduledRunSignals.notifyScheduledRun(
                 config: config, profile: profile, mode: mode,
                 artifact: artifact?.lastPathComponent, sheetFailures: sheetFailures,
-                recorder: recorder
+                recorder: recorder, now: startedAt
             )
             if evaluatesAlerts, let workspace {
                 await ScheduledRunSignals.notifyMetricAlerts(

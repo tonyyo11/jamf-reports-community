@@ -20,6 +20,14 @@ struct PatchView: View {
     /// Per-title adoption velocity, computed off-main from dated patch-status
     /// history. Empty until a few days of collected history exist.
     @State private var velocity: [TitleVelocity] = []
+    /// Every version window and the definitions sidecar, for the Version History card.
+    @State private var versions: [VersionVelocity] = []
+    @State private var versionDates: VersionDatesRead = .absent
+    @State private var versionTitleId: String?
+    @State private var versionsLoaded = false
+    /// The Version History card's fleet figure and model key, set once per history load.
+    @State private var versionSummary = FleetVersionSummary()
+    @State private var historyRevision = 0
     /// Band the titles table is filtered to; a tile sets it and its chip clears it.
     @State private var titleFilter: TitleFilter?
 
@@ -57,6 +65,10 @@ struct PatchView: View {
                     if !workspace.demoMode {
                         patchVelocityCard
                     }
+                    PatchVersionHistoryCard(
+                        titles: snapshot.titles, versions: versions, dates: versionDates,
+                        loaded: versionsLoaded, summary: versionSummary,
+                        revision: historyRevision, titleId: $versionTitleId)
                     if !snapshot.failures.isEmpty {
                         recentFailuresCard
                     }
@@ -88,6 +100,10 @@ struct PatchView: View {
             snapshot = .empty
             releaseLookup = [:]
             velocity = []
+            versions = []
+            versionDates = .absent
+            versionTitleId = nil
+            versionsLoaded = false
             titleFilter = nil
         }
         // Demo mode shows no velocity card: the static demo dataset has no dated
@@ -96,6 +112,10 @@ struct PatchView: View {
             snapshot = DemoData.patchStatus
             releaseLookup = DemoData.patchReleaseLookup
             velocity = []
+            (versions, versionDates) = DemoData.patchVersionHistory
+            versionSummary = PatchVelocityBuilder.summary(versions, now: daysBehindReferenceDate)
+            historyRevision += 1
+            versionsLoaded = true
             loadedSource = source
             return
         }
@@ -106,18 +126,37 @@ struct PatchView: View {
                      PatchReleaseDateService.load(profile: profile)) }
         ) else { return }
         snapshot = loaded.0
+        versionTitleId = Self.validTitle(versionTitleId, in: snapshot.titles)
         releaseLookup = PatchReleaseDateService.releaseDateLookup(from: loaded.1)
         loadedSource = source
         // The slow part: it walks every dated patch-status snapshot, so the table paints first.
         let releaseRows = loaded.1
         guard let computed = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
-            read: { () -> [TitleVelocity] in
-                guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return [] }
-                return PatchVelocityBuilder.compute(dataDir: dir, releaseRows: releaseRows)
+            read: { () -> ([TitleVelocity], [VersionVelocity], VersionDatesRead, Date) in
+                let dir: URL
+                do {
+                    dir = try WorkspacePaths.dataDir(for: profile)
+                } catch {
+                    // Refused is not "not collected yet".
+                    return ([], [], .unreadable(WorkspacePaths.dataDirRefusal(
+                        error, profile: profile)), Date())
+                }
+                let built = PatchVelocityBuilder.computeWithVersions(
+                    dataDir: dir, releaseRows: releaseRows)
+                return (built.velocities, built.versions, built.versionDates, built.now)
             }
         ) else { return }
-        velocity = computed
+        (velocity, versions, versionDates) = (computed.0, computed.1, computed.2)
+        versionSummary = PatchVelocityBuilder.summary(versions, now: computed.3)
+        historyRevision += 1
+        versionsLoaded = true
+    }
+
+    /// The chosen Version History title, or nil when a reload dropped it from `patch-status`.
+    nonisolated static func validTitle(_ id: String?, in titles: [PatchStatusRow]) -> String? {
+        guard let id, titles.contains(where: { $0.id == id }) else { return nil }
+        return id
     }
 
     /// The date Days Behind counts to: the demo's own "now", or today.

@@ -1508,6 +1508,7 @@ struct CustomSheetGroup: Sendable {
                 .patchFailures,
                 .patchSummaryDashboard,
                 .patchVelocity,
+                .patchVersionHistory,
                 .updateStatus,
                 .updateFailures,
                 .policyHealth,

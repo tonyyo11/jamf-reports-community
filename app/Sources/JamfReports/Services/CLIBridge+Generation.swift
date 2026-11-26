@@ -193,7 +193,11 @@ extension CLIBridge {
         // Every format adds what it wrote; the run is sealed once, after the last one.
         let written = RunArtifacts()
         // The workbook step's `generate` checkpoints too; the run names each drift once.
-        return await SharedConfigPin.announcingOnce {
+        // Every format of the run reads the patch history once, against this run's "now".
+        let patchHistory = PatchHistoryShare()
+        patchHistory.adopt(now: now)
+        return await PatchVelocityBuilder.$runShare.withValue(patchHistory) {
+          await SharedConfigPin.announcingOnce {
             SharedConfigPin.checkpoint(profile: profile, onLine: onLine)
             let result = await Self.runGenerateAll(
                 types: types,
@@ -249,6 +253,7 @@ extension CLIBridge {
                     artifacts: files, config: written.config, profile: profile, onLine: onLine)
             }
             return result
+          }
         }
     }
 

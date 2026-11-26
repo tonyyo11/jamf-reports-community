@@ -35,6 +35,7 @@ extension SectionID {
         case .auditEvidence: "Audit findings"
         case .patchBar: "Patch compliance chart"
         case .patchQueue: "Patch titles behind"
+        case .patchVersionHistory: "Patch version history"
         case .osAdoptionChart: "OS version distribution"
         case .osCurrency: "OS currency"
         case .interventionList: "Macs needing intervention"
@@ -79,7 +80,8 @@ enum HtmlDetailGroup: String, CaseIterable {
         case .security:
             [.securityTiles, .complianceBands, .agentHealth, .exceptionList, .protectAlerts,
              .auditEvidence]
-        case .patching: [.patchBar, .patchQueue, .osAdoptionChart, .osCurrency, .deploymentHealth]
+        case .patching: [.patchBar, .patchQueue, .patchVersionHistory, .osAdoptionChart,
+                         .osCurrency, .deploymentHealth]
         case .devices: [.interventionList]
         case .policies: [.policyTable, .profileTable, .appTable, .cleanupAnalysis]
         case .trends: [.timeline]
@@ -248,6 +250,9 @@ extension HtmlReport {
         case .patchBar:
             return buildPatchChart(patchStatus: inputs.patchStatus)
         case .patchQueue: return buildPatchQueue(patchStatus: inputs.patchStatus)
+        case .patchVersionHistory:
+            return buildPatchVersionHistory(
+                inputs.patchVersions, dates: inputs.patchVersionDates, now: inputs.patchHistoryNow)
         case .osAdoptionChart:
             return buildOSChart(osVersions: inputs.security.filter {
                 $0["section"] as? String == "os_version"

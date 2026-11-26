@@ -1,0 +1,35 @@
+[
+ {
+  "data": [
+   {
+    "completed": 0,
+    "deferred": 0,
+    "failed": 1,
+    "failure_rate": "100.0%",
+    "pending": 0,
+    "policy": "Example App 1.2.3",
+    "policy_id": "11"
+   }
+  ],
+  "fetch_error": "",
+  "section": "policy_failures"
+ },
+ {
+  "data": [
+   {
+    "attempt": "2",
+    "device": "Example-Mac-01",
+    "device_id": "101",
+    "last_action": "Error: Package was not successfully downloaded. -1003",
+    "os_version": "15.7.7",
+    "policy": "Example App 1.2.3",
+    "policy_id": "11",
+    "serial": "C02EXAMPLE01",
+    "status_date": "2026-11-25T22:56:47.671",
+    "username": "user@example.com"
+   }
+  ],
+  "fetch_error": "",
+  "section": "device_failures"
+ }
+]

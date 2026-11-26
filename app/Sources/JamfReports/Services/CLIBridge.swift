@@ -1433,7 +1433,10 @@ try await ReportEngine.schoolGenerateReport(
     nonisolated private static func legacyDeviceCache(
         profile: String, cacheSubdir: String, file: String, current: URL?
     ) -> URL? {
-        guard let workspace = ProfileService.workspaceURL(for: profile),
+        // Only beside a data folder that resolved: under a refused data_dir the default folder
+        // is not read in its place.
+        guard (try? WorkspacePaths.dataDir(for: profile)) != nil,
+              let workspace = ProfileService.workspaceURL(for: profile),
               let folder = try? WorkspacePaths.confinedFolder(
                   ["jamf-cli-data", cacheSubdir], under: workspace),
               folder.standardizedFileURL != current?.standardizedFileURL else { return nil }
@@ -2910,7 +2913,7 @@ private func finishDeviceDetail(
     return code
 }
 
-private func deviceCacheFilename(_ raw: String) -> String {
+func deviceCacheFilename(_ raw: String) -> String {
     let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
     let sanitizedScalars = raw.unicodeScalars.map { scalar in
         allowed.contains(scalar) ? Character(scalar) : "_"

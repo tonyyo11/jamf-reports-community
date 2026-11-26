@@ -12,9 +12,24 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 @MainActor
 @Observable final class TrendStore {
     private var allSummaries: [DailySummary] = [] {
-        didSet { newestTwoSummaries = Self.newestTwo(of: allSummaries) }
+        didSet {
+            newestTwoSummaries = Self.newestTwo(of: allSummaries)
+            overviewChangesCache = nil
+        }
     }
     private(set) var filteredSummaries: [DailySummary] = []
+
+    /// Built once per load and format, not on every Overview redraw.
+    @ObservationIgnored private var overviewChangesCache:
+        (format: PercentFormat, value: OverviewChanges?)?
+
+    /// The Overview's "Since last collect" figures, over every loaded summary.
+    func overviewChanges(format: PercentFormat) -> OverviewChanges? {
+        if let cached = overviewChangesCache, cached.format == format { return cached.value }
+        let built = OverviewChanges.build(summaries: allSummaries, format: format)
+        overviewChangesCache = (format, built)
+        return built
+    }
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
     /// Most-recent summary file mtime for the active profile, captured at
@@ -656,17 +671,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
         guard !baselines.isEmpty else { return ([:], []) }
 
-        // 2. Resolve the data directory. Uses a non-existent temp URL when the
-        //    profile is nil or dataDir lookup fails; buildAllSeries degrades to
-        //    summaries-only gracefully.
-        let dataDir: URL
-        if let profile, let dir = try? WorkspacePaths.dataDir(for: profile) {
-            dataDir = dir
-        } else if let profile, let workspace = ProfileService.workspaceURL(for: profile) {
-            dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        } else {
-            dataDir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
-        }
+        // 2. Resolve the data directory. With no profile, or a data_dir the path rules refuse,
+        //    it is a URL that does not exist, so buildAllSeries reads summaries only and never
+        //    the default folder in place of a refused one.
+        let dataDir = profile.flatMap { WorkspacePaths.dataDirOrLog(for: $0, category: .report) }
+            ?? URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
 
         let series = MSCPChartDataBuilder.buildAllSeries(
             baselines: baselines, dataDir: dataDir, summaries: summaries)
@@ -723,10 +732,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         // eligible day (an undecodable file gives way to the next), off the main thread. It
         // is skipped when every recorded figure already carries the device basis (a workspace
         // that began on 2.9).
+        // A data_dir the path rules refuse is not swapped for the default folder.
         guard summaries.contains(where: isRecordedPerTitle),
-              let workspace = ProfileService.workspaceURL(for: profile) else { return summaries }
-        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
-            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+              let dataDir = WorkspacePaths.dataDirOrLog(for: profile, category: .report)
+        else { return summaries }
         return resolvingPatch(summaries, dataDir: dataDir)
     }
 
