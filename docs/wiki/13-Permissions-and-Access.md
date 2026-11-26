@@ -186,6 +186,7 @@ names are the ones Run History and the health strip use.
 | Health Audit | `audit` | Read Policies; Read Categories; Read Self Service; Read Smart Computer Groups; Read Static Computer Groups; Read Device Enrollment Program Instances; Read Computer PreStage Enrollments; View MDM command information in Jamf Pro API; Read Computers | Deployment > Policies; Organizational context > Categories; Global settings > Self Service configuration; Inventory > Device groups; Infrastructure > Automated Device Enrollment connection; Enrollment > PreStage enrollments; Device actions > Device actions; Inventory > Devices; for its platform checks, Deployment > Blueprints; Compliance > Compliance Benchmarks; Deployment > Declarations reporting |
 | Server health (jamf-cli 1.38.0 or later) | `certificate-authority`, `jamf-pro-notifications` | None needed: both read with a role that has no privilege for them. Jamf shows each login only the notifications for its own user and site | Not collected through a Platform API profile yet |
 | Admin hygiene (optional, off by default; Data Sources switches or `jamf_cli.collect_opt_in`) | `laps-pending-rotations`, `admin-accounts`, `api-integrations` | View Local Admin Password; Read Accounts; Read API Integrations | Not collected through a Platform API profile yet |
+| Deployment health (jamf-cli 1.35.0 or later) | `app-installers-deployments`, `patch-policies` | Read Mac Applications; Read Patch Policies | App lifecycle management > Apps (`applications:read`); App lifecycle management > Patch policies (`patch-policies:read`) |
 | Group hygiene (Health Audit, on demand) | `group-tools-analyze` | Read Smart Computer Groups; Read Static Computer Groups; Read Policies; Read macOS Configuration Profiles; Read Patch Policies; Read Patch Management Software Titles; Read Restricted Software; Read eBooks; Read Computer PreStage Enrollments | Inventory > Device groups; Deployment > Policies; Deployment > Configuration profiles; App lifecycle management > Patch policies; App lifecycle management > Patch titles; App lifecycle management > Restricted software; App lifecycle management > eBooks; Enrollment > PreStage enrollments |
 | Device lookup (live, not stored) | — | Read Computers; View MDM command information in Jamf Pro API | Inventory > Devices; Inventory > Device history; Device actions > Device actions |
 | Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks (`compliance-benchmarks:read`); Deployment > Blueprints (`blueprints:read`, see below); Deployment > Declarations reporting (`declarations:read`); Inventory > Devices (`devices:read`) — environment level (DDM status also answers at tenant level) |
@@ -213,6 +214,14 @@ LAPS holds, not only the list of pending rotations. Grant it to a role you would
 passwords, or leave LAPS rotations off; the other two sources do not need it. A source whose
 privilege the role lacks is shown as not permitted and checked again weekly, and never fails a
 run. On a shared workspace each Mac collects only the sources it confirmed in Config Doctor.
+
+**Deployment health is on by default.** App Installers deployments and patch policies are
+collected on every Jamf Pro workspace, unlike admin hygiene. A role without *Read Mac
+Applications* or *Read Patch Policies* fails that source, and the run reads as Partial until
+the privilege is granted or the source is turned off in Data Sources (`jamf_cli.collect_skip`).
+A server without App Installers reports it as not set up, which is never a failure. The Platform
+API permissions come from jamf-cli's command catalog and Jamf's Platform API reference; no
+Platform API profile has collected these two sources yet.
 
 **The `overview` source** checks about 40 settings and inventory objects in one pass. It
 shows N/A for any line the credential cannot read and keeps the rest. The areas above cover

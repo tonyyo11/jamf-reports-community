@@ -23,7 +23,8 @@ The repository is `jamf-reports-community`. The app is featured in the
 ## What you get
 
 - **Dashboards** for fleet health, security, compliance, patching, OS updates, policies and
-  profiles, mobile devices, Jamf Protect and the Jamf Pro server's own certificate expiry. See
+  profiles, mobile devices, Jamf Protect, App Installers and patch policy failures, and the Jamf
+  Pro server's own certificate expiry. See
   [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards).
 - **Reports** as Excel workbooks, self-contained HTML, PDF and CSV, from a template or your own
   choice of sheets, with percentages to one decimal (`56.7%`) or as whole numbers (`57%`). See

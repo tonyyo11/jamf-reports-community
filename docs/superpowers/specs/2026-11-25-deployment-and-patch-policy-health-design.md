@@ -580,12 +580,13 @@ Checkpoint suites: `DeploymentSummaryTests`, `SummaryJSONParserTests`, `TrendSto
 
 ### Phase 4: docs
 
-#### 29. `CHANGELOG.md`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `docs/wiki/13-Permissions-and-Access.md` (Modify)
+#### 29. `CHANGELOG.md`, `README.md`, `CLAUDE.md`, `AGENTS.md`, `docs/wiki/13-Permissions-and-Access.md`, `docs/wiki/04-Configuration-and-Templates.md` (Modify)
 
 *   **CHANGELOG** Unreleased: Added (the two sources, the card, the tab, Trends); Changed (a new workbook tab after Server and Admin Health).
 *   **README:** one line under what is collected.
 *   **CLAUDE.md and AGENTS.md:** a short paragraph in the jamf_cli config section on the two kinds, `notSetUpOnExit4Kinds`/`untilFirstLandingKinds`, `DeploymentHealth` and the two keys.
 *   **Permissions wiki:** both privileges for the new sources, and the gateway permissions `applications:read` and `patch-policies:read` for a Platform API profile.
+*   **Configuration wiki:** one sentence in the `thresholds` bullet naming the two keys and their defaults.
 
 #### 30. `app/Localization/Localizable.xcstrings` (Modify, every phase)
 
