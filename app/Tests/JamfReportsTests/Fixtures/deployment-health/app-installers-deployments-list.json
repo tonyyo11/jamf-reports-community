@@ -1,0 +1,46 @@
+[
+  {
+    "id": "1",
+    "name": "Example Browser",
+    "enabled": true,
+    "deploymentType": "INSTALL_AUTOMATICALLY",
+    "updateBehavior": "AUTOMATIC",
+    "category": {"id": "1", "name": "Productivity"},
+    "site": {"id": "-1", "name": null},
+    "smartGroup": {"id": "10", "name": "All Example Macs"},
+    "app": {
+      "id": "100",
+      "bundleId": "com.example.browser",
+      "latestVersion": "2.4.1",
+      "deployedVersion": "2.4.1",
+      "selectedVersion": "",
+      "mediaSourceType": "JAMF",
+      "titleAvailableInAis": true,
+      "versionRemoved": false,
+      "iconUrl": "https://example.invalid/icon.png"
+    },
+    "computerStatuses": {"installed": 360, "available": 0, "inProgress": 0, "failed": 40, "unqualified": 12}
+  },
+  {
+    "id": "2",
+    "name": "Example Editor",
+    "enabled": true,
+    "deploymentType": "SELF_SERVICE",
+    "updateBehavior": "MANUAL",
+    "category": {"id": "2", "name": "Developer"},
+    "site": {"id": "-1", "name": null},
+    "smartGroup": {"id": "11", "name": "Example Developers"},
+    "app": {
+      "id": "101",
+      "bundleId": "com.example.editor",
+      "latestVersion": "5.0",
+      "deployedVersion": "4.9",
+      "selectedVersion": "4.9",
+      "mediaSourceType": "JAMF",
+      "titleAvailableInAis": true,
+      "versionRemoved": false,
+      "iconUrl": "https://example.invalid/icon2.png"
+    },
+    "computerStatuses": {"installed": 20, "available": 5, "inProgress": 1, "failed": 0, "unqualified": 0}
+  }
+]

@@ -147,6 +147,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "laps-pending-rotations":         .inventory,
         "admin-accounts":                 .inventory,
         "api-integrations":               .inventory,
+        // Deployment health: daily counts that move as installs land; one list call each.
+        "app-installers-deployments":     .refresh,
+        "patch-policies":                 .refresh,
         // jamf-cli's HTML dashboard (1.31.0+): about 22 requests plus one per 500
         // computers, the inventory sweep again with no per-device fan-out.
         "dashboard":                      .inventory,

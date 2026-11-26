@@ -370,7 +370,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
              .mobileDataProtection, .mobileStale, .mobileJailbroken, .protectComputers,
              .protectMatched, .protectOpenAlerts, .securityCloudDevices, .securityCloudMatched,
              .securityCloudHighRisk, .serverCredentialSoonestDays, .jamfProNotifications,
-             .lapsPending:
+             .lapsPending, .appInstallersAtLevel, .patchPoliciesAtLevel:
             return Self.environmentValue(metric, in: summary)
         }
     }
@@ -397,6 +397,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .serverCredentialSoonestDays: return summary.serverCredentialSoonestDays.map(Double.init)
         case .jamfProNotifications: return summary.jamfProNotificationCount.map(Double.init)
         case .lapsPending: return summary.lapsPendingCount.map(Double.init)
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            return deploymentGroup(metric, in: summary).map { Double($0.atLevel) }
         default: return nil
         }
     }
@@ -405,7 +407,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mobile metric needs a day that carries it, a Mac metric a day with Macs. With no history
     /// loaded yet every Mac metric stays offered, so a load in flight keeps the selection.
     func offers(_ metric: TrendSeries.Metric) -> Bool {
-        if metric.isMobile || metric.isProtect || metric.isSecurityCloud || metric.isServerHealth {
+        if metric.isMobile || metric.isProtect || metric.isSecurityCloud || metric.isServerHealth
+            || metric.isDeployment {
             return allSummaries.contains { value(for: metric, in: $0) != nil }
         }
         return allSummaries.isEmpty || allSummaries.contains { $0.totalDevices > 0 }
@@ -458,6 +461,37 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             + "there is the definition, not the fleet."
     }
 
+    /// A note under a deployment-health chart when the visible days were judged at different
+    /// levels or floors: the count steps there because the rule did. Nil when every visible
+    /// day with the group shares one basis; days without it are skipped, not a change.
+    func deploymentLevelsNote(metric: TrendSeries.Metric) -> String? {
+        Self.deploymentLevelsNote(of: metric, in: filteredSummaries)
+    }
+
+    nonisolated static func deploymentLevelsNote(
+        of metric: TrendSeries.Metric, in summaries: [DailySummary]
+    ) -> String? {
+        let judged = summaries.compactMap { day in
+            deploymentGroup(metric, in: day).map { (date: day.date, group: $0) }
+        }.sorted { $0.date < $1.date }
+        guard let index = judged.indices.dropFirst().last(where: {
+            judged[$0].group.basis != judged[$0 - 1].group.basis
+        }) else { return nil }
+        let (date, group) = judged[index]
+        return L("The levels changed on \(date): rows are now at warning from \(group.warningPercent)% failed and at critical from \(group.criticalPercent)%, with at least \(group.minimumInScope) Macs in scope. Earlier days keep the count they were judged with, so the step there is the rule, not the fleet.")
+    }
+
+    /// The deployment-health group `metric` reads; nil for any other metric.
+    nonisolated static func deploymentGroup(
+        _ metric: TrendSeries.Metric, in summary: DailySummary
+    ) -> DeploymentSummaryGroup? {
+        switch metric {
+        case .appInstallersAtLevel: return summary.appInstallersHealth
+        case .patchPoliciesAtLevel: return summary.patchPolicyHealth
+        default: return nil
+        }
+    }
+
     /// The metric's values in range since its measurement basis last changed, so a change
     /// over the range compares days measured the same way; every value for a metric with
     /// one definition.
@@ -500,6 +534,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .securityScore: read = { ($0.securityScore, $0.securityScoreBasis) }
         case .compliance: read = { ($0.compliancePct, $0.complianceIsProxy.map { "\($0)" }) }
         case .patch: read = { ($0.patchPct, $0.patchPctBasis) }
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            read = { summary in
+                let group = deploymentGroup(metric, in: summary)
+                return (group.map { Double($0.atLevel) }, group?.basis)
+            }
         default: return nil
         }
         let measured = summaries.sorted { $0.date < $1.date }.compactMap { day in

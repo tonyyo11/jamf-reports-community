@@ -290,6 +290,12 @@ extension ReportEngine {
         if let held = advisoryHold(kind) { return held }
         let cadence = CadenceResolver.cadence(forReport: kind)
         let last = lastRun(kind)
+        // The daily summary takes these figures from the run that landed them, so each day's
+        // first run collects them (`planAddOn`'s rule).
+        if deploymentKinds.contains(kind), let last,
+           !Calendar.current.isDate(last, inSameDayAs: inputs.now) {
+            return nil
+        }
         return CadenceResolver.isDue(lastRun: last, cadence: cadence, now: inputs.now)
             ? nil : .notDue(lastRun: last, cadence: cadence)
     }

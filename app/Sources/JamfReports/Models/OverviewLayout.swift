@@ -288,6 +288,8 @@ extension TrendSeries.Metric {
             L("Needs Jamf Security Cloud collected for this environment.")
         case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
             L("Needs the server health sources collected for this Jamf Pro server.")
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            L("Needs App Installers deployments or patch policies collected for this Jamf Pro server.")
         }
     }
 
@@ -311,7 +313,7 @@ extension TrendSeries.Metric {
         under policy: SecurityControlPolicy, in composition: EnvironmentComposition = .unknown
     ) -> Bool {
         // WorkspaceStore.isOffered checks the product
-        if isProtect || isSecurityCloud || isServerHealth { return true }
+        if isProtect || isSecurityCloud || isServerHealth || isDeployment { return true }
         if isMobile { return composition.allowsMobile }
         guard composition.allowsMacs else { return false }
         guard let control = securityControl else { return true }

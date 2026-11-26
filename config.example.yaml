@@ -822,6 +822,12 @@ thresholds:
   warning_disk_percent: 80
   critical_disk_percent: 90
 
+  # App Installers deployments and patch policies: the failed share of a deployment's or
+  # policy's own Macs at which it is at warning and at critical (whole numbers, 1-100).
+  # Judged only with at least 10 Macs in scope.
+  deployment_failure_warning_percent: 10
+  deployment_failure_critical_percent: 25
+
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90
 

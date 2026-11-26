@@ -154,6 +154,7 @@ extension ReportEngine {
         summariesDir: URL, dataDir: URL, environment: EnvironmentProfiles,
         workspace: WorkspaceID, landed: [EnvironmentProducts.Product: Set<String>],
         day: Date = Date(), announcesWrite: Bool = true, maxCacheAgeHours: Int = 168,
+        deploymentLevels: DeploymentHealth.Levels = .defaults,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> SummaryEmitOutcome {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
@@ -201,12 +202,15 @@ extension ReportEngine {
         let serverFigures = environment.jamfPro == nil ? nil : serverHealthSummaryFigures(
             dataDir: dataDir, landed: landed[.jamfPro] ?? [],
             maxCacheAgeHours: maxCacheAgeHours, now: day)
-        guard !slots.isEmpty || figures != nil || serverFigures != nil else {
+        let deploymentFigures = environment.jamfPro == nil ? nil : deploymentSummaryFigures(
+            dataDir: dataDir, landed: landed[.jamfPro] ?? [], levels: deploymentLevels, now: day)
+        guard !slots.isEmpty || figures != nil || serverFigures != nil
+            || deploymentFigures != nil else {
             return .keptExisting
         }
         summary = summary.withEnvironment(
             products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures,
-            serverHealth: serverFigures)
+            serverHealth: serverFigures, deployments: deploymentFigures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
         // run" line would contradict the [partial] line already logged: drop its [ok] line. A
         // rewrite of a summary already there drops it too: the [info] line below says what it

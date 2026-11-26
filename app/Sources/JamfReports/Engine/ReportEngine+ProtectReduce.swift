@@ -13,6 +13,9 @@ extension ReportEngine {
         "laps-pending-rotations": "1.38.0",
         "admin-accounts": "1.38.0",
         "api-integrations": "1.38.0",
+        // The oldest catalog the app ships (1.35.0) lists both; earlier versions are unchecked.
+        "app-installers-deployments": "1.35.0",
+        "patch-policies": "1.35.0",
     ]
 
     /// Whether `installed` can serve `kind`: always for a kind with no entry.

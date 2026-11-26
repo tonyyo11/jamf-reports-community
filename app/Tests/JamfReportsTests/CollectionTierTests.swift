@@ -45,6 +45,11 @@ final class CollectionTierLookupTests: XCTestCase {
             .contains("mobile-devices-list"))
     }
 
+    func testTheDeploymentSourcesAreOnTheRefreshTier() {
+        XCTAssertEqual(CollectionTier.tier(forReport: "app-installers-deployments"), .refresh)
+        XCTAssertEqual(CollectionTier.tier(forReport: "patch-policies"), .refresh)
+    }
+
     func testTheCertificateAuthorityIsExpectedOnlyWhereCollectWouldRunIt() {
         let kind = "certificate-authority"
         XCTAssertEqual(CollectionTier.tier(forReport: kind), .inventory)

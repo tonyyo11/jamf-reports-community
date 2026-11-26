@@ -61,6 +61,24 @@ final class StateFileStoreAdvisoryTests: XCTestCase {
         XCTAssertNil(store.advisoryHoldUntil(report: "computers", now: now))
     }
 
+    func testAppInstallersIsQuietOnlyUntilItsFirstLanding() {
+        let kind = "app-installers-deployments"
+        fail(kind, .notConfiguredOnServer, exit: 4)
+        XCTAssertTrue(store.isAdvisory(kind: kind))
+        XCTAssertNotNil(store.advisoryHoldUntil(report: kind, now: now))
+        store.record(.landed, report: kind, at: now)
+        fail(kind, .notConfiguredOnServer, exit: 4)
+        XCTAssertFalse(store.isAdvisory(kind: kind), "it answered once, so a 404 is a fault")
+    }
+
+    func testAMissingPermissionIsNotAdvisoryForAppInstallers() {
+        fail("app-installers-deployments", .missingPermission, exit: 5)
+        XCTAssertFalse(store.isAdvisory(kind: "app-installers-deployments"),
+                       "Read Mac Applications is already required by app-status")
+        fail("patch-policies", .notConfiguredOnServer, exit: 4)
+        XCTAssertFalse(store.isAdvisory(kind: "patch-policies"))
+    }
+
     func testAFutureStampHoldsNothing() {
         fail(kind, .missingPermission, exit: 5, at: now.addingTimeInterval(86_400))
         XCTAssertNil(store.advisoryHoldUntil(report: kind, now: now))

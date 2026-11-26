@@ -74,6 +74,9 @@ extension HtmlReport {
         var mobile: MobileFleetService.Snapshot?
         /// The collect's persisted site-scope verdict; only `limited` shows anything.
         var siteScope: SiteScope = .unknown
+        /// App Installers deployments and patch policies (`DeploymentHealth`), and the levels.
+        var deployments: [DeploymentHealth.Source: DeploymentHealth.SourceState] = [:]
+        var deploymentLevels = DeploymentHealth.Levels.defaults
     }
 
     /// Loads what the sections in `sections` and the figures at the top need.
@@ -149,6 +152,14 @@ extension HtmlReport {
             inputs.eaRows = EAResultRow.decodeSnapshot(data).rows
         }
         inputs.siteScope = SiteScope.persisted(dataDir: dataDir)
+        // The section and the attention sentences are its only readers.
+        if sections.contains(.deploymentHealth) || sections.contains(.needsAttention) {
+            _ = track("App Installers deployments", DeploymentHealth.Source.appInstallers.kind)
+            _ = track("Patch policies", DeploymentHealth.Source.patchPolicy.kind)
+            inputs.deployments = DeploymentHealth.load(
+                dataDir: dataDir, now: now, maxAgeHours: config.jamfCli?.resolvedMaxCacheAgeHours)
+            inputs.deploymentLevels = config.thresholds?.resolvedDeploymentLevels ?? .defaults
+        }
         inputs.summaries = loadDailySummaries()
         inputs.p0 = inputs.summaries.last?.actionItemsP0 ?? inputs.fleet?.p0
         if let latest = inputs.summaries.last {

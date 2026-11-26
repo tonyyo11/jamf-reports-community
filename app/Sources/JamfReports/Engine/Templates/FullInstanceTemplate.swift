@@ -77,6 +77,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .complianceTrend,
             // Server and admin health
             .serverAdminHealth,
+            .deploymentHealth,
         ]
     }
 
@@ -98,6 +99,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .patchQueue,
             .osAdoptionChart,
             .osCurrency,
+            .deploymentHealth,
             // Devices, policies, trends, failures
             .interventionList,
             .policyTable,

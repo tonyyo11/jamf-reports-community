@@ -205,8 +205,9 @@ struct CommandCatalog: Sendable {
         listed: [
             "Read Advanced Mobile Device Searches", "Read Buildings", "Read Categories",
             "Read Computer Extension Attributes", "Read Computers", "Read Departments",
-            "Read Device Enrollment Program Instances", "Read Mobile Devices", "Read Packages",
-            "Read Patch Management Software Titles", "Read Scripts", "Read Self Service",
+            "Read Device Enrollment Program Instances", "Read Mac Applications",
+            "Read Mobile Devices", "Read Packages", "Read Patch Management Software Titles",
+            "Read Patch Policies", "Read Scripts", "Read Self Service",
             "Read Sites", "Read Smart Computer Groups",
         ],
         supplemental: supplementalPrivileges.values.flatMap { $0 })

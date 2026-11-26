@@ -182,6 +182,7 @@ extension HtmlReport {
         .patchQueue: "patch-queue", .interventionList: "intervention-list",
         .profileTable: "profile-status", .appTable: "app-status",
         .recentFailures: "recent-failures", .mobileFleet: "mobile-fleet",
+        .deploymentHealth: "deployment-health",
     ]
 
     /// Where a line about `id` links: its own block when the report has it, else its group
@@ -256,6 +257,9 @@ extension HtmlReport {
             add(.securityTiles, .security, p0 == 1
                 ? "1 P0 security gap needs action: FileVault, SIP or Firewall is off."
                 : "\(p0) P0 security gaps need action: FileVault, SIP or Firewall is off.")
+        }
+        for sentence in Self.deploymentSentences(inputs) {
+            add(.deploymentHealth, .patching, sentence)
         }
         let weak = inputs.patchStatus.filter { (patchTitlePct($0) ?? 100) < 50 }.count
         if weak > 0 {

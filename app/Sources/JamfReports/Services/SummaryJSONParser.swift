@@ -74,7 +74,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              securityCloudRiskCounts, osMajorCounts, modelFamilyCounts, mobileFormFactorCounts,
              lastSeenBuckets,
              // Server health (wave A): credential expiries as text, and the notification count.
-             serverCredentialExpiries, jamfProNotificationCount, lapsPendingCount
+             serverCredentialExpiries, jamfProNotificationCount, lapsPendingCount,
+             // Deployment health (wave C): rows judged and at a level, with the levels used.
+             appInstallersHealth, patchPolicyHealth
     }
 
     var id: String { date }
@@ -187,6 +189,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
     private(set) var jamfProNotificationCount: Int?
     /// Local admin passwords waiting for rotation (opt-in); nil unless the kind landed that day.
     private(set) var lapsPendingCount: Int?
+    /// App Installers deployments as judged on this day; nil unless the kind landed that day.
+    private(set) var appInstallersHealth: DeploymentSummaryGroup?
+    /// Patch policies as judged on this day; nil unless the kind landed that day.
+    private(set) var patchPolicyHealth: DeploymentSummaryGroup?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -249,7 +255,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
     func withEnvironment(
         products added: [String]?, protect: ProtectSummaryFigures?,
         securityCloud: SecurityCloudSummaryFigures? = nil,
-        serverHealth: ServerHealthSummaryFigures? = nil
+        serverHealth: ServerHealthSummaryFigures? = nil,
+        deployments: [DeploymentHealth.Source: DeploymentSummaryGroup]? = nil
     ) -> DailySummary {
         var resolved = self
         if let added { resolved.products = Array(Set(products ?? []).union(added)).sorted() }
@@ -275,6 +282,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         }
         if let count = serverHealth?.notificationCount { resolved.jamfProNotificationCount = count }
         if let count = serverHealth?.lapsPendingCount { resolved.lapsPendingCount = count }
+        // Each group this run measured replaces that group only; the other keeps its own.
+        if let group = deployments?[.appInstallers] { resolved.appInstallersHealth = group }
+        if let group = deployments?[.patchPolicy] { resolved.patchPolicyHealth = group }
         return resolved
     }
 
@@ -343,7 +353,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
             lastSeenBuckets: mergedLastSeen(older.lastSeenBuckets),
             serverCredentialExpiries: serverCredentialExpiries ?? older.serverCredentialExpiries,
             jamfProNotificationCount: jamfProNotificationCount ?? older.jamfProNotificationCount,
-            lapsPendingCount: lapsPendingCount ?? older.lapsPendingCount
+            lapsPendingCount: lapsPendingCount ?? older.lapsPendingCount,
+            appInstallersHealth: appInstallersHealth ?? older.appInstallersHealth,
+            patchPolicyHealth: patchPolicyHealth ?? older.patchPolicyHealth
         )
     }
 
@@ -417,7 +429,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         lastSeenBuckets: LastSeenBuckets? = nil,
         serverCredentialExpiries: [String: CredentialExpiryEntry]? = nil,
         jamfProNotificationCount: Int? = nil,
-        lapsPendingCount: Int? = nil
+        lapsPendingCount: Int? = nil,
+        appInstallersHealth: DeploymentSummaryGroup? = nil,
+        patchPolicyHealth: DeploymentSummaryGroup? = nil
     ) {
         self.date = date
         parsedDate = Self.day(date)
@@ -468,6 +482,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.serverCredentialExpiries = serverCredentialExpiries
         self.jamfProNotificationCount = jamfProNotificationCount
         self.lapsPendingCount = lapsPendingCount
+        self.appInstallersHealth = appInstallersHealth
+        self.patchPolicyHealth = patchPolicyHealth
     }
 
     init(from decoder: Decoder) throws {
@@ -537,6 +553,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
         jamfProNotificationCount = try container.decodeIfPresent(
             Int.self, forKey: .jamfProNotificationCount)
         lapsPendingCount = try container.decodeIfPresent(Int.self, forKey: .lapsPendingCount)
+        // A malformed group reads as absent: it must not hide the rest of the day.
+        appInstallersHealth = (try? container.decodeIfPresent(
+            DeploymentSummaryGroup.self, forKey: .appInstallersHealth)) ?? nil
+        patchPolicyHealth = (try? container.decodeIfPresent(
+            DeploymentSummaryGroup.self, forKey: .patchPolicyHealth)) ?? nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -589,6 +610,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(serverCredentialExpiries, forKey: .serverCredentialExpiries)
         try container.encodeIfPresent(jamfProNotificationCount, forKey: .jamfProNotificationCount)
         try container.encodeIfPresent(lapsPendingCount, forKey: .lapsPendingCount)
+        try container.encodeIfPresent(appInstallersHealth, forKey: .appInstallersHealth)
+        try container.encodeIfPresent(patchPolicyHealth, forKey: .patchPolicyHealth)
     }
 }
 
@@ -625,10 +648,18 @@ extension DailySummary {
         ].compactMap { $0 }.flatMap { $0.values }
         let pairs = [protectMatched, securityCloudMatched].compactMap { $0 }
             .flatMap { [$0.met, $0.of] }
-        return [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount,
-                jamfProNotificationCount, lapsPendingCount]
-            .compactMap { $0 } + maps + pairs
-            + (lastSeenBuckets?.computers?.values ?? []) + (lastSeenBuckets?.mobile?.values ?? [])
+        let deployments = [appInstallersHealth, patchPolicyHealth].compactMap { $0 }
+            .flatMap { [$0.judged, $0.atWarning, $0.atCritical, $0.minimumInScope] }
+        // Built in steps: one long `+` chain is too slow for the Swift 6.1 type checker.
+        let singles: [Int?] = [protectComputerCount, protectOpenAlerts, securityCloudDeviceCount,
+                               jamfProNotificationCount, lapsPendingCount]
+        var counts: [Int] = singles.compactMap { $0 }
+        counts += maps
+        counts += pairs
+        counts += deployments
+        counts += lastSeenBuckets?.computers?.values ?? []
+        counts += lastSeenBuckets?.mobile?.values ?? []
+        return counts
     }
 
     /// Counts are not negative, the matched pair has met <= of (of >= 0 follows from met >= 0), and no severity has more open
@@ -648,6 +679,8 @@ extension DailySummary {
            securityCloudRiskCounts.values.contains(where: { $0 > securityCloudDeviceCount }) {
             return false
         }
+        for group in [appInstallersHealth, patchPolicyHealth].compactMap({ $0 })
+        where !group.isConsistent { return false }
         return true
     }
 }

@@ -494,7 +494,7 @@ struct TrendsView: View {
             // Offered where a day carries the metric: the demo workspace's series, or a live
             // history by device type.
             if metric.isMobile || metric.isProtect || metric.isSecurityCloud
-                || metric.isServerHealth {
+                || metric.isServerHealth || metric.isDeployment {
                 return workspaceStore.demoMode
                     ? !points(for: metric).isEmpty : trendStore.offers(metric)
             }
@@ -1128,6 +1128,11 @@ struct TrendsView: View {
         if metric == .securityScore, !workspaceStore.demoMode,
            let note = trendStore.securityScoreDefinitionNote(
                edrAgentName: workspaceStore.edrAgentName) {
+            Text(note)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+        } else if metric.isDeployment, let note = trendStore.deploymentLevelsNote(metric: metric) {
             Text(note)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))

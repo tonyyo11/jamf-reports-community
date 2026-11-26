@@ -59,6 +59,8 @@ struct CustomTemplate: ReportTemplate {
                 if !sections.contains(.profileTable) { sections.append(.profileTable) }
             case .appStatus:
                 if !sections.contains(.appTable) { sections.append(.appTable) }
+            case .deploymentHealth:
+                if !sections.contains(.deploymentHealth) { sections.append(.deploymentHealth) }
             case .protectOverview, .protectAlerts, .protectComputers:
                 if !sections.contains(.protectAlerts) { sections.append(.protectAlerts) }
             default:

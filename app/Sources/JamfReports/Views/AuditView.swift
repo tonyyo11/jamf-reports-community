@@ -127,6 +127,7 @@ struct AuditView: View {
     @State private var contactGapList: [AuditFinding] = []
     @State private var managementCard: ManagementCard?
     @State private var serverHealth: ServerHealth?
+    @State private var deploymentCard: DeploymentHealthCard?
     @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
@@ -592,6 +593,10 @@ struct AuditView: View {
             ManagementHealthSection(card: managementCard)
             if workspace.environmentProducts.has(.jamfPro) {
                 ServerHealthSection(health: serverHealth)
+                // Both sources are Mac-only, so a mobile-only fleet never collects them.
+                if workspace.environmentProducts.composition != .mobileOnly {
+                    DeploymentHealthSection(card: deploymentCard)
+                }
             }
             MobileDevicesSection(findings: mobileFindingList)
                 .id(MobileDevicesSection.anchorID)
@@ -1118,6 +1123,7 @@ struct AuditView: View {
             contactGapList = []
             managementCard = DemoData.managementCard
             serverHealth = DemoData.serverHealth
+            deploymentCard = DemoData.deploymentHealth
             mobileFindingList = DemoData.mobileAuditFindings
             return
         }
@@ -1134,6 +1140,7 @@ struct AuditView: View {
         contactGapList = []
         managementCard = nil
         serverHealth = nil
+        deploymentCard = nil
         mobileFindingList = []
         hasPreviousAudit = false
         let loadProfile = workspace.profile
@@ -1215,6 +1222,10 @@ struct AuditView: View {
         }.value
         guard !superseded() else { return }
         serverHealth = health
+        if let card = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { DeploymentHealthCard.load(profile: profile) }
+        ) { deploymentCard = card }
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
             stillCurrent: { profile == workspace.profile && !workspace.demoMode },

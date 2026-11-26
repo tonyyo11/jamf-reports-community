@@ -1971,6 +1971,8 @@ struct OverviewView: View {
             L("Open Data Sources to see the Jamf Security Cloud collect.")
         case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
             L("Open Health Audit to see the server and admin health card.")
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            L("Open Health Audit to see the deployments and patch policies card.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -2035,7 +2037,8 @@ struct OverviewView: View {
             [.init(.protectDashboard)]
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             [.init(.sources)]
-        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending,
+             .appInstallersAtLevel, .patchPoliciesAtLevel:
             [.init(.audit)]
         case .sip:
             [.init(.securityPosture), .init(.devices, filter: .sipOff)]

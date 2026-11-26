@@ -553,10 +553,10 @@ extension WorkspaceStore {
             if ReportEngine.serverHealthOptInKinds.contains(kind), !optIn.contains(kind) {
                 return false
             }
-            if ReportEngine.serverHealthKinds.contains(kind),
-               workspaceAuthIsPlatform || advisory.contains(kind) {
+            if ReportEngine.serverHealthKinds.contains(kind), workspaceAuthIsPlatform {
                 return false
             }
+            if advisory.contains(kind) { return false }
             if ReportEngine.skippedSide(of: kind, skipped: skippedSides) != nil { return false }
             let platformOut = platformUnavailable || skipsPlatform
             return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))

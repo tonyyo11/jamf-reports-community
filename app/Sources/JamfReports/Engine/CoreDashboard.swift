@@ -132,8 +132,10 @@ struct CoreDashboard: Sendable {
             // --- mSCP / STIG compliance (sheets 46–47) ---
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
-            // --- Server and admin health (last core tab; EA and Charts tabs follow) ---
+            // --- Server and admin health ---
             (SheetID.serverAdminHealth.rawValue, writeServerAdminHealth),
+            // --- Deployment health (last core tab; EA and Charts tabs follow) ---
+            (SheetID.deploymentHealth.rawValue, writeDeploymentHealth),
         ]
         // --- Protect (sheets 35–40, optional) ---
         return leading + protectSheetPlan + trailing
@@ -3265,6 +3267,9 @@ struct CoreDashboard: Sendable {
                 + "built-in certificate authority, with days left, the Jamf Pro notifications this "
                 + "login sees and, when turned on, admin hygiene counts, or why one could not "
                 + "be read.",
+            "Deployment Health": "App Installers deployments and patch policies with the share "
+                + "of their own Macs that failed, judged against the organization's warning and "
+                + "critical levels; deployed versus latest version, pinned or lagging.",
             "Compliance Trend": "Historical band counts per snapshot date for the "
                 + "primary configured baseline.",
             "Fleet Drift": "Macs that joined or left, changed macOS, or became or stopped being "
