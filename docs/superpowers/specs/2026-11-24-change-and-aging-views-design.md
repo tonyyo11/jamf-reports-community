@@ -169,6 +169,11 @@ all of that.
     *   The maintainer captures it on the NFR server by scoping a patch policy that fails.
 Answered:
 
+*   Patch failure rows on a real tenant (2026-11-25): a patch policy failing a download on
+    the NFR server (jamf-cli 1.38.0, Jamf Pro 11.34) gives `device_id` and `policy_id` as
+    strings and `attempt` as text, and the device stays out of `device_failures` while its
+    download is PENDING. The capture is a test fixture and the patch parts ship visible.
+
 *   jamf-cli 1.38.0 pages `definitions` on its own (2026-11-25, NFR). Paging on 1.29-1.37 is
     unverified; a title with exactly 100 definitions reads "the 100 newest versions".
 
@@ -384,6 +389,10 @@ The sidecar is a sidecar of `patch-release-dates`, not a collect kind:
 *   **B2b:** the patch half (`PatchFailureDrift` and the `patch` part). It waits for a
     `patch-device-failures` fixture captured from a failing patch policy, so the comparison
     is tested on a real shape.
+    Built on 2026-11-25 against a failing patch policy captured on the NFR server
+    (jamf-cli 1.38.0): `PatchFailureDrift.isEnabled` was dropped, a pair that drops off reads
+    "No longer listed as failed" (a download still retrying is PENDING and not listed), and
+    the baseline is the newest scan from an earlier day.
 *   **B2c:** opening the Macs behind an Overview count in Computers. CUJ 1's "each count
     opens Computers" moves here; B2a shows counts only.
 

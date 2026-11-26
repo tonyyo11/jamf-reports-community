@@ -42,7 +42,10 @@ Overview, Devices and Trends screens and a workbook of its own; see
   leaves the Mac sections out. A **Since last collect** section counts the Macs that
   enrolled, left, went stale, started checking in again, turned FileVault off, stopped
   reporting FileVault or changed macOS version since the newest collect on an earlier day,
-  plus Compliance Benchmark rules newly failing and each security agent's coverage change.
+  plus Compliance Benchmark rules newly failing, patch policy failures since the last weekly
+  patch scan, and each security agent's coverage change. A patch failure that drops off the
+  list reads "No longer listed as failed", not fixed: Jamf Pro leaves out a download that is
+  still retrying.
   The counts are stored in each day's summary, so they match the Fleet Drift tab of that
   day's workbook; a count the collect could not take reads "Not measured". On a shared
   workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
