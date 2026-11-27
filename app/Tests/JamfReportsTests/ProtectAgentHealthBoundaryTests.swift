@@ -50,9 +50,9 @@ final class ProtectAgentHealthBoundaryTests: XCTestCase {
     }
 
     func testDisconnectedExactlyADayIsNotOverADay() throws {
-        let computers = try rows("""
-        [{"connectionStatus":"Disconnected","lastDisconnection":"\(ISO8601Time.string(hoursAgo(24)))"}]
-        """)
+        let gone = ISO8601Time.string(hoursAgo(24))
+        let computers = try rows(
+            #"[{"connectionStatus":"Disconnected","lastDisconnection":"\#(gone)"}]"#)
         XCTAssertEqual(evaluate(computers).disconnected.share, .init(met: 0, of: 1))
     }
 
@@ -60,7 +60,8 @@ final class ProtectAgentHealthBoundaryTests: XCTestCase {
 
     func testDottedVersionsAreTrimmedDigitsOnly() {
         XCTAssertEqual(ProtectAgentHealth.dottedVersion(" 5.1 "), [5, 1])
-        XCTAssertNil(ProtectAgentHealth.dottedVersion("+5.1"), "Int reads a sign; a version has none")
+        XCTAssertNil(ProtectAgentHealth.dottedVersion("+5.1"),
+                     "Int reads a sign; a version has none")
         XCTAssertNil(ProtectAgentHealth.dottedVersion("5.-1"))
     }
 

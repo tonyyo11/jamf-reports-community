@@ -341,14 +341,16 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         try ReportEngine.writePatchVersionDates(
-            try encoder.encode(rows), stamp: stamp(now.addingTimeInterval(-2 * 86_400)), dataDir: dir)
+            try encoder.encode(rows), stamp: stamp(now.addingTimeInterval(-2 * 86_400)),
+            dataDir: dir)
         try ReportEngine.writePatchVersionDates(
             Data("{bad".utf8), stamp: stamp(now.addingTimeInterval(-86_400)), dataDir: dir)
         let lines = VersionLines()
         ReportEngine.updatePatchVersionDates(
             answered: [:], currentTitles: ["1": "One"], refreshAfter: week, dataDir: dir,
             now: now, onLine: lines.append)
-        guard case .rows(let kept, _, _) = PatchReleaseDateService.versionDates(dataDir: dir, now: now)
+        guard case .rows(let kept, _, _) =
+                PatchReleaseDateService.versionDates(dataDir: dir, now: now)
         else { return XCTFail("the bad newest file is replaced") }
         XCTAssertEqual(kept, rows)
     }

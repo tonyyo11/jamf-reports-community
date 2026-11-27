@@ -86,7 +86,9 @@ final class ServerHealthBoundaryTests: XCTestCase {
 
     // MARK: - Lists
 
-    private func row(_ credential: CredentialExpiry, stale: Date? = nil) -> ServerHealth.CredentialRow {
+    private func row(
+        _ credential: CredentialExpiry, stale: Date? = nil
+    ) -> ServerHealth.CredentialRow {
         .init(key: credential.key, label: credential.label,
               fact: .value(.credential(credential), stale: stale))
     }
@@ -150,14 +152,14 @@ final class ServerHealthBoundaryTests: XCTestCase {
     }
 
     func testLAPSUsesTheEnvelopesOwnCount() throws {
-        XCTAssertEqual(try reduced("laps-pending-rotations", #"{"totalCount":7,"results":[]}"#)["totalCount"]
-                       as? Int, 7)
+        let laps = try reduced("laps-pending-rotations", #"{"totalCount":7,"results":[]}"#)
+        XCTAssertEqual(laps["totalCount"] as? Int, 7)
     }
 
     func testOnlyAnEnabledAccountIsAFullAccessAdmin() throws {
         let counts = try reduced("admin-accounts", #"[{"accountStatus":"Locked","#
-            + #""accessLevel":"FullAccess","privilegeLevel":"ADMINISTRATOR","accountType":"DEFAULT","#
-            + #""failedLoginAttempts":0}]"#)
+            + #""accessLevel":"FullAccess","privilegeLevel":"ADMINISTRATOR","#
+            + #""accountType":"DEFAULT","failedLoginAttempts":0}]"#)
         XCTAssertEqual(counts["fullAccessLocal"] as? Int, 0)
         XCTAssertEqual(counts["passwordAgeUnknown"] as? Int, 0, "a locked account is not judged")
     }

@@ -29,7 +29,8 @@ final class PatchVersionBoundaryTests: XCTestCase {
         -> VersionWindow? {
         let lookup = release.map { released("A", on: $0) }
             ?? ReleaseDateLookup(versionRows: [], releaseFilesNewestFirst: [])
-        return PatchVelocityBuilder.versions(days: rows(points), lookup: lookup).first?.windows.first
+        return PatchVelocityBuilder.versions(days: rows(points), lookup: lookup)
+            .first?.windows.first
     }
 
     // MARK: - Windows
@@ -40,7 +41,8 @@ final class PatchVersionBoundaryTests: XCTestCase {
     }
 
     func testFiftyAndNinetyAreTheirOwnCrossings() throws {
-        let window = try XCTUnwrap(window([(0, "A", 10, 100), (1, "A", 60, 100), (3, "A", 95, 100)]))
+        let window = try XCTUnwrap(
+            window([(0, "A", 10, 100), (1, "A", 60, 100), (3, "A", 95, 100)]))
         XCTAssertEqual(window.daysTo50, 1)
         XCTAssertEqual(window.daysTo90, 3)
     }
@@ -79,8 +81,11 @@ final class PatchVersionBoundaryTests: XCTestCase {
         let atSince = crossed(on: 10, days: 1)
         XCTAssertEqual(atSince.windows[0].crossedAt90, since)
         XCTAssertEqual(PatchVelocityBuilder.summary([atSince], now: now).crossed, 1)
-        XCTAssertEqual(PatchVelocityBuilder.summary([crossed(on: 100, days: 1)], now: now).crossed, 1)
-        XCTAssertEqual(PatchVelocityBuilder.summary([crossed(on: 101, days: 1)], now: now).crossed, 0,
+        func count(_ offset: Double) -> Int {
+            PatchVelocityBuilder.summary([crossed(on: offset, days: 1)], now: now).crossed
+        }
+        XCTAssertEqual(count(100), 1)
+        XCTAssertEqual(count(101), 0,
                        "a crossing after now is outside the period")
     }
 
@@ -163,7 +168,8 @@ final class PatchVersionBoundaryTests: XCTestCase {
 
     func testAFileWithNoStampIsUnreadable() throws {
         let dir = try dataDir()
-        let url = dir.appendingPathComponent("\(PatchReleaseDateService.versionDatesKind)/x_garbage.json")
+        let url = dir.appendingPathComponent(PatchReleaseDateService.versionDatesKind)
+            .appendingPathComponent("x_garbage.json")
         try "[]".write(to: url, atomically: true, encoding: .utf8)
         guard case .unreadable = PatchReleaseDateService.versionDates(at: url) else {
             return XCTFail("a file with no stamp is not read")
@@ -191,19 +197,24 @@ final class PatchVersionBoundaryTests: XCTestCase {
                              PatchVersionDate(titleId: "1", title: "A", version: "a")]],
             currentTitles: ["1": "A", "2": "B"], previous: .absent, now: Date(),
             refreshAfter: 86_400)
-        XCTAssertEqual(update.rows.map { "\($0.titleId) \($0.version ?? "")" }, ["1 a", "1 b", "2 a"])
+        XCTAssertEqual(update.rows.map { "\($0.titleId) \($0.version ?? "")" },
+                       ["1 a", "1 b", "2 a"])
     }
 
     // MARK: - Release-date lookup
 
-    private func iso(_ offset: Double) -> String { ISO8601DateFormatter().string(from: day(offset)) }
+    private func iso(_ offset: Double) -> String {
+        ISO8601DateFormatter().string(from: day(offset))
+    }
 
     private func sofa(_ offset: Double) -> Date? { SOFAFeedService.parseSOFADate(iso(offset)) }
 
     func testAnAnsweredSidecarDateWinsAndTheFirstRowOfAKeyWins() {
         let lookup = ReleaseDateLookup(
-            versionRows: [PatchVersionDate(titleId: "1", title: "T", version: "1.0", releaseDate: iso(1)),
-                          PatchVersionDate(titleId: "1", title: "T", version: "1.0", releaseDate: iso(2))],
+            versionRows: [
+                PatchVersionDate(titleId: "1", title: "T", version: "1.0", releaseDate: iso(1)),
+                PatchVersionDate(titleId: "1", title: "T", version: "1.0", releaseDate: iso(2)),
+            ],
             releaseFilesNewestFirst: [[.init(titleId: "1", title: "T", latestVersion: "1.0",
                                              releaseDate: iso(3))]])
         XCTAssertEqual(lookup.date(titleId: "1", title: "T", version: "1.0"), sofa(1))
@@ -219,7 +230,9 @@ final class PatchVersionBoundaryTests: XCTestCase {
 
     func testABlankTitleIsNoNameKey() {
         let lookup = ReleaseDateLookup(
-            versionRows: [PatchVersionDate(titleId: "1", title: "", version: "1.0", releaseDate: iso(1))],
+            versionRows: [
+                PatchVersionDate(titleId: "1", title: "", version: "1.0", releaseDate: iso(1)),
+            ],
             releaseFilesNewestFirst: [])
         XCTAssertNil(lookup.date(titleId: "2", title: "", version: "1.0"))
     }

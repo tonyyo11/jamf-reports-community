@@ -9,7 +9,9 @@ final class TickSchedulerSplitBoundaryTests: XCTestCase {
     private func at(_ hours: Double) -> Date { day.addingTimeInterval(hours * 3600) }
     private let label = "com.github.tonyyo11.jamf-reports-community.freshness"
 
-    private func schedule(mode: Schedule.RunMode = .snapshotOnly, enabled: Bool = true) -> Schedule {
+    private func schedule(
+        mode: Schedule.RunMode = .snapshotOnly, enabled: Bool = true
+    ) -> Schedule {
         Schedule(
             name: "freshness", profile: "alpha", schedule: "Daily 06:00", cadence: "daily",
             mode: mode, next: "—", last: "—", lastStatus: .ok, artifacts: [],

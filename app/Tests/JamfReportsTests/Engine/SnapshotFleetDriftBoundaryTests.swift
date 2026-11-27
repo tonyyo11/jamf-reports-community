@@ -69,7 +69,8 @@ final class SnapshotFleetDriftBoundaryTests: XCTestCase {
     // MARK: - OS
 
     func testAnOSAppearingOrRespelledIsNoChange() {
-        let result = drift([mac(1, checkIn: taken, os: "15.1"), mac(2, checkIn: taken, os: "26.7.0"),
+        let result = drift([mac(1, checkIn: taken, os: "15.1"),
+                            mac(2, checkIn: taken, os: "26.7.0"),
                             mac(3, checkIn: taken, os: "26.7")],
                            [mac(1, checkIn: before), mac(2, checkIn: before, os: "26.7"),
                             mac(3, checkIn: before, os: "26.7.0")])
@@ -79,7 +80,8 @@ final class SnapshotFleetDriftBoundaryTests: XCTestCase {
     // MARK: - FileVault
 
     func testFileVaultIsNotComparedWhenOnlyTheCurrentSnapshotReportsIt() {
-        let result = drift([mac(1, checkIn: taken, fileVault: "UNENCRYPTED")], [mac(1, checkIn: before)])
+        let result = drift([mac(1, checkIn: taken, fileVault: "UNENCRYPTED")],
+                           [mac(1, checkIn: before)])
         XCTAssertNil(result.fileVaultOff)
         XCTAssertNil(result.fileVaultStoppedReporting)
     }
@@ -107,14 +109,15 @@ final class SnapshotFleetDriftBoundaryTests: XCTestCase {
         let same = PatchFailureDrift(current: [failure(" 5", "1")], baseline: [failure("5", "1")],
                                      computers: index)
         XCTAssertTrue(same.startedFailing.isEmpty && same.noLongerListed.isEmpty)
-        let dropped = PatchFailureDrift(current: [], baseline: [failure(" 5 ", "1")], computers: index)
+        let dropped = PatchFailureDrift(current: [], baseline: [failure(" 5 ", "1")],
+                                        computers: index)
         XCTAssertEqual(dropped.noLongerListed.count, 1)
         XCTAssertEqual(dropped.notInComputers, 0)
     }
 
     func testPatchChangesSortByDeviceThenPolicy() {
-        let result = PatchFailureDrift(current: [failure("2", "1"), failure("1", "2")], baseline: [],
-                                       computers: ComputerDateIndex([]))
+        let result = PatchFailureDrift(current: [failure("2", "1"), failure("1", "2")],
+                                       baseline: [], computers: ComputerDateIndex([]))
         XCTAssertEqual(result.startedFailing.map(\.deviceId), ["1", "2"])
     }
 

@@ -81,7 +81,8 @@ final class ChangeFilterBoundaryTests: XCTestCase {
     func testPatchMacsAreKeyedByTheTrimmedJamfID() throws {
         let dir = dataDir()
         try write("computers", day: 0, [["id": "1"]], in: dir)
-        try write(PatchFailureDrift.kind, day: 0, [["device_id": " 1 ", "policy_id": "11"]], in: dir)
+        try write(PatchFailureDrift.kind, day: 0, [["device_id": " 1 ", "policy_id": "11"]],
+                  in: dir)
         try write(PatchFailureDrift.kind, day: -7, [] as [Any], in: dir)
         let patch = ChangeFilter(kind: .patchStarted, currentStamp: stamp(0),
                                  baselineStamp: stamp(-7), computersStamp: stamp(0))

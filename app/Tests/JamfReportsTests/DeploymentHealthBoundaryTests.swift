@@ -56,7 +56,8 @@ final class DeploymentHealthBoundaryTests: XCTestCase {
             policy("warning", failed: 10),
             policy("critical", failed: 30),
         ]
-        let expected = ["critical", "warning", "below", "small", "nothing", "unmeasured", "notJudged"]
+        let expected = ["critical", "warning", "below", "small", "nothing", "unmeasured",
+                        "notJudged"]
         XCTAssertEqual(DeploymentHealth.tabOrder(rows, levels: levels).map(\.id), expected)
         XCTAssertEqual(DeploymentHealth.tabOrder(rows.reversed(), levels: levels).map(\.id),
                        expected)
@@ -95,7 +96,8 @@ final class DeploymentHealthBoundaryTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(patchRow(["failed": 1.5])).failed)
         XCTAssertNil(try XCTUnwrap(patchRow(["failed": true])).failed, "a boolean is no count")
         let max = SummaryJSONParser.maxSummaryNumber
-        XCTAssertEqual(try XCTUnwrap(patchRow(["failed": max])).failed, max, "the seam itself is read")
+        XCTAssertEqual(try XCTUnwrap(patchRow(["failed": max])).failed, max,
+                       "the seam itself is read")
     }
 
     func testOnlyABooleanIsAFlag() throws {
