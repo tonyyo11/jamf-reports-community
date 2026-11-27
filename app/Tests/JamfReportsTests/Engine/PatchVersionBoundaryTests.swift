@@ -47,6 +47,15 @@ final class PatchVersionBoundaryTests: XCTestCase {
         XCTAssertEqual(window.daysTo90, 3)
     }
 
+    func testAWindowWithNoPointsIsOpenOrSupersededByItsEnd() {
+        func outcome(end: Date?) -> VersionWindow.Outcome {
+            VersionWindow(start: day(0), end: end, series: [], releaseDate: nil, daysTo50: nil,
+                          daysTo90: nil).outcome
+        }
+        XCTAssertEqual(outcome(end: nil), .open)
+        XCTAssertEqual(outcome(end: day(1)), .superseded)
+    }
+
     func testExactlyNinetyIsAtNinety() throws {
         let already = try XCTUnwrap(window([(0, "A", 90, 100), (1, "A", 95, 100)]))
         XCTAssertEqual(already.outcome, .alreadyAt90)
@@ -188,6 +197,18 @@ final class PatchVersionBoundaryTests: XCTestCase {
             previous: .rows(first.rows, stamp: stamp, bytes: first.data),
             now: written.addingTimeInterval(86_400), refreshAfter: 86_400)
         XCTAssertFalse(again.changed)
+    }
+
+    func testAnEarlierFileWhoseStampDoesNotParseIsRewritten() {
+        let rows = [PatchVersionDate(titleId: "1", title: "T", version: "1.0")]
+        let first = PatchReleaseDateService.patchVersionDatesUpdate(
+            answered: ["1": rows], currentTitles: ["1": "T"], previous: .absent, now: Date(),
+            refreshAfter: 86_400)
+        let again = PatchReleaseDateService.patchVersionDatesUpdate(
+            answered: ["1": rows], currentTitles: ["1": "T"],
+            previous: .rows(first.rows, stamp: "no-stamp", bytes: first.data), now: Date(),
+            refreshAfter: 86_400)
+        XCTAssertTrue(again.changed, "an age that cannot be read is treated as aged")
     }
 
     func testRowsAreOrderedByTitleThenVersion() {
