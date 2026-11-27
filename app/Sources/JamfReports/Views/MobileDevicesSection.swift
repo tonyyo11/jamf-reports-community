@@ -108,7 +108,7 @@ struct MobileDevicesSection: View {
 
     private func row(_ finding: AuditFinding) -> some View {
         HStack(spacing: 10) {
-            Pill(text: finding.severity, tone: tone(finding.severity))
+            Pill(text: ManagementDetail.severityValue(finding.severity), tone: tone(finding.severity))
                 .frame(width: 86, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(finding.name)

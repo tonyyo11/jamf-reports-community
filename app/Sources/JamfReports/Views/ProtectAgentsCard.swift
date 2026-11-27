@@ -48,8 +48,9 @@ struct ProtectAgentsCard: View {
         if !shown.isEmpty || health.disconnectedTimeUnknown > 0 {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(shown.enumerated()), id: \.offset) { _, entry in
-                    // Protect's reason is shown as it gives it; only the fallback is translated.
-                    let reason = entry.reason ?? L("No reason reported")
+                    // Protect's reason in the app's words; the workbook and HTML keep Protect's code.
+                    let reason = entry.reason.map(ManagementDetail.disconnectReasonValue)
+                        ?? L("No reason reported")
                     Text(verbatim: "\(entry.count) · \(reason)")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))

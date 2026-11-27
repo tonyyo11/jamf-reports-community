@@ -548,7 +548,7 @@ struct ExtensionAttributesView: View {
                         .width(min: 80, ideal: 100)
 
                         TableColumn("Input") { definition in
-                            Text(definition.inputType ?? L("Unknown"))
+                            Text(definition.inputType.map(ManagementDetail.displayValue) ?? L("Unknown"))
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }

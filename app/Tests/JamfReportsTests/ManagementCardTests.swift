@@ -288,6 +288,28 @@ final class ManagementDisplayValueTests: XCTestCase {
         XCTAssertEqual(ManagementDetail.statusValue("FINANCE"), "FINANCE")
     }
 
+    /// Values as jamf-cli and Jamf send them: `pro audit` WARNING/INFO, `policy-status` warning,
+    /// Protect High/Informational and its disconnect codes, a report's `device_type`.
+    func testJamfValuesSentAsCodesReadAsWords() {
+        XCTAssertEqual(ManagementDetail.severityValue("WARNING"), "Warning")
+        XCTAssertEqual(ManagementDetail.severityValue("INFO"), "Info")
+        XCTAssertEqual(ManagementDetail.severityValue("warning"), "Warning")
+        XCTAssertEqual(ManagementDetail.severityValue("High"), "High")
+        XCTAssertEqual(ManagementDetail.severityValue("Informational"), "Informational")
+        XCTAssertEqual(ManagementDetail.severityValue("NEW_LEVEL"), "New level")
+        XCTAssertEqual(ManagementDetail.disconnectReasonValue("MQTT_KEEP_ALIVE_TIMEOUT"),
+                       "Keep-alive timed out")
+        XCTAssertEqual(ManagementDetail.disconnectReasonValue("CONNECTION_LOST"), "Connection lost")
+        XCTAssertEqual(ManagementDetail.disconnectReasonValue("SERVER_INITIATED_DISCONNECT"),
+                       "Server initiated disconnect")
+        XCTAssertEqual(ManagementDetail.policyCheckValue("no_scope"), "No scope")
+        XCTAssertEqual(ManagementDetail.policyCheckValue("future_check"), "future_check")
+        XCTAssertEqual(ManagementDetail.deviceTypeValue("Mobile"), "Mobile")
+        XCTAssertEqual(ManagementDetail.securityValue("false"), "Off")
+        XCTAssertEqual(ManagementDetail.securityValue("APP_STORE_AND_IDENTIFIED_DEVELOPERS"),
+                       "App store and identified developers")
+    }
+
     func testTimestampTextKeepsWhatItCannotParse() {
         XCTAssertEqual(DevicesView.timestampText("2026-11-15T03:20:06.123Z"), "2026-11-15T03:20:06Z")
         XCTAssertEqual(DevicesView.timestampText("never"), "never")

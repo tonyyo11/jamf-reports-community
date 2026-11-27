@@ -633,7 +633,7 @@ struct ProtectView: View {
     }
 
     private func severityPill(_ severity: String?) -> some View {
-        let text = severity?.capitalized ?? L("Unknown")
+        let text = severity.map(ManagementDetail.severityValue) ?? L("Unknown")
         let (tone, icon): (Pill.Tone, String) = {
             guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
             if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
@@ -762,7 +762,7 @@ struct ProtectView: View {
                     .frame(width: 56, alignment: .trailing)
                     .accessibilityLabel(L("Signatures version"))
 
-                Text(computer.lastDisconnectionReason ?? "—")
+                Text(computer.lastDisconnectionReason.map(ManagementDetail.disconnectReasonValue) ?? "—")
                     .font(.caption2.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .lineLimit(1)

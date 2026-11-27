@@ -591,7 +591,7 @@ struct DDMBlueprintView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Text(blueprint.state.isEmpty ? "—" : blueprint.state)
+            Text(blueprint.state.isEmpty ? "—" : ManagementDetail.displayValue(blueprint.state))
                 .font(Theme.Fonts.mono(11, weight: .semibold))
                 .foregroundStyle(stateColor)
                 .frame(width: 120, alignment: .trailing)

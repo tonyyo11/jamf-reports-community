@@ -195,7 +195,7 @@ struct PolicyProfileView: View {
                 Table(sortedFindings) {
                     TableColumn("Severity") { finding in
                         Pill(
-                            text: finding.severity,
+                            text: ManagementDetail.severityValue(finding.severity),
                             tone: severityTone(for: finding.severity),
                             icon: severityIcon(for: finding.severity)
                         )
@@ -212,7 +212,7 @@ struct PolicyProfileView: View {
                     .width(min: 180, ideal: 180)
 
                     TableColumn("Finding") { finding in
-                        Text(finding.check)
+                        Text(ManagementDetail.policyCheckValue(finding.check))
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -339,7 +339,7 @@ struct PolicyProfileView: View {
                     .width(min: 180, ideal: 180)
 
                     TableColumn("Device Type") { profile in
-                        Text(profile.deviceType)
+                        Text(ManagementDetail.deviceTypeValue(profile.deviceType))
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }

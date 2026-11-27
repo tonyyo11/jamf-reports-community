@@ -548,7 +548,7 @@ struct AuditView: View {
                         // are capped and the two text columns take what is left.
                         .width(min: 130, ideal: 150, max: 260)
                         TableColumn("Severity", value: \.severity) { f in
-                            Pill(text: f.severity, tone: pillTone(f.severity))
+                            Pill(text: ManagementDetail.severityValue(f.severity), tone: pillTone(f.severity))
                         }
                         .width(min: 70, ideal: 78, max: 90)
                         TableColumn("Category", value: \.category) { f in
@@ -729,7 +729,8 @@ struct AuditView: View {
                     Divider().background(Theme.Colors.hairline)
                     ForEach(commandFindings) { finding in
                         HStack(spacing: 10) {
-                            Pill(text: finding.severity, tone: pillTone(finding.severity))
+                            Pill(text: ManagementDetail.severityValue(finding.severity),
+                                 tone: pillTone(finding.severity))
                                 .frame(width: 86, alignment: .leading)
                             Text(finding.label)
                                 .font(.footnote.weight(.semibold))
@@ -1446,7 +1447,7 @@ struct FindingDetailPopover: View {
                         .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
-                        Pill(text: finding.severity, tone: tone)
+                        Pill(text: ManagementDetail.severityValue(finding.severity), tone: tone)
                         Pill(text: finding.category, tone: .muted)
                         Mono(text: L("\(finding.affectedDisplay) affected"))
                     }

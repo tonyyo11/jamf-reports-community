@@ -318,7 +318,7 @@ struct UpdatesView: View {
                     Image(systemName: icon)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color(hex: slice.colorHex))
-                    Text(slice.label)
+                    Text(ManagementDetail.displayValue(slice.label))
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                 }
@@ -397,7 +397,7 @@ struct UpdatesView: View {
                     .width(min: 118, ideal: 118)
 
                     TableColumn("Action") { plan in
-                        Text(plan.action)
+                        Text(ManagementDetail.displayValue(plan.action))
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
@@ -442,7 +442,7 @@ struct UpdatesView: View {
                     .width(min: 80, ideal: 80)
 
                     TableColumn("Status") { device in
-                        Pill(text: device.status, tone: .danger)
+                        Pill(text: ManagementDetail.displayValue(device.status), tone: .danger)
                             .accessibilityLabel("Status \(device.status)")
                     }
                     .width(min: 80, ideal: 80)
