@@ -75,8 +75,29 @@ final class PlatformOverviewTests: XCTestCase {
             let sum = mac.adoption.reduce(0) { $0 + $1.points[index].percent }
             XCTAssertEqual(sum, 100, accuracy: 1e-9)
         }
-        // The bars list every major of the newest day, not the pooled set.
-        XCTAssertEqual(mac.versions.count, 6)
+        // The bars end in one "macOS 12 or older" bar pooling the chart's Other majors.
+        XCTAssertEqual(mac.versions.map(\.key),
+                       ["macOS 26", "macOS 15", "macOS 14", "macOS 13", "Other"])
+        XCTAssertEqual(mac.versions.map(\.orOlder), [nil, nil, nil, nil, "macOS 12"])
+        XCTAssertEqual(mac.versions.last?.count, 2)
+        XCTAssertEqual(mac.versions.last?.percent ?? 0, 2.0 / 16 * 100, accuracy: 1e-9)
+    }
+
+    func testThePooledBarFollowsTheChartsMajorsNotTheNewestDays() throws {
+        // macOS 27 was seen earlier in the window, so 27, 26, 15 and 14 are drawn and the
+        // newest day's 13 and 12 pool; 13 names the bar.
+        let overview = PlatformOverview.build([
+            day("2026-11-01", ["macOS 27": 1, "macOS 26": 1]),
+            day("2026-11-08", ["macOS 26": 4, "macOS 15": 3, "macOS 14": 1, "macOS 13": 1,
+                               "macOS 12": 1]),
+        ])
+        let mac = try XCTUnwrap(overview.platforms.first)
+        XCTAssertEqual(mac.adoption.map(\.key),
+                       ["macOS 27", "macOS 26", "macOS 15", "macOS 14", "Other"])
+        XCTAssertEqual(mac.versions.map(\.key), ["macOS 26", "macOS 15", "macOS 14", "Other"])
+        XCTAssertEqual(mac.versions.last?.orOlder, "macOS 13")
+        XCTAssertEqual(mac.versions.last?.count, 2)
+        XCTAssertEqual(mac.versions.map(\.percent).reduce(0, +), 100, accuracy: 1e-9)
     }
 
     func testFourMajorsNeedNoOther() throws {

@@ -8,9 +8,12 @@ import Foundation
 struct PlatformOverview: Equatable, Sendable {
     struct Platform: Equatable, Sendable {
         struct Version: Equatable, Sendable {
+            /// A map key, or `PlatformOverview.otherKey` for the pooled bar.
             let key: String
             let count: Int
             let percent: Double
+            /// The pooled bar only: its newest major ("macOS 11"), shown as "macOS 11 or older".
+            var orOlder: String? = nil
         }
         struct Point: Equatable, Sendable {
             let date: Date
@@ -25,7 +28,8 @@ struct PlatformOverview: Equatable, Sendable {
         let name: String
         /// Devices reporting a version on the newest day.
         let devices: Int
-        /// The newest day's majors, newest first.
+        /// The newest day's majors, newest first; the majors "Other" pools in the adoption chart
+        /// are one last bar, its count and share the sum of theirs.
         let versions: [Version]
         /// The newest `drawnMajors` majors seen in the window, then "Other" when more were.
         let adoption: [Series]
@@ -126,6 +130,15 @@ private extension PlatformOverview.Platform {
         let drawnCount = min(seen.count, PlatformOverview.drawnMajors)
         let drawn = Array(seen.prefix(drawnCount))
         let pooled = Set(seen.dropFirst(drawnCount))
+        let pooledToday = versions.filter { version in
+            PlatformOverview.parts(version.key).map { pooled.contains($0.major) } ?? false
+        }
+        var bars = versions.filter { !pooledToday.contains($0) }
+        if let newestPooled = pooledToday.first {
+            bars.append(Version(
+                key: PlatformOverview.otherKey, count: pooledToday.map(\.count).reduce(0, +),
+                percent: pooledToday.map(\.percent).reduce(0, +), orOlder: newestPooled.key))
+        }
         func series(_ key: String, _ count: ([Int: Int]) -> Int) -> Series {
             Series(key: key, points: measured.map { date, majors, total in
                 Point(date: date, percent: Double(count(majors)) / Double(total) * 100)
@@ -138,7 +151,7 @@ private extension PlatformOverview.Platform {
             })
         }
         return Self(
-            name: name, devices: devices, versions: versions, adoption: adoption,
+            name: name, devices: devices, versions: bars, adoption: adoption,
             versionsSeen: seen.count, versionsPooled: pooled.count, modelFamilies: modelFamilies,
             onCurrentRelease: onCurrentRelease, securityGaps: securityGaps)
     }

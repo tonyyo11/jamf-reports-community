@@ -97,21 +97,26 @@ private struct PlatformOverviewCard: View {
 }
 
 /// The newest day's majors as rows: version, a bar of its share of the platform, then count and
-/// share.
+/// share. The majors the adoption chart pools as Other end in one "N or older" bar.
 private struct PlatformVersionBars: View {
     let versions: [PlatformOverview.Platform.Version]
     @Environment(\.percentFormat) private var percentFormat
+
+    private func label(_ version: PlatformOverview.Platform.Version) -> String {
+        version.orOlder.map { L("\($0) or older") } ?? version.key
+    }
 
     var body: some View {
         let colors = Theme.ChartColors.colors(forVersions: versions.map(\.key))
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(versions.enumerated()), id: \.element.key) { index, version in
                 HStack(spacing: 10) {
-                    Text(verbatim: version.key)
+                    Text(verbatim: label(version))
                         .font(.callout)
                         .foregroundStyle(Theme.Colors.fg2)
                         .lineLimit(1)
-                        .frame(width: 110, alignment: .leading)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 150, alignment: .leading)
                     GeometryReader { geometry in
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(colors[index])
@@ -125,7 +130,7 @@ private struct PlatformVersionBars: View {
                         .frame(minWidth: 96, alignment: .trailing)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("\(version.key): \(version.count) devices, \(percentFormat.text(version.percent))"))
+                .accessibilityLabel(L("\(label(version)): \(version.count) devices, \(percentFormat.text(version.percent))"))
             }
         }
     }
