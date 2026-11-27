@@ -196,6 +196,31 @@ final class ManagementCardTests: XCTestCase {
         XCTAssertEqual(rows.count, 3)
     }
 
+    func testEnrollmentTypeReadsInJamfProWording() {
+        let expected = [
+            "none": "None", "supervised": "Supervised", "device": "Device Enrollment",
+            "user": "User Enrollment", "unknown": "Unknown", " Supervised ": "Supervised",
+            "SOMETHING_NEW": "Something new",
+        ]
+        for (raw, shown) in expected {
+            XCTAssertEqual(ManagementDetail.enrollmentTypeValue(raw), shown, raw)
+        }
+        var facts = ManagementFacts(item: [:])
+        facts.appleEnrollmentType = "supervised"
+        let rows = Dictionary(
+            uniqueKeysWithValues: ManagementDetail.rows(facts, now: now, calendar: calendar))
+        XCTAssertEqual(rows["Enrollment type"], "Supervised")
+
+        let list = [
+            mac("a") { $0.appleEnrollmentType = "supervised" },
+            mac("b") { $0.appleEnrollmentType = "supervised" },
+            mac("c") { $0.appleEnrollmentType = "device" },
+        ]
+        let card = ManagementCard.build(health: health(list), tokens: .empty)
+        XCTAssertEqual(row(card, "values.appleEnrollmentType")?.breakdown,
+                       "Supervised 2 · Device Enrollment 1")
+    }
+
     func testRemediationFollowsTheGaps() {
         var facts = ManagementFacts(item: [:])
         XCTAssertTrue(ManagementDetail.remediation(facts, warningDays: 90, now: now).isEmpty)
