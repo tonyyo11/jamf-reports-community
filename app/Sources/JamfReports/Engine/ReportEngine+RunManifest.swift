@@ -68,7 +68,7 @@ extension ReportEngine {
                 session: session, nonce: nonce)
             do { try RunManifest.install(reply, at: tsrURL) } catch {
                 throw TimestampAuthority.Failure(
-                    step: "saving \(tsrURL.lastPathComponent)", reason: error.localizedDescription)
+                    step: "saving \(tsrURL.lastPathComponent)", reason: error.englishDescription)
             }
         } catch let failure as TimestampAuthority.Failure {
             warn(timestampFailureMarker + failure.text, onLine: onLine)
@@ -147,7 +147,7 @@ enum TimestampAuthority {
             inspection = try TimestampToken.inspect(reply: reply)
         } catch {
             throw Failure(step: "reading the reply from \(host)",
-                          reason: error.localizedDescription)
+                          reason: error.englishDescription)
         }
         let expected = sha256.hexString
         guard inspection.imprint == expected,

@@ -270,7 +270,7 @@ final class WorkspaceMergePlanTests: XCTestCase {
 
     /// Copying more logs than the recorder keeps would make the target's next run prune its own.
     func testRunHistoryCopiesOnlyLogsAmongTheNewestKept() throws {
-        let keep = ScheduledRunRecorder.maxRunLogs
+        let keep = ScheduledRunRecorder.maxWorkspaceRunLogs
         let now = Date()
         func log(_ ws: String, _ name: String, age: TimeInterval) throws {
             try write("l", ws, "automation/logs/\(name)")
@@ -282,7 +282,7 @@ final class WorkspaceMergePlanTests: XCTestCase {
             try log(tgt, String(format: "t.20260101-%06d.log", i), age: Double(11 + i))
         }
         try log(src, "s.20260201-000000.log", age: 10)
-        try log(src, "s.20260202-000000.log", age: 100)
+        try log(src, "s.20260202-000000.log", age: Double(keep + 100))
         try log(src, "s.20250101-000000.log", age: 10_000)
         try log(src, "notes.txt", age: 10_000)
         let copied = steps(try plan(), .runHistory).map { URL(fileURLWithPath: $0.source)

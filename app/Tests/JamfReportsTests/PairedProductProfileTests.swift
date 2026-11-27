@@ -49,13 +49,17 @@ final class PairedProductProfileTests: XCTestCase {
         try workspace("pro-only", config: "profiles:\n  protect: pro-only\n")
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
-        XCTAssertEqual(
+        func expected(_ version: String) -> [String] {
             WorkspaceStore.expectedKinds(
-                profile: "pro-only", jamfCLIVersion: "1.35.0", auth: nil,
+                profile: "pro-only", jamfCLIVersion: version, auth: nil,
                 protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                               product: .protect) },
-                protectPinAllows: { _, _ in true }),
-            DataFreshnessHealth.protectKinds)
+                protectPinAllows: { _, _ in true })
+        }
+        XCTAssertEqual(expected("1.38.0"), DataFreshnessHealth.protectKinds)
+        XCTAssertEqual(expected("1.35.0"), DataFreshnessHealth.protectKinds.filter {
+            $0 != ReportEngine.protectSignatureVersionsKind
+        }, "a source this jamf-cli cannot run is not owed")
     }
 
     func testAnUnconfirmedProtectOnlyEditExpectsNothing() throws {

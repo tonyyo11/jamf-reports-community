@@ -109,4 +109,88 @@ final class MetricAlertLedgerTests: XCTestCase {
             "an empty record must not clobber the day's existing keys"
         )
     }
+
+    // MARK: - Credential keys
+
+    private func credentialHit(
+        key: String = "ca", expires: String = "2026-08-01T00:00:00Z", state: String = "hit"
+    ) -> MetricAlertHit {
+        MetricAlertHit(
+            metricLabel: "Server credential days left", ruleDescription: "below 45", current: 40,
+            prior: nil, message: "m", credentialKey: key, expires: expires,
+            credentialState: state)
+    }
+
+    private let now = Date.testNoon
+
+    func testACredentialIsSentOnceAcrossDaysAndARenewalOrNewStateReArms() {
+        let hit = credentialHit()
+        XCTAssertEqual(ledger.pendingCredentialHits([hit]).count, 1)
+        ledger.recordCredentials([hit], now: now)
+        XCTAssertTrue(ledger.pendingCredentialHits([hit]).isEmpty)
+        sendSucceeded(day: "2026-07-09", keys: ["a"])
+        XCTAssertTrue(ledger.pendingCredentialHits([hit]).isEmpty, "a new day does not reset it")
+        XCTAssertEqual(
+            ledger.pendingCredentialHits([credentialHit(expires: "2027-08-01T00:00:00Z")]).count, 1)
+        XCTAssertEqual(ledger.pendingCredentialHits([credentialHit(state: "expired")]).count, 1)
+        XCTAssertEqual(ledger.pendingCredentialHits([credentialHit(key: "ade:1")]).count, 1)
+    }
+
+    func testRecordingMergesAndKeepsTheDayRecordBothWays() {
+        sendSucceeded(day: "2026-07-08", keys: ["a"])
+        ledger.recordCredentials([credentialHit()], now: now)
+        ledger.recordCredentials([credentialHit(key: "ade:1")], now: now)
+        sendSucceeded(day: "2026-07-08", keys: ["a", "b"])
+        XCTAssertTrue(ledger.pendingCredentialHits(
+            [credentialHit(), credentialHit(key: "ade:1")]).isEmpty)
+        XCTAssertTrue(ledger.pendingKeys(day: "2026-07-08", keys: ["a", "b"]).isEmpty)
+    }
+
+    func testALedgerAPeerWroteIsBoundedAndDropsEntriesWithNoDate() throws {
+        let url = AutomationStateFile.url(named: ".metric-alerts-ledger.json", in: workspace)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let entries = (0..<500).map {
+            #"{"rule":"below 45","key":"ca","expires":"2030-01-01T00:00:\#($0 % 60 < 10 ? "0" : "")\#($0 % 60)Z","state":"hit\#($0)"}"#
+        } + [#"{"rule":"below 45","key":"ca","expires":"not a date","state":"hit"}"#]
+        try Data(#"{"day":"","keys":[],"credentialKeys":[\#(entries.joined(separator: ","))]}"#.utf8)
+            .write(to: url)
+        let bogus = credentialHit(key: "ca", expires: "not a date", state: "hit")
+        XCTAssertEqual(ledger.pendingCredentialHits([bogus]).count, 1, "a dateless entry is dropped")
+        let late = credentialHit(key: "ca", expires: "2030-01-01T00:00:00Z", state: "hit499")
+        XCTAssertEqual(ledger.pendingCredentialHits([late]).count, 1, "past the 200 cap")
+        let early = credentialHit(key: "ca", expires: "2030-01-01T00:00:00Z", state: "hit0")
+        XCTAssertTrue(ledger.pendingCredentialHits([early]).isEmpty, "inside the cap")
+    }
+
+    func testAnEntryIsPrunedSixtyDaysAfterItsExpiryOnly() {
+        let day = 86_400.0
+        func stamp(_ days: Double) -> String { ISO8601Time.string(now.addingTimeInterval(days * day)) }
+        let recent = credentialHit(key: "ca", expires: stamp(-59), state: "expired")
+        let old = credentialHit(key: "ade:1", expires: stamp(-61), state: "expired")
+        ledger.recordCredentials([recent, old], now: now)
+        XCTAssertTrue(ledger.pendingCredentialHits([recent]).isEmpty)
+        // The evaluator emits no hit this old (`testAnExpiredCredentialPostsTwice...`), so
+        // pruning cannot re-send it.
+        XCTAssertEqual(ledger.pendingCredentialHits([old]).count, 1, "pruned from the file")
+    }
+
+    func testALedgerAn212BuildWroteHasNoCredentialKeysAndSendsOnce() throws {
+        let url = AutomationStateFile.url(named: ".metric-alerts-ledger.json", in: workspace)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"day":"2026-07-08","keys":["a"]}"#.utf8).write(to: url)
+        XCTAssertEqual(ledger.pendingCredentialHits([credentialHit()]).count, 1)
+        ledger.recordCredentials([credentialHit()], now: now)
+        XCTAssertTrue(ledger.pendingCredentialHits([credentialHit()]).isEmpty)
+        XCTAssertTrue(ledger.pendingKeys(day: "2026-07-08", keys: ["a"]).isEmpty)
+    }
+
+    func testAnUnreadableLedgerFailsTowardSendingCredentialAlerts() throws {
+        let url = AutomationStateFile.url(named: ".metric-alerts-ledger.json", in: workspace)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: url)
+        XCTAssertEqual(ledger.pendingCredentialHits([credentialHit()]).count, 1)
+    }
 }

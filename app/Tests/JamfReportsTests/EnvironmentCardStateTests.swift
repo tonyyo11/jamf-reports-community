@@ -104,7 +104,8 @@ final class EnvironmentCardStateTests: XCTestCase {
         XCTAssertEqual(
             Set(EnvironmentCardState.kinds(for: .platform)), ReportEngine.platformOnlyKinds)
         XCTAssertEqual(
-            EnvironmentCardState.kinds(for: .protect), DataFreshnessHealth.protectKinds)
+            EnvironmentCardState.kinds(for: .protect), ReportEngine.protectReportKinds,
+            "a fresh installer file must not date stale computers data")
         XCTAssertFalse(EnvironmentCardState.kinds(for: .protect).isEmpty)
     }
 

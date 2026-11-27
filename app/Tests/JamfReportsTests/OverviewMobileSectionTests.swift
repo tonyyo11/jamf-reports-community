@@ -285,6 +285,10 @@ final class OverviewMobileSectionTests: XCTestCase {
             format: .standard, formFactors: ["iPad": 12, "iPhone": 1, "Apple TV": 0])[0]
         XCTAssertEqual(tile.value, "13")
         XCTAssertEqual(tile.caption, "12 iPads, 1 iPhone")
+        let vision = figures.overviewTiles(
+            format: .standard, formFactors: ["iPad": 1, "Vision Pro": 2])[0]
+        XCTAssertEqual(vision.value, "3")
+        XCTAssertEqual(vision.caption, "1 iPad, 2 Vision Pros")
 
         for absent in [nil, [:], ["iPad": 0]] as [[String: Int]?] {
             let fallback = figures.overviewTiles(format: .standard, formFactors: absent)[0]

@@ -3,8 +3,8 @@ import XCTest
 
 /// Every jamf-cli command and long flag the app issues exists in jamf-cli's own command catalog.
 ///
-/// The catalog is the fixture `Fixtures/jamf-cli/commands-1.35.0.json`, captured from
-/// `jamf-cli commands -o json` (1.31.1, 2026-10-29). Tests never run jamf-cli, so the fixture
+/// The catalog is the fixture `Fixtures/jamf-cli/commands-1.38.0.json`, captured from
+/// `jamf-cli commands -o json` (1.38.0, 2026-11-24). Tests never run jamf-cli, so the fixture
 /// is refreshed by hand when the jamf-cli floor moves: run
 /// `app/scripts/capture-jamf-cli-catalog.zsh`, then fix whatever this suite reports.
 ///
@@ -27,14 +27,14 @@ final class CLIHelpContractTests: XCTestCase {
     }
 
     /// Flags jamf-cli accepts on every command (`jamf-cli pro device --help`, Global Flags,
-    /// 1.35.0); the catalog lists each command's own flags only. `--version` and `--help` are the
+    /// 1.38.0); the catalog lists each command's own flags only. `--version` and `--help` are the
     /// root command's.
     private static let globalFlags: Set<String> = [
         "--output", "--out-file", "--no-input", "--no-color", "--no-hints", "--no-version-check",
         "--profile", "--url", "--environment-id", "--tenant-id", "--version", "--help",
     ]
 
-    /// Commands the installed jamf-cli 1.31.1 runs (`jamf-cli pro device --help`) but whose rows
+    /// Commands the installed jamf-cli 1.38.0 runs (`jamf-cli pro device --help`) but whose rows
     /// `commands -o json` leaves out. The test checks they are still absent, so the entry goes
     /// when the catalog gains the row.
     private static let missingFromCatalog: Set<String> = ["pro device"]
@@ -256,7 +256,7 @@ final class CLIHelpContractTests: XCTestCase {
     // MARK: - Tests
 
     private func catalog() throws -> CommandCatalog {
-        let url = TestFixtures.dir("jamf-cli/commands-1.35.0.json")
+        let url = TestFixtures.dir("jamf-cli/commands-1.38.0.json")
         return try CommandCatalog(data: Data(contentsOf: url))
     }
 

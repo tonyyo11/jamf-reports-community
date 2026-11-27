@@ -96,6 +96,55 @@ final class ManagementHealthHtmlTests: XCTestCase {
         XCTAssertFalse(lines(fine).contains { $0.contains("Enrollment") })
     }
 
+    func testTheADETokenIsStatedOnceAndTheCAGetsItsOwnSentence() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let anchor = GoldenFleetClock.anchorNoon()
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "computers", dataDir: dataDir, at: anchor, rows: [mac(1)])
+        try GoldenFleetWorkspace.writeSnapshot(
+            kind: "device-enrollment-instances", dataDir: dataDir, at: anchor,
+            rows: [["id": "1", "name": "A", "tokenExpirationDate": day(12)]])
+        let caDir = dataDir.appendingPathComponent("certificate-authority", isDirectory: true)
+        try FileManager.default.createDirectory(at: caDir, withIntermediateDirectories: true)
+        let expiry = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 40, to: Date()))
+        try #"{"notAfter":\#(Int(expiry.timeIntervalSince1970))}"#.write(
+            to: caDir.appendingPathComponent("certificate-authority_\(Self.freshStamp).json"),
+            atomically: true, encoding: .utf8)
+        let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
+        let text = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertEqual(text.filter { $0.contains("Automated Device Enrollment") }.count, 1,
+                       "\(text)")
+        XCTAssertTrue(text.contains("The Jamf Pro built-in CA expires in 40 days."), "\(text)")
+    }
+
+    /// A snapshot stamped now, so it is inside `max_cache_age_hours` whatever day this runs.
+    private static var freshStamp: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: Date())
+    }
+
+    func testNotificationsGetOneSentenceWhileAboveZero() throws {
+        let root = GoldenFleetWorkspace.freshRoot()
+        roots.append(root)
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let dir = dataDir.appendingPathComponent("jamf-pro-notifications", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("jamf-pro-notifications_\(Self.freshStamp).json")
+        try #"[{"type":"B"},{"type":"A"},{"type":"A"}]"#.write(
+            to: file, atomically: true, encoding: .utf8)
+        let report = HtmlReport(config: try ConfigLoader.loadFromString(""), dataDir: dataDir)
+        let text = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertTrue(text.contains("Jamf Pro has 3 notifications for this login: A (2), B (1)."),
+                      "\(text)")
+        try "[]".write(to: file, atomically: true, encoding: .utf8)
+        let none = lines((report, report.loadInputs(for: Set(SectionID.allCases))))
+        XCTAssertFalse(none.contains { $0.contains("notification") }, "\(none)")
+    }
+
     // MARK: - Intervention list
 
     func testTheInterventionListCarriesTheFindingTitleAsTheReason() throws {

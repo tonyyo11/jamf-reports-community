@@ -192,11 +192,17 @@ struct ComplianceBenchmarksService: Sendable {
 
     // MARK: - Internals
 
-    private static func decodeRules(at url: URL) -> [Snapshot.Rule]? {
-        guard let items = LenientElement<RawRule>.rows(at: url, logging: .platform) else {
-            return nil
-        }
-        return items.map { raw in
+    static func decodeRules(at url: URL) -> [Snapshot.Rule]? {
+        LenientElement<RawRule>.rows(at: url, logging: .platform).map(rules(from:))
+    }
+
+    /// The rules in bytes already read; nil when they are not a list of rows.
+    static func decodeRules(in data: Data) -> [Snapshot.Rule]? {
+        LenientElement<RawRule>.rows(in: data).map { rules(from: $0.rows) }
+    }
+
+    private static func rules(from items: [RawRule]) -> [Snapshot.Rule] {
+        items.map { raw in
             Snapshot.Rule(
                 rule: raw.rule ?? "",
                 passed: raw.passed ?? 0,

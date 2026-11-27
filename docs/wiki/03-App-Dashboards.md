@@ -39,7 +39,19 @@ Overview, Devices and Trends screens and a workbook of its own; see
   failing compliance rules, security-agent coverage, and recent activity. Where the environment has mobile
   devices, a **Mobile Devices** section shows the managed count, the OS-current and passcode
   shares and a Needs attention count that opens the Health Audit; a workspace with no Macs
-  leaves the Mac sections out. On a shared
+  leaves the Mac sections out. A **Since last collect** section counts the Macs that
+  enrolled, left, went stale, started checking in again, turned FileVault off, stopped
+  reporting FileVault or changed macOS version since the newest collect on an earlier day,
+  plus Compliance Benchmark rules newly failing, patch policy failures since the last weekly
+  patch scan, and each security agent's coverage change. A patch failure that drops off the
+  list reads "No longer listed as failed", not fixed: Jamf Pro leaves out a download that is
+  still retrying.
+  The counts are stored in each day's summary, so they match the Fleet Drift tab of that
+  day's workbook; a count the collect could not take reads "Not measured". Click a count
+  to open those Macs in Computers: the list is rebuilt from the same two snapshots, removed
+  Macs show as a list above the table, and a note says when a Mac is no longer listed, the
+  rule has changed since or a snapshot is gone. Newly failing benchmark rules open Compliance
+  Benchmarks. On a shared
   workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
   reads as "someone else is working" rather than a bug. On a
   macOS 27+ host with AI insights enabled, an AI Fleet Insight card turns the same daily

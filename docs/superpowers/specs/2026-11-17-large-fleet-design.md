@@ -163,7 +163,8 @@ per workspace.
    `jamf_cli.run_budget_minutes` (clamped 10 to 240) for a slower server or Mac. When it is used up the
    run starts no further slow source or scan pass; what is left stays due and the next wake
    takes it. The log says `[info] run budget used; N sources left for the next run`. This is
-   not Partial: nothing failed.
+   not Partial: nothing failed. (2.13: that next run is a planned continuation, not a failure
+   retry; see `2026-11-25-split-collect-design.md`.)
 5. **A manual refresh interrupts a scheduled run between sources.** It waits for the source in
    progress, with the status line naming it ("Waiting for the scheduled run: collecting
    ea-results"), then the scheduled run stops, gives up the lock and logs

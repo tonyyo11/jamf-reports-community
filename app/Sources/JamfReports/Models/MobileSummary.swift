@@ -86,11 +86,12 @@ struct MobileSummary: Codable, Sendable, Equatable {
     }
 
     /// The Jamf Pro reading of one `mobile-devices-list` row (`MobileFleetService` accessors).
-    /// Apple TV is outside the iOS feed, so its version is not judged.
+    /// Apple TV and Vision Pro are outside the iOS feed, so their version is not judged; every
+    /// other share counts them.
     static func device(_ item: MobileDeviceInventoryItem) -> Device {
-        let isTV = MobileFleetService.classifyFormFactor(
+        let isTV = [.appleTV, .visionPro].contains(MobileFleetService.classifyFormFactor(
             model: item.hardware?.model, modelIdentifier: item.hardware?.modelIdentifier,
-            deviceType: item.deviceType) == .appleTV
+            deviceType: item.deviceType))
         return Device(
             managed: item.general?.managed,
             supervised: item.general?.supervised,

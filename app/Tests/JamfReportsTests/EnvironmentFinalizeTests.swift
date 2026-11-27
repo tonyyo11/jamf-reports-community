@@ -223,6 +223,23 @@ final class EnvironmentFinalizeTests: XCTestCase {
         XCTAssertEqual(s.collectionSources?["protect-alerts"], "live")
     }
 
+    /// The signature and installer metadata alone measure nothing: no Trends day, a dead run.
+    func testProtectOnlyWithOnlyTheVersionMetadataIsDeadAndWritesNoSummary() async throws {
+        try makeRoot()
+        var o = Options()
+        o.writesMDMSummary = false
+        o.inventory = .none
+        o.landedKinds = [ReportEngine.protectInstallerKind, ReportEngine.protectSignatureVersionsKind]
+        do {
+            try await run("profiles:\n  protect: \(ws)\n", o)
+            XCTFail("expected collectDead")
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
+            XCTAssertEqual(failedCount, ReportEngine.protectReportKinds.count)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try file().path))
+        XCTAssertEqual(EnvironmentCardState.kinds(for: .protect), ReportEngine.protectReportKinds)
+    }
+
     /// Every Pro and School collect logged "[ok] wrote summary_…json" twice: once for the MDM
     /// write and again for this rewrite. Only a summary this step creates is announced.
     func testOnlyASummaryThisStepCreatesIsAnnounced() async throws {

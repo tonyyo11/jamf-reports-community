@@ -53,7 +53,7 @@ extension WorkspaceStore {
                 profile: profile, config: WorkspaceStore.loadReportConfig(profile: profile))
         }.value
         if refused { return 0 }
-        beginCollect(for: profile, status: "refreshing data in the background · profile=\(profile)")
+        beginCollect(for: profile, status: "refreshing data in the background · \(profile)")
         defer { endCollect(for: profile) }
         Self.automaticCollectsRunning.withLock { $0 += 1 }
         defer { Self.automaticCollectsRunning.withLock { $0 -= 1 } }
@@ -178,11 +178,12 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard await manualCollectMayStart() else { return }
+        guard await manualCollectMayStart(
+            full: Set(tiers) == Set(CollectionTier.allCases)) else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         beginCollect(
-            for: activeProfile, status: "refreshing \(labels) data · profile=\(activeProfile)")
+            for: activeProfile, status: "refreshing \(labels) data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -227,9 +228,10 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard await manualCollectMayStart() else { return }
+        guard await manualCollectMayStart(
+            full: tiers == Set(CollectionTier.allCases)) else { return }
         let activeProfile = profile
-        beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
+        beginCollect(for: activeProfile, status: "refreshing data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -277,10 +279,11 @@ extension WorkspaceStore {
             toast = Toast(message: L("Collect is unavailable for this profile."), style: .info)
             return
         }
-        guard await manualCollectMayStart() else { return }
+        // Every tier, forced, of the active workspace: a full refresh.
+        guard await manualCollectMayStart(full: true) else { return }
         let activeProfile = profile
         beginCollect(
-            for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
+            for: activeProfile, status: "collecting jamf-cli data · \(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -311,7 +314,10 @@ extension WorkspaceStore {
     /// process, or this app's own background refresh, self-repair or catch-up) is asked to
     /// stop at its next source (`ManualRefreshRequest`) and waited for, up to
     /// `manualRefreshWait`. True when the collect may start.
-    func manualCollectMayStart() async -> Bool {
+    /// `workspace` (the active one when nil) and `full` go into the request, so a run stopped for
+    /// a refresh that does not collect everything due in its workspace is continued by the tick.
+    /// `full` has no default: only a forced collect of every tier of that workspace is full.
+    func manualCollectMayStart(workspace: String? = nil, full: Bool) async -> Bool {
         let scheduledElsewhere = CLIBridge.collectRefusal() == .tickLockHeld
         let automaticHere = Self.automaticCollectsRunning.withLock { $0 > 0 }
         guard scheduledElsewhere || automaticHere, manualRefreshWait > 0,
@@ -319,7 +325,7 @@ extension WorkspaceStore {
             return !manualCollectMustWait()
         }
         isWaitingForScheduledRun = true
-        ManualRefreshRequest.post()
+        ManualRefreshRequest.post(workspace: workspace ?? profile, full: full)
         globalStatus = L("Waiting for the automatic collect to finish its current source…")
         defer {
             isWaitingForScheduledRun = false
@@ -699,7 +705,7 @@ extension WorkspaceStore {
 
     /// The kinds `profile` is expected to collect, from the inputs the health
     /// strip reads: the skip-expensive toggle, `jamf_cli.collect_skip`, the
-    /// profile's auth method and the jamf-cli version (for the dashboard). The Protect kinds are
+    /// profile's auth method and the jamf-cli version (for gated sources). The Protect kinds are
     /// expected only where `collect` would run Protect: the pin allows `protect.profile` and
     /// that login is not another product. Off the main actor: resolving can run `config list`.
     nonisolated static func expectedKinds(
@@ -730,7 +736,9 @@ extension WorkspaceStore {
         let collectSkip = SharedConfigPin.collectSkip(
             configured: config?.jamfCli?.collectSkip, profile: profile,
             protectOnly: environment.isConfirmedProtectOnly(workspace: profile), fleet: fleet)
-        let protectKinds = DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) }
+        let protectKinds = DataFreshnessHealth.protectKinds.filter {
+            !collectSkip.contains($0) && ReportEngine.jamfCLIAllows($0, installed: jamfCLIVersion)
+        }
         // Security Cloud follows an MDM collect where `CollectRouter` would run it.
         let securityCloudCollected = environment.securityCloud.map {
             securityCloudPinAllows(profile, $0)
@@ -769,11 +777,15 @@ extension WorkspaceStore {
             authMethod: platform.auth?.authMethod,
             tenantLevel: platform.auth?.isTenantLevel == true,
             collectSkip: collectSkip,
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion),
+            jamfCLIVersion: jamfCLIVersion,
             protectConnected: protectCollected,
             securityCloudConnected: !securityKinds.isEmpty,
             platformUnavailable: platform.unavailable != nil,
-            skippedSides: fleet.skipped
+            skippedSides: fleet.skipped,
+            workspaceAuthIsPlatform: JamfCLIAuthMethod(raw: auth?.authMethod)?.isPlatform == true,
+            advisory: Set(StateFileStore.advisoryCauses(profile: profile).keys),
+            optIn: SharedConfigPin.collectOptIn(
+                configured: config?.jamfCli?.collectOptIn, profile: profile)
         )
     }
 

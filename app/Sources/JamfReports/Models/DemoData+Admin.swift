@@ -181,6 +181,7 @@ extension DemoData {
 
     private static let refreshKinds = [
         "overview", "security", "inventory-summary", "patch-status", "policy-status", "audit",
+        "app-installers-deployments", "patch-policies",
     ]
     private static let inventoryKinds = [
         "computers", "mobile-devices-list", "ea-results", "app-status", "update-status",
@@ -190,10 +191,7 @@ extension DemoData {
     /// blueprints, which need the Platform API fields meridianedu does not have.
     private static let schoolKinds = ReportEngine.schoolCommandMatrix(profile: schoolWorkspace)
         .map(\.kind).filter { $0 != ReportEngine.schoolBlueprintsKind }
-    private static let protectKinds = [
-        "protect-overview", "protect-alerts", "protect-computers",
-        "protect-plans",
-    ]
+    private static let protectKinds = DataFreshnessHealth.protectKinds
 
     private static let snapshotBytes: [String: Int] = [
         "overview": 18_422, "security": 412_880, "inventory-summary": 9_310,
@@ -202,7 +200,9 @@ extension DemoData {
         "app-status": 88_120, "update-status": 14_632, "patch-device-failures": 18_872,
         "update-device-failures": 21_406, "protect-overview": 2_140, "protect-alerts": 36_518,
         "protect-computers": 128_774, "protect-plans": 6_912,
+        "protect-signature-versions": 812, "protect-installer": 38,
         "school-overview": 1_204, "school-devices": 612_480, "school-users": 488_116,
+        "app-installers-deployments": 14_208, "patch-policies": 6_344,
     ]
 
     private static func collectLines(_ kinds: [String], profile: String) -> [String] {

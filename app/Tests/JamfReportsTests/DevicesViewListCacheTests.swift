@@ -82,6 +82,31 @@ final class DevicesViewListCacheTests: XCTestCase {
         KeyPathComparator(\DeviceSortRow.riskScore, order: .reverse),
     ]
 
+    /// A "Since last collect" list keeps only the Macs it names, by Jamf ID or serial, never
+    /// by name, and nothing until its Macs are known.
+    func testAChangeListKeepsOnlyItsMacs() {
+        var devices = fleet(6)
+        devices[0].jamfID = "100"
+        devices[3].name = "C1"
+        let match = ChangeMatch([MacKey(jamfID: "100"), MacKey(serial: "c2"), MacKey(serial: "C1")])
+        func rows(_ result: ChangeFilterResult?) -> [String] {
+            Screen.buildRows(
+                devices: devices, query: "", osFilter: nil, filter: .all,
+                sortOrder: [KeyPathComparator(\DeviceSortRow.device.serial)], policy: policy,
+                staleRule: rule, contactGapDays: 14,
+                changeKeep: Screen.changeKeep(result, match: match),
+                searchableText: { $0.searchableText }, risk: risk).map(\.device.serial)
+        }
+        let keys = ChangeFilterResult(outcome: .macs([]))
+        XCTAssertEqual(rows(keys), ["C0", "C1", "C2"], "C3 is named C1 and is not kept")
+        XCTAssertEqual(rows(nil), [], "comparing")
+        XCTAssertEqual(rows(ChangeFilterResult(outcome: .left([]))), [])
+        XCTAssertEqual(rows(ChangeFilterResult(outcome: .fileGone)), [])
+        XCTAssertEqual(rows(ChangeFilterResult(outcome: .unreadable(.tooLarge))), [])
+        XCTAssertEqual(match.unmatchedCount(in: devices), 0)
+        XCTAssertEqual(match.unmatchedCount(in: Array(devices.dropFirst())), 1, "Mac 100 is gone")
+    }
+
     func testEveryFilterSortAndSearchEqualsThePreviousPipeline() {
         let devices = fleet(300)
         for filter in Screen.DeviceFilter.allCases {

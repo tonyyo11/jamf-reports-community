@@ -12,12 +12,15 @@ final class CollectPlanTests: XCTestCase {
     private func inputs(
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases), force: Bool = false,
         skipExpensive: Bool = false, nonPlatformAuth: String? = nil, tenantLevel: Bool = false,
-        collectSkip: Set<String> = [], dashboardSupported: Bool = true
+        collectSkip: Set<String> = [], installedVersion: String? = "1.38.0",
+        optIn: Set<String> = []
     ) -> ReportEngine.CollectPlanInputs {
-        ReportEngine.CollectPlanInputs(
+        var planInputs = ReportEngine.CollectPlanInputs(
             tiers: tiers, force: force, skipExpensive: skipExpensive,
             nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel, collectSkip: collectSkip,
-            dashboardSupported: dashboardSupported, installedVersion: "1.29.0", now: now)
+            installedVersion: installedVersion, now: now)
+        planInputs.optInKinds = optIn
+        return planInputs
     }
 
     private var matrix: [(args: [String], kind: String)] {
@@ -55,7 +58,7 @@ final class CollectPlanTests: XCTestCase {
             commands: matrix,
             inputs: inputs(
                 tiers: [.refresh, .inventory], nonPlatformAuth: "oauth2",
-                collectSkip: ["update-status", "security"], dashboardSupported: false),
+                collectSkip: ["update-status", "security"], installedVersion: "1.29.0"),
             lastRun: { $0 == "security" || $0 == "overview" ? self.now : nil })
 
         XCTAssertEqual(skip("update-status", in: plan), .collectSkip)
@@ -63,7 +66,7 @@ final class CollectPlanTests: XCTestCase {
                        "collect_skip is reported ahead of cadence")
         XCTAssertEqual(skip("compliance-rules", in: plan), .platformOnly(authMethod: "oauth2"))
         XCTAssertEqual(skip("dashboard", in: plan),
-                       .dashboardUnsupported(installedVersion: "1.29.0"))
+                       .needsJamfCLI(required: "1.31.0", installed: "1.29.0"))
         XCTAssertEqual(skip("patch-device-failures", in: plan), .tierNotSelected(.scan))
         XCTAssertEqual(skip("overview", in: plan),
                        .notDue(lastRun: now, cadence: .seconds(43_200)))
@@ -107,7 +110,7 @@ final class CollectPlanTests: XCTestCase {
                 planInputs = ReportEngine.CollectPlanInputs(
                     tiers: planInputs.tiers, force: force, skipExpensive: false,
                     nonPlatformAuth: nil, tenantLevel: false, collectSkip: [],
-                    dashboardSupported: true, installedVersion: nil, now: time)
+                    installedVersion: nil, now: time)
             }
             return ReportEngine.planCollect(
                 commands: matrix, inputs: planInputs,
@@ -119,6 +122,90 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertNil(skip("patch-status", in: plan(force: true)))
         XCTAssertNil(skip("patch-status", in: plan(at: until)), "due again once the hold ends")
         XCTAssertFalse(ReportEngine.CollectSkipReason.repeatedTimeouts(retryAfter: until).isNotDue)
+    }
+
+    // MARK: - Server health
+
+    func testServerHealthSkipsComeInTheirOrder() {
+        func plan(
+            supported: Bool = true, platform: Bool = false, force: Bool = false,
+            hold: ReportEngine.CollectSkipReason? = nil, lastRun: Date? = nil
+        ) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(
+                tiers: [.inventory], force: force, installedVersion: supported ? "1.38.0" : "1.37.0")
+            planInputs.workspaceAuthIsPlatform = platform
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs,
+                advisoryHold: { $0 == "certificate-authority" ? hold : nil },
+                lastRun: { _ in lastRun })
+        }
+        let kind = "certificate-authority"
+        XCTAssertNil(skip(kind, in: plan()), "the default inputs never skip it")
+        XCTAssertEqual(skip(kind, in: plan(supported: false)), .needsJamfCLI(required: "1.38.0", installed: "1.37.0"))
+        XCTAssertEqual(skip(kind, in: plan(platform: true)), .serverHealthNotOnGateway)
+        XCTAssertEqual(skip(kind, in: plan(supported: false, platform: true)),
+                       .serverHealthNotOnGateway, "the gateway reason comes first")
+        XCTAssertEqual(skip(kind, in: plan(hold: .notPermitted)), .notPermitted)
+        XCTAssertEqual(skip(kind, in: plan(hold: .notConfigured)), .notConfigured)
+        XCTAssertNil(skip(kind, in: plan(force: true, hold: .notPermitted)),
+                     "Collect now probes at once")
+        XCTAssertEqual(skip(kind, in: plan(supported: false, hold: .notPermitted)),
+                       .needsJamfCLI(required: "1.38.0", installed: "1.37.0"), "the hold is a schedule reason, after the profile's")
+        XCTAssertNil(skip("computers", in: plan(supported: false, platform: true)),
+                     "only the server-health kinds are affected")
+    }
+
+    func testAnOptInSourceRunsOnlyWhenListedAndEveryOtherSkipComesFirst() {
+        func plan(
+            optIn: Set<String> = [], supported: Bool = true, platform: Bool = false
+        ) -> [ReportEngine.PlannedKind] {
+            var planInputs = inputs(
+                tiers: [.inventory], installedVersion: supported ? "1.38.0" : "1.37.0",
+                optIn: optIn)
+            planInputs.workspaceAuthIsPlatform = platform
+            return ReportEngine.planCollect(
+                commands: matrix, inputs: planInputs, lastRun: { _ in nil })
+        }
+        for kind in ReportEngine.serverHealthOptInKinds.sorted() {
+            XCTAssertEqual(skip(kind, in: plan()), .notOptedIn, kind)
+            XCTAssertNil(skip(kind, in: plan(optIn: [kind])), kind)
+            XCTAssertEqual(skip(kind, in: plan(optIn: [kind], supported: false)),
+                           .needsJamfCLI(required: "1.38.0", installed: "1.37.0"), "an unsupported jamf-cli is the first reason")
+            XCTAssertEqual(skip(kind, in: plan(supported: false)), .needsJamfCLI(required: "1.38.0", installed: "1.37.0"))
+            XCTAssertEqual(skip(kind, in: plan(platform: true)), .serverHealthNotOnGateway)
+        }
+        XCTAssertNil(skip("certificate-authority", in: plan()), "the built-in sources need none")
+        XCTAssertEqual(ReportEngine.CollectSkipReason.notOptedIn.planLabel,
+                       "not turned on (jamf_cli.collect_opt_in)")
+        XCTAssertFalse(ReportEngine.CollectSkipReason.notOptedIn.isNotDue)
+    }
+
+    func testServerHealthSkipTextsAreTheSpecsAndIsNotDueIsFalse() {
+        typealias Reason = ReportEngine.CollectSkipReason
+        XCTAssertEqual(Reason.notPermitted.skipDetail,
+                       "not permitted for this login; checked again weekly")
+        XCTAssertEqual(Reason.notConfigured.planLabel, "not set up")
+        XCTAssertEqual(Reason.needsJamfCLI(required: "1.38.0", installed: "1.37.0").skipDetail,
+                       "needs jamf-cli 1.38.0 or later (installed: 1.37.0)")
+        XCTAssertEqual(Reason.serverHealthNotOnGateway.planLabel, "Platform API profile")
+        for reason in [Reason.notPermitted, .notConfigured,
+                       .needsJamfCLI(required: "1.38.0", installed: "1.37.0"),
+                       .serverHealthNotOnGateway] {
+            XCTAssertFalse(reason.isNotDue)
+        }
+    }
+
+    /// Every server-health source is gated at 1.38.0 in the one table; unknown counts as older.
+    func testTheServerHealthSourcesAreInTheVersionTable() {
+        for kind in ReportEngine.serverHealthKinds {
+            XCTAssertEqual(ReportEngine.minimumJamfCLI[kind], "1.38.0", kind)
+            XCTAssertTrue(ReportEngine.jamfCLIAllows(kind, installed: "1.39.2"), kind)
+            XCTAssertNil(ReportEngine.jamfCLISkip(kind, installed: "1.38.0"), kind)
+            for version in ["1.37.9", "1.38.0-rc1", "garbage", nil] as [String?] {
+                XCTAssertEqual(ReportEngine.jamfCLISkip(kind, installed: version),
+                               .needsJamfCLI(required: "1.38.0", installed: version), kind)
+            }
+        }
     }
 
     // MARK: - Slow sources last
@@ -187,6 +274,62 @@ final class CollectPlanTests: XCTestCase {
                      "one aggregate line already names these")
     }
 
+    // MARK: - jamf-cli version gate
+
+    func testTheDashboardFollowsTheVersionTable() {
+        for (version, gated) in [("1.30.2", true), ("1.31.0", false), (nil, true)] as
+            [(String?, Bool)] {
+            let plan = ReportEngine.planCollect(
+                commands: matrix, inputs: inputs(installedVersion: version),
+                lastRun: { _ in nil })
+            XCTAssertEqual(
+                skip("dashboard", in: plan),
+                gated ? .needsJamfCLI(required: "1.31.0", installed: version) : nil,
+                version ?? "unknown")
+        }
+    }
+
+    /// The Protect sources jamf-cli added after the floor are skipped below their version,
+    /// forced or not, with nothing recorded; collect_skip is reported first.
+    func testProtectSourcesBelowTheirJamfCLIVersionAreSkippedEvenWhenForced() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plan-gate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = StateFileStore(directory: dir)
+        let commands = ReportEngine.protectCommandMatrix(profile: profile)
+        func plan(_ version: String?, forced: Bool, skip: Set<String> = [])
+            -> [String: ReportEngine.CollectSkipReason?] {
+            let planned = ReportEngine.$addOnCollectForced.withValue(forced) {
+                ReportEngine.planAddOn(
+                    commands: commands, collectSkip: skip, installedVersion: version,
+                    stateStore: store, now: now)
+            }
+            return Dictionary(uniqueKeysWithValues: planned.map { ($0.kind, $0.skip) })
+        }
+        let signatures = ReportEngine.protectSignatureVersionsKind
+        let installer = ReportEngine.protectInstallerKind
+        for forced in [false, true] {
+            let old = plan("1.34.0", forced: forced)
+            XCTAssertEqual(old[signatures], .needsJamfCLI(required: "1.38.0", installed: "1.34.0"))
+            XCTAssertEqual(old[installer], .needsJamfCLI(required: "1.35.0", installed: "1.34.0"))
+            XCTAssertEqual(old["protect-computers"], .some(nil), "ungated kinds still run")
+            let mid = plan("1.37.0", forced: forced)
+            XCTAssertEqual(mid[signatures], .needsJamfCLI(required: "1.38.0", installed: "1.37.0"))
+            XCTAssertEqual(mid[installer], .some(nil))
+            let current = plan("1.38.0", forced: forced)
+            XCTAssertEqual(current[signatures], .some(nil))
+            let unknown = plan(nil, forced: forced)
+            XCTAssertEqual(unknown[signatures], .needsJamfCLI(required: "1.38.0", installed: nil))
+        }
+        XCTAssertEqual(plan("1.34.0", forced: true, skip: [signatures])[signatures], .collectSkip)
+        XCTAssertNil(store.lastRun(report: signatures), "a skip records nothing")
+        XCTAssertNil(store.lastFailureExitCode(for: signatures))
+        XCTAssertEqual(
+            ReportEngine.CollectSkipReason.needsJamfCLI(required: "1.38.0", installed: nil)
+                .skipDetail, "needs jamf-cli 1.38.0 or later (installed: unknown)")
+    }
+
     // MARK: - Lines
 
     func testThePlanNamesWhatRunsAndGroupsWhatDoesNot() {
@@ -194,7 +337,7 @@ final class CollectPlanTests: XCTestCase {
             commands: matrix,
             inputs: inputs(
                 tiers: [.refresh, .inventory], nonPlatformAuth: "oauth2",
-                collectSkip: ["update-status"], dashboardSupported: false),
+                collectSkip: ["update-status"], installedVersion: "1.29.0"),
             lastRun: { $0 == "overview" ? self.now : nil })
         let lines = ReportEngine.collectPlanLines(
             profile: profile, plan: plan, deviceScan: .tierNotSelected)
@@ -221,7 +364,8 @@ final class CollectPlanTests: XCTestCase {
     func testALongListWrapsUnderTheLimitAndLosesNothing() {
         let longProfile = String(repeating: "p", count: 60)
         let plan = ReportEngine.planCollect(
-            commands: matrix, inputs: inputs(), lastRun: { _ in nil })
+            commands: matrix, inputs: inputs(optIn: ReportEngine.serverHealthOptInKinds),
+            lastRun: { _ in nil })
         let lines = ReportEngine.collectPlanLines(
             profile: longProfile, plan: plan, deviceScan: .due)
 

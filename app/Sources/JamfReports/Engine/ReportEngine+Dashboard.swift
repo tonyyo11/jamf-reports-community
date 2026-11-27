@@ -50,7 +50,7 @@ extension ReportEngine {
     ) async -> String? {
         guard let protect else { return nil }
         // Every Protect source turned off here: the page must not collect Protect behind it.
-        if Set(DataFreshnessHealth.protectKinds).isSubset(of: collectSkip) {
+        if Set(protectReportKinds).isSubset(of: collectSkip) {
             onLine(.init(timestamp: Date(), level: .warn, text: "[warn] dashboard: Protect left "
                 + "out: every Jamf Protect source is turned off in this workspace"))
             return nil

@@ -41,7 +41,16 @@ final class PatchScanFailureSectionsTests: XCTestCase {
 
     private func rows(_ data: Data?, file: StaticString = #filePath,
                       line: UInt = #line) throws -> [[String: Any]] {
-        let unwrapped = try XCTUnwrap(data, "expected a payload", file: file, line: line)
+        try rows(data.map(ReportEngine.PatchFailurePayload.rows) ?? .unreadable,
+                 file: file, line: line)
+    }
+
+    private func rows(_ payload: ReportEngine.PatchFailurePayload, file: StaticString = #filePath,
+                      line: UInt = #line) throws -> [[String: Any]] {
+        guard case .rows(let unwrapped) = payload else {
+            XCTFail("expected rows, got \(payload)", file: file, line: line)
+            return []
+        }
         return try XCTUnwrap(
             JSONSerialization.jsonObject(with: unwrapped) as? [[String: Any]],
             "payload was not an array of objects", file: file, line: line)
@@ -59,23 +68,18 @@ final class PatchScanFailureSectionsTests: XCTestCase {
                        "must select the device-failure section, not compliance or policies")
     }
 
-    /// A tenant with no patch policy failures emits only the compliance section.
-    /// Filing those rows under patch-device-failures is the specific bug this
-    /// replaces: they decode as the wrong type and the sheet reads as broken
-    /// rather than empty.
-    func testComplianceOnlyStreamYieldsNoFailuresRatherThanComplianceRows() throws {
-        let picked = try rows(ReportEngine.patchDeviceFailurePayload(from: Data(compliance.utf8)))
-        XCTAssertTrue(picked.isEmpty,
-                      "no device section means no failures — never the compliance rows")
+    /// A stream with only the compliance section has no device section: never the compliance
+    /// rows, and not a clean zero either, which against an earlier scan would read as every
+    /// failure clearing at once.
+    func testComplianceOnlyStreamHasNoDeviceSection() {
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: Data(compliance.utf8)),
+                       .noDeviceSection)
     }
 
-    /// Policies can have failures while no per-device rows come back. Still no
-    /// device failures, and still not the policy rows.
-    func testPolicySectionWithoutDeviceSectionYieldsNoFailures() throws {
+    /// Policy rows are a different shape and must not stand in for devices.
+    func testPolicySectionWithoutDeviceSectionHasNoDeviceSection() {
         let stream = Data((compliance + policies).utf8)
-        let picked = try rows(ReportEngine.patchDeviceFailurePayload(from: stream))
-        XCTAssertTrue(picked.isEmpty,
-                      "policy rows are a different shape and must not stand in for devices")
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: stream), .noDeviceSection)
     }
 
     /// Section order is not the selector — shape is. If upstream reorders or
@@ -113,13 +117,11 @@ final class PatchScanFailureSectionsTests: XCTestCase {
     }
 
     /// Empty device data with no fetch error is the ordinary healthy tenant on
-    /// 1.29 — a real zero, and no warning (there is nothing ambiguous to say).
+    /// 1.29 — a real zero.
     func testEnvelopeWithNoDeviceRowsIsAnEmptyAnswer() throws {
-        let collector = LineCollector()
         let picked = try rows(ReportEngine.patchDeviceFailurePayload(
-            from: envelope(devices: "[]"), onLine: collector.append))
+            from: envelope(devices: "[]")))
         XCTAssertTrue(picked.isEmpty)
-        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
     }
 
     /// Go encodes a nil slice as null and drops it under `omitempty`, so a
@@ -140,8 +142,8 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         let missingData = try rows(ReportEngine.patchDeviceFailurePayload(from: missing))
         XCTAssertTrue(missingData.isEmpty, "a device section without data is no failures")
 
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: envelope(devices: "\"none\"")),
-                     "data that is neither rows nor null is still unreadable")
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: envelope(devices: "\"none\"")),
+                       .noDeviceSection, "data that is neither rows nor null is not an answer")
     }
 
     /// A section jamf-cli could not fetch is empty AND says so. That is not a
@@ -149,13 +151,13 @@ final class PatchScanFailureSectionsTests: XCTestCase {
     /// `patchFetchError` tells it which section failed and why.
     func testEnvelopeFetchErrorIsNotACleanZero() throws {
         let deviceFailure = envelope(devices: "[]", deviceError: "request failed (HTTP 503)")
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: deviceFailure))
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: deviceFailure), .noDeviceSection)
         let found = try XCTUnwrap(ReportEngine.patchFetchError(in: deviceFailure))
         XCTAssertEqual(found.section, "device_failures")
         XCTAssertEqual(found.error, "request failed (HTTP 503)")
 
         let policyFailure = envelope(devices: "[]", policyError: "request failed (HTTP 401)")
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: policyFailure),
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: policyFailure), .noDeviceSection,
             "device rows depend on policy rows upstream, so a policy fetch error is not zero either")
         XCTAssertEqual(ReportEngine.patchFetchError(in: policyFailure)?.section, "policy_failures")
         XCTAssertNil(ReportEngine.patchFetchError(in: envelope(devices: "[]")))
@@ -173,8 +175,8 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         Usage:
           jamf-cli pro report [command]
         """.utf8)
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: cobraHelp),
-                     "help text must not be recorded as a clean zero-failure result")
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: cobraHelp), .unreadable,
+                       "help text must not be recorded as a clean zero-failure result")
     }
 
     /// A truncated section is not valid JSON and must not be salvaged into a
@@ -185,7 +187,7 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         [
           {"policy": "Firefox", "device_id": "123",
         """.utf8)
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: truncated))
+        XCTAssertEqual(ReportEngine.patchDeviceFailurePayload(from: truncated), .unreadable)
     }
 
     // MARK: - Only this kind is treated specially
@@ -199,46 +201,20 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         XCTAssertEqual(ReportEngine.sectionedCollectKinds, ["patch-device-failures"])
     }
 
-    // MARK: - Saying which shape produced the zero
+    // MARK: - The captured NFR failure
 
-    /// A stream with several sections and no device rows is indistinguishable
-    /// from an upstream rename of `device_id` unless the run says so. The `[]`
-    /// result is unchanged — this is a line in the log, not a new failure.
-    func testMultiSectionStreamWithoutDeviceRowsWarns() throws {
-        let collector = LineCollector()
-        let stream = Data((compliance + policies).utf8)
-
-        let picked = try rows(
-            ReportEngine.patchDeviceFailurePayload(from: stream, onLine: collector.append)
-        )
-
-        XCTAssertTrue(picked.isEmpty, "the warning must not change the result")
-        XCTAssertEqual(collector.texts.count, 1, "got: \(collector.texts)")
-        let line = try XCTUnwrap(collector.texts.first)
-        XCTAssertTrue(line.hasPrefix("[warn] patch-device-failures: 2 sections parsed, "),
-                      "the count is the diagnostic — got: \(line)")
-        XCTAssertTrue(line.contains("none carried device rows — treating as no failures"),
-                      "got: \(line)")
-    }
-
-    /// The ordinary healthy tenant emits ONE section (compliance) and no
-    /// devices. Warning there would fire on nearly every run and train the
-    /// operator to ignore the line that matters.
-    func testSingleSectionStreamDoesNotWarn() throws {
-        let collector = LineCollector()
-        _ = ReportEngine.patchDeviceFailurePayload(
-            from: Data(compliance.utf8), onLine: collector.append
-        )
-        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
-    }
-
-    /// Finding the device section is the success case — no warning either.
-    func testFullStreamWithDeviceRowsDoesNotWarn() throws {
-        let collector = LineCollector()
-        _ = ReportEngine.patchDeviceFailurePayload(
-            from: Data((compliance + policies + devices).utf8), onLine: collector.append
-        )
-        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
+    /// A real failing patch policy (NFR, jamf-cli 1.38.0, values replaced): the device rows
+    /// are kept, the policy section is not, and `attempt` arrives as text.
+    func testCapturedFailureSavesItsDeviceRow() throws {
+        let url = TestFixtures.dir("patch")
+            .appendingPathComponent("patch-scan-failures-captured.json")
+        let payload = ReportEngine.patchDeviceFailurePayload(from: try Data(contentsOf: url))
+        guard case .rows(let data) = payload else { return XCTFail("got \(payload)") }
+        let decoded = try JSONDecoder().decode([PatchFailureRow].self, from: data)
+        XCTAssertEqual(decoded.count, 1)
+        XCTAssertEqual(decoded.first?.attempt, 2)
+        XCTAssertEqual(decoded.first?.deviceId, "101")
+        XCTAssertEqual(decoded.first?.policyId, "11")
     }
 
     /// The generic salvage keeps working for everything else: a single document
@@ -255,25 +231,5 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         let stream = Data((compliance + policies + devices).utf8)
         XCTAssertNil(ReportEngine.jsonPayload(from: stream),
                      "the generic path must not silently return the first of several sections")
-    }
-}
-
-/// Thread-safe collector for streamed log-line text — `onLine` is `@Sendable`,
-/// so a plainly captured `var` is not.
-private final class LineCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var lines: [String] = []
-
-    /// Usable directly as an `onLine` handler.
-    var append: @Sendable (CLIBridge.LogLine) -> Void {
-        { line in
-            self.lock.lock(); defer { self.lock.unlock() }
-            self.lines.append(line.text)
-        }
-    }
-
-    var texts: [String] {
-        lock.lock(); defer { lock.unlock() }
-        return lines
     }
 }

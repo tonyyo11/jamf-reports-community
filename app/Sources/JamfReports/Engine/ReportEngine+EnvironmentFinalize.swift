@@ -28,6 +28,57 @@ final class LandedSources: Sendable {
         set { scanPlan.withLock { $0 = newValue } }
     }
 
+    /// The `computers` snapshot this run saved (wave B2), decoded once when the change
+    /// counts are built.
+    struct LandedComputers: Sendable {
+        let stamp: String
+        let date: Date
+        let snapshot: ComputerSnapshot
+    }
+
+    /// Where that snapshot was saved; the collect does not decode it again on the hot path.
+    struct LandedFile: Sendable {
+        let stamp: String
+        let date: Date
+        let url: URL
+    }
+
+    private let computers = Mutex<LandedFile?>(nil)
+    var computerFile: LandedFile? {
+        get { computers.withLock { $0 } }
+        set { computers.withLock { $0 = newValue } }
+    }
+
+    private let rulesStamp = Mutex<Date?>(nil)
+    /// The stamp of the `compliance-rules` snapshot this run saved.
+    var complianceRulesStamp: Date? {
+        get { rulesStamp.withLock { $0 } }
+        set { rulesStamp.withLock { $0 = newValue } }
+    }
+
+    private let patchStamp = Mutex<Date?>(nil)
+    /// The stamp of the `patch-device-failures` scan this run saved.
+    var patchFailuresStamp: Date? {
+        get { patchStamp.withLock { $0 } }
+        set { patchStamp.withLock { $0 = newValue } }
+    }
+
+    /// Records what the change counts need from a snapshot this run saved.
+    func noteSaved(kind: String, file: URL) {
+        guard let date = CloudStorage.snapshotTimestamp(of: file) else { return }
+        switch kind {
+        case "computers":
+            guard let stamp = PatchReleaseDateService.snapshotStamp(of: file) else { return }
+            computerFile = LandedFile(stamp: stamp, date: date, url: file)
+        case "compliance-rules":
+            complianceRulesStamp = date
+        case PatchFailureDrift.kind:
+            patchFailuresStamp = date
+        default:
+            break
+        }
+    }
+
     private let unwritten = Mutex(false)
     /// The MDM step logged `summaryNotWrittenMarker` this run.
     var mdmSummaryUnwritten: Bool {
@@ -49,7 +100,7 @@ extension ReportEngine {
     /// `max_cache_age_hours`, the summary builder's own rule.
     static func protectSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
-        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168, now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
     ) -> ProtectSummaryFigures? {
         func readable(_ kind: String) -> Bool {
@@ -61,7 +112,7 @@ extension ReportEngine {
         if readable("protect-computers"), !snapshot.unreadableKinds.contains("protect-computers") {
             let stale = hasInventory ? staleInventoryKind(
                 dataDir: dataDir, kinds: [school ? "school-devices" : "computers"],
-                maxCacheAgeHours: maxCacheAgeHours) : nil
+                maxCacheAgeHours: maxCacheAgeHours, now: now) : nil
             if let stale {
                 logMatchLeftOut("Jamf Protect", kind: stale, hours: maxCacheAgeHours, onLine)
             }
@@ -75,7 +126,28 @@ extension ReportEngine {
         if readable("protect-alerts"), !snapshot.unreadableKinds.contains("protect-alerts") {
             figures.alerts = protectAlertFigures(snapshot.alerts)
         }
-        return figures.computers == nil && figures.alerts == nil ? nil : figures
+        figures.agent = protectAgentFigures(snapshot, landed: landed)
+        return figures.computers == nil && figures.alerts == nil && figures.agent == nil
+            ? nil : figures
+    }
+
+    /// The agent findings this run measured: disconnected whenever `protect-computers` landed,
+    /// signatures and agent only when their own baseline landed too and could be read.
+    static func protectAgentFigures(
+        _ snapshot: ProtectDashboardService.Snapshot, landed: Set<String>
+    ) -> ProtectSummaryFigures.Agent? {
+        let computers = "protect-computers"
+        guard landed.contains(computers), !snapshot.unreadableKinds.contains(computers),
+              let health = snapshot.agentHealth else { return nil }
+        func measured(_ kind: String, _ finding: ProtectAgentHealth.Finding)
+            -> ProtectSummaryFigures.Measured? {
+            landed.contains(kind) && !snapshot.unreadableKinds.contains(kind)
+                ? .init(finding.share) : nil
+        }
+        return .init(
+            signaturesBehind: measured(protectSignatureVersionsKind, health.signaturesBehind),
+            agentBehind: measured(protectInstallerKind, health.agentBehind),
+            disconnected: .init(health.disconnected.share))
     }
 
     /// The open alerts, counted by lowercased severity; the demo summary counts its alerts here.
@@ -91,12 +163,12 @@ extension ReportEngine {
     /// none is. An absent or unreadable one is left to the match's own loader, which returns
     /// nil for it.
     private static func staleInventoryKind(
-        dataDir: URL, kinds: [String], maxCacheAgeHours: Int
+        dataDir: URL, kinds: [String], maxCacheAgeHours: Int, now: Date
     ) -> String? {
         for kind in kinds {
             do {
                 _ = try latestSnapshotURL(
-                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours)
+                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours, now: now)
             } catch is SnapshotCacheExpired {
                 return kind
             } catch {}
@@ -122,7 +194,7 @@ extension ReportEngine {
     /// near 0 of N.
     static func securityCloudSummaryFigures(
         dataDir: URL, workspace: WorkspaceID, landed: Set<String>, school: Bool = false,
-        hasInventory: Bool = true, maxCacheAgeHours: Int = 168,
+        hasInventory: Bool = true, maxCacheAgeHours: Int = 168, now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void = { _ in }
     ) -> SecurityCloudSummaryFigures? {
         guard landed.contains(securityRiskKind),
@@ -133,7 +205,8 @@ extension ReportEngine {
             let mobile = MobileFleetService.load(dataDir: dataDir)
             let kinds = ["computers"] + [mobile.inventoryKind].compactMap { $0 }
             if let stale = staleInventoryKind(
-                dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours) {
+                dataDir: dataDir, kinds: kinds, maxCacheAgeHours: maxCacheAgeHours,
+                now: now) {
                 logMatchLeftOut("Security Cloud", kind: stale, hours: maxCacheAgeHours, onLine)
             } else {
                 correlation = SecurityCloudCorrelation.load(
@@ -153,18 +226,21 @@ extension ReportEngine {
         summariesDir: URL, dataDir: URL, environment: EnvironmentProfiles,
         workspace: WorkspaceID, landed: [EnvironmentProducts.Product: Set<String>],
         day: Date = Date(), announcesWrite: Bool = true, maxCacheAgeHours: Int = 168,
+        deploymentLevels: DeploymentHealth.Levels = .defaults,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> SummaryEmitOutcome {
         let date = SummaryJSONParser.dateFormatter.string(from: day)
         let file = summariesDir.appendingPathComponent("summary_\(date).json")
         let protectKinds = landed[.protect] ?? []
+        // A Protect-only day needs a source reports are built on, not only the version metadata.
+        let protectReportLanded = protectKinds.contains(where: protectReportKinds.contains)
         var summary: DailySummary
         var creates = false
         if let data = try? BoundedFile.read(
             file, limit: SummaryJSONParser.maxSummaryFileBytes, followSymlinks: false),
            let existing = try? SummaryJSONParser.decode(data) {
             summary = existing
-        } else if environment.isProtectOnly, !protectKinds.isEmpty {
+        } else if environment.isProtectOnly, protectReportLanded {
             do {
                 try FileManager.default.createDirectory(
                     at: summariesDir, withIntermediateDirectories: true)
@@ -181,7 +257,7 @@ extension ReportEngine {
         } else {
             return .nothingToSummarize
         }
-        if environment.isProtectOnly, !protectKinds.isEmpty {
+        if environment.isProtectOnly, protectReportLanded {
             summary.collectionSources = mergedSources(
                 existing: summary.collectionSources,
                 fresh: Dictionary(uniqueKeysWithValues: protectKinds.map { ($0, "live") }))
@@ -191,14 +267,24 @@ extension ReportEngine {
             ? nil : protectSummaryFigures(
                 dataDir: dataDir, workspace: workspace, landed: protectKinds,
                 school: environment.isSchool, hasInventory: environment.mdm != nil,
-                maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
+                maxCacheAgeHours: maxCacheAgeHours, now: day, onLine: onLine)
         let securityFigures = securityCloudSummaryFigures(
             dataDir: dataDir, workspace: workspace, landed: landed[.securityCloud] ?? [],
             school: environment.isSchool, hasInventory: environment.mdm != nil,
-            maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
-        guard !slots.isEmpty || figures != nil else { return .keptExisting }
+            maxCacheAgeHours: maxCacheAgeHours, now: day, onLine: onLine)
+        // Server health is a Jamf Pro matrix source: School and Protect-only environments run none.
+        let serverFigures = environment.jamfPro == nil ? nil : serverHealthSummaryFigures(
+            dataDir: dataDir, landed: landed[.jamfPro] ?? [],
+            maxCacheAgeHours: maxCacheAgeHours, now: day)
+        let deploymentFigures = environment.jamfPro == nil ? nil : deploymentSummaryFigures(
+            dataDir: dataDir, landed: landed[.jamfPro] ?? [], levels: deploymentLevels, now: day)
+        guard !slots.isEmpty || figures != nil || serverFigures != nil
+            || deploymentFigures != nil else {
+            return .keptExisting
+        }
         summary = summary.withEnvironment(
-            products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures)
+            products: slots.isEmpty ? nil : slots, protect: figures, securityCloud: securityFigures,
+            serverHealth: serverFigures, deployments: deploymentFigures)
         // After a run whose MDM summary was not written, `writeSummaryFile`'s "will reflect this
         // run" line would contradict the [partial] line already logged: drop its [ok] line. A
         // rewrite of a summary already there drops it too: the [info] line below says what it

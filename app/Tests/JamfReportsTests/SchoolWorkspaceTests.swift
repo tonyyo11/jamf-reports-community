@@ -173,9 +173,11 @@ final class SchoolWorkspaceTests: XCTestCase {
           enabled: true
           profile: "campus-protect"
         """.utf8).write(to: workspace.appendingPathComponent("config.yaml"))
-        func expected(_ product: JamfCLIProduct, pinAllows: Bool = true) -> [String] {
+        func expected(
+            _ product: JamfCLIProduct, pinAllows: Bool = true, version: String = "1.38.0"
+        ) -> [String] {
             WorkspaceStore.expectedKinds(
-                profile: "campus", jamfCLIVersion: "1.33.0", auth: nil,
+                profile: "campus", jamfCLIVersion: version, auth: nil,
                 protectResolved: { _ in .init(authMethod: "oauth2", isTenantLevel: false,
                                                product: product) },
                 protectPinAllows: { _, _ in pinAllows })
@@ -184,6 +186,8 @@ final class SchoolWorkspaceTests: XCTestCase {
         XCTAssertEqual(expected(.protect), school + DataFreshnessHealth.protectKinds)
         XCTAssertEqual(expected(.school), school, "a protect.profile of another product is skipped")
         XCTAssertEqual(expected(.protect, pinAllows: false), school)
+        XCTAssertEqual(expected(.protect, version: "1.33.0"),
+                       school + ReportEngine.protectReportKinds, "gated sources are not owed")
     }
 
     // MARK: - Generate

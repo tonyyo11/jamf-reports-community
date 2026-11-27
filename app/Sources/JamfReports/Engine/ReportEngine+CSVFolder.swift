@@ -200,7 +200,7 @@ extension ReportEngine {
                               + "(\(count) file\(count == 1 ? "" : "s"))"))
             return folder
         } catch {
-            let reason = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
+            let reason = error.englishDescription.replacingOccurrences(of: "\n", with: " ")
             let message = csvFolderFailureMarker + reason
             AppLogger.report.warning("\(message, privacy: .private)")
             if let onLine {

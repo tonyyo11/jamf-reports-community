@@ -637,9 +637,9 @@ struct OverviewView: View {
         }
 
         if shouldSkipCollect {
-            workspace.globalStatus = "generate from cached snapshots · profile=\(profile)"
+            workspace.globalStatus = "generate from cached snapshots · \(profile)"
         } else {
-            workspace.globalStatus = "collect + generate · profile=\(profile)"
+            workspace.globalStatus = "collect + generate · \(profile)"
         }
 
         // Status-bar race guard — see AuditView.runAudit comment.
@@ -649,7 +649,7 @@ struct OverviewView: View {
             // last manual audit. Failures warn and continue — a stale audit
             // is preferable to no report.
             if includeAuditInGenerate && !workspace.demoMode {
-                workspace.globalStatus = "health audit · profile=\(profile)"
+                workspace.globalStatus = "health audit · \(profile)"
                 do {
                     _ = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
                         Task { @MainActor in
@@ -777,7 +777,9 @@ struct OverviewView: View {
     private var renderedSections: [OverviewSection] {
         let composition = workspace.environmentComposition
         return workspace.overviewLayout.visible.filter { section in
-            guard section.availability(in: composition).isShown else { return false }
+            guard section.availability(
+                in: composition, hasJamfPro: workspace.environmentProducts.has(.jamfPro)
+            ).isShown else { return false }
             switch section {
             case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
@@ -825,6 +827,7 @@ struct OverviewView: View {
         } else {
             switch section {
             case .aiInsight: aiInsightCard
+            case .changes: changesSection
             case .managedDevices: managedDevicesSection
             case .mobileDevices: mobileDevicesSection
             case .scoreCards: statRow
@@ -863,6 +866,11 @@ struct OverviewView: View {
                 : nil
         case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
             return liveLoaded ? live.unavailable[section] : nil
+        case .changes:
+            return overviewChanges == nil
+                ? OverviewUnavailable(
+                    reason: L("No comparison yet: needs computers collected on two different days."))
+                : nil
         case .scoreCards, .aiInsight, .workspaceStatus:
             return nil
         }
@@ -1011,7 +1019,7 @@ struct OverviewView: View {
         guard !workspace.demoMode else { return DemoData.securityAgents }
         return OverviewLiveDataLoader.agents(
             live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
-            edrSeries: trendStore.values(metric: .edrAgent))
+            edrSeries: trendStore.currentPoints(metric: .edrAgent).map(\.value))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1067,6 +1075,21 @@ struct OverviewView: View {
     /// The latest summary's mobile figures; the demo fleet's own in demo mode.
     private var mobileSummary: MobileSummary? {
         workspace.demoMode ? DemoData.mobileSummary : trendStore.filteredSummaries.last?.mobile
+    }
+
+    private var overviewChanges: OverviewChanges? {
+        workspace.demoMode ? DemoData.overviewChanges
+            : trendStore.overviewChanges(format: percentFormat)
+    }
+
+    @ViewBuilder
+    private var changesSection: some View {
+        if let changes = overviewChanges {
+            OverviewChangesCard(
+                changes: changes,
+                today: workspace.demoMode
+                    ? changes.day : SummaryJSONParser.dateFormatter.string(from: Date()))
+        }
     }
 
     private var mobileDevicesSection: some View {
@@ -1703,7 +1726,9 @@ struct OverviewView: View {
                 kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: L("Overview"), action: { popDrillDown() })],
                 title: metricDetailTitle(metric),
-                subtitle: MetricDetailFigures.summaryCount(values.count)
+                subtitle: MetricDetailFigures.summaryCount(
+                    values.count,
+                    of: workspace.demoMode ? nil : trendStore.filteredSummaries.count)
                     + " · \(workspace.profile)"
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
@@ -1963,10 +1988,15 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             L("Open Mobile Devices to inspect current records.")
-        case .protectComputers, .protectMatched, .protectOpenAlerts:
+        case .protectComputers, .protectMatched, .protectOpenAlerts,
+             .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             L("Open Jamf Protect to inspect current records.")
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             L("Open Data Sources to see the Jamf Security Cloud collect.")
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending:
+            L("Open Health Audit to see the server and admin health card.")
+        case .appInstallersAtLevel, .patchPoliciesAtLevel:
+            L("Open Health Audit to see the deployments and patch policies card.")
         case .sip, .firewall, .gatekeeper:
             L("Open Security Posture for the per-control breakdown.")
         }
@@ -2027,10 +2057,14 @@ struct OverviewView: View {
         case .mobileManaged, .mobileOSCurrent, .mobilePasscode, .mobileSupervised,
              .mobileDataProtection, .mobileStale, .mobileJailbroken:
             [.init(.mobileFleet)]
-        case .protectComputers, .protectMatched, .protectOpenAlerts:
+        case .protectComputers, .protectMatched, .protectOpenAlerts,
+             .protectSignaturesBehind, .protectAgentBehind, .protectDisconnected:
             [.init(.protectDashboard)]
         case .securityCloudDevices, .securityCloudMatched, .securityCloudHighRisk:
             [.init(.sources)]
+        case .serverCredentialSoonestDays, .jamfProNotifications, .lapsPending,
+             .appInstallersAtLevel, .patchPoliciesAtLevel:
+            [.init(.audit)]
         case .sip:
             [.init(.securityPosture), .init(.devices, filter: .sipOff)]
         case .firewall:
@@ -2395,9 +2429,13 @@ struct MetricDetailFigures: Equatable {
             change: delta(latest - previous), hasChange: true)
     }
 
-    /// "1 summary", "0 summaries".
-    static func summaryCount(_ count: Int) -> String {
-        count == 1 ? L("1 summary") : L("\(count) summaries")
+    /// "1 summary", "3 summaries"; "2 of 5 summaries" when some loaded summaries do not
+    /// carry the metric, so a metric no summary has does not read as no summaries at all.
+    static func summaryCount(_ count: Int, of total: Int? = nil) -> String {
+        if let total, total > count {
+            return total == 1 ? L("\(count) of 1 summary") : L("\(count) of \(total) summaries")
+        }
+        return count == 1 ? L("1 summary") : L("\(count) summaries")
     }
 }
 

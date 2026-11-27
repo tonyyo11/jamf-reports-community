@@ -10,6 +10,9 @@ struct OnboardingView: View {
     @State private var isStartingOver = false
     /// Set on first launch only: returns to the chooser, where the path was picked.
     var onStartOver: (() -> Void)?
+    /// The in-shell run this view shows (`ContentView`'s counter); nil on first launch. A run
+    /// that has created something is parked on the workspace store when the tab goes away.
+    var run: Int?
 
     /// The profile name as the commands on this screen show it.
     private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
@@ -24,6 +27,8 @@ struct OnboardingView: View {
     /// The privileges for the commands a collect runs, each labelled with its source; the 1.31.1
     /// list until the installed jamf-cli's catalog has been read.
     @State private var privileges = CommandCatalog.bundledCollectPrivileges
+    /// The privileges of the opt-in admin-hygiene sources, shown apart.
+    @State private var optionalPrivileges = CommandCatalog.bundledOptionalPrivileges
 
     var body: some View {
         ScrollView {
@@ -41,12 +46,18 @@ struct OnboardingView: View {
         .background(Theme.Colors.winBG)
         // The jamf-cli probe waits on child processes, so it starts here and runs off the main
         // actor, never from `OnboardingFlow.init()` while this view is being built.
+        .onAppear {
+            if let parked = workspaceStore.takeParkedOnboarding(run: run) { flow = parked }
+            // A command that was running when the tab was left may have saved something since.
+            workspaceStore.onboardingRunHasWork = flow.startOverRemovesSomething
+        }
         .task { await flow.refreshJamfCLIStatus() }
-        // The flow goes with the view (the Add sheet starting a new onboarding, a tab switch),
-        // so its typed secrets are wiped first.
-        .onDisappear { [flow, workspaceStore] in
+        // The view goes on a tab switch or a new onboarding; its typed secrets are wiped first.
+        // A run that has saved a profile or folder is parked, not dropped, so coming back still
+        // offers Start over; the Add sheet stays refused meanwhile.
+        .onDisappear { [flow, workspaceStore, run] in
             flow.clearAllSecrets()
-            workspaceStore.onboardingRunHasWork = false
+            workspaceStore.leaveOnboarding(run: run, flow: flow)
         }
         .onChange(of: flow.startOverRemovesSomething) { _, hasWork in
             workspaceStore.onboardingRunHasWork = hasWork
@@ -981,6 +992,22 @@ struct OnboardingView: View {
         return Text("\(name) \(source)")
     }
 
+    /// Privileges only the opt-in admin hygiene counts need; off by default, so none is required.
+    private var optionalPrivilegesGroup: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Optional, only if you turn on admin hygiene")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.Colors.fg)
+            Text(optionalPrivileges.map(\.name).joined(separator: ", "))
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.fg2)
+            Text("View Local Admin Password can also read the passwords LAPS holds. Jamf Reports saves only a count.")
+                .font(.caption2)
+                .foregroundStyle(Theme.Colors.fg2)
+        }
+        .padding(.top, 4)
+    }
+
     private var privilegesBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Required Jamf Pro API privileges")
@@ -999,12 +1026,15 @@ struct OnboardingView: View {
             Text("Names marked jamf-cli come from jamf-cli's command list. It lists none for report and Classic commands, so Jamf Reports adds those from its own permissions page.")
                 .font(.caption2)
                 .foregroundStyle(Theme.Colors.fg2)
+            optionalPrivilegesGroup
         }
         .task {
             let read = await Task.detached {
-                CommandCatalog.installed()?.collectPrivileges()
+                (CommandCatalog.installed()?.collectPrivileges(),
+                 CommandCatalog.installed()?.optionalPrivileges())
             }.value
-            if let read, !read.isEmpty { privileges = read }
+            if let collect = read.0, !collect.isEmpty { privileges = collect }
+            if let optional = read.1, !optional.isEmpty { optionalPrivileges = optional }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1037,7 +1067,8 @@ struct OnboardingView: View {
             .accessibilityLabel(flow.currentStep == .welcome
                 ? L("Back to the first screen") : L("Back to step \(max(1, flow.stepPosition - 1))"))
 
-            if onStartOver != nil && flow.currentStep != .welcome {
+            if (onStartOver != nil || flow.startOverRemovesSomething)
+                && flow.currentStep != .welcome {
                 PNPButton(title: L("Start over"), icon: "arrow.uturn.backward") {
                     requestStartOver()
                 }
@@ -1082,7 +1113,15 @@ struct OnboardingView: View {
             let problems = await flow.startOver()
             isStartingOver = false
             if problems.isEmpty {
-                onStartOver?()
+                if let onStartOver {
+                    onStartOver()
+                } else {
+                    // In the shell there is no chooser to return to: a fresh setup.
+                    flow = OnboardingFlow()
+                    workspaceStore.onboardingRunHasWork = false
+                    workspaceStore.reloadFromDisk()
+                    await flow.refreshJamfCLIStatus()
+                }
             } else {
                 flow.lastError = problems.joined(separator: "\n")
             }

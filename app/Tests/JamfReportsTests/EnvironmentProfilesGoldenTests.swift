@@ -73,35 +73,37 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
     /// What each shape ran before `profiles:` existed: the router's lines and the product and
     /// profile each collect closure was handed, then the SHA-256 of that transcript with every
     /// call expanded into its jamf-cli command lines.
+    /// The Protect shapes' hashes changed in 2.13 only because `protectCommandMatrix` gained
+    /// two commands; their routing transcripts are unchanged.
     private let golden: [String: (transcript: String, sha256: String)] = [
         "pro-oauth": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
         "pro-platform": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
         "pro-protect": (
             transcript: """
                 pro ws-golden
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
+            sha256: "ab7f36f78ec7ee0c31881fa0787720004121c98e85e6786d4a395c0aafea0fc5"),
         "pro-protect-blank": (
             transcript: """
                 pro ws-golden
                 log [warn] Jamf Protect not collected: protect.profile is blank
                 """,
-            sha256: "3a847f5e868bc156875cf828bcaae0184b82195d20397edc28b843058c41a1f7"),
+            sha256: "c1c08cdb3517f3af0f62d7d09040d11dab102cc406c68ad4dbce86c36d09c838"),
         "pro-protect-disabled": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
         "school-primary": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -122,7 +124,7 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 log [info] running protect collect for ws-golden
                 protect ws-golden-protect
                 """,
-            sha256: "9fe678098564c6373099a9e56f6ecd16d072c005da26aad9609fadd08b2b8402"),
+            sha256: "ab7f36f78ec7ee0c31881fa0787720004121c98e85e6786d4a395c0aafea0fc5"),
         "school-protect": (
             transcript: """
                 log [info] routing ws-golden → Jamf School collect
@@ -131,22 +133,22 @@ final class EnvironmentProfilesGoldenTests: XCTestCase {
                 protect ws-golden-protect
                 log [skip] school-device-detail: school-devices did not land this run
                 """,
-            sha256: "d02714987955a7f7e1d103d2340aa7a9d49ecc3bc64b1689413272e8e182ebbc"),
+            sha256: "3906bd7618fef3d97cf8dbc87ccc32eb85051de6193bf4f237cb97eff054ee8e"),
         "jamf-cli-profile-equal": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
         "jamf-cli-profile-differs": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
         "no-config": (
             transcript: """
                 pro ws-golden
                 """,
-            sha256: "265dbc2be4ab708f87f2ec50512acbb097579674e9438f68ee68d837e5aaebcd"),
+            sha256: "b4b88944b9de039fe55295e4eb6a4a5d3b7793d218bbaa27815198627704e348"),
     ]
 
     func testEveryOldShapeRunsTheSameCommandLines() async throws {

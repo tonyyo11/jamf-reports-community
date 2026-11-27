@@ -79,7 +79,8 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         try installLockedKeychainStub()
         let stub: URL = bin
         try await ReportEngine.protectCollect(
-            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+            profile: profile, dataDir: data, locateJamfCLI: { stub },
+            readVersion: { _ in "1.38.0" }, onLine: { _ in })
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
         XCTAssertEqual(store.cause(for: kind)?.kind, .keychainLocked)
@@ -104,7 +105,8 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         func collect(forced: Bool) async throws -> [String] {
             try await ReportEngine.$addOnCollectForced.withValue(forced) {
                 try await ReportEngine.protectCollect(
-                    profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: { _ in })
+                    profile: profile, dataDir: data, locateJamfCLI: { stub },
+                    readVersion: { _ in "1.38.0" }, onLine: { _ in })
             }
         }
 
@@ -183,7 +185,8 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         let seen = LineBox()
         try await ReportEngine.protectCollect(
-            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: seen.append)
+            profile: profile, dataDir: data, locateJamfCLI: { stub },
+            readVersion: { _ in "1.38.0" }, onLine: seen.append)
         let kind = try XCTUnwrap(ReportEngine.protectCommandMatrix(profile: profile).first?.kind)
         try assertMissingPermissionEndsRetries(kind: kind, lines: seen)
     }
@@ -221,8 +224,124 @@ final class SchoolProtectCollectHonestyTests: XCTestCase {
         let stub: URL = bin
         let seen = LineBox()
         try await ReportEngine.protectCollect(
-            profile: profile, dataDir: data, locateJamfCLI: { stub }, onLine: seen.append)
+            profile: profile, dataDir: data, locateJamfCLI: { stub },
+            readVersion: { _ in "1.38.0" }, onLine: seen.append)
         XCTAssertEqual(refusals(seen.texts).count, 1, "\(seen.texts)")
+    }
+
+    // MARK: - Wave E sources
+
+    /// Writes a stub that answers each new Protect command with its own payload and every
+    /// other command with `[]`.
+    private func installWaveEStub(signatures: String, installer: String) throws {
+        let body = """
+            #!/bin/sh
+            case "$*" in
+              *threat-prevention-versions*) printf '%s' '\(signatures)' ;;
+              *"downloads summary"*) printf '%s' '\(installer)' ;;
+              *) printf '[]' ;;
+            esac
+            """
+        try body.write(to: bin, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
+    }
+
+    private func newestSnapshot(_ kind: String, in data: URL) throws -> Data {
+        let file = try XCTUnwrap(
+            FileManager.newestJSONFile(in: data.appendingPathComponent(kind)))
+        return try Data(contentsOf: file)
+    }
+
+    /// The two sources save only their keep-lists: no download URL, no unknown key.
+    func testTheNewProtectSourcesSaveOnlyTheirKeptFields() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installWaveEStub(
+            signatures: #"[{"id":"40213","created":"2026-11-20T10:00:00.123456789Z","x":{"y":1}}]"#,
+            installer: #"{"installerVersion":"5.1.0.7","installerURL":"https://x.invalid/p"}"#)
+        let stub: URL = bin
+        let seen = LineBox()
+        let landed = try await ReportEngine.$addOnCollectForced.withValue(true) {
+            try await ReportEngine.protectCollect(
+                profile: profile, dataDir: data, locateJamfCLI: { stub },
+                readVersion: { _ in "1.38.0" }, onLine: seen.append)
+        }
+        XCTAssertTrue(landed.contains(ReportEngine.protectSignatureVersionsKind), "\(seen.texts)")
+        XCTAssertTrue(landed.contains(ReportEngine.protectInstallerKind))
+        let signatures = try JSONSerialization.jsonObject(
+            with: newestSnapshot(ReportEngine.protectSignatureVersionsKind, in: data))
+            as? [[String: Any]]
+        XCTAssertEqual(signatures?.first?.keys.sorted(), ["created", "id"])
+        let installer = try newestSnapshot(ReportEngine.protectInstallerKind, in: data)
+        XCTAssertEqual(String(decoding: installer, as: UTF8.self),
+                       #"[{"installerVersion":"5.1.0.7"}]"#)
+    }
+
+    /// A payload the reducer cannot read is not saved: a failed attempt, reported as not landed.
+    func testAProtectSourceThatCannotBeReducedIsNotSaved() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installWaveEStub(signatures: #"{"unexpected":true}"#, installer: "null")
+        let stub: URL = bin
+        let seen = LineBox()
+        let kind = ReportEngine.protectSignatureVersionsKind
+        let landed = try await ReportEngine.$addOnCollectForced.withValue(true) {
+            try await ReportEngine.protectCollect(
+                profile: profile, dataDir: data, locateJamfCLI: { stub },
+                readVersion: { _ in "1.38.0" }, onLine: seen.append)
+        }
+        XCTAssertFalse(landed.contains(kind))
+        XCTAssertTrue(seen.texts.contains("[warn] \(kind) not saved: unexpected shape"))
+        XCTAssertTrue(seen.texts.contains { $0.hasPrefix("[partial]") && $0.contains(kind) },
+                      "\(seen.texts)")
+        XCTAssertNil(FileManager.newestJSONFile(in: data.appendingPathComponent(kind)))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.lastFailureExitCode(for: kind), 0)
+        XCTAssertTrue(landed.contains(ReportEngine.protectInstallerKind),
+                      "a null installer answer is an empty list, which lands")
+    }
+
+    /// With every gated source listed in collect_skip, the version is never asked for.
+    func testNoVersionProbeWhenTheGatedSourcesAreTurnedOff() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installWaveEStub(signatures: "[]", installer: "[]")
+        let stub: URL = bin
+        let asked = LineBox()
+        let gated = Set(ReportEngine.minimumJamfCLI.keys)
+        _ = try await ReportEngine.$addOnCollectForced.withValue(true) {
+            try await ReportEngine.protectCollect(
+                profile: profile, dataDir: data, collectSkip: gated, locateJamfCLI: { stub },
+                readVersion: { _ in
+                    asked.append(.init(timestamp: Date(), level: .info, text: "asked"))
+                    return "1.38.0"
+                }, onLine: { _ in })
+        }
+        XCTAssertEqual(asked.texts, [])
+    }
+
+    /// On a jamf-cli too old for them the new sources are skipped: no command, nothing
+    /// recorded, no `[partial]` line; the other Protect sources still run.
+    func testAnOldJamfCLISkipsTheNewProtectSourcesQuietly() async throws {
+        let data = try WorkspacePaths.dataDir(for: profile)
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        try installWaveEStub(signatures: "[]", installer: "[]")
+        let stub: URL = bin
+        let seen = LineBox()
+        let landed = try await ReportEngine.$addOnCollectForced.withValue(true) {
+            try await ReportEngine.protectCollect(
+                profile: profile, dataDir: data, locateJamfCLI: { stub },
+                readVersion: { _ in "1.34.0" }, onLine: seen.append)
+        }
+        XCTAssertEqual(landed, ReportEngine.protectReportKinds)
+        XCTAssertTrue(seen.texts.contains("[skip] protect-signature-versions: "
+            + "needs jamf-cli 1.38.0 or later (installed: 1.34.0)"))
+        XCTAssertFalse(seen.texts.contains { $0.hasPrefix("[partial]") }, "\(seen.texts)")
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        for kind in [ReportEngine.protectSignatureVersionsKind, ReportEngine.protectInstallerKind] {
+            XCTAssertNil(store.lastRun(report: kind))
+            XCTAssertNil(store.lastFailureExitCode(for: kind))
+        }
     }
 }
 

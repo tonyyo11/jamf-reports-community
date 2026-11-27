@@ -4,13 +4,13 @@ import XCTest
 final class CommandCatalogTests: XCTestCase {
 
     private func fixture() throws -> CommandCatalog {
-        let url = TestFixtures.dir("jamf-cli/commands-1.35.0.json")
+        let url = TestFixtures.dir("jamf-cli/commands-1.38.0.json")
         return try CommandCatalog(data: Data(contentsOf: url))
     }
 
     func testDecodesTheCapturedCatalog() throws {
         let catalog = try fixture()
-        XCTAssertEqual(catalog.count, 1783)
+        XCTAssertEqual(catalog.count, 1798)
         XCTAssertEqual(
             catalog.flags(for: ["pro", "backup"]),
             ["--concurrency", "--download-packages", "--format", "--include-ids", "--output",
@@ -100,6 +100,10 @@ final class CommandCatalogTests: XCTestCase {
     private static let unmappedUnlisted: Set<String> = [
         "pro overview", "pro report compliance-devices", "pro report compliance-rules",
         "pro report ddm-status", "pro report blueprint-status",
+        // The restricted-role capture read it with no privilege, so none is needed.
+        "pro certificate-authority active",
+        // Jamf filters notifications by the caller, so the catalog lists no privilege.
+        "pro jamf-pro-notifications list",
     ]
 
     func testEverySupplementedCommandIsStillUnlistedAndEveryOtherUnlistedOneIsKnown() throws {
@@ -125,7 +129,9 @@ final class CommandCatalogTests: XCTestCase {
         XCTAssertEqual(source["Read Managed Software Updates"], .jamfReports)
         XCTAssertEqual(source["Read iOS Configuration Profiles"], .jamfReports)
         XCTAssertEqual(source["Read Mobile Device Applications"], .jamfReports)
-        XCTAssertEqual(source["Read Patch Policies"], .jamfReports)
+        // `pro patch-policies list` (wave C) lists it in jamf-cli's catalog.
+        XCTAssertEqual(source["Read Patch Policies"], .jamfCLI)
+        XCTAssertEqual(source["Read Mac Applications"], .jamfCLI)
         XCTAssertNil(source["compliance-benchmarks:read"])
         XCTAssertEqual(privileges.map(\.name), privileges.map(\.name).sorted())
     }
@@ -159,5 +165,28 @@ final class CommandCatalogTests: XCTestCase {
     func testNoCatalogIsReadWithoutAJamfCLI() {
         XCTAssertNil(CommandCatalog.installed())
         XCTAssertNil(CommandCatalog.installed(locate: { nil }))
+    }
+
+    // MARK: - Opt-in admin hygiene
+
+    func testTheSetupListLeavesOutTheOptInCommandsAndHoldsThemApart() throws {
+        let catalog = try fixture()
+        let collect = catalog.proPrivileges(forArguments: CommandCatalog.collectArguments())
+        for name in ["Read Accounts", "Read API Integrations", "View Local Admin Password"] {
+            XCTAssertFalse(collect.listed.contains(name), "\(name) is optional, not required")
+        }
+        XCTAssertFalse(CommandCatalog.collectArguments().contains {
+            $0.argv.contains("pending-rotations") || $0.argv.contains("accounts")
+                || $0.argv.contains("api-integrations")
+        })
+        let optional = catalog.optionalPrivileges()
+        XCTAssertEqual(optional.map(\.name),
+                       ["Read API Integrations", "Read Accounts", "View Local Admin Password"])
+        XCTAssertTrue(optional.allSatisfy { $0.source == .jamfCLI })
+        XCTAssertEqual(CommandCatalog.bundledOptionalPrivileges, optional)
+        XCTAssertEqual(CommandCatalog.optionalArguments().count, 3)
+        XCTAssertEqual(
+            catalog.proPrivileges(forArguments: CommandCatalog.optionalArguments()).missing, [],
+            "the opt-in commands are in the catalog")
     }
 }

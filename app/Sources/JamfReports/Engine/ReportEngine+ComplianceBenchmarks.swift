@@ -184,7 +184,8 @@ extension ReportEngine {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                     + "command on this jamf-cli?) — snapshot not saved"))
-            stateStore?.record(.failed(exitCode: success.exitCode), report: kind, at: collectStart)
+            stateStore?.record(.failed(exitCode: success.exitCode), report: kind, at: collectStart,
+                cause: .unexpectedOutput)
             return KindCollectResult(outcome: success, saved: false)
         }
         return try saveCollectedPayload(

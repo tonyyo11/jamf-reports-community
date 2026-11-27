@@ -71,8 +71,8 @@ extension ReportEngine {
         }
         let bridge = CLIBridge()
         var unlanded: [String] = []
-        for (args, kind) in commands {
-            if stopsRun(left: running, onLine: onLine) { return [] }
+        for (index, (args, kind)) in commands.enumerated() {
+            if stopsRun(left: Array(running[index...]), onLine: onLine) { return [] }
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
             let watcher = StderrSignalWatcher()
@@ -104,7 +104,8 @@ extension ReportEngine {
                 onLine(.init(timestamp: Date(), level: .warn,
                     text: "[warn] \(kind): output is not a JSON array — snapshot not saved"))
                 unlanded.append(kind)
-                stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+                stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                                   cause: .unexpectedOutput)
             } else {
                 let cause = FailureCause.classify(
                     exitCode: exitCode, stdout: data,

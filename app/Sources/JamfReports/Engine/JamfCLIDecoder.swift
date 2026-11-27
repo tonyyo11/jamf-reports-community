@@ -1221,9 +1221,11 @@ struct ProtectComputerRow: Decodable, Sendable {
     let signaturesVersion: Double?
     /// Why the agent last dropped its connection, as Protect words it (`MQTT_KEEP_ALIVE_TIMEOUT`).
     let lastDisconnectionReason: String?
+    /// When it last dropped it, as Protect writes it; `ProtectAgentHealth` parses it.
+    let lastDisconnection: String?
 
     private enum CodingKeys: String, CodingKey {
-        case signaturesVersion, lastDisconnectionReason
+        case signaturesVersion, lastDisconnectionReason, lastDisconnection
         case uuid, hostname, serial, modelName, osString, plan, version
         case osMajor, osMinor, osPatch
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
@@ -1253,6 +1255,7 @@ struct ProtectComputerRow: Decodable, Sendable {
             .flatMap { wholeInt($0) == nil ? nil : $0 }
         lastDisconnectionReason = try? c.decodeIfPresent(
             String.self, forKey: .lastDisconnectionReason)
+        lastDisconnection = try? c.decodeIfPresent(String.self, forKey: .lastDisconnection)
     }
 
     /// The signatures version as text: no ".0" on a whole number; nil when not reported.
@@ -1260,14 +1263,6 @@ struct ProtectComputerRow: Decodable, Sendable {
         signaturesVersion.flatMap {
             $0 == $0.rounded() ? wholeInt($0).map(String.init) : String($0)
         }
-    }
-
-    /// How many of the Macs that report a signatures version hold less than the newest one in
-    /// this tenant. Nil with fewer than two distinct versions, where "behind" has no meaning.
-    static func signatureLag(_ rows: [ProtectComputerRow]) -> (behind: Int, reporting: Int)? {
-        let versions = rows.compactMap(\.signaturesVersion)
-        guard Set(versions).count >= 2, let newest = versions.max() else { return nil }
-        return (versions.filter { $0 < newest }.count, versions.count)
     }
 
     /// jamf-cli prints `osMajor`, `osMinor` and `osPatch` and no `osString`: "macOS 15.7.3",
@@ -1296,12 +1291,27 @@ struct ProtectPlanRow: Sendable, Equatable {
     let logLevel: String?
     let autoUpdate: Bool?
     let telemetry: String?
+    /// Absent when the plan has none (jamf-cli leaves the key out).
+    var usbControlSet: PlanReference = .absent
+    /// `""` when the plan has none; absent on every row before jamf-cli 1.37.
+    var preventListSets: PlanReference = .absent
+}
+
+/// A plan's reference to a set: absent, its names, or a value that is not text.
+enum PlanReference: Sendable, Equatable {
+    case absent, names(String), unreadable
+
+    /// From a decoded JSON value: nil key is absent, a string is names, anything else unreadable.
+    init(present: Bool, value: Any?) {
+        guard present else { self = .absent; return }
+        self = (value as? String).map(PlanReference.names) ?? .unreadable
+    }
 }
 
 // Decoding sits in an extension so the memberwise initializer stays available to demo data.
 extension ProtectPlanRow: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case name, logLevel, autoUpdate, telemetry
+        case name, logLevel, autoUpdate, telemetry, usbControlSet, preventListSets
     }
 
     init(from decoder: Decoder) throws {
@@ -1310,6 +1320,15 @@ extension ProtectPlanRow: Decodable {
         logLevel = try? c.decodeIfPresent(String.self, forKey: .logLevel)
         autoUpdate = try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)
         telemetry = try? c.decodeIfPresent(String.self, forKey: .telemetry)
+        usbControlSet = Self.reference(c, .usbControlSet)
+        preventListSets = Self.reference(c, .preventListSets)
+    }
+
+    private static func reference(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> PlanReference {
+        guard c.contains(key) else { return .absent }
+        return (try? c.decode(String.self, forKey: key)).map(PlanReference.names) ?? .unreadable
     }
 }
 

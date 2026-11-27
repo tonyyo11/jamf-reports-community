@@ -126,6 +126,8 @@ struct AuditView: View {
     @State private var commandFindings: [AuditFinding] = []
     @State private var contactGapList: [AuditFinding] = []
     @State private var managementCard: ManagementCard?
+    @State private var serverHealth: ServerHealth?
+    @State private var deploymentCard: DeploymentHealthCard?
     @State private var mobileFindingList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
@@ -589,6 +591,13 @@ struct AuditView: View {
             commandHealthSection
             ContactGapSection(findings: contactGapList)
             ManagementHealthSection(card: managementCard)
+            if workspace.environmentProducts.has(.jamfPro) {
+                ServerHealthSection(health: serverHealth)
+                // Both sources are Mac-only, so a mobile-only fleet never collects them.
+                if workspace.environmentProducts.composition != .mobileOnly {
+                    DeploymentHealthSection(card: deploymentCard)
+                }
+            }
             MobileDevicesSection(findings: mobileFindingList)
                 .id(MobileDevicesSection.anchorID)
         }
@@ -1113,6 +1122,8 @@ struct AuditView: View {
             commandFindings = []
             contactGapList = []
             managementCard = DemoData.managementCard
+            serverHealth = DemoData.serverHealth
+            deploymentCard = DemoData.deploymentHealth
             mobileFindingList = DemoData.mobileAuditFindings
             return
         }
@@ -1128,6 +1139,8 @@ struct AuditView: View {
         scanProgress = nil
         contactGapList = []
         managementCard = nil
+        serverHealth = nil
+        deploymentCard = nil
         mobileFindingList = []
         hasPreviousAudit = false
         let loadProfile = workspace.profile
@@ -1196,6 +1209,23 @@ struct AuditView: View {
         }.value
         guard !superseded() else { return }
         managementCard = card
+        let health = await Task.detached(priority: .userInitiated) {
+            // The reports' cache-age rule, so the card marks an aged value "as of" as they do.
+            let maxAge = ProfileService.workspaceURL(for: profile).flatMap {
+                try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+            }?.jamfCli?.resolvedMaxCacheAgeHours
+            return (try? WorkspacePaths.dataDir(for: profile)).map {
+                ServerHealth.load(
+                    dataDir: $0, warningDays: warningDays,
+                    optIn: SharedConfigPin.collectOptIn(profile: profile), maxAgeHours: maxAge)
+            }
+        }.value
+        guard !superseded() else { return }
+        serverHealth = health
+        if let card = await ScreenLoad.paint(
+            stillCurrent: { profile == workspace.profile && !workspace.demoMode },
+            read: { DeploymentHealthCard.load(profile: profile) }
+        ) { deploymentCard = card }
         let staleDays = workspace.configState.staleRule.days
         if let mobile = await ScreenLoad.paint(
             stillCurrent: { profile == workspace.profile && !workspace.demoMode },
@@ -1262,7 +1292,7 @@ struct AuditView: View {
         // against the fictional demo profile.
         guard !workspace.demoMode else { return }
         isRunningAudit = true
-        workspace.globalStatus = "audit · profile=\(workspace.profile)"
+        workspace.globalStatus = "audit · \(workspace.profile)"
         Task {
             let profile = workspace.profile
             // Late-arriving onLine callbacks would otherwise overwrite the
@@ -1299,7 +1329,7 @@ struct AuditView: View {
     private func runHygiene() {
         guard !workspace.demoMode else { return }
         isRunningHygiene = true
-        workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
+        workspace.globalStatus = "group-tools analyze · \(workspace.profile)"
         Task {
             let profile = workspace.profile
             let code: Int32

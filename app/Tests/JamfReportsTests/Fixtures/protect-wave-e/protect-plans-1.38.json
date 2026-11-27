@@ -1,0 +1,11 @@
+[
+  {
+    "actionConfig": "Example Actions",
+    "autoUpdate": true,
+    "logLevel": "ERROR",
+    "name": "Example Plan",
+    "preventListSets": "",
+    "unifiedLoggingFilterSets": "",
+    "usbControlSet": "Example USB Control"
+  }
+]

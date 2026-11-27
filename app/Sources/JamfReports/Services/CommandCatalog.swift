@@ -154,10 +154,12 @@ struct CommandCatalog: Sendable {
             listed: names.sorted(), unlisted: unlisted.sorted(), missing: missing.sorted())
     }
 
-    /// The argvs a full collect runs: the command matrix, the benchmark listing, the per-device
-    /// scan's two calls and the patch-definition walk.
+    /// The argvs a full collect runs: the command matrix (less the opt-in sources, which
+    /// `optionalArguments` holds), the benchmark listing, the per-device scan's two calls and
+    /// the patch-definition walk.
     static func collectArguments() -> [(argv: [String], positionals: Int)] {
         ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
+            .filter { !ReportEngine.serverHealthOptInKinds.contains($0.kind) }
             .map { (argv: $0.args, positionals: 0) } + [
             (ReportEngine.benchmarkListArguments(profile: "p"), 0),
             (ReportEngine.historyArguments(profile: "p", id: "1"), 1),
@@ -166,6 +168,19 @@ struct CommandCatalog: Sendable {
             (ReportEngine.patchTitleListArguments(profile: "p"), 0),
             (ReportEngine.patchSummaryArguments(profile: "p", titleId: "1"), 1),
         ]
+    }
+
+    /// The admin-hygiene commands, run only when turned on in Data Sources.
+    static func optionalArguments() -> [(argv: [String], positionals: Int)] {
+        ReportEngine.collectCommandMatrix(profile: "p", staleDays: 30)
+            .filter { ReportEngine.serverHealthOptInKinds.contains($0.kind) }
+            .map { (argv: $0.args, positionals: 0) }
+    }
+
+    /// The privileges the opt-in sources need, for the setup text's optional group.
+    func optionalPrivileges() -> [Privilege] {
+        Privilege.merged(
+            listed: proPrivileges(forArguments: Self.optionalArguments()).listed, supplemental: [])
     }
 
     /// The setup text's list for a full collect: what this catalog lists, plus
@@ -183,18 +198,24 @@ struct CommandCatalog: Sendable {
 
     // MARK: - Installed jamf-cli
 
-    /// The setup text's list when no catalog can be read: the 1.35.0 catalog's names and every
+    /// The setup text's list when no catalog can be read: the 1.38.0 catalog's names and every
     /// supplemental one. `CommandCatalogTests` keeps it equal to the fixture's, so the text is
     /// never blank and never drifts.
     static let bundledCollectPrivileges = Privilege.merged(
         listed: [
             "Read Advanced Mobile Device Searches", "Read Buildings", "Read Categories",
             "Read Computer Extension Attributes", "Read Computers", "Read Departments",
-            "Read Device Enrollment Program Instances", "Read Mobile Devices", "Read Packages",
-            "Read Patch Management Software Titles", "Read Scripts", "Read Self Service",
+            "Read Device Enrollment Program Instances", "Read Mac Applications",
+            "Read Mobile Devices", "Read Packages", "Read Patch Management Software Titles",
+            "Read Patch Policies", "Read Scripts", "Read Self Service",
             "Read Sites", "Read Smart Computer Groups",
         ],
         supplemental: supplementalPrivileges.values.flatMap { $0 })
+
+    /// `optionalPrivileges` when no catalog can be read; `CommandCatalogTests` keeps it equal.
+    static let bundledOptionalPrivileges = Privilege.merged(
+        listed: ["Read Accounts", "Read API Integrations", "View Local Admin Password"],
+        supplemental: [])
 
     /// What a read of the installed jamf-cli runs.
     static let fetchArguments = ["commands", "-o", "json"]

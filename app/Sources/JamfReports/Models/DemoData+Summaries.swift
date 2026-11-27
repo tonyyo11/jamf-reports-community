@@ -32,9 +32,15 @@ extension DemoData {
         let computers = protectSnapshot.computers
         let matched = ProtectProCorrelation.load(
             protect: computers, profile: workspace, demoMode: true)?.matchedShare
+        let agent = protectSnapshot.agentHealth.map { health in
+            ProtectSummaryFigures.Agent(
+                signaturesBehind: .init(health.signaturesBehind.share),
+                agentBehind: .init(health.agentBehind.share),
+                disconnected: .init(health.disconnected.share))
+        }
         return ProtectSummaryFigures(
             computers: .init(count: computers.count, matched: matched),
-            alerts: ReportEngine.protectAlertFigures(protectSnapshot.alerts))
+            alerts: ReportEngine.protectAlertFigures(protectSnapshot.alerts), agent: agent)
     }
 
     /// The summary fields Protect fills, on the newest day only.
@@ -50,6 +56,9 @@ extension DemoData {
             .protectComputers: (start: 6, jitter: 0.6, isCount: true),
             .protectMatched: (start: 92, jitter: 1.5, isCount: false),
             .protectOpenAlerts: (start: 5, jitter: 1.2, isCount: true),
+            .protectSignaturesBehind: (start: 5, jitter: 1.0, isCount: true),
+            .protectAgentBehind: (start: 6, jitter: 1.0, isCount: true),
+            .protectDisconnected: (start: 2, jitter: 0.8, isCount: true),
         ])
 
     // MARK: - Mobile
@@ -219,4 +228,89 @@ extension DemoData {
             underOneDay: out["under"], underSevenDays: out["week"],
             sevenDaysOrMore: out["older"], never: out["never"])
     }
+}
+
+extension DemoData {
+    /// The demo fleet's "Since last collect": 524 Macs yesterday and today (1 enrolled,
+    /// 1 removed). Each count is how many of the 8 listed Macs `demoChangeMacs` picks, so
+    /// the Computers list a count opens has that many rows.
+    static let fleetChanges = FleetChangeSummary(computers: ComputerChanges(
+        currentStamp: demoStamp(daysBefore: 0), baselineStamp: demoStamp(daysBefore: 1),
+        currentCount: totalDevices,
+        priorCount: totalDevices - demoChangeMacs(.joined).count + demoLeftMacs.count,
+        staleDays: 30, staleBasis: [StaleBasis.checkIn.rawValue],
+        joined: demoChangeMacs(.joined).count, left: demoLeftMacs.count,
+        osChanged: demoChangeMacs(.osChanged).count,
+        becameStale: demoChangeMacs(.becameStale).count,
+        noLongerStale: demoChangeMacs(.noLongerStale).count,
+        fileVaultOff: demoChangeMacs(.fileVaultOff).count,
+        fileVaultStoppedReporting: demoChangeMacs(.fileVaultStoppedReporting).count,
+        unidentified: 0, ambiguous: 0),
+        patch: PatchChanges(
+            currentStamp: demoStamp(daysBefore: 0), baselineStamp: demoStamp(daysBefore: 7),
+            startedFailing: demoPatchFailures(.patchStarted),
+            stoppedFailing: demoPatchFailures(.patchNoLongerListed),
+            leftOut: 0, notInComputers: 0, computersStamp: demoStamp(daysBefore: 0)))
+
+    /// The Macs each demo count stands for, by a fixed rule over `deviceInventory` in fleet
+    /// order. FileVault stopped reporting picks none.
+    static func demoChangeMacs(_ kind: ChangeKind) -> [DeviceInventoryRecord] {
+        let macs = deviceInventory
+        let newest = macs.map(\.osVersion)
+            .max { JamfCLIInstaller.compareVersions($0, $1) == .orderedAscending }
+        let stale = macs.filter { ($0.daysSinceContact ?? 0) > 14 }
+        let fileVaultOff = macs.filter {
+            SecurityControlPolicy.default.reading($0.fileVault, for: .fileVault) == false
+        }
+        let osChanged = macs.filter { $0.osVersion == newest }
+        let picked = Set((stale + fileVaultOff + osChanged).map(\.serial))
+        let checkingIn = macs.filter { !picked.contains($0.serial) }
+            .min { ($0.daysSinceContact ?? 0) < ($1.daysSinceContact ?? 0) }
+        let pickedAgain = picked.union([checkingIn?.serial].compactMap { $0 })
+        let failing = macs.filter { $0.patchFailureCount > 0 }
+        switch kind {
+        case .becameStale: return stale
+        case .fileVaultOff: return fileVaultOff
+        case .osChanged: return osChanged
+        case .noLongerStale: return checkingIn.map { [$0] } ?? []
+        case .fileVaultStoppedReporting, .left: return []
+        case .joined: return macs.first { !pickedAgain.contains($0.serial) }.map { [$0] } ?? []
+        case .patchStarted: return failing
+        case .patchNoLongerListed:
+            return macs.first { $0.patchFailureCount == 0 }.map { [$0] } ?? []
+        }
+    }
+
+    /// The demo's removed Mac: an invented name no listed Mac has.
+    static let demoLeftMacs = [
+        ComputerDates(jamfID: "1187", serial: "C02DEMORMV01", name: "MERIDIAN-OLD-MBP"),
+    ]
+
+    private static func demoPatchFailures(_ kind: ChangeKind) -> Int {
+        let macs = demoChangeMacs(kind)
+        return kind == .patchStarted ? macs.map(\.patchFailureCount).reduce(0, +) : macs.count
+    }
+
+    /// What the Computers screen shows for a demo count; reads no disk.
+    static func changeFilterResult(for kind: ChangeKind) -> ChangeFilterResult {
+        if kind == .left { return ChangeFilterResult(outcome: .left(demoLeftMacs)) }
+        let keys = demoChangeMacs(kind).map { MacKey(jamfID: $0.jamfID, serial: $0.serial) }
+        return ChangeFilterResult(
+            outcome: .macs(keys), failures: kind.isPatch ? demoPatchFailures(kind) : nil)
+    }
+
+    /// A snapshot stamp on `referenceDate` or before, so no demo date passes it.
+    private static func demoStamp(daysBefore days: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'060000"
+        return formatter.string(from: referenceDate.addingTimeInterval(-Double(days) * 86_400))
+    }
+
+    static let overviewChanges: OverviewChanges = {
+        OverviewChanges(
+            day: SummaryJSONParser.dateFormatter.string(from: referenceDate),
+            computers: fleetChanges.computers, benchmarks: nil, patch: fleetChanges.patch,
+            agents: [])
+    }()
 }

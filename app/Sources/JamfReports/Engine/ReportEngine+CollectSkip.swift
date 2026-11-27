@@ -34,11 +34,18 @@ extension ReportEngine {
         }
     }
 
-    /// The sources that can be turned off here.
+    /// The sources that can be turned off here. An opt-in source is off until turned on, so it
+    /// has no collect_skip switch.
     static func optionalKinds(
         protectOnly: Bool = false, fleet: FleetState = .unknown
     ) -> Set<String> {
         allSourceKinds.filter { !isCoreKind($0, protectOnly: protectOnly, fleet: fleet) }
+            .subtracting(serverHealthOptInKinds)
+    }
+
+    /// `collect_opt_in` as the opt-in sources it names (same normalizing as `collect_skip`).
+    static func listedOptInKinds(_ raw: [String]?) -> Set<String> {
+        Set((raw ?? []).map(normalizedKind)).intersection(serverHealthOptInKinds)
     }
 
     /// `collect_skip` as the list it names: trimmed, lowercased, underscores read as hyphens,

@@ -1,0 +1,6 @@
+[
+  {"id": "1", "policyName": "Example Browser latest", "policyEnabled": true, "policyTargetVersion": "2.4.1", "policyDeploymentMethod": "SELFSERVICE", "softwareTitle": "Example Browser", "softwareTitleConfigurationId": "1", "pending": 10, "completed": 70, "deferred": 5, "failed": 15},
+  {"id": "2", "policyName": "Example Editor latest", "policyEnabled": true, "policyTargetVersion": "5.0", "policyDeploymentMethod": "PROMPT", "softwareTitle": "Example Editor", "softwareTitleConfigurationId": "2", "pending": 0, "completed": 98, "deferred": 0, "failed": 2},
+  {"id": "3", "policyName": "Example Viewer old", "policyEnabled": false, "policyTargetVersion": "1.0", "policyDeploymentMethod": "SELFSERVICE", "softwareTitle": "Example Viewer", "softwareTitleConfigurationId": "3", "pending": 0, "completed": 0, "deferred": 0, "failed": 3},
+  {"id": "4", "policyName": "Example Tool new", "policyEnabled": true, "policyTargetVersion": "3.1", "policyDeploymentMethod": "PROMPT", "softwareTitle": "Example Tool", "softwareTitleConfigurationId": "4", "pending": 0, "completed": 0, "deferred": 0, "failed": 0}
+]

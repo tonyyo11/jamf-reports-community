@@ -228,6 +228,15 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        "beside an MDM Protect's computer list is optional")
     }
 
+    func testAnOptInKindInCollectSkipIsNamedAsDoingNothing() throws {
+        let found = try rows("jamf_cli:\n  collect_skip: [Admin_Accounts, sofa]\n")
+        XCTAssertEqual(
+            found.first { $0.id == "config.value.jamf_cli.collect_skip.optIn" }?.detail,
+            "\"Admin_Accounts\" is collected only when collect_opt_in lists it; collect_skip does "
+                + "nothing for it.")
+        XCTAssertFalse(found.contains { $0.id == "config.value.jamf_cli.collect_skip" })
+    }
+
     /// `sofa` was reported as "not a kind collect can skip" until it became skippable.
     func testSOFAInCollectSkipIsNotWarnedAbout() throws {
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [sofa, SOFA]\n"), [])

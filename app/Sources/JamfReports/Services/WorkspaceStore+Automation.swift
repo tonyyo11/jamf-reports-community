@@ -346,6 +346,7 @@ extension WorkspaceStore {
         let request = healthRequests
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
+            splitCollectRows = []
             return
         }
         let profile = self.profile
@@ -359,7 +360,9 @@ extension WorkspaceStore {
         // foreground pass instead of only after a relaunch. Scope to THIS
         // profile's agents plus the global managed (isMulti) agents so a
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
-        typealias HealthPass = (status: TickerStatus, issues: [AutomationHealthIssue])
+        typealias HealthPass = (
+            status: TickerStatus, issues: [AutomationHealthIssue],
+            lastRuns: [String: RunHistoryService.RunSummary], tickState: TickState)
         let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
             let status = registrar.status
             // With nothing scheduled an unregistered ticker is not a fault.
@@ -372,12 +375,19 @@ extension WorkspaceStore {
                 forProfile: profile)
             return (status: status,
                     issues: AutomationHealth.evaluate(
-                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now),
+                    lastRuns: RunHistoryService.newestFinishedRuns(profile: profile),
+                    tickState: TickState.load())
         }.value
         // A later request or a profile switch overtook this read: what it found is for
         // something else, and the newer request publishes its own.
         guard request == healthRequests, profile == self.profile else { return }
         tickerStatus = evaluated.status
+        self.schedules = Self.withLastRuns(
+            self.schedules, evaluated.lastRuns, splitDay: evaluated.tickState.splitDay,
+            workspace: profile, now: now)
+        splitCollectRows = SplitCollectRow.rows(
+            state: evaluated.tickState, schedules: self.schedules, workspace: profile, now: now)
         // While this process holds the tick lock, and until the wake it turned away has had
         // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
         // the schedule is running. Neither the banner nor the digest calls it overdue.
@@ -389,6 +399,29 @@ extension WorkspaceStore {
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
         await refreshDataFreshness()
+    }
+
+    /// Each schedule's placeholder last run and status replaced with its newest finished run in
+    /// the active workspace's Run History, or In progress while `workspace` has an open split day
+    /// on it that a failure does not stand behind.
+    nonisolated static func withLastRuns(
+        _ schedules: [Schedule], _ runs: [String: RunHistoryService.RunSummary],
+        splitDay: [String: SplitDay] = [:], workspace: String = "", now: Date = Date()
+    ) -> [Schedule] {
+        schedules.map { schedule in
+            guard let label = schedule.launchAgentLabel else { return schedule }
+            var updated = schedule
+            if let run = runs[label] {
+                updated.last = FileDisplay.date(run.date)
+                updated.lastStatus = run.status
+            }
+            let key = schedule.isMulti ? workspace : ""
+            if let split = splitDay[label], split.isOpen(on: now), !split.failed,
+               split.profiles[key] != nil, ![.fail, .partial].contains(updated.lastStatus) {
+                updated.lastStatus = .inProgress
+            }
+            return updated
+        }
     }
 
     // MARK: - Data freshness (per-kind)
@@ -510,8 +543,9 @@ extension WorkspaceStore {
     /// tenant-level integration can never be granted `environmentLevelKinds`,
     /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
     /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
-    /// and it skips the dashboard on a jamf-cli before 1.31.0
-    /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
+    /// and it skips a source the installed jamf-cli is too old for (`ReportEngine.minimumJamfCLI`:
+    /// the dashboard, two Protect sources, the server-health and deployment sources; an
+    /// unknown version counts as too old, as `collect` reads it).
     /// A workspace with Protect connected (`EnvironmentProfiles.protect`) also expects the
     /// `protect-*` kinds, and one with Jamf Security Cloud connected the `security-risk` kind.
     /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
@@ -523,26 +557,39 @@ extension WorkspaceStore {
         authMethod: String?,
         tenantLevel: Bool = false,
         collectSkip: Set<String> = [],
-        dashboardSupported: Bool = false,
+        jamfCLIVersion: String? = nil,
         protectConnected: Bool = false,
         securityCloudConnected: Bool = false,
         platformUnavailable: Bool = false,
-        skippedSides: Set<FleetSide> = []
+        skippedSides: Set<FleetSide> = [],
+        workspaceAuthIsPlatform: Bool = false,
+        advisory: Set<String> = [],
+        optIn: Set<String> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
+        let allows = { ReportEngine.jamfCLIAllows($0, installed: jamfCLIVersion) }
         let protect = (protectConnected
-                ? DataFreshnessHealth.protectKinds.filter { !collectSkip.contains($0) } : [])
+                ? DataFreshnessHealth.protectKinds.filter {
+                    !collectSkip.contains($0) && allows($0)
+                } : [])
             + (securityCloudConnected
                 ? DataFreshnessHealth.securityCloudKinds.filter { !collectSkip.contains($0) } : [])
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
             }
-            if kind == ReportEngine.dashboardKind, !dashboardSupported { return false }
+            if !allows(kind) { return false }
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
             if collectSkip.contains(kind) { return false }
+            if ReportEngine.serverHealthOptInKinds.contains(kind), !optIn.contains(kind) {
+                return false
+            }
+            if ReportEngine.serverHealthKinds.contains(kind), workspaceAuthIsPlatform {
+                return false
+            }
+            if advisory.contains(kind) { return false }
             if ReportEngine.skippedSide(of: kind, skipped: skippedSides) != nil { return false }
             let platformOut = platformUnavailable || skipsPlatform
             return !(platformOut && ReportEngine.platformOnlyKinds.contains(kind))
@@ -643,7 +690,7 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
-        beginCollect(for: profile, status: "re-collecting stale data · profile=\(profile)")
+        beginCollect(for: profile, status: "re-collecting stale data · \(profile)")
         defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
@@ -1062,7 +1109,7 @@ extension WorkspaceStore {
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        let status = "catching up daily data · profile=\(targets.joined(separator: ", "))"
+        let status = "catching up daily data · \(targets.joined(separator: ", "))"
         targets.forEach { beginCollect(for: $0, status: status) }
         defer { targets.forEach { endCollect(for: $0) } }
         if await Self.runCatchUp(profiles: targets, collect: collect) {

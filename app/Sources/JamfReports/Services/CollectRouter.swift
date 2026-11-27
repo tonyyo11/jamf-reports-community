@@ -290,6 +290,7 @@ enum CollectRouter {
                     environment: environment, workspace: workspace, workspacePaths: workspacePaths,
                     landed: landed.all, day: now, announcesWrite: !landed.mdmSummaryUnwritten,
                     maxCacheAgeHours: config?.jamfCli?.resolvedMaxCacheAgeHours ?? 168,
+                    deploymentLevels: config?.thresholds?.resolvedDeploymentLevels ?? .defaults,
                     onLine: onLine)
             }
             let watched: @Sendable (CLIBridge.LogLine) -> Void = { line in
@@ -437,9 +438,10 @@ enum CollectRouter {
         let kinds = try await ReportEngine.$addOnCollectForced.withValue(true) {
             try await protectCollect(protectProfile, dataDir, collectSkip, onLine)
         }
-        guard !kinds.isEmpty else {
+        // The signature and installer metadata alone measure nothing a report is built on.
+        guard kinds.contains(where: ReportEngine.protectReportKinds.contains) else {
             throw ReportEngineError.collectDead(
-                profile: profile, failedCount: ReportEngine.protectCommandMatrix(profile: "").count)
+                profile: profile, failedCount: ReportEngine.protectReportKinds.count)
         }
         return kinds
     }
@@ -453,6 +455,7 @@ enum CollectRouter {
         day: Date,
         announcesWrite: Bool = true,
         maxCacheAgeHours: Int,
+        deploymentLevels: DeploymentHealth.Levels,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) {
         guard let dataDir = try? workspacePaths.dataDir(for: workspace.name),
@@ -464,7 +467,7 @@ enum CollectRouter {
         ReportEngine.finalizeEnvironmentSummary(
             summariesDir: summariesDir, dataDir: dataDir, environment: environment,
             workspace: workspace, landed: landed, day: day, announcesWrite: announcesWrite,
-            maxCacheAgeHours: maxCacheAgeHours, onLine: onLine)
+            maxCacheAgeHours: maxCacheAgeHours, deploymentLevels: deploymentLevels, onLine: onLine)
     }
 
     /// The Protect half of a Jamf Pro or Jamf School run. Never throws: a Protect failure is a
