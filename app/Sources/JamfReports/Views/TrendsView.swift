@@ -716,7 +716,7 @@ struct TrendsView: View {
                                         stacking: .standard
                                     )
                                     .foregroundStyle(by: .value("Band", series.label))
-                                    .interpolationMethod(.monotone)
+                                    .interpolationMethod(.linear)
                                     .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                                 }
                             }
@@ -739,13 +739,13 @@ struct TrendsView: View {
                                                  Color(hex: metric.colorHex).opacity(0.0)],
                                         startPoint: .top, endPoint: .bottom
                                     ))
-                                    .interpolationMethod(.monotone)
+                                    .interpolationMethod(.linear)
                                 LineMark(x: .value("Date", point.date),
                                          y: .value(metricLabel(metric), point.value),
                                          series: .value("Segment", segment))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                    .interpolationMethod(.monotone)
+                                    .interpolationMethod(.linear)
 
                                 // Always-visible data point dots
                                 PointMark(x: .value("Date", point.date),
@@ -1071,7 +1071,7 @@ struct TrendsView: View {
                                 stacking: .standard
                             )
                             .foregroundStyle(by: .value("Band", series.label))
-                            .interpolationMethod(.monotone)
+                            .interpolationMethod(.linear)
                             .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                         }
                     }
@@ -1327,7 +1327,7 @@ struct TrendsView: View {
             )
             .foregroundStyle(color)
             .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-            .interpolationMethod(.catmullRom)
+            .interpolationMethod(.linear)
 
             PointMark(
                 x: .value("Date", point.date),
@@ -1801,7 +1801,7 @@ private struct ChartExportView: View {
                              Color(hex: metric.colorHex).opacity(0.0)],
                     startPoint: .top, endPoint: .bottom
                 ))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
 
                 LineMark(
                     x: .value("Date", point.date),
@@ -1809,7 +1809,7 @@ private struct ChartExportView: View {
                 )
                 .foregroundStyle(Color(hex: metric.colorHex))
                 .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
 
                 PointMark(
                     x: .value("Date", point.date),

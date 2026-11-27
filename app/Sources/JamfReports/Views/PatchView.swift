@@ -475,8 +475,16 @@ struct PatchView: View {
                         y: .value("Adoption %", pct)
                     )
                     .foregroundStyle(by: .value("Title", title.title))
-                    .interpolationMethod(.monotone)
+                    .interpolationMethod(.linear)
                     .accessibilityLabel("\(title.title): \(PercentFormat.whole.text(pct)) adopted")
+                    // A title with one measured day has no line; the point keeps it visible.
+                    PointMark(
+                        x: .value("Date", point.date),
+                        y: .value("Adoption %", pct)
+                    )
+                    .foregroundStyle(by: .value("Title", title.title))
+                    .symbolSize(16)
+                    .accessibilityHidden(true)
                 }
             }
         }

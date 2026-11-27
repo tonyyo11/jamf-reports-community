@@ -123,4 +123,24 @@ final class ComplianceBandingServiceTests: XCTestCase {
         XCTAssertEqual(ComplianceBandingService.osLabel(27), "macOS Golden Gate 27")
         XCTAssertEqual(ComplianceBandingService.osLabel(11), "macOS 11")
     }
+
+    // The per-OS breakdown draws every row to one scale, so a row's length follows its
+    // Mac count (2.12 beta: every row filled the width whatever its count).
+    func testPerOSWidthsFollowEachRowsCountAgainstTheLargestRow() {
+        let rows = DemoData.compliancePostureSnapshot.perOSMajor
+        let totals = rows.map { $0.bands.reduce(0) { $0 + $1.count } }
+        let largest = totals.max() ?? 0
+        XCTAssertGreaterThan(Set(totals).count, 1, "demo rows should differ in size")
+        for (row, total) in zip(rows, totals) {
+            let parts = ComplianceBandingService.perOSWidthFractions(row.bands, largestRowTotal: largest)
+            let length = parts.reduce(0) { $0 + $1.fraction }
+            XCTAssertEqual(length, Double(total) / Double(largest), accuracy: 1e-9)
+            XCTAssertFalse(parts.contains { $0.band.count == 0 }, "empty bands add gaps")
+        }
+    }
+
+    func testPerOSWidthsAreEmptyWithNoDevices() {
+        let bands = ComplianceBandingService.bands(failures: [])
+        XCTAssertTrue(ComplianceBandingService.perOSWidthFractions(bands, largestRowTotal: 0).isEmpty)
+    }
 }
