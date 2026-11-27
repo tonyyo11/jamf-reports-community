@@ -582,14 +582,15 @@ struct CompliancePostureView: View {
     }
 
     private var perOSGrid: some View {
-        VStack(spacing: 8) {
+        let largestRow = snapshot.perOSMajor.map { $0.bands.reduce(0) { $0 + $1.count } }.max() ?? 0
+        return VStack(spacing: 8) {
             ForEach(snapshot.perOSMajor, id: \.osMajor) { row in
                 HStack(alignment: .center, spacing: 12) {
                     Text(ComplianceBandingService.osLabel(row.osMajor))
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .frame(width: 150, alignment: .leading)
-                    perOSStack(row.bands)
+                    perOSStack(row.bands, largestRow: largestRow)
                         .frame(height: 14)
                     Text("\(row.bands.reduce(0) { $0 + $1.count })")
                         .font(Theme.Fonts.mono(11))
@@ -603,14 +604,15 @@ struct CompliancePostureView: View {
         }
     }
 
-    private func perOSStack(_ bands: [ComplianceBand]) -> some View {
-        let total = max(bands.reduce(0) { $0 + $1.count }, 1)
+    /// One scale for every row: the largest row fills the width.
+    private func perOSStack(_ bands: [ComplianceBand], largestRow: Int) -> some View {
+        let parts = ComplianceBandingService.perOSWidthFractions(bands, largestRowTotal: largestRow)
         return GeometryReader { geo in
             HStack(spacing: 1) {
-                ForEach(bands) { band in
+                ForEach(parts, id: \.band.id) { part in
                     Rectangle()
-                        .fill(Color(hex: band.colorHex))
-                        .frame(width: geo.size.width * Double(band.count) / Double(total))
+                        .fill(Color(hex: part.band.colorHex))
+                        .frame(width: geo.size.width * part.fraction)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))

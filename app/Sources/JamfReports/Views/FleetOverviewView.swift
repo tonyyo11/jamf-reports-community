@@ -245,7 +245,7 @@ struct FleetOverviewView: View {
                              stability.opacity(0)],
                     startPoint: .top, endPoint: .bottom
                 ))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
 
                 LineMark(
                     x: .value("Date", point.date),
@@ -253,7 +253,7 @@ struct FleetOverviewView: View {
                 )
                 .foregroundStyle(stability)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
             }
         }
         .chartYScale(domain: 0...100)

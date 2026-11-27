@@ -47,6 +47,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- In-app trend charts (Trends, Fleet Overview, Patch velocity) draw straight lines between measured days instead of curves that invented values between them, and a Patch title with one measured day shows as a point. Compliance Posture's per-OS bars are drawn to one scale, so a macOS version with fewer Macs has a shorter bar.
 - Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
 - The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
 - A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".

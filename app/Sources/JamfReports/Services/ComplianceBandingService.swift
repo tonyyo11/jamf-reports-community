@@ -91,6 +91,17 @@ struct ComplianceBandingService: Sendable {
             .sorted { $0.osMajor > $1.osMajor }
     }
 
+    /// Each band's share of the bar width when every per-OS row is drawn to one scale:
+    /// the largest row fills the width, so a row's length follows its Mac count.
+    /// Zero-count bands are left out so their spacing does not lengthen small rows.
+    static func perOSWidthFractions(
+        _ bands: [ComplianceBand], largestRowTotal: Int
+    ) -> [(band: ComplianceBand, fraction: Double)] {
+        guard largestRowTotal > 0 else { return [] }
+        return bands.filter { $0.count > 0 }
+            .map { (band: $0, fraction: Double($0.count) / Double(largestRowTotal)) }
+    }
+
     /// Extracts the OS major version from a string like "15.4.1" or
     /// "macOS 14.7". Returns nil when no leading integer is found.
     static func parseOSMajor(_ raw: String) -> Int? {
