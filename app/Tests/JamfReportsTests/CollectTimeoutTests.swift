@@ -342,6 +342,15 @@ final class CollectTimeoutTests: XCTestCase {
         XCTAssertNotNil(rows.first { $0.titleId == "1" }?.staleSince)
     }
 
+    /// Only a literal `[]` is "no versions": the title gets its marker row.
+    func testAnEmptyDefinitionsAnswerWritesTheNoVersionsMarker() async throws {
+        _ = try await runDefinitionWalk(#"printf '[]'; exit 0"#)
+        let rows = try JSONDecoder().decode(
+            [PatchVersionDate].self, from: try XCTUnwrap(try newestVersionDates()).data)
+        XCTAssertEqual(rows.first { $0.titleId == "1" }?.noVersions, true)
+        XCTAssertNil(rows.first { $0.titleId == "1" }?.version)
+    }
+
     func testAStoppedWalkLeavesTheSidecarAsItWas() async throws {
         _ = try await runDefinitionWalk(Self.oneDefinition)
         let before = try XCTUnwrap(try newestVersionDates())
