@@ -111,7 +111,7 @@ final class PolicyHealthServiceTests: XCTestCase {
               {"device_type": "Computer", "name": "Dock Settings", "id": 104,
                "errors": 5, "devices": 4, "last_error": "2026-06-09",
                "top_error": "Install timeout"},
-              {"device_type": "Mobile Device", "name": "Email Configuration", "id": null,
+              {"device_type": "Mobile", "name": "Email Configuration", "id": null,
                "errors": 3, "devices": 3, "last_error": "2026-06-08",
                "top_error": "Account exists"}
             ],

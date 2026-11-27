@@ -168,9 +168,9 @@ final class CoreDashboardSecurityTests: XCTestCase {
 
         let json = """
         [{"total":200,
-          "status_summary":[{"status":"UP_TO_DATE","count":180},{"status":"PENDING","count":20}],
+          "status_summary":[{"status":"IDLE","count":180},{"status":"DOWNLOADING","count":20}],
           "plan_total":5,
-          "plan_state_summary":[{"state":"Activated","count":3},{"state":"Pending","count":2}]}]
+          "plan_state_summary":[{"state":"PlanCompleted","count":3},{"state":"PendingPlanValidation","count":2}]}]
         """
         try seedJSON(json, kind: "update-status", in: dir)
 

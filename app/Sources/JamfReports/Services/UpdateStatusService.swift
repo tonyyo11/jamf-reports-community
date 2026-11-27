@@ -217,11 +217,11 @@ struct UpdateStatusService: Sendable {
     private static func statusColor(for status: String) -> UInt32 {
         let upper = status.uppercased()
         switch upper {
-        case let s where s.contains("COMPLETED") || s.contains("SUCCESS"):
+        case "INSTALLED":
             return 0x30D158  // green
         case let s where s.contains("ERROR") || s.contains("FAILED"):
             return 0xFF453A  // red
-        case let s where s.contains("PENDING") || s.contains("IDLE") || s.contains("INSTALLING"):
+        case "DOWNLOADING", "INSTALLING", "IDLE":
             return 0x007AFF  // blue
         default:
             return 0x8E8E93  // gray

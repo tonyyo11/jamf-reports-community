@@ -112,7 +112,7 @@ final class MobileFleetServiceTests: XCTestCase {
                     "managed": true,
                     "supervised": false,
                     "lastInventoryUpdateDate": "2025-01-09T16:45:00Z",
-                    "deviceOwnershipType": "Corporate",
+                    "deviceOwnershipType": "UserEnrollment",
                     "activationLockEnabled": false,
                     "passcodeCompliant": false,
                     "dataProtectionEnabled": true,

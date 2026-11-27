@@ -211,8 +211,8 @@ final class MobileFindingsTests: XCTestCase {
         let dir = dataDir.appendingPathComponent("update-device-failures")
         try GoldenFleetWorkspace.writeJSON(
             [["total": 1, "status_summary": [], "error_devices": [[
-                "name": "Mac", "serial": "C02X", "device_type": "COMPUTER", "os_version": "26.0",
-                "username": "u", "status": "FAILED", "product_key": "k", "updated": "2026-10-18",
+                "name": "Mac", "serial": "C02X", "device_type": "Computer", "os_version": "26.0",
+                "username": "u", "status": "INSTALL_FAILED", "product_key": "k", "updated": "2026-10-18",
             ]], "failed_plans": NSNull()] as [String: Any]],
             to: dir.appendingPathComponent("update-device-failures_2026-10-18T120000000000.json"))
         let snapshot = MobileFleetService.load(dataDir: dataDir)
@@ -358,8 +358,8 @@ final class MobileFindingsTests: XCTestCase {
 
     func testOneDeviceWithErrorsForTwoProductsIsOneDevice() throws {
         func row(_ product: String) -> [String: Any] {
-            ["name": "iPad", "serial": "sn-1", "device_type": "MOBILE_DEVICE",
-             "os_version": "18", "username": "u", "status": "FAILED", "product_key": product,
+            ["name": "iPad", "serial": "sn-1", "device_type": "Mobile",
+             "os_version": "18", "username": "u", "status": "INSTALL_FAILED", "product_key": product,
              "updated": "2026-10-18"]
         }
         let data = try JSONSerialization.data(withJSONObject: [[
@@ -379,8 +379,8 @@ final class MobileFindingsTests: XCTestCase {
         let named = try XCTUnwrap(try rows().first { ($0["mobileDeviceId"] as? String) == "5" })
         let name = try XCTUnwrap((named["general"] as? [String: Any])?["displayName"] as? String)
         func row(_ name: String, serial: String) -> [String: Any] {
-            ["name": name, "serial": serial, "device_type": "MOBILE_DEVICE", "os_version": "18",
-             "username": "u", "status": "FAILED", "product_key": "k", "updated": "2026-10-18"]
+            ["name": name, "serial": serial, "device_type": "Mobile", "os_version": "18",
+             "username": "u", "status": "INSTALL_FAILED", "product_key": "k", "updated": "2026-10-18"]
         }
         try GoldenFleetWorkspace.writeJSON(
             [["total": 2, "status_summary": [], "error_devices": [
