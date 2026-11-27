@@ -17,14 +17,15 @@ enum ManagementDetail {
         return words.prefix(1).uppercased() + words.dropFirst()
     }
 
-    /// Jamf's `appleEnrollmentType` for the screen. The API sends it in lower case (`none`,
-    /// `supervised`, `device`, `user`, `unknown`), which `displayValue` leaves as given.
+    /// Jamf's `appleEnrollmentType` (macOS 27 or later, Jamf Pro 11.32) in Jamf Pro's words. The
+    /// API sends it in lower case (`none`, `supervised`, `device`, `user`, `unknown`), which
+    /// `displayValue` leaves as given.
     static func enrollmentTypeValue(_ raw: String) -> String {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "none": L("None")
         case "supervised": L("Supervised")
-        case "device": L("Device Enrollment")
-        case "user": L("User Enrollment")
+        case "device": L("Device")
+        case "user": L("User")
         case "unknown": L("Unknown")
         default: displayValue(raw)
         }

@@ -3,8 +3,8 @@ import XCTest
 @testable import JamfReports
 
 /// Rows are parsed from JSON text so a boolean and a number arrive as they do from disk.
-/// Every identifier is a placeholder. `appleEnrollmentType` is the value Jamf Pro 11.34 reports
-/// after a Mac's inventory update (seen on a cloud and an on-prem server, 2026-11-27).
+/// Every identifier is a placeholder. `appleEnrollmentType` is the value a macOS 27 Mac reports
+/// (seen on a cloud and an on-prem Jamf Pro 11.34 server, 2026-11-27).
 enum ManagementFixture {
     static func row(_ json: String) -> [String: Any] {
         guard let data = json.data(using: .utf8),

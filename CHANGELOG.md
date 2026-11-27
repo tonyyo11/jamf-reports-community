@@ -47,7 +47,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
-- The Computers detail panel and the Health Audit's Management card show a Mac's enrollment type in Jamf Pro's words ("Supervised", "Device Enrollment", "User Enrollment"), not as Jamf Pro 11.34 sends it ("supervised"). Macs report it after their first inventory update on 11.34. The workbook keeps Jamf's value.
+- The Computers detail panel and the Health Audit's Management card show a Mac's Apple enrollment type in Jamf Pro's words ("Supervised", "Device", "User", "None", "Unknown"), not as the API sends it ("supervised"). Jamf Pro reports it for Macs on macOS 27 or later. The workbook keeps Jamf's value.
 - Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
 - The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
 - A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".

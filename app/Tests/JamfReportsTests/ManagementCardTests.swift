@@ -198,8 +198,8 @@ final class ManagementCardTests: XCTestCase {
 
     func testEnrollmentTypeReadsInJamfProWording() {
         let expected = [
-            "none": "None", "supervised": "Supervised", "device": "Device Enrollment",
-            "user": "User Enrollment", "unknown": "Unknown", " Supervised ": "Supervised",
+            "none": "None", "supervised": "Supervised", "device": "Device",
+            "user": "User", "unknown": "Unknown", " Supervised ": "Supervised",
             "SOMETHING_NEW": "Something new",
         ]
         for (raw, shown) in expected {
@@ -218,7 +218,7 @@ final class ManagementCardTests: XCTestCase {
         ]
         let card = ManagementCard.build(health: health(list), tokens: .empty)
         XCTAssertEqual(row(card, "values.appleEnrollmentType")?.breakdown,
-                       "Supervised 2 · Device Enrollment 1")
+                       "Supervised 2 · Device 1")
     }
 
     func testRemediationFollowsTheGaps() {
