@@ -63,6 +63,27 @@ final class ManagementFactsTests: XCTestCase {
         XCTAssertNil(facts.batteryCapacityPercent)
     }
 
+    /// `computers-macos27.json` is a scrubbed row captured from a macOS 27.3 Mac on a Jamf Cloud
+    /// test server, so these values are the ones Jamf sends, not ones written by hand.
+    func testReadsTheCapturedMacOS27Row() throws {
+        let url = TestFixtures.dir("jamf-cli-data/computers-macos27/computers-macos27.json")
+        let rows = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
+        let facts = ManagementFacts(item: try XCTUnwrap(rows.first))
+        XCTAssertEqual(facts.appleEnrollmentType, "supervised")
+        XCTAssertEqual(facts.awaitingConfiguration, false)
+        XCTAssertEqual(facts.lockdownModeEnabled, true)
+        XCTAssertEqual(facts.attestationStatus, "PENDING")
+        XCTAssertEqual(facts.batteryHealth, "UNSUPPORTED")
+
+        let shown = Dictionary(
+            ManagementDetail.rows(facts, now: Date()), uniquingKeysWith: { first, _ in first })
+        XCTAssertEqual(shown["Enrollment type"], "Supervised")
+        XCTAssertEqual(shown["Awaiting setup"], "No")
+        XCTAssertEqual(shown["Lockdown Mode"], "Yes")
+        XCTAssertEqual(shown["External boot"], "Allow booting from external media")
+    }
+
     func testRecordFromComputerCarriesFacts() {
         let record = DeviceInventoryService.recordFromComputer(
             ManagementFixture.row(ManagementFixture.full), source: "test")

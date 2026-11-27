@@ -1,0 +1,176 @@
+[
+  {
+    "id": "31",
+    "udid": "00008112-FIXTURE00000031",
+    "general": {
+      "name": "Lab-Mac-31",
+      "lastIpAddress": "203.0.113.31",
+      "lastReportedIpV4": "198.51.100.31",
+      "lastReportedIpV6": "2001:db8::31",
+      "jamfBinaryVersion": "11.34.0-t1793383479089",
+      "platform": "Mac",
+      "barcode1": null,
+      "barcode2": null,
+      "assetTag": null,
+      "remoteManagement": {
+        "managed": true,
+        "managementUsername": null
+      },
+      "supervised": true,
+      "mdmCapable": {
+        "capable": true,
+        "capableUsers": [
+          "localadmin"
+        ],
+        "userManagementInfo": [
+          {
+            "capableUser": "localadmin",
+            "managementId": "3f1d2c4e-5a6b-4c7d-8e9f-0a1b2c3d4e31"
+          }
+        ]
+      },
+      "reportDate": "2026-11-27T13:17:31.702Z",
+      "lastCheckIn": "2026-11-27T13:36:20.199Z",
+      "lastContact": "2026-11-27T13:40:52.215Z",
+      "lastCloudBackupDate": null,
+      "lastEnrolledDate": "2026-11-27T12:14:01.555Z",
+      "mdmProfileExpiration": "2028-11-27T12:13:40Z",
+      "initialEntryDate": "2026-11-27",
+      "distributionPoint": null,
+      "site": {
+        "id": "-1",
+        "name": "None"
+      },
+      "itunesStoreAccountActive": false,
+      "enrolledViaAutomatedDeviceEnrollment": false,
+      "userApprovedMdm": true,
+      "enrollmentMethod": {
+        "id": "6",
+        "objectName": null,
+        "objectType": "User-initiated - no invitation"
+      },
+      "declarativeDeviceManagementEnabled": true,
+      "appleEnrollmentType": "supervised",
+      "awaitingConfiguration": false,
+      "managementId": "7b2e9c10-4d3f-4a5b-9c6d-1e2f3a4b5c31",
+      "lastLoggedInUsernameSelfService": null,
+      "lastLoggedInUsernameSelfServiceTimestamp": null,
+      "lastLoggedInUsernameBinary": "localadmin",
+      "lastLoggedInUsernameBinaryTimestamp": "2026-11-27T13:14:42.492Z",
+      "lastLoggedInUsernameMdm": "localadmin",
+      "lastLoggedInUsernameMdmTimestamp": "2026-11-27T12:15:20.833Z",
+      "extensionAttributes": []
+    },
+    "diskEncryption": {
+      "individualRecoveryKeyValidityStatus": "UNKNOWN",
+      "institutionalRecoveryKeyPresent": false,
+      "diskEncryptionConfigurationName": null,
+      "fileVault2Enabled": false,
+      "fileVault2EligibilityMessage": "Eligible",
+      "fileVault2EnabledUserNames": [
+        "localadmin"
+      ],
+      "bootPartitionEncryptionDetails": null
+    },
+    "localUserAccounts": null,
+    "purchasing": {
+      "purchased": true,
+      "leased": false,
+      "poNumber": null,
+      "lifeExpectancy": 0,
+      "purchasePrice": null,
+      "purchasingAccount": null,
+      "purchasingContact": null,
+      "appleCareId": null,
+      "vendor": null,
+      "leaseDate": null,
+      "poDate": null,
+      "warrantyDate": null,
+      "extensionAttributes": []
+    },
+    "printers": null,
+    "storage": null,
+    "applications": null,
+    "userAndLocation": {
+      "username": "user31",
+      "realname": "Test User 31",
+      "email": "user31@example.com",
+      "position": "Staff",
+      "phone": "612-555-0131",
+      "departmentId": null,
+      "buildingId": null,
+      "room": null,
+      "extensionAttributes": []
+    },
+    "configurationProfiles": null,
+    "services": null,
+    "hardware": {
+      "make": "Apple",
+      "model": "VirtualMac2,1",
+      "modelIdentifier": "VirtualMac2,1",
+      "serialNumber": "FXTR0031AA",
+      "processorSpeedMhz": 0,
+      "processorCount": 0,
+      "coreCount": 4,
+      "processorType": "Apple M2 Max (Virtual)",
+      "processorArchitecture": "arm64",
+      "busSpeedMhz": 0,
+      "cacheSizeKilobytes": 0,
+      "networkAdapterType": "Ethernet",
+      "macAddress": "02:00:00:00:00:31",
+      "altNetworkAdapterType": "Ethernet",
+      "altMacAddress": "02:00:00:00:01:31",
+      "totalRamMegabytes": 8192,
+      "openRamSlots": 0,
+      "batteryCapacityPercent": -1,
+      "batteryHealth": "UNSUPPORTED",
+      "smcVersion": null,
+      "nicSpeed": "n/a",
+      "opticalDrive": null,
+      "bootRom": "20457.60.77.501.2",
+      "bleCapable": false,
+      "supportsIosAppInstalls": true,
+      "appleSilicon": true,
+      "provisioningUdid": "0000000000000000000000000000000000000031",
+      "extensionAttributes": []
+    },
+    "certificates": null,
+    "attachments": null,
+    "packageReceipts": null,
+    "security": {
+      "sipStatus": "ENABLED",
+      "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
+      "xprotectVersion": "5287",
+      "autoLoginDisabled": false,
+      "remoteDesktopEnabled": false,
+      "activationLockEnabled": false,
+      "secureBootLevel": "FULL_SECURITY",
+      "externalBootLevel": "ALLOW_BOOTING_FROM_EXTERNAL_MEDIA",
+      "bootstrapTokenAllowed": true,
+      "bootstrapTokenEscrowedStatus": "ESCROWED",
+      "recoveryLockEnabled": false,
+      "firewallEnabled": true,
+      "lastAttestationAttempt": "2026-11-27T13:17:32.395Z",
+      "lastSuccessfulAttestation": null,
+      "attestationStatus": "PENDING",
+      "lockdownModeEnabled": true
+    },
+    "operatingSystem": {
+      "name": "macOS",
+      "version": "27.3",
+      "build": "26C5047e",
+      "supplementalBuildVersion": "26C5047e",
+      "rapidSecurityResponse": null,
+      "activeDirectoryStatus": "Not Bound",
+      "fileVault2Status": "NOT_APPLICABLE",
+      "softwareUpdateDeviceId": "VMA2MACOSAP",
+      "extensionAttributes": []
+    },
+    "licensedSoftware": null,
+    "softwareUpdates": null,
+    "groupMemberships": null,
+    "extensionAttributes": null,
+    "contentCaching": null,
+    "ibeacons": null
+  }
+]
