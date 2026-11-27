@@ -17,6 +17,20 @@ enum ManagementDetail {
         return words.prefix(1).uppercased() + words.dropFirst()
     }
 
+    /// Jamf's `appleEnrollmentType` (macOS 27 or later, Jamf Pro 11.32) in Jamf Pro's words. The
+    /// API sends it in lower case (`none`, `supervised`, `device`, `user`, `unknown`), which
+    /// `displayValue` leaves as given.
+    static func enrollmentTypeValue(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "none": L("None")
+        case "supervised": L("Supervised")
+        case "device": L("Device")
+        case "user": L("User")
+        case "unknown": L("Unknown")
+        default: displayValue(raw)
+        }
+    }
+
     /// `displayValue` for a field of any kind (a jamf-cli Detail row, which can hold a name):
     /// only a value with an underscore or a known status word is rewritten, so a user, site or
     /// department written in capitals ("JSMITH", "FINANCE") stays as given.
@@ -51,7 +65,7 @@ enum ManagementDetail {
         add(L("MDM capable"), yesNo(facts.mdmCapable))
         add(L("Supervised"), yesNo(facts.supervised))
         add(L("Enrolled via ADE"), yesNo(facts.enrolledViaADE))
-        add(L("Enrollment type"), facts.appleEnrollmentType.map(displayValue))
+        add(L("Enrollment type"), facts.appleEnrollmentType.map(enrollmentTypeValue))
         add(L("Awaiting setup"), yesNo(facts.awaitingConfiguration))
         add(L("Attestation"), facts.attestationStatus.map(displayValue))
         add(L("Last attested"), date(facts.lastSuccessfulAttestation))

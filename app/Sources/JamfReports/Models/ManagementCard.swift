@@ -107,21 +107,23 @@ struct ManagementCard: Sendable, Equatable {
         let total = health.values(breakdown).reduce(0) { $0 + $1.records.count }
         let title = breakdown == .externalBootLevel
             ? L("External boot level") : L("Enrollment type")
+        let format = breakdown == .appleEnrollmentType
+            ? ManagementDetail.enrollmentTypeValue : ManagementDetail.displayValue
         return Row(
             id: "values.\(breakdown)", title: title,
             value: L("\(total) of \(health.managedCount) Macs"), tone: .neutral,
-            breakdown: line(values))
+            breakdown: line(values, format: format))
     }
 
-    /// "Value 3 · Other 1", the most common values in `ManagementDetail.displayValue` wording,
-    /// with "5 of 12 values"
-    /// when there are more than are shown.
+    /// "Value 3 · Other 1", the most common values in `ManagementDetail.displayValue` wording
+    /// (or `format`'s), with "5 of 12 values" when there are more than are shown.
     private static func line(
-        _ values: (shown: [(value: String, count: Int)], distinct: Int)
+        _ values: (shown: [(value: String, count: Int)], distinct: Int),
+        format: (String) -> String = ManagementDetail.displayValue
     ) -> String? {
         guard values.distinct > 0 else { return nil }
         let text = values.shown
-            .map { "\(ManagementDetail.displayValue($0.value)) \($0.count)" }
+            .map { "\(format($0.value)) \($0.count)" }
             .joined(separator: " · ")
         return values.distinct > values.shown.count
             ? text + " · " + L("\(values.shown.count) of \(values.distinct) values") : text
