@@ -69,8 +69,10 @@ final class SnapshotFleetDriftBoundaryTests: XCTestCase {
     // MARK: - OS
 
     func testAnOSAppearingOrRespelledIsNoChange() {
-        let result = drift([mac(1, checkIn: taken, os: "15.1"), mac(2, checkIn: taken, os: "26.7.0")],
-                           [mac(1, checkIn: before), mac(2, checkIn: before, os: "26.7")])
+        let result = drift([mac(1, checkIn: taken, os: "15.1"), mac(2, checkIn: taken, os: "26.7.0"),
+                            mac(3, checkIn: taken, os: "26.7")],
+                           [mac(1, checkIn: before), mac(2, checkIn: before, os: "26.7"),
+                            mac(3, checkIn: before, os: "26.7.0")])
         XCTAssertTrue(result.osChanged.isEmpty)
     }
 
