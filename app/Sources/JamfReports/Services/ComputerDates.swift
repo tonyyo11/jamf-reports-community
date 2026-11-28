@@ -42,8 +42,9 @@ struct ComputerDates: Sendable, Hashable {
     /// `lastContactTime` to `lastCheckIn`; the older name is read for a snapshot that has it,
     /// and so are the flat `last_check_in` and `last_contact` of the fixtures and exports that
     /// have no `general` section. Jamf's own `general.lastContact` is a different field: any
-    /// contact, MDM included.
-    init(item: [String: Any]) {
+    /// contact, MDM included. The FileVault, never-inventoried and hardware fields are read
+    /// only with `security`: the HTML report builds this about nine times per Mac.
+    init(item: [String: Any], security: Bool = false) {
         let general = item["general"] as? [String: Any] ?? [:]
         let hardware = item["hardware"] as? [String: Any] ?? [:]
         func text(_ values: [String: Any], _ keys: [String]) -> String? {
@@ -65,9 +66,10 @@ struct ComputerDates: Sendable, Hashable {
             contact: date(general, ["lastContact"]),
             name: text(general, ["name"]) ?? text(item, ["name"]),
             osVersion: text(item["operatingSystem"] as? [String: Any] ?? [:], ["version"])
-                ?? text(item, ["operatingSystemVersion"]) ?? text(general, ["osVersion"]),
-            neverInventoried: NeverInventoried.isNeverInventoried(computer: item),
-            hardwareEncrypted: HardwareEncryption.isHardwareEncrypted(computer: item))
+                ?? text(item, ["operatingSystemVersion"]) ?? text(general, ["osVersion"]))
+        guard security else { return }
+        neverInventoried = NeverInventoried.isNeverInventoried(computer: item)
+        hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         if !neverInventoried { fileVault = FileVaultValue.raw(computer: item) }
     }
 
@@ -87,16 +89,16 @@ struct ComputerDates: Sendable, Hashable {
     /// The Macs of a `computers` snapshot, and whether any of them carries a FileVault value
     /// (a snapshot collected without `diskEncryption` and `operatingSystem` carries none).
     static func decodeComputerSnapshot(_ data: Data) -> ComputerSnapshot? {
-        decodeSnapshot(data).map { ComputerSnapshot(rows: $0) }
+        decodeSnapshot(data, security: true).map { ComputerSnapshot(rows: $0) }
     }
 
     /// The Macs of a `computers` snapshot: a bare array, or an envelope with `results`.
     /// Nil when the data is neither.
-    static func decodeSnapshot(_ data: Data) -> [ComputerDates]? {
+    static func decodeSnapshot(_ data: Data, security: Bool = false) -> [ComputerDates]? {
         let object = try? JSONSerialization.jsonObject(with: data)
         let items = (object as? [[String: Any]])
             ?? (object as? [String: Any]).flatMap { $0["results"] as? [[String: Any]] }
-        return items?.map(ComputerDates.init(item:))
+        return items?.map { ComputerDates(item: $0, security: security) }
     }
 }
 

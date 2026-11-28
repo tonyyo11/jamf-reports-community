@@ -146,10 +146,9 @@ struct MSCPChartDataBuilder: Sendable {
 
         // Sort ascending by snapshot date so last-writer-wins is deterministic:
         // the newest file for a given date overwrites earlier ones.
-        let jsonFiles = files
+        let jsonFiles = sortedBySnapshotDate(files
             .filter { $0.pathExtension == "json" && $0.lastPathComponent != "manifest.json" }
-            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
-            .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) })
         for url in jsonFiles {
             guard let data = BoundedFile.readLogged(url, inside: dataDir) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
@@ -295,6 +294,16 @@ struct MSCPChartDataBuilder: Sendable {
     /// and the python-era dashed form `<kind>_yyyy-MM-ddTHHmmss<microseconds>.json`
     /// (trailing microsecond digits ignored). Falls back to the file modification
     /// time when neither pattern matches.
+    /// `urls` ordered by `dateFromSnapshotFilename`, each name parsed once: a comparator that
+    /// parses both sides runs a regex and a DateFormatter on every comparison.
+    static func sortedBySnapshotDate(
+        _ urls: [URL], descending: Bool = false, fm: FileManager = .default
+    ) -> [URL] {
+        urls.map { ($0, dateFromSnapshotFilename($0, fm: fm)) }
+            .sorted { descending ? $0.1 > $1.1 : $0.1 < $1.1 }
+            .map(\.0)
+    }
+
     static func dateFromSnapshotFilename(_ url: URL, fm: FileManager = .default) -> Date {
         // One parser, shared with FileSystemHelpers' newest* helpers, so the
         // ordering used by the charts can never drift from the ordering used by

@@ -59,6 +59,7 @@ versions in this repository map to git tags.
 - A Jamf School device scan that was due could be skipped by an unforced run that included the scan tier, because `school-devices` had already landed that day; such a run now collects the devices list whenever the scan is due.
 - Jamf Security Cloud's "stopped early" line listed its source as left even after it was collected.
 - Send test notification now sends its card in English, as every other webhook card is. In a translated app it went out in the app's language.
+- The HTML report is back to about 2.12's speed on large fleets, and the workbook is a little faster. Reading each Mac's dates no longer also reads its FileVault and encryption fields, which only Fleet Drift uses, and the patch history no longer re-reads every snapshot's date while sorting. On 6,000 synthetic Macs the HTML report had needed about a quarter more work than in 2.12.
 
 ## [2.12.0] - 2026-11-23
 

@@ -231,14 +231,10 @@ enum PatchVelocityBuilder {
         }
 
         // Ascending by snapshot date so the newest file for a day overwrites earlier ones.
-        let jsonFiles = files
+        let jsonFiles = MSCPChartDataBuilder.sortedBySnapshotDate(files
             .filter { $0.pathExtension == "json"
                 && $0.lastPathComponent.lowercased() != "manifest.json" }
-            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
-            .sorted {
-                MSCPChartDataBuilder.dateFromSnapshotFilename($0)
-                    < MSCPChartDataBuilder.dateFromSnapshotFilename($1)
-            }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }, fm: fm)
 
         var byDay: [String: DayRows] = [:]
         for url in jsonFiles {

@@ -464,6 +464,17 @@ final class MSCPChartTests: XCTestCase {
         XCTAssertEqual(decoded.mscpBandColumns?["NIST"], "NIST - Failures")
     }
 
+    func testSortedBySnapshotDateOrdersByStampNotName() {
+        let dir = URL(fileURLWithPath: "/nonexistent", isDirectory: true)
+        let urls = ["ea-results_20261103T060000.json", "ea-results_2026-11-01T060000.json",
+                    "ea-results_20261102T060000.json"].map { dir.appendingPathComponent($0) }
+        let names = { (list: [URL]) in list.map(\.lastPathComponent) }
+        XCTAssertEqual(names(MSCPChartDataBuilder.sortedBySnapshotDate(urls)),
+                       names([urls[1], urls[2], urls[0]]))
+        XCTAssertEqual(names(MSCPChartDataBuilder.sortedBySnapshotDate(urls, descending: true)),
+                       names([urls[0], urls[2], urls[1]]))
+    }
+
     // MARK: - dateFromSnapshotFilename: python-era dashed form
 
     func testDateFromSnapshotFilenameDashedPythonEraFormat() throws {
