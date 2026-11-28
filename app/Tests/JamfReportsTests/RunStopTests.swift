@@ -255,16 +255,19 @@ final class RunStopTests: XCTestCase {
         let lines = Lines()
         let watcher = CollectHonestyWatcher()
         let asked = Counter()
+        let progress = ReportEngine.RunProgress()
         // Lets two sources run, then stops.
-        try await ReportEngine.$runStop.withValue({
-            asked.next() > 2 ? .budgetUsed(minutes: 45) : nil
-        }) {
-            _ = try await ReportEngine.collect(
-                workspace: WorkspaceID(validating: profile),
-                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
-                force: true, authConfirmationProbe: { _, _ in false },
-                locateJamfCLI: { stub }, refreshSOFA: { _ in (.empty, []) },
-                onLine: { lines.add($0); watcher.observe($0.text) })
+        try await ReportEngine.$runProgress.withValue(progress) {
+            try await ReportEngine.$runStop.withValue({
+                asked.next() > 2 ? .budgetUsed(minutes: 45) : nil
+            }) {
+                _ = try await ReportEngine.collect(
+                    workspace: WorkspaceID(validating: profile),
+                    profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+                    force: true, authConfirmationProbe: { _, _ in false },
+                    locateJamfCLI: { stub }, refreshSOFA: { _ in (.empty, []) },
+                    onLine: { lines.add($0); watcher.observe($0.text) })
+            }
         }
 
         let ran = try String(contentsOf: calls, encoding: .utf8).split(separator: "\n")
@@ -276,6 +279,12 @@ final class RunStopTests: XCTestCase {
         XCTAssertTrue(stopLine.contains("left for the next run"), stopLine)
         XCTAssertFalse(lines.all.contains { $0.contains("collecting sofa") },
                        "nothing else starts after the stop")
+        // What runs after the matrix is left too, so the continuation's count is right.
+        for kind in ReportEngine.sourcesAfterMatrix(tiers: [.refresh], collectSkip: []) {
+            XCTAssertTrue(stopLine.contains(kind), stopLine)
+            XCTAssertTrue(progress.left.contains(kind), "\(progress.left)")
+        }
+        XCTAssertEqual(progress.planned.filter { !progress.left.contains($0) }.count, 2)
         // On a workspace with nothing to summarize yet, a stopped run is still not Partial: the
         // summary line is information, and the retry writes the summary.
         XCTAssertFalse(lines.all.contains { $0.hasPrefix("[partial]") }, "\(lines.all)")

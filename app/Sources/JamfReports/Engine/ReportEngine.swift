@@ -2552,6 +2552,11 @@ struct ReportEngine: Sendable {
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
         var stoppedEarly = false
+        // A stopped run starts nothing after the matrix, so a stop inside it leaves these too.
+        let leftAfterMatrix = (scanPlan == .due ? ["device scan"] : []) + afterMatrix
+        func left(from index: Int) -> [String] {
+            plan[index...].filter { $0.skip == nil }.map(\.kind) + leftAfterMatrix
+        }
         // Written once, before the first slow source or the device scan, so Trends advance in
         // the run's first minutes; the end of the run rebuilds it with what landed later.
         var wroteEarlySummary = false
@@ -2569,7 +2574,7 @@ struct ReportEngine: Sendable {
                 await writeEarlySummary()
             }
             if planned.skip == nil, Self.stopsRun(
-                left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine) {
+                left: left(from: index), onLine: onLine) {
                 stoppedEarly = true
                 break
             }
@@ -2622,7 +2627,7 @@ struct ReportEngine: Sendable {
                     collectStart: collectStart, limits: patchDefinitionLimits,
                     afterReportTimeout: false, onLine: onLine) else {
                     stoppedEarly = Self.stopsRun(
-                        left: plan[index...].filter { $0.skip == nil }.map(\.kind), onLine: onLine)
+                        left: left(from: index), onLine: onLine)
                     break
                 }
                 result = walked
@@ -2655,7 +2660,7 @@ struct ReportEngine: Sendable {
                         } else {
                             outcomes.append(result.outcome)
                             stoppedEarly = Self.stopsRun(
-                                left: plan[index...].filter { $0.skip == nil }.map(\.kind),
+                                left: left(from: index),
                                 onLine: onLine)
                             break
                         }
@@ -2699,7 +2704,7 @@ struct ReportEngine: Sendable {
         // A stopped run starts nothing else: the scan and the release-date walk stay due.
         if !stoppedEarly, scanPlan == .due || !afterMatrix.isEmpty {
             stoppedEarly = Self.stopsRun(
-                left: (scanPlan == .due ? ["device scan"] : []) + afterMatrix, onLine: onLine)
+                left: leftAfterMatrix, onLine: onLine)
         }
         let scanSaved = await Self.runDeviceScanPhase(
             profile: profile, bin: bin, dataDir: dataDir,
