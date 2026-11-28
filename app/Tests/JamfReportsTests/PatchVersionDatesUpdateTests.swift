@@ -330,6 +330,31 @@ final class PatchVersionDatesUpdateTests: XCTestCase {
                        SOFAFeedService.parseSOFADate("2026-03-01T00:00:00Z"))
     }
 
+    /// An unreadable newest sidecar is replaced even when the carried rows are unchanged and
+    /// recent, so the next read is not left on the bad file.
+    func testAnUnreadableNewestIsReplacedEvenWhenNothingChanged() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("replace-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let rows = [PatchVersionDate(titleId: "1", title: "One", version: "1.0",
+                                     staleSince: "20260901T000000")]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try ReportEngine.writePatchVersionDates(
+            try encoder.encode(rows), stamp: stamp(now.addingTimeInterval(-2 * 86_400)),
+            dataDir: dir)
+        try ReportEngine.writePatchVersionDates(
+            Data("{bad".utf8), stamp: stamp(now.addingTimeInterval(-86_400)), dataDir: dir)
+        let lines = VersionLines()
+        ReportEngine.updatePatchVersionDates(
+            answered: [:], currentTitles: ["1": "One"], refreshAfter: week, dataDir: dir,
+            now: now, onLine: lines.append)
+        guard case .rows(let kept, _, _) =
+                PatchReleaseDateService.versionDates(dataDir: dir, now: now)
+        else { return XCTFail("the bad newest file is replaced") }
+        XCTAssertEqual(kept, rows)
+    }
+
     func testTheNewestReleaseFileWins() {
         let newer = PatchReleaseDateService.Row(titleId: "1", title: "T", latestVersion: "1.0",
                                                 releaseDate: "2026-03-01T00:00:00Z")
