@@ -47,6 +47,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A scheduled run no longer says "Trends updated" in Run History when it kept the day's summary unchanged, such as a run that stopped for a refresh in the app or found nothing due.
 - Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
 - The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
 - A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".

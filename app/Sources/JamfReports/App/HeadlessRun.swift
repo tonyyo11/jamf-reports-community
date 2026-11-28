@@ -591,7 +591,7 @@ private func scheduledRunSingleBody(
             let protectOnly = EnvironmentProfiles.resolve(config: routingConfig, workspace: profile)
                 .isConfirmedProtectOnly(workspace: profile)
             let trendsSuffix = detected.type == .jamfPro && !protectOnly
-                && honesty.producedFreshSnapshot
+                && honesty.advancedTrends
                 ? " — Trends updated" : ""
             let message = honesty.stoodDown
                 ? "[ok] scheduled snapshot for '\(profile)' stood down — another machine "

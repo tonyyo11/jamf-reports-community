@@ -308,6 +308,48 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertTrue(watcher.producedFreshSnapshot)
     }
 
+    /// "Trends updated" needs the summary-written line from this run: a run that kept the
+    /// summary already there (nothing due, or stopped for a refresh) moved nothing.
+    func testOnlyARunThatWroteTheSummaryAdvancesTrends() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trends-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let wrote = CollectHonestyWatcher()
+        XCTAssertTrue(ReportEngine.writeSummaryFile(
+            DailySummary(
+                date: "2026-11-28", totalDevices: 5, fileVaultPct: nil, compliancePct: nil,
+                staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+                source: "jamf-cli"),
+            to: dir.appendingPathComponent("summary_2026-11-28.json"),
+            onLine: { wrote.observe($0.text) }))
+        XCTAssertTrue(wrote.advancedTrends)
+
+        let kept = CollectHonestyWatcher()
+        for line in ["[info] collecting overview for prod",
+                     "\(ReportEngine.stoppedEarlyMarker)stopped for a manual refresh; 6 sources "
+                        + "left for the next run: security",
+                     "[info] summary_2026-11-28.json already exists — leaving existing file in place"] {
+            kept.observe(line)
+        }
+        XCTAssertTrue(kept.producedFreshSnapshot, "nothing failed")
+        XCTAssertFalse(kept.advancedTrends)
+
+        // A summary written before the slow sources counts, though the run then stopped and
+        // the end of it kept that file.
+        let early = CollectHonestyWatcher()
+        for line in [ReportEngine.earlySummaryWrittenLine,
+                     "\(ReportEngine.stoppedEarlyMarker)run budget used (45 minutes); 1 source "
+                        + "left for the next run: patch-status",
+                     "[info] summary_2026-11-28.json already exists — leaving existing file in place"] {
+            early.observe(line)
+        }
+        XCTAssertTrue(early.advancedTrends)
+
+        wrote.observe(ReportEngine.standDownLine(reason: "[info] peer collected recently"))
+        XCTAssertFalse(wrote.advancedTrends)
+    }
+
     /// Drives the background item's same-day retry: a source or summary that did not land
     /// is incomplete; a stand-down or a report's sheet failures are not.
     func testWatcherFlagsOnlyMissingDataAsIncomplete() {
