@@ -146,10 +146,9 @@ struct MSCPChartDataBuilder: Sendable {
 
         // Sort ascending by snapshot date so last-writer-wins is deterministic:
         // the newest file for a given date overwrites earlier ones.
-        let jsonFiles = files
+        let jsonFiles = sortedBySnapshotDate(files
             .filter { $0.pathExtension == "json" && $0.lastPathComponent != "manifest.json" }
-            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
-            .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) })
         for url in jsonFiles {
             guard let data = BoundedFile.readLogged(url, inside: dataDir) else { continue }
             let decoded = EAResultRow.decodeSnapshot(data)
@@ -287,6 +286,15 @@ struct MSCPChartDataBuilder: Sendable {
             d[band] = idx < result.bands.count ? result.bands[idx].count : 0
         }
         return d
+    }
+
+    /// `urls` ordered by `dateFromSnapshotFilename`, parsing each name once, not per comparison.
+    static func sortedBySnapshotDate(
+        _ urls: [URL], descending: Bool = false, fm: FileManager = .default
+    ) -> [URL] {
+        urls.map { ($0, dateFromSnapshotFilename($0, fm: fm)) }
+            .sorted { descending ? $0.1 > $1.1 : $0.1 < $1.1 }
+            .map(\.0)
     }
 
     /// Extract a date from an ea-results snapshot filename.

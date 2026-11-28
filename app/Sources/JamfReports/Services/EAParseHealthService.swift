@@ -227,14 +227,11 @@ struct EAParseHealthService {
             return .insufficientData(reason: "Fewer than two ea-results snapshots")
         }
 
-        let snapshots = entries
+        let snapshots = MSCPChartDataBuilder.sortedBySnapshotDate(entries
             .filter { $0.pathExtension.lowercased() == "json" }
             .filter { $0.lastPathComponent.lowercased() != "manifest.json" }
-            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
-            .sorted {
-                MSCPChartDataBuilder.dateFromSnapshotFilename($0, fm: fm)
-                    > MSCPChartDataBuilder.dateFromSnapshotFilename($1, fm: fm)
-            }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) },
+            descending: true, fm: fm)
 
         switch twoNewestDistinctDays(snapshots, fm: fm, inside: dataDir) {
         case .found(let current, let previous):

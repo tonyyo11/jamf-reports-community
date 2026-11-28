@@ -57,13 +57,28 @@ final class FileVaultValueTests: XCTestCase {
                        .fail)
     }
 
-    func testComputerDatesCarryFileVault() {
+    func testComputerDatesCarryFileVault() throws {
         var computer = item(status: "ALL_ENCRYPTED")
         computer["general"] = ["name": "Mac-1", "lastCheckIn": "2026-11-01T00:00:00Z",
                                "reportDate": "2026-11-01T00:00:00Z"]
         computer["operatingSystem"] = ["fileVault2Status": "ALL_ENCRYPTED", "version": "26.1"]
-        XCTAssertEqual(ComputerDates(item: computer).fileVault, "ALL_ENCRYPTED")
-        XCTAssertTrue(ComputerSnapshot(rows: [ComputerDates(item: computer)]).fileVaultReported)
+        let withSecurity = ComputerDates(item: computer, security: true)
+        XCTAssertEqual(withSecurity.fileVault, "ALL_ENCRYPTED")
+        XCTAssertTrue(ComputerSnapshot(rows: [withSecurity]).fileVaultReported)
         XCTAssertFalse(ComputerSnapshot(rows: [ComputerDates(jamfID: "1")]).fileVaultReported)
+        let data = try JSONSerialization.data(withJSONObject: [computer])
+        XCTAssertEqual(ComputerDates.decodeComputerSnapshot(data)?.rows.first?.fileVault,
+                       "ALL_ENCRYPTED")
+    }
+
+    /// The dates-only reader the HTML report calls per Mac leaves the security fields unread.
+    func testComputerDatesReadSecurityOnlyWhenAsked() {
+        var computer = item(status: "ALL_ENCRYPTED")
+        computer["general"] = ["lastCheckIn": "2026-11-01T00:00:00Z"]
+        let dates = ComputerDates(item: computer)
+        XCTAssertNotNil(dates.checkIn)
+        XCTAssertNil(dates.fileVault)
+        XCTAssertNil(dates.hardwareEncrypted)
+        XCTAssertFalse(dates.neverInventoried)
     }
 }
