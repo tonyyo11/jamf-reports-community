@@ -48,3 +48,13 @@ text of the descriptions and gateway permissions differs from jamf-cli's raw byt
 `report_fixture_2026-10-29_090000.manifest.json`, which `RunManifest.build` wrote over the
 three small artifacts `RunManifestTests` recreates. The query holds only that hash and a nonce.
 Never edit these three files; a new capture replaces all three together.
+
+`jamf-cli-data/computers-macos27/computers-macos27.json` is one row of `jamf-cli pro computers
+list` with the app's sections (`ReportEngine.computerInventorySections`), captured on
+2026-11-27 with jamf-cli 1.38.0 from a macOS 27.3 virtual Mac on a Jamf Cloud test server
+(Jamf Pro 11.34). Keys, nesting, JSON types and every status, level and type value are as Jamf
+sent them (`appleEnrollmentType: "supervised"`, `awaitingConfiguration: false`,
+`lockdownModeEnabled: true`). Identifiers were replaced per the checklist above: ID, UDID, name,
+serial, MAC and provisioning UDID, management IDs, IP addresses (TEST-NET and `2001:db8::`),
+the local account (`localadmin`), the assigned user, and every extension attribute list
+(emptied).

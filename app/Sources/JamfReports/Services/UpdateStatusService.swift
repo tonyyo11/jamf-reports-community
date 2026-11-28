@@ -214,17 +214,25 @@ struct UpdateStatusService: Sendable {
         }
     }
 
-    private static func statusColor(for status: String) -> UInt32 {
+    /// How a managed software update status reads, for its colour and its icon alike.
+    enum StatusKind: Equatable { case installed, failed, inProgress, other }
+
+    static func statusKind(for status: String) -> StatusKind {
         let upper = status.uppercased()
         switch upper {
-        case let s where s.contains("COMPLETED") || s.contains("SUCCESS"):
-            return 0x30D158  // green
-        case let s where s.contains("ERROR") || s.contains("FAILED"):
-            return 0xFF453A  // red
-        case let s where s.contains("PENDING") || s.contains("IDLE") || s.contains("INSTALLING"):
-            return 0x007AFF  // blue
-        default:
-            return 0x8E8E93  // gray
+        case "INSTALLED": return .installed
+        case let s where s.contains("ERROR") || s.contains("FAILED"): return .failed
+        case "DOWNLOADING", "INSTALLING", "IDLE": return .inProgress
+        default: return .other
+        }
+    }
+
+    private static func statusColor(for status: String) -> UInt32 {
+        switch statusKind(for: status) {
+        case .installed: 0x30D158  // green
+        case .failed: 0xFF453A  // red
+        case .inProgress: 0x007AFF  // blue
+        case .other: 0x8E8E93  // gray
         }
     }
 

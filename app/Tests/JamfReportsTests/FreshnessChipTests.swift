@@ -45,7 +45,7 @@ final class FreshnessChipTests: XCTestCase {
         [
           {
             "total": 10,
-            "status_summary": [{"status": "COMPLETED", "count": 10}],
+            "status_summary": [{"status": "INSTALLED", "count": 10}],
             "plan_total": 2,
             "plan_state_summary": [{"state": "PlanCompleted", "count": 2}]
           }
@@ -70,14 +70,14 @@ final class FreshnessChipTests: XCTestCase {
             "total": 10,
             "status_summary": [{"status": "ERROR", "count": 3}],
             "error_devices": [
-              {"name": "Mac-1", "serial": "S1", "device_type": "computer",
+              {"name": "Mac-1", "serial": "S1", "device_type": "Computer",
                "os_version": "15.0", "username": "u", "status": "ERROR",
                "product_key": "k", "updated": "2026-07-01"}
             ],
             "plan_total": 2,
             "plan_state_summary": [{"state": "PlanFailed", "count": 1}],
             "failed_plans": [
-              {"name": "Mac-1", "serial": "S1", "device_type": "computer",
+              {"name": "Mac-1", "serial": "S1", "device_type": "Computer",
                "os_version": "15.0", "username": "u", "state": "PlanFailed",
                "action": "a", "version": "1", "error": "e", "last_event": "2026-07-01"}
             ]

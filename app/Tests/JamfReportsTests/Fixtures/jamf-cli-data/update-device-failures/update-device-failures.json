@@ -2,15 +2,15 @@
   {
     "total": 12,
     "status_summary": [
-      { "status": "PENDING", "count": 6 },
-      { "status": "FAILED", "count": 4 },
+      { "status": "DOWNLOADING", "count": 6 },
+      { "status": "INSTALL_FAILED", "count": 4 },
       { "status": "COMPLETE", "count": 2 }
     ],
     "error_devices": [
       {
         "name": "test-macbook-001",
         "serial": "TEST-ABC0001",
-        "device_type": "COMPUTER",
+        "device_type": "Computer",
         "os_version": "15.7.3",
         "username": "tuser1@example.com",
         "status": "DOWNLOAD_FAILED",
@@ -20,7 +20,7 @@
       {
         "name": "test-macbook-002",
         "serial": "TEST-ABC0002",
-        "device_type": "COMPUTER",
+        "device_type": "Computer",
         "os_version": "15.7.3",
         "username": "tuser2@example.com",
         "status": "INSTALL_FAILED",
@@ -30,7 +30,7 @@
       {
         "name": "test-ipad-101",
         "serial": "TEST-IPAD0101",
-        "device_type": "MOBILE_DEVICE",
+        "device_type": "Mobile",
         "os_version": "17.5.1",
         "username": "",
         "status": "PREPARING",
@@ -40,17 +40,17 @@
     ],
     "plan_total": 8,
     "plan_state_summary": [
-      { "state": "Activated", "count": 5 },
-      { "state": "Failed", "count": 3 }
+      { "state": "PlanCompleted", "count": 5 },
+      { "state": "PlanFailed", "count": 3 }
     ],
     "failed_plans": [
       {
         "name": "test-macbook-001",
         "serial": "TEST-ABC0001",
-        "device_type": "COMPUTER",
+        "device_type": "Computer",
         "os_version": "15.7.3",
         "username": "tuser1@example.com",
-        "state": "Failed",
+        "state": "PlanFailed",
         "action": "DOWNLOAD_INSTALL",
         "version": "14.0",
         "error": "DownloadFailed: TimedOut",
@@ -59,10 +59,10 @@
       {
         "name": "test-macbook-004",
         "serial": "TEST-ABC0004",
-        "device_type": "COMPUTER",
+        "device_type": "Computer",
         "os_version": "15.7.3",
         "username": "tuser4@example.com",
-        "state": "Failed",
+        "state": "PlanFailed",
         "action": "DOWNLOAD_INSTALL",
         "version": "14.0",
         "error": "PreconditionNotMet: BatteryLow",
@@ -71,10 +71,10 @@
       {
         "name": "test-imac-003",
         "serial": "TEST-ABC0003",
-        "device_type": "COMPUTER",
+        "device_type": "Computer",
         "os_version": "14.7.5",
         "username": "",
-        "state": "Failed",
+        "state": "PlanFailed",
         "action": "DOWNLOAD_INSTALL",
         "version": "15.0",
         "error": "InstallationFailed: DiskSpace",

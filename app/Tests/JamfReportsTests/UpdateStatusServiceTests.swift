@@ -12,6 +12,25 @@ final class UpdateStatusServiceTests: XCTestCase {
     }
 
 
+    /// The status icon follows the colour's grouping of Jamf's values, so INSTALLED gets the
+    /// check mark and a value Jamf never sends (COMPLETED, PENDING) the plain dot.
+    func testStatusIconAndColourShareOneGrouping() {
+        let cases: [(String, UpdateStatusService.StatusKind, String)] = [
+            ("INSTALLED", .installed, "checkmark.circle"),
+            ("DOWNLOADING", .inProgress, "arrow.triangle.2.circlepath"),
+            ("INSTALLING", .inProgress, "arrow.triangle.2.circlepath"),
+            ("IDLE", .inProgress, "arrow.triangle.2.circlepath"),
+            ("INSTALL_FAILED", .failed, "exclamationmark.triangle"),
+            ("ERROR", .failed, "exclamationmark.triangle"),
+            ("COMPLETED", .other, "circle.fill"),
+            ("PENDING", .other, "circle.fill"),
+        ]
+        for (status, kind, icon) in cases {
+            XCTAssertEqual(UpdateStatusService.statusKind(for: status), kind, status)
+            XCTAssertEqual(UpdatesView.statusIcon(for: status), icon, status)
+        }
+    }
+
     func testUpdatesViewInstantiatesInDemoMode() throws {
         let workspace = WorkspaceStore()
         workspace.profile = "test"
@@ -42,14 +61,14 @@ final class UpdateStatusServiceTests: XCTestCase {
           {
             "total": 150,
             "status_summary": [
-              {"status": "COMPLETED", "count": 120},
-              {"status": "PENDING", "count": 20},
+              {"status": "INSTALLED", "count": 120},
+              {"status": "DOWNLOADING", "count": 20},
               {"status": "ERROR", "count": 10}
             ],
             "plan_total": 8,
             "plan_state_summary": [
               {"state": "PlanCompleted", "count": 5},
-              {"state": "PlanActive", "count": 2},
+              {"state": "CollectingOSUpdateStatus", "count": 2},
               {"state": "PlanFailed", "count": 1}
             ]
           }
@@ -74,15 +93,21 @@ final class UpdateStatusServiceTests: XCTestCase {
         let statusByLabel = Dictionary(uniqueKeysWithValues:
             snapshot.statusBreakdown.map { ($0.label, $0.count) }
         )
-        XCTAssertEqual(statusByLabel["COMPLETED"], 120)
-        XCTAssertEqual(statusByLabel["PENDING"], 20)
+        XCTAssertEqual(statusByLabel["INSTALLED"], 120)
+        XCTAssertEqual(statusByLabel["DOWNLOADING"], 20)
         XCTAssertEqual(statusByLabel["ERROR"], 10)
+        // Jamf's update statuses: INSTALLED is done, DOWNLOADING still under way.
+        let colorByStatus = Dictionary(uniqueKeysWithValues:
+            snapshot.statusBreakdown.map { ($0.label, $0.colorHex) })
+        XCTAssertEqual(colorByStatus["INSTALLED"], 0x30D158)
+        XCTAssertEqual(colorByStatus["DOWNLOADING"], 0x007AFF)
+        XCTAssertEqual(colorByStatus["ERROR"], 0xFF453A)
 
         let planByLabel = Dictionary(uniqueKeysWithValues:
             snapshot.planStateBreakdown.map { ($0.label, $0.count) }
         )
         XCTAssertEqual(planByLabel["PlanCompleted"], 5)
-        XCTAssertEqual(planByLabel["PlanActive"], 2)
+        XCTAssertEqual(planByLabel["CollectingOSUpdateStatus"], 2)
         XCTAssertEqual(planByLabel["PlanFailed"], 1)
     }
 
@@ -93,7 +118,7 @@ final class UpdateStatusServiceTests: XCTestCase {
           {
             "total": 100,
             "status_summary": [
-              {"status": "COMPLETED", "count": 80},
+              {"status": "INSTALLED", "count": 80},
               {"status": "ERROR", "count": 20}
             ],
             "error_devices": [
@@ -122,8 +147,8 @@ final class UpdateStatusServiceTests: XCTestCase {
                 "username": "cjohnson",
                 "state": "PlanFailed",
                 "action": "Install",
-                "version": "15.3",
-                "error": "Insufficient disk space",
+                "version": "SPECIFIC_VERSION",
+                "error": "NO_DISK_SPACE",
                 "last_event": "2026-05-11T14:20:00Z"
               }
             ]
@@ -154,7 +179,7 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertEqual(failedPlan.name, "MacBook-035")
         XCTAssertEqual(failedPlan.serial, "JKL012")
         XCTAssertEqual(failedPlan.state, "PlanFailed")
-        XCTAssertEqual(failedPlan.error, "Insufficient disk space")
+        XCTAssertEqual(failedPlan.error, "NO_DISK_SPACE")
     }
 
     /// 2.8.0: the weekly `--scan-failures` kind lives in its own directory. The
@@ -163,17 +188,17 @@ final class UpdateStatusServiceTests: XCTestCase {
     /// failed_plans is one row per plan, so one Mac with several failed plans
     /// shares a serial; the rows still need distinct Table identities, and a
     /// byte-identical duplicate row is dropped rather than rendered twice.
-    /// A Vision Pro row (Jamf Pro 11.34, `VISION_PRO`) is kept like any other device type.
+    /// A Vision Pro row is kept like any other device; jamf-cli names its type `Mobile`.
     func testVisionProRowsAreKept() throws {
         let json = """
         [{"total": 2, "status_summary": [],
-          "error_devices": [{"name": "Vision-01", "serial": "VP1", "device_type": "VISION_PRO",
-                             "os_version": "26.1", "username": "", "status": "Error",
+          "error_devices": [{"name": "Vision-01", "serial": "VP1", "device_type": "Mobile",
+                             "os_version": "26.1", "username": "", "status": "ERROR",
                              "product_key": "", "updated": "2026-11-20T10:00:00Z"}],
           "plan_total": 1, "plan_state_summary": [],
-          "failed_plans": [{"name": "Vision-01", "serial": "VP1", "device_type": "VISION_PRO",
+          "failed_plans": [{"name": "Vision-01", "serial": "VP1", "device_type": "Mobile",
                             "os_version": "26.1", "username": "", "state": "PlanFailed",
-                            "action": "DOWNLOAD_INSTALL", "version": "26.2", "error": "X",
+                            "action": "DOWNLOAD_INSTALL", "version": "SPECIFIC_VERSION", "error": "X",
                             "last_event": "2026-11-20T10:00:00Z"}]}]
         """
         let url = FileManager.default.temporaryDirectory
@@ -213,7 +238,7 @@ final class UpdateStatusServiceTests: XCTestCase {
 
     func testLoadMergesTheScanDirectoryIntoTheSummary() throws {
         let summary = """
-        [{"total": 150, "status_summary": [{"status": "COMPLETED", "count": 150}],
+        [{"total": 150, "status_summary": [{"status": "INSTALLED", "count": 150}],
           "plan_total": 8, "plan_state_summary": [{"state": "PlanCompleted", "count": 8}]}]
         """
         let scan = """
@@ -257,7 +282,7 @@ final class UpdateStatusServiceTests: XCTestCase {
             "plan_state_summary": [
               {"state": "PlanCompleted", "count": 1},
               {"state": "PlanFailed", "count": 1},
-              {"state": "PlanActive", "count": 1}
+              {"state": "CollectingOSUpdateStatus", "count": 1}
             ]
           }
         ]
@@ -276,7 +301,7 @@ final class UpdateStatusServiceTests: XCTestCase {
 
         XCTAssertEqual(colorByState["PlanCompleted"], 0x30D158)  // green
         XCTAssertEqual(colorByState["PlanFailed"], 0xFF453A)     // red
-        XCTAssertEqual(colorByState["PlanActive"], 0x007AFF)     // blue
+        XCTAssertEqual(colorByState["CollectingOSUpdateStatus"], 0x007AFF)     // blue
     }
 
     /// 2.8.1 visual pass: the donut legend and the Failed Plans pills printed
@@ -285,8 +310,8 @@ final class UpdateStatusServiceTests: XCTestCase {
     func testPlanStateDisplayNameReadsAsWords() {
         let name = UpdateStatusService.planStateDisplayName
         XCTAssertEqual(name("PlanCompleted"), "Completed")
-        XCTAssertEqual(name("PlanActive"), "Active")
-        XCTAssertEqual(name("PlanPending"), "Pending")
+        XCTAssertEqual(name("CollectingOSUpdateStatus"), "Collecting OS Update Status")
+        XCTAssertEqual(name("UpToDate"), "Up To Date")
         XCTAssertEqual(name("PlanFailed"), "Failed")
         XCTAssertEqual(name("PlanException"), "Exception")
         XCTAssertEqual(name("PlanCanceled"), "Canceled")
@@ -353,7 +378,7 @@ final class UpdateStatusServiceTests: XCTestCase {
         [
           {
             "total": 100,
-            "status_summary": [{"status": "COMPLETED", "count": 100}],
+            "status_summary": [{"status": "INSTALLED", "count": 100}],
             "error_devices": [],
             "plan_total": 5,
             "plan_state_summary": [{"state": "PlanCompleted", "count": 5}],

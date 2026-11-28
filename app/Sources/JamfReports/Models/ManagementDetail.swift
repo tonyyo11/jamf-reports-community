@@ -1,8 +1,9 @@
 import Foundation
 
 /// The Computers detail panel's "Management" section: every field the Mac reported, and what
-/// to do about a gap. A field Jamf did not report is left out, never shown as No or 0; Jamf's
-/// status strings are shown as given.
+/// to do about a gap. A field Jamf did not report is left out, never shown as No or 0. Also the
+/// one place a Jamf status, type or severity is worded for a screen; workbook, HTML and CSV keep
+/// Jamf's raw value.
 enum ManagementDetail {
     /// A Jamf status string for the screen only: `ALLOW_BOOTING_FROM_EXTERNAL_MEDIA` reads
     /// "Allow booting from external media", `DISABLED` "Disabled". Only upper-case letters and
@@ -27,6 +28,68 @@ enum ManagementDetail {
         case "device": L("Device")
         case "user": L("User")
         case "unknown": L("Unknown")
+        default: displayValue(raw)
+        }
+    }
+
+    /// A severity in the app's words: `pro audit` (`CRITICAL`, `WARNING`, `INFO`), `policy-status`
+    /// (`warning`, `info`), Jamf Protect alerts (`High`, `Medium`, `Low`, `Informational`) and
+    /// the app's own `OK`. Another value goes through `displayValue`.
+    static func severityValue(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "critical": L("Critical")
+        case "high": L("High")
+        case "medium": L("Medium")
+        case "warning": L("Warning")
+        case "low": L("Low")
+        case "info": L("Info")
+        case "informational": L("Informational")
+        case "ok": L("OK")
+        default: displayValue(raw)
+        }
+    }
+
+    /// Jamf Protect's `lastDisconnectionReason`, AWS IoT's disconnect codes; the two seen on a
+    /// test tenant are worded, any other goes through `displayValue`.
+    static func disconnectReasonValue(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "MQTT_KEEP_ALIVE_TIMEOUT": L("Keep-alive timed out")
+        case "CONNECTION_LOST": L("Connection lost")
+        default: displayValue(raw)
+        }
+    }
+
+    /// `policy-status`'s config finding `check` (jamf-cli's `pro_report_policy.go`).
+    static func policyCheckValue(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "disabled_scoped": L("Disabled but scoped")
+        case "no_scope": L("No scope")
+        case "no_payload": L("No payload")
+        case "no_trigger": L("No trigger")
+        case "no_category": L("No category")
+        default: raw
+        }
+    }
+
+    /// jamf-cli's `device_type` in its reports (`normalizeDeviceType`: Computer, Mobile,
+    /// Apple TV, plus Mixed and Unknown in `profile-status`).
+    static func deviceTypeValue(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "Computer": L("Computer")
+        case "Mobile": L("Mobile")
+        case "Apple TV": L("Apple TV")
+        case "Mixed": L("Mixed")
+        case "Unknown": L("Unknown")
+        default: displayValue(raw)
+        }
+    }
+
+    /// A Computers security cell: `true`/`false` (a boolean field such as the firewall) read On
+    /// and Off, a Jamf status through `displayValue`.
+    static func securityValue(_ raw: String) -> String {
+        switch raw {
+        case "true": L("On")
+        case "false": L("Off")
         default: displayValue(raw)
         }
     }

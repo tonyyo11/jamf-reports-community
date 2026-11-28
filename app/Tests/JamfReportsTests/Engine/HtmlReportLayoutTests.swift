@@ -97,7 +97,7 @@ final class HtmlReportLayoutTests: XCTestCase {
                 "summary": ["days": 30, "total_errors": count * 3, key: count,
                             "unique_devices": count * 2],
                 "failures": (0..<count).map {
-                    ["device_type": "computer", "name": "Item-\($0)", "id": "\($0)",
+                    ["device_type": "Computer", "name": "Item-\($0)", "id": "\($0)",
                      "errors": 3, "devices": 2, "last_error": "e", "top_error": "boom"]
                 },
                 "device_failures": [], "device_pending": [],

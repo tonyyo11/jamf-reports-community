@@ -119,7 +119,7 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         let definitionsJSON = """
         [
           {"id": "10", "name": "Test EA 1", "dataType": "STRING", "description": "Test", "inputType": "SCRIPT", "enabled": true},
-          {"id": "11", "name": "Test EA 2", "dataType": "BOOLEAN", "description": "Test", "inputType": "SCRIPT", "enabled": true}
+          {"id": "11", "name": "Test EA 2", "dataType": "INTEGER", "description": "Test", "inputType": "SCRIPT", "enabled": true}
         ]
         """
 

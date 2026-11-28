@@ -149,19 +149,19 @@ final class JamfCLIDecoderTests: XCTestCase {
 
     // MARK: - ExtensionAttribute
 
-    func testExtensionAttributeDecodesBooleanDataType() throws {
+    func testExtensionAttributeDecodesIntegerDataType() throws {
         let json = """
         [{"id":"1","name":"FileVault Status","description":"FV2 state",
-          "dataType":"BOOLEAN","inputType":"SCRIPT","enabled":true}]
+          "dataType":"INTEGER","inputType":"SCRIPT","enabled":true}]
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
         XCTAssertEqual(eas.count, 1)
         XCTAssertEqual(eas[0].id, "1")
         XCTAssertEqual(eas[0].name, "FileVault Status")
-        XCTAssertEqual(eas[0].dataType, "BOOLEAN")
+        XCTAssertEqual(eas[0].dataType, "INTEGER")
         XCTAssertEqual(eas[0].inputType, "SCRIPT")
         XCTAssertEqual(eas[0].enabled, true)
-        XCTAssertEqual(eas[0].dataTypeLabel, "Boolean")
+        XCTAssertEqual(eas[0].dataTypeLabel, "Integer")
     }
 
     func testExtensionAttributeDecodesDateDataType() throws {
@@ -216,24 +216,24 @@ final class JamfCLIDecoderTests: XCTestCase {
 
     func testUpdateStatusReportDecoding() throws {
         let json = """
-        [{"total":120,"status_summary":[{"status":"PENDING","count":10},{"status":"UP_TO_DATE","count":110}],
-          "plan_total":5,"plan_state_summary":[{"state":"Activated","count":3}]}]
+        [{"total":120,"status_summary":[{"status":"DOWNLOADING","count":10},{"status":"IDLE","count":110}],
+          "plan_total":5,"plan_state_summary":[{"state":"PlanCompleted","count":3}]}]
         """
         let reports = try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8))
         XCTAssertEqual(reports.count, 1)
         let r = reports[0]
         XCTAssertEqual(r.total, 120)
         XCTAssertEqual(r.statusSummary.count, 2)
-        XCTAssertEqual(r.statusSummary[0].status, "PENDING")
+        XCTAssertEqual(r.statusSummary[0].status, "DOWNLOADING")
         XCTAssertEqual(r.statusSummary[0].count, 10)
         XCTAssertEqual(r.planTotal, 5)
-        XCTAssertEqual(r.planStateSummary?.first?.state, "Activated")
+        XCTAssertEqual(r.planStateSummary?.first?.state, "PlanCompleted")
     }
 
     func testUpdateStatusReportOptionalPlanFields() throws {
         // plan_total and plan_state_summary are optional — must decode without them.
         let json = """
-        [{"total":50,"status_summary":[{"status":"UP_TO_DATE","count":50}]}]
+        [{"total":50,"status_summary":[{"status":"IDLE","count":50}]}]
         """
         let reports = try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8))
         XCTAssertEqual(reports[0].total, 50)
@@ -405,17 +405,17 @@ final class JamfCLIDecoderTests: XCTestCase {
     func testUpdateFailuresReportDecoding() throws {
         let json = """
         [{"total":2,
-          "status_summary":[{"status":"FAILED","count":2}],
+          "status_summary":[{"status":"INSTALL_FAILED","count":2}],
           "error_devices":[{"name":"MacBook-001","serial":"ABC123",
-            "device_type":"COMPUTER","os_version":"15.7","username":"jdoe",
+            "device_type":"Computer","os_version":"15.7","username":"jdoe",
             "status":"DOWNLOAD_FAILED","product_key":"MACOS_15_7",
             "updated":"2026-04-01T12:00:00Z"}],
           "plan_total":1,
-          "plan_state_summary":[{"state":"Failed","count":1}],
+          "plan_state_summary":[{"state":"PlanFailed","count":1}],
           "failed_plans":[{"name":"MacBook-001","serial":"ABC123",
-            "device_type":"COMPUTER","os_version":"15.7","username":"jdoe",
-            "state":"Failed","action":"DOWNLOAD","version":"15.7",
-            "error":"NetworkError","last_event":"2026-04-01T12:05:00Z"}]}]
+            "device_type":"Computer","os_version":"15.7","username":"jdoe",
+            "state":"PlanFailed","action":"DOWNLOAD_ONLY","version":"SPECIFIC_VERSION",
+            "error":"APPLE_SOFTWARE_LOOKUP_SERVICE_ERROR","last_event":"2026-04-01T12:05:00Z"}]}]
         """
         let reports = try JSONDecoder().decode([UpdateFailuresReport].self, from: Data(json.utf8))
         XCTAssertEqual(reports.count, 1)
@@ -423,11 +423,11 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(r.total, 2)
         XCTAssertEqual(r.errorDevices.count, 1)
         XCTAssertEqual(r.errorDevices[0].name, "MacBook-001")
-        XCTAssertEqual(r.errorDevices[0].deviceType, "COMPUTER")
+        XCTAssertEqual(r.errorDevices[0].deviceType, "Computer")
         XCTAssertEqual(r.errorDevices[0].productKey, "MACOS_15_7")
         XCTAssertEqual(r.failedPlans.count, 1)
-        XCTAssertEqual(r.failedPlans[0].state, "Failed")
-        XCTAssertEqual(r.failedPlans[0].error, "NetworkError")
+        XCTAssertEqual(r.failedPlans[0].state, "PlanFailed")
+        XCTAssertEqual(r.failedPlans[0].error, "APPLE_SOFTWARE_LOOKUP_SERVICE_ERROR")
         XCTAssertEqual(r.failedPlans[0].lastEvent, "2026-04-01T12:05:00Z")
     }
 
@@ -496,7 +496,7 @@ final class JamfCLIDecoderTests: XCTestCase {
 
     func testPlantedUpdateStatusCountIsRefused() {
         let json = """
-        [{"total":5,"status_summary":[{"status":"PENDING","count":-1}]}]
+        [{"total":5,"status_summary":[{"status":"DOWNLOADING","count":-1}]}]
         """
         XCTAssertThrowsError(
             try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8)))
@@ -650,7 +650,7 @@ final class JamfCLIDecoderTests: XCTestCase {
           "failures":[{"device_type":"Computer","name":"WiFi Profile","id":"7",
                        "errors":10,"devices":8,"last_error":"2026-06-10",
                        "top_error":"Payload could not be installed"},
-                      {"device_type":"Mobile Device","name":"VPN","id":3,
+                      {"device_type":"Mobile","name":"VPN","id":3,
                        "errors":2,"devices":1,"last_error":"2026-06-09","top_error":"Timeout"}],
           "device_failures":[],"device_pending":[]}]
         """
@@ -666,7 +666,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(failures[0].profileId?.stringValue, "7")
         XCTAssertEqual(failures[0].errors?.intValue, 10)
         XCTAssertEqual(failures[1].profileId?.stringValue, "3", "id arrives as Int or String")
-        XCTAssertEqual(failures[1].deviceType, "Mobile Device")
+        XCTAssertEqual(failures[1].deviceType, "Mobile")
     }
 
     // MARK: - MobileDeviceListRow

@@ -89,7 +89,7 @@ final class DemoDataOperationsTests: XCTestCase {
 
         XCTAssertEqual(snapshot.total, DemoData.totalDevices)
         XCTAssertEqual(snapshot.statusBreakdown.reduce(0) { $0 + $1.count }, snapshot.total)
-        XCTAssertEqual(updateCount("COMPLETED", in: snapshot.statusBreakdown), onCurrent)
+        XCTAssertEqual(updateCount("INSTALLED", in: snapshot.statusBreakdown), onCurrent)
         XCTAssertEqual(updateCount("ERROR", in: snapshot.statusBreakdown), 3)
         XCTAssertEqual(snapshot.errorDevices.count, 3)
         XCTAssertTrue(snapshot.errorDevices.allSatisfy { $0.status == "ERROR" })

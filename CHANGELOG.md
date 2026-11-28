@@ -48,6 +48,7 @@ versions in this repository map to git tags.
 ### Fixed
 
 - The Computers detail panel and the Health Audit's Management card show a Mac's Apple enrollment type in Jamf Pro's words ("Supervised", "Device", "User", "None", "Unknown"), not as the API sends it ("supervised"). Jamf Pro reports it for Macs on macOS 27 or later. The workbook keeps Jamf's value.
+- Screens show Jamf's codes as words: the Jamf Protect disconnect reason ("Keep-alive timed out", not `MQTT_KEEP_ALIVE_TIMEOUT`), audit, policy and Protect alert severities, policy finding checks ("No scope"), the Computers security values (Gatekeeper, SIP, bootstrap token; the firewall reads On or Off), and the OS Updates statuses, plan actions and error device statuses, extension attribute input types and blueprint states. On OS Updates, devices whose update is installed now read green and those still downloading blue; they were grey. The workbook, HTML report and CSV keep Jamf's values.
 - Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
 - The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
 - A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".

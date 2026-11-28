@@ -1423,7 +1423,7 @@ struct DevicesView: View {
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: Self.detailLabelWidth, alignment: .leading)
-                Pill(text: value, tone: tone)
+                Pill(text: ManagementDetail.securityValue(value), tone: tone)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
@@ -1501,7 +1501,7 @@ struct DevicesView: View {
             symbol = "minus.circle"
             color = Theme.Colors.fgMuted
         }
-        let display = value.isEmpty ? L("Not collected") : value
+        let display = value.isEmpty ? L("Not collected") : ManagementDetail.securityValue(value)
         return Image(systemName: symbol)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(color)
