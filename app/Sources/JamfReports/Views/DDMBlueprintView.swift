@@ -618,7 +618,8 @@ struct DDMBlueprintView: View {
 
     private static func blueprintA11y(_ blueprint: DDMBlueprintService.Snapshot.Blueprint) -> String {
         let name = blueprint.name.isEmpty ? L("Unnamed blueprint") : blueprint.name
-        let state = blueprint.state.isEmpty ? L("no state") : blueprint.state
+        let state = blueprint.state.isEmpty
+            ? L("no state") : ManagementDetail.displayValue(blueprint.state)
         let failed = blueprint.failed.map { L("\($0) failed") } ?? L("no failures reported")
         let pending = blueprint.pending.map { L("\($0) pending") } ?? L("no pending")
         let succeeded = blueprint.succeeded.map { L("\($0) succeeded") } ?? L("no deployment counts")
