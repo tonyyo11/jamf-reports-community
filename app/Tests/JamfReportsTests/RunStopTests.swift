@@ -217,7 +217,7 @@ final class RunStopTests: XCTestCase {
                 locateJamfCLI: { stub }, refreshSOFA: { _ in (.empty, []) }, onLine: lines.add)
             return lines.all
         }
-        let early = "[info] summary written before the slow sources"
+        let early = ReportEngine.earlySummaryWrittenLine
 
         let clean = try await run()
         let wrote = try XCTUnwrap(clean.firstIndex(of: early), "\(clean)")

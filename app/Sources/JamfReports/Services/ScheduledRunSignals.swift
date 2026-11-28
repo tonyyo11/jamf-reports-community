@@ -636,7 +636,7 @@ final class CollectHonestyWatcher: Sendable {
         var permanentPartial = false
         /// The run stopped before its sources were done (`ReportEngine.stoppedEarlyMarker`).
         var stoppedEarly = false
-        /// This run wrote the day's summary (`ReportEngine.summaryWrittenMarker`).
+        /// This run wrote the day's summary (`summaryWrittenMarker`, or early).
         var summaryWritten = false
     }
     private let flags = Mutex(Flags())
@@ -645,7 +645,8 @@ final class CollectHonestyWatcher: Sendable {
 
     /// Feed one log line. Cheap enough to call on every line of a collect.
     func observe(_ line: String) {
-        if line.hasPrefix(ReportEngine.summaryWrittenMarker) {
+        if line.hasPrefix(ReportEngine.summaryWrittenMarker)
+            || line == ReportEngine.earlySummaryWrittenLine {
             flags.withLock { $0.summaryWritten = true }
             return
         }

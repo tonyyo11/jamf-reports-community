@@ -738,6 +738,9 @@ struct ReportEngine: Sendable {
     /// Prefix of the line `writeSummaryFile` emits once the day's summary is on disk.
     static let summaryWrittenMarker = "[ok] wrote "
 
+    /// The line a run logs when it wrote the day's summary early, before its slow sources.
+    static let earlySummaryWrittenLine = "[info] summary written before the slow sources"
+
     /// Prefix of the line `collect` emits when shared-workspace coordination
     /// told this Mac to stand down. Same `[partial]` contract as above: nothing
     /// was collected, so the run is not the success a bare exit 0 implies.
@@ -2941,8 +2944,7 @@ struct ReportEngine: Sendable {
             liveKinds: buildLiveKinds(savedKinds: savedKinds, sofaRefreshed: false),
             day: day, onLine: { _ in })
         if outcome == .wrote {
-            onLine(.init(timestamp: Date(), level: .info,
-                         text: "[info] summary written before the slow sources"))
+            onLine(.init(timestamp: Date(), level: .info, text: earlySummaryWrittenLine))
         }
     }
 

@@ -335,6 +335,17 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertTrue(kept.producedFreshSnapshot, "nothing failed")
         XCTAssertFalse(kept.advancedTrends)
 
+        // A summary written before the slow sources counts, though the run then stopped and
+        // the end of it kept that file.
+        let early = CollectHonestyWatcher()
+        for line in [ReportEngine.earlySummaryWrittenLine,
+                     "\(ReportEngine.stoppedEarlyMarker)run budget used (45 minutes); 1 source "
+                        + "left for the next run: patch-status",
+                     "[info] summary_2026-11-28.json already exists — leaving existing file in place"] {
+            early.observe(line)
+        }
+        XCTAssertTrue(early.advancedTrends)
+
         wrote.observe(ReportEngine.standDownLine(reason: "[info] peer collected recently"))
         XCTAssertFalse(wrote.advancedTrends)
     }
