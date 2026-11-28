@@ -7,7 +7,9 @@ final class ProtectAgentSummaryTests: XCTestCase {
 
     private var root: URL!
     private var dataDir: URL!
-    private let anchor = GoldenFleetClock.anchorNoon()
+    // The latest noon already past: the code under test reads the real clock, so a fixture
+    // stamped at today's noon would be in the future before 12:00 local.
+    private let anchor = GoldenFleetClock.anchorNoon(from: Date().addingTimeInterval(-12 * 3_600))
 
     override func setUpWithError() throws {
         try super.setUpWithError()
