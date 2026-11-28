@@ -129,6 +129,42 @@ final class PlatformOverviewTests: XCTestCase {
         XCTAssertEqual(overview.platforms.first?.devices, 3)
     }
 
+    /// A count past `maxSummaryNumber` is skipped like a bad one, so the sums cannot overflow
+    /// for a summary built in memory that never passed the decoder's range check.
+    func testCountsPastTheSummaryLimitAreIgnored() throws {
+        let overview = PlatformOverview.build([
+            day("2026-11-19", ["macOS 26": Int.max, "macOS 15": Int.max]),
+            day("2026-11-20", ["macOS 26": Int.max, "macOS 15": 5, "iOS 26": Int.max]),
+        ])
+        XCTAssertEqual(overview.platforms.map(\.name), ["macOS"])
+        let mac = try XCTUnwrap(overview.platforms.first)
+        XCTAssertEqual(mac.devices, 5)
+        XCTAssertEqual(mac.versions.map(\.key), ["macOS 15"])
+        XCTAssertEqual(percents(mac, "macOS 15"), [100])
+    }
+
+    /// Peer-written Mac figures out of their range are left out, never shown: a family map of
+    /// "Other" alone, a current-release share outside 0 to 100, a negative gap count.
+    func testMacFiguresOutOfRangeAreLeftOut() throws {
+        let cases: [([String: Int], Double, Int)] = [
+            (["Other": 4], 100.5, -1), (["Other": 4, "Mac mini": 0], -2, Int.max),
+        ]
+        for (models, current, p0) in cases {
+            let mac = try XCTUnwrap(PlatformOverview.build([
+                day("2026-11-20", ["macOS 26": 2], models: models, osCurrent: current, p0: p0),
+            ]).platforms.first)
+            XCTAssertNil(mac.modelFamilies)
+            XCTAssertNil(mac.onCurrentRelease)
+            XCTAssertNil(mac.securityGaps)
+        }
+        let edges = try XCTUnwrap(PlatformOverview.build([
+            day("2026-11-20", ["macOS 26": 2], models: ["Mac mini": 1], osCurrent: 0, p0: 0),
+        ]).platforms.first)
+        XCTAssertEqual(edges.modelFamilies, 1)
+        XCTAssertEqual(edges.onCurrentRelease, 0)
+        XCTAssertEqual(edges.securityGaps, 0)
+    }
+
     func testNoMapOnTheNewestDayDrawsNothing() {
         XCTAssertTrue(PlatformOverview.build([]).isEmpty)
         XCTAssertTrue(PlatformOverview.build([

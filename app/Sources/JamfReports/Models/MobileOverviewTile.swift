@@ -62,14 +62,15 @@ extension MobileSummary {
             ("Vision Pro", { $0 == 1 ? L("\($0) Vision Pro") : L("\($0) Vision Pros") }),
             ("Other", { $0 == 1 ? L("\($0) other device") : L("\($0) other devices") }),
         ].compactMap { (key: String, text: (Int) -> String) in
-            (forms?[key]).flatMap { $0 > 0 ? text($0) : nil }
+            (forms?[key]).flatMap { SummaryJSONParser.isDeviceCount($0) ? text($0) : nil }
         }
         guard let forms, !parts.isEmpty else {
             return MobileOverviewTile(
                 label: L("Devices"), value: "\(managed)", caption: L("managed mobile devices"))
         }
+        let total = forms.values.filter(SummaryJSONParser.isDeviceCount).reduce(0, +)
         return MobileOverviewTile(
-            label: L("Devices"), value: "\(forms.values.reduce(0, +))",
+            label: L("Devices"), value: "\(total)",
             caption: parts.joined(separator: ", "))
     }
 

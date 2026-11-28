@@ -130,7 +130,9 @@ private struct PlatformVersionBars: View {
                         .frame(minWidth: 96, alignment: .trailing)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(L("\(label(version)): \(version.count) devices, \(percentFormat.text(version.percent))"))
+                .accessibilityLabel(version.count == 1
+                    ? L("\(label(version)): \(version.count) device, \(percentFormat.text(version.percent))")
+                    : L("\(label(version)): \(version.count) devices, \(percentFormat.text(version.percent))"))
             }
         }
     }

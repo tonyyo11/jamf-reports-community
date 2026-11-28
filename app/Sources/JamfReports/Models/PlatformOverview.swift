@@ -91,11 +91,18 @@ struct PlatformOverview: Equatable, Sendable {
                           percent: Double($0.value) / Double(total) * 100)
                 },
                 adoption: [], versionsSeen: 0, versionsPooled: 0,
-                modelFamilies: isMac ? newest.modelFamilyCounts.map {
-                    $0.filter { $0.key != otherKey && $0.value > 0 }.count
+                modelFamilies: isMac ? newest.modelFamilyCounts.flatMap {
+                    let families = $0.filter {
+                        $0.key != otherKey && SummaryJSONParser.isDeviceCount($0.value)
+                    }.count
+                    return families > 0 ? families : nil
                 } : nil,
-                onCurrentRelease: isMac ? newest.osCurrentPct : nil,
-                securityGaps: isMac ? newest.actionItemsP0 : nil
+                onCurrentRelease: isMac ? newest.osCurrentPct.flatMap {
+                    (0...100).contains($0) ? $0 : nil
+                } : nil,
+                securityGaps: isMac ? newest.actionItemsP0.flatMap {
+                    (0...SummaryJSONParser.maxSummaryNumber).contains($0) ? $0 : nil
+                } : nil
             ).withAdoption(window.map { ($0.0, $0.1[name]) })
         }
         let hasMobile = names.contains { $0 != macPlatform }
@@ -105,11 +112,11 @@ struct PlatformOverview: Equatable, Sendable {
             mobileJailbroken: hasMobile ? newest.mobile?.jailbroken : nil)
     }
 
-    /// Platform to major to count; a count at or below 0 or a key with no major is skipped
-    /// (summaries are peer-writable; the writer produces neither).
+    /// Platform to major to count; a count outside `SummaryJSONParser.isDeviceCount` or a key
+    /// with no major is skipped (summaries are peer-writable; the writer produces neither).
     private static func byPlatform(_ map: [String: Int]) -> [String: [Int: Int]] {
         var result: [String: [Int: Int]] = [:]
-        for (key, count) in map where count > 0 {
+        for (key, count) in map where SummaryJSONParser.isDeviceCount(count) {
             guard let (platform, major) = parts(key) else { continue }
             result[platform, default: [:]][major, default: 0] += count
         }

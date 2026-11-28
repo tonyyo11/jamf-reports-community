@@ -290,6 +290,11 @@ final class OverviewMobileSectionTests: XCTestCase {
         XCTAssertEqual(vision.value, "3")
         XCTAssertEqual(vision.caption, "1 iPad, 2 Vision Pros")
 
+        let huge = figures.overviewTiles(
+            format: .standard, formFactors: ["iPad": 2, "iPhone": Int.max, "Other": Int.max])[0]
+        XCTAssertEqual(huge.value, "2", "a count past the summary limit is not added")
+        XCTAssertEqual(huge.caption, "2 iPads")
+
         for absent in [nil, [:], ["iPad": 0]] as [[String: Int]?] {
             let fallback = figures.overviewTiles(format: .standard, formFactors: absent)[0]
             XCTAssertEqual(fallback.value, "118")
