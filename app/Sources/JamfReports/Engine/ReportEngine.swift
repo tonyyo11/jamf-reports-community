@@ -681,7 +681,8 @@ struct ReportEngine: Sendable {
         do {
             let data = try encoder.encode(summary)
             try data.write(to: url, options: .atomic)
-            let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
+            let msg = "\(summaryWrittenMarker)\(url.lastPathComponent) — trend chart and StaleDataBanner "
+                + "will reflect this run"
             AppLogger.collect.info("\(msg, privacy: .private)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
             return true
@@ -733,6 +734,9 @@ struct ReportEngine: Sendable {
     /// not be written. `[partial]` is the marker `RunHistoryService.isPartialRun`
     /// scans for, and the prefix is what `CollectHonestyWatcher` matches on.
     static let summaryNotWrittenMarker = "[partial] summary not written:"
+
+    /// Prefix of the line `writeSummaryFile` emits once the day's summary is on disk.
+    static let summaryWrittenMarker = "[ok] wrote "
 
     /// Prefix of the line `collect` emits when shared-workspace coordination
     /// told this Mac to stand down. Same `[partial]` contract as above: nothing

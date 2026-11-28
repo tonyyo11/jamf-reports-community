@@ -636,6 +636,8 @@ final class CollectHonestyWatcher: Sendable {
         var permanentPartial = false
         /// The run stopped before its sources were done (`ReportEngine.stoppedEarlyMarker`).
         var stoppedEarly = false
+        /// This run wrote the day's summary (`ReportEngine.summaryWrittenMarker`).
+        var summaryWritten = false
     }
     private let flags = Mutex(Flags())
 
@@ -643,6 +645,10 @@ final class CollectHonestyWatcher: Sendable {
 
     /// Feed one log line. Cheap enough to call on every line of a collect.
     func observe(_ line: String) {
+        if line.hasPrefix(ReportEngine.summaryWrittenMarker) {
+            flags.withLock { $0.summaryWritten = true }
+            return
+        }
         if line.hasPrefix(ReportEngine.stoppedEarlyMarker) {
             flags.withLock { $0.stoppedEarly = true }
             return
@@ -769,6 +775,12 @@ final class CollectHonestyWatcher: Sendable {
     /// Whether the run may claim it refreshed the fleet's data. False for
     /// either marker: both mean today's summary is not this run's work.
     var producedFreshSnapshot: Bool { !stoodDown && !summaryWriteFailed }
+
+    /// This run wrote the day's summary, so Trends moved. A run that kept the summary already
+    /// there, or stopped before writing one, did not.
+    var advancedTrends: Bool {
+        producedFreshSnapshot && flags.withLock { $0.summaryWritten }
+    }
 }
 
 // MARK: - Included-CLI run signals
