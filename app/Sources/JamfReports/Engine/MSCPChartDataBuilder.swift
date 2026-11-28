@@ -288,14 +288,7 @@ struct MSCPChartDataBuilder: Sendable {
         return d
     }
 
-    /// Extract a date from an ea-results snapshot filename.
-    ///
-    /// Handles the canonical `saveSnapshot` form `<kind>_yyyyMMddTHHmmss.json`
-    /// and the python-era dashed form `<kind>_yyyy-MM-ddTHHmmss<microseconds>.json`
-    /// (trailing microsecond digits ignored). Falls back to the file modification
-    /// time when neither pattern matches.
-    /// `urls` ordered by `dateFromSnapshotFilename`, each name parsed once: a comparator that
-    /// parses both sides runs a regex and a DateFormatter on every comparison.
+    /// `urls` ordered by `dateFromSnapshotFilename`, parsing each name once, not per comparison.
     static func sortedBySnapshotDate(
         _ urls: [URL], descending: Bool = false, fm: FileManager = .default
     ) -> [URL] {
@@ -304,6 +297,12 @@ struct MSCPChartDataBuilder: Sendable {
             .map(\.0)
     }
 
+    /// Extract a date from an ea-results snapshot filename.
+    ///
+    /// Handles the canonical `saveSnapshot` form `<kind>_yyyyMMddTHHmmss.json`
+    /// and the python-era dashed form `<kind>_yyyy-MM-ddTHHmmss<microseconds>.json`
+    /// (trailing microsecond digits ignored). Falls back to the file modification
+    /// time when neither pattern matches.
     static func dateFromSnapshotFilename(_ url: URL, fm: FileManager = .default) -> Date {
         // One parser, shared with FileSystemHelpers' newest* helpers, so the
         // ordering used by the charts can never drift from the ordering used by
