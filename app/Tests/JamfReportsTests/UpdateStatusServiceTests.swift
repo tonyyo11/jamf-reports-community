@@ -12,6 +12,25 @@ final class UpdateStatusServiceTests: XCTestCase {
     }
 
 
+    /// The status icon follows the colour's grouping of Jamf's values, so INSTALLED gets the
+    /// check mark and a value Jamf never sends (COMPLETED, PENDING) the plain dot.
+    func testStatusIconAndColourShareOneGrouping() {
+        let cases: [(String, UpdateStatusService.StatusKind, String)] = [
+            ("INSTALLED", .installed, "checkmark.circle"),
+            ("DOWNLOADING", .inProgress, "arrow.triangle.2.circlepath"),
+            ("INSTALLING", .inProgress, "arrow.triangle.2.circlepath"),
+            ("IDLE", .inProgress, "arrow.triangle.2.circlepath"),
+            ("INSTALL_FAILED", .failed, "exclamationmark.triangle"),
+            ("ERROR", .failed, "exclamationmark.triangle"),
+            ("COMPLETED", .other, "circle.fill"),
+            ("PENDING", .other, "circle.fill"),
+        ]
+        for (status, kind, icon) in cases {
+            XCTAssertEqual(UpdateStatusService.statusKind(for: status), kind, status)
+            XCTAssertEqual(UpdatesView.statusIcon(for: status), icon, status)
+        }
+    }
+
     func testUpdatesViewInstantiatesInDemoMode() throws {
         let workspace = WorkspaceStore()
         workspace.profile = "test"

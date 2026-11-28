@@ -314,7 +314,7 @@ struct UpdatesView: View {
                 : 0
             HStack {
                 HStack(spacing: 4) {
-                    let icon = statusIcon(for: slice.label)
+                    let icon = Self.statusIcon(for: slice.label)
                     Image(systemName: icon)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color(hex: slice.colorHex))
@@ -345,15 +345,16 @@ struct UpdatesView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(slice.label) update status, \(percentFormat.numberText(snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
+        .accessibilityLabel("\(ManagementDetail.displayValue(slice.label)) update status, \(percentFormat.numberText(snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) update statuses")
     }
 
-    private func statusIcon(for status: String) -> String {
-        let lower = status.lowercased()
-        if lower.contains("completed") { return "checkmark.circle" }
-        if lower.contains("pending") || lower.contains("installing") { return "arrow.triangle.2.circlepath" }
-        if lower.contains("error") { return "exclamationmark.triangle" }
-        return "circle.fill"
+    static func statusIcon(for status: String) -> String {
+        switch UpdateStatusService.statusKind(for: status) {
+        case .installed: "checkmark.circle"
+        case .inProgress: "arrow.triangle.2.circlepath"
+        case .failed: "exclamationmark.triangle"
+        case .other: "circle.fill"
+        }
     }
 
     @ViewBuilder
@@ -443,7 +444,7 @@ struct UpdatesView: View {
 
                     TableColumn("Status") { device in
                         Pill(text: ManagementDetail.displayValue(device.status), tone: .danger)
-                            .accessibilityLabel("Status \(device.status)")
+                            .accessibilityLabel("Status \(ManagementDetail.displayValue(device.status))")
                     }
                     .width(min: 80, ideal: 80)
 

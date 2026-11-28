@@ -199,7 +199,7 @@ struct PolicyProfileView: View {
                             tone: severityTone(for: finding.severity),
                             icon: severityIcon(for: finding.severity)
                         )
-                        .accessibilityLabel("\(finding.severity) severity")
+                        .accessibilityLabel("\(ManagementDetail.severityValue(finding.severity)) severity")
                     }
                     .width(min: 90, ideal: 90)
 
