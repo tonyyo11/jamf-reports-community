@@ -9,6 +9,7 @@ versions in this repository map to git tags.
 
 ### Added
 
+- A cross-platform overview on Fleet Overview (Jamf Pro) and on the School Overview (Jamf School): one section for each platform the daily summaries name (macOS, iOS, iPadOS, tvOS), with its device count, OS version breakdown (the newest four versions, then one "macOS 11 or older" bar for the rest), version adoption over the last 12 weeks and a button that opens that platform's device list. It reads the daily summaries the app already writes, so it works on-prem and needs no new collect. macOS also shows how many model families it has, its share on the current release and its FileVault, SIP and firewall gaps (the Security Posture P0 count); a figure the summaries do not hold for a platform is left out.
 - Apple Vision Pro shows as its own device type on Mobile Devices, the Overview's mobile card, the daily summary (`visionOS` in the OS map) and the HTML report, instead of "Other". It counts in the managed, supervised, passcode and data protection shares and, like Apple TV, not in "OS current" (there is no visionOS release feed). Vision Pro rows in OS Updates and its failure tables are kept like any other device.
 - The Health Audit has a "Server and admin health" card that shows when the Jamf Pro server's built-in certificate authority expires, from jamf-cli 1.38.0. A login without the privilege, or a server without the feature, is shown as such and checked again weekly, never as a failed run. The HTML report's Needs attention list names an expired or expiring certificate.
 - The same card, the "Server and Admin Health" tab and the HTML report's Needs attention list show the Jamf Pro notifications the login can see, counted by the type Jamf gives them. Jamf filters notifications by user and site, so zero reads "None visible to this login".
@@ -30,6 +31,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Fleet Overview's Mac models, Operating systems and Mobile device types tiles are replaced by the per-platform sections. The Mac section shows how many model families there are, not the count for each family. The two last-seen tiles stay.
 - The status bar names the workspace without `profile=` ("refreshing data · Example").
 - The workbook has a new last core tab, "Server and Admin Health", in the Full Instance and Operational templates. The Config field for the existing expiry warning window is now labelled "Certificate and token expiry warning"; the key is unchanged.
 - The workbook has two new core tabs, "Server and Admin Health" and, after it, "Deployment Health", now the last core tab, in the Full Instance and Operational templates. The Config field for the existing expiry warning window is now labelled "Certificate and token expiry warning"; the key is unchanged.
@@ -47,6 +49,7 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A tile title that may take two lines (Overview score cards, the new platform sections) no longer cuts off after one line when the line under the number also wraps.
 - Compliance Posture no longer lists a control as "0 failing" when no Mac reported it: the bar reads "Not reported", and Macs that did not report a control leave its share instead of counting as passing.
 - The Trends hero no longer shows an older day's figure as current when the newest summary did not measure the metric; it shows a dash and says so. The EDR agent's trend arrow on the Overview follows the same rule.
 - A score card's detail page says "0 of 4 summaries" when summaries exist but none carries the metric, instead of "0 summaries".

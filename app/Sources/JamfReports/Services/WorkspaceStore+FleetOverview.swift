@@ -9,6 +9,8 @@ struct FleetWorkspaceOverview: Sendable {
     var summaries: [DailySummary] = []
     /// A Jamf School workspace writes no daily summary, so none of the summary issues applies.
     var isSchool = false
+    /// Built off the main actor with `summaries` (`PlatformOverview.build`).
+    var platforms: PlatformOverview = .empty
 
     /// Taken when shown, so a Customize change reads without reloading the summaries.
     func issues(format: PercentFormat, staleDays: Int) -> [FleetProfileIssue] {
@@ -35,9 +37,13 @@ extension WorkspaceStore {
         if demoMode { return demoFleetOverview() }
         let name = profile
         let isSchool = isSchoolWorkspace
-        let summaries = await Task.detached(priority: .utility) { readSummaries(name) }.value
+        let (summaries, platforms) = await Task.detached(priority: .utility) {
+            let summaries = readSummaries(name)
+            return (summaries, PlatformOverview.build(summaries))
+        }.value
         return FleetWorkspaceOverview(
-            profile: name, summary: summaries.last, summaries: summaries, isSchool: isSchool)
+            profile: name, summary: summaries.last, summaries: summaries, isSchool: isSchool,
+            platforms: platforms)
     }
 
     /// The demo workspace's own summaries (`DemoData.fleetSummaries(for:)`); every demo trend
@@ -46,6 +52,7 @@ extension WorkspaceStore {
         let summaries = DemoData.fleetSummaries(for: profile)
         return FleetWorkspaceOverview(
             profile: profile, summary: summaries.last, summaries: summaries,
-            isSchool: DemoData.environmentProducts(for: profile).isSchool)
+            isSchool: DemoData.environmentProducts(for: profile).isSchool,
+            platforms: DemoData.platformOverview(for: profile))
     }
 }

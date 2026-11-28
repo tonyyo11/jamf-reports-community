@@ -785,6 +785,10 @@ struct SummaryJSONParser {
     /// add counts across profiles (two of `Int.max` overflow), and never see the file.
     static let maxSummaryNumber = 1_000_000_000
 
+    /// A map count a screen adds up: 1 through `maxSummaryNumber`, so no sum can overflow even
+    /// for a summary that never passed `decode`.
+    static func isDeviceCount(_ value: Int) -> Bool { (1...maxSummaryNumber).contains(value) }
+
     struct NumberOutOfRange: LocalizedError {
         var errorDescription: String? {
             "a number is outside ±\(SummaryJSONParser.maxSummaryNumber)"

@@ -113,6 +113,7 @@ struct FleetOverviewView: View {
         }
 
         stabilityTrendCard(for: row)
+        PlatformOverviewSection(overview: row.platforms, isSchool: row.isSchool)
         FleetDeviceMapsSection(summary: row.summary)
         summaryDetailsCard(for: row)
     }

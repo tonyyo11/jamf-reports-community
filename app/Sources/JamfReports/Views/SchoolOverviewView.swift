@@ -10,6 +10,8 @@ struct SchoolOverviewView: View {
     @State private var snapshot: SchoolFleetService.Snapshot = .empty
     @State private var scanTurnedOff = false
     @State private var checklist: GettingStartedChecklist?
+    /// From the School daily summaries, which the snapshot does not hold.
+    @State private var platforms: PlatformOverview = .empty
     /// The `dataSource` `snapshot` and `checklist` were read for; the content waits for it to
     /// match.
     @State private var loadedSource: String?
@@ -38,6 +40,7 @@ struct SchoolOverviewView: View {
                         now: workspace.demoMode ? DemoData.referenceDate : Date(),
                         filters: [.all], opens: openDevices)
                 }
+                PlatformOverviewSection(overview: platforms, isSchool: true)
                 if let health = SchoolDeviceHealth(snapshot, scanTurnedOff: scanTurnedOff) {
                     SchoolDeviceHealthCard(health: health)
                 }
@@ -87,11 +90,14 @@ struct SchoolOverviewView: View {
     /// Decodes off the main thread; the task is cancelled when `dataSource` or `reloads` changes.
     private func load() async {
         let source = dataSource
-        if loadedSource != source { loadedSource = nil; snapshot = .empty; checklist = nil }
+        if loadedSource != source {
+            loadedSource = nil; snapshot = .empty; checklist = nil; platforms = .empty
+        }
         let profile = workspace.profile
         if workspace.demoMode {
             // The demo district, never this Mac's workspace; its checklist is done.
             snapshot = DemoData.schoolSnapshot
+            platforms = DemoData.platformOverview(for: profile)
             loadedSource = source
             return
         }
@@ -100,7 +106,7 @@ struct SchoolOverviewView: View {
             return
         }
         let connected = !workspace.profiles.isEmpty
-        guard let (loaded, scheduled, reported, scanOff) = await ScreenLoad.paint(
+        guard let (loaded, scheduled, reported, scanOff, built) = await ScreenLoad.paint(
             stillCurrent: { source == dataSource },
             read: {
                 let loaded = SchoolFleetService.load(profile: profile)
@@ -112,11 +118,13 @@ struct SchoolOverviewView: View {
                     hasAgent: hasAgent, policyIsManaged: policy.isManaged,
                     excluded: policy.excludedWorkspaces.contains(profile))
                 let reported = !ReportLibrary().list(profile: profile).isEmpty
-                return (loaded, scheduled, reported, scanOff)
+                let built = PlatformOverview.build(TrendStore.readSummaries(profile: profile))
+                return (loaded, scheduled, reported, scanOff, built)
             }
         ) else { return }
         snapshot = loaded
         scanTurnedOff = scanOff
+        platforms = built
         checklist = .buildSchool(
             connected: connected, collected: loaded.isDetected,
             scheduled: scheduled, reported: reported)

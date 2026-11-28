@@ -518,6 +518,9 @@ struct StatTile: View {
                 .transformEnvironment(\.lineLimit) { limit in
                     if let labelLineLimit { limit = labelLineLimit }
                 }
+                // A filled tile offers its VStack a fixed height, which shrinks the label to one
+                // truncated line whenever the caption wraps.
+                .fixedSize(horizontal: false, vertical: true)
                 // Keeps a long title out from under the chevron overlay.
                 .padding(.trailing, action != nil ? 14 : 0)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
